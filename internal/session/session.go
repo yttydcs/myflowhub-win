@@ -17,6 +17,7 @@ type Session struct {
 	mu      sync.Mutex
 	conn    net.Conn
 	codec   header.HeaderTcpCodec
+	baseCtx context.Context
 	ctx     context.Context
 	cancel  context.CancelFunc
 	onFrame func(core.IHeader, []byte)
@@ -28,7 +29,7 @@ func New(ctx context.Context, onFrame func(core.IHeader, []byte), onError func(e
 		ctx = context.Background()
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	return &Session{ctx: cctx, cancel: cancel, codec: header.HeaderTcpCodec{}, onFrame: onFrame, onError: onError}
+	return &Session{baseCtx: ctx, ctx: cctx, cancel: cancel, codec: header.HeaderTcpCodec{}, onFrame: onFrame, onError: onError}
 }
 
 func (s *Session) Connect(addr string) error {
@@ -36,6 +37,13 @@ func (s *Session) Connect(addr string) error {
 	defer s.mu.Unlock()
 	if s.conn != nil {
 		return errors.New("已经连接")
+	}
+	if s.ctx == nil || s.ctx.Err() != nil {
+		base := s.baseCtx
+		if base == nil {
+			base = context.Background()
+		}
+		s.ctx, s.cancel = context.WithCancel(base)
 	}
 	dialer := net.Dialer{Timeout: 5 * time.Second}
 	conn, err := dialer.DialContext(s.ctx, "tcp", addr)
