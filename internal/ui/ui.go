@@ -72,6 +72,10 @@ type Controller struct {
 
 	mainWin   fyne.Window
 	connected bool
+
+	varPoolNames []string
+	varPoolData  map[string]varValue
+	varPoolList  *fyne.Container
 }
 
 func New(app fyne.App, ctx context.Context) *Controller {
@@ -82,15 +86,18 @@ func New(app fyne.App, ctx context.Context) *Controller {
 
 func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.mainWin = w
+	c.loadVarPoolPrefs()
 	homeTab := c.buildHomeTab(w)
 	debugTab := c.buildDebugTab(w)
 	configTab := c.buildConfigTab(w)
 	presetTab := c.buildPresetTab(w)
+	varPoolTab := c.buildVarPoolTab(w)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("核心设置", configTab),
 		container.NewTabItem("自定义调试", debugTab),
 		container.NewTabItem("预设调试", presetTab),
+		container.NewTabItem("变量池", varPoolTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 	tabs.SelectTabIndex(0)
@@ -380,6 +387,8 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 	if deviceID != "" {
 		p.SetString(prefHomeDeviceID, deviceID)
 	}
+	// 登录成功后尝试拉取变量池
+	c.fetchVarPoolAll()
 }
 
 func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
@@ -440,6 +449,33 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nCredential: %s\nRole: %s",
 			resp.DeviceID, resp.NodeID, resp.Credential, resp.Role))
 	default:
+		// varstore responses
+		if act == "get_resp" {
+			var resp struct {
+				Code       int    `json:"code"`
+				Msg        string `json:"msg"`
+				Name       string `json:"name"`
+				Value      string `json:"value"`
+				Owner      uint32 `json:"owner"`
+				Visibility string `json:"visibility"`
+				Type       string `json:"type"`
+			}
+			if err := json.Unmarshal(msg.Data, &resp); err != nil {
+				return
+			}
+			if resp.Name == "" {
+				return
+			}
+			if resp.Code != 1 {
+				return
+			}
+			c.updateVarPoolValue(resp.Name, varValue{
+				value:      resp.Value,
+				owner:      resp.Owner,
+				visibility: resp.Visibility,
+				typ:        resp.Type,
+			})
+		}
 	}
 }
 
@@ -858,6 +894,13 @@ type logEntry struct {
 	widget.Entry
 }
 
+type varValue struct {
+	value      string
+	owner      uint32
+	visibility string
+	typ        string
+}
+
 func newLogEntry() *logEntry {
 	e := &logEntry{}
 	e.MultiLine = true
@@ -922,6 +965,7 @@ const (
 	prefHomeRole       = "home.role"
 	prefHomeAutoCon    = "home.auto_connect"
 	prefHomeAutoLog    = "home.auto_login"
+	prefVarPoolNames   = "varpool.names"
 )
 
 var configKeys = []string{
@@ -1227,6 +1271,9 @@ func (c *Controller) sendPreset(def presetDefinition, p1, p2 string) error {
 	if err != nil {
 		return err
 	}
+	if strings.EqualFold(def.name, "VarSet") {
+		c.addVarPoolName(strings.TrimSpace(p1))
+	}
 	hdr, err = c.applyPresetHeaderOverrides(hdr)
 	if err != nil {
 		return err
@@ -1261,6 +1308,154 @@ func (c *Controller) applyPresetHeaderOverrides(h core.IHeader) (core.IHeader, e
 		}
 	}
 	return h, nil
+}
+
+// Var pool UI
+func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
+	if c.varPoolList == nil {
+		c.varPoolList = container.NewVBox()
+	}
+	c.refreshVarPoolUI()
+	refreshBtn := widget.NewButton("刷新变量", func() { c.fetchVarPoolAll() })
+	info := widget.NewLabel("展示本地缓存的变量名（VarSet 发送后记录），登录成功后自动向上级查询最新值")
+	return container.NewBorder(info, refreshBtn, nil, nil, c.varPoolList)
+}
+
+func (c *Controller) refreshVarPoolUI() {
+	if c.varPoolList == nil {
+		return
+	}
+	c.varPoolList.Objects = nil
+	for _, name := range c.varPoolNames {
+		val := c.varPoolData[name]
+		value := val.value
+		if value == "" {
+			value = "-"
+		}
+		vis := val.visibility
+		if strings.TrimSpace(vis) == "" {
+			vis = "-"
+		}
+		typ := val.typ
+		if typ == "" {
+			typ = "-"
+		}
+		meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", val.owner, vis, typ)
+		card := widget.NewCard(name, meta, widget.NewLabel(value))
+		c.varPoolList.Add(card)
+	}
+	c.varPoolList.Refresh()
+}
+
+func (c *Controller) loadVarPoolPrefs() {
+	if c.varPoolData == nil {
+		c.varPoolData = make(map[string]varValue)
+	}
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	raw := c.app.Preferences().StringWithFallback(prefVarPoolNames, "")
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(raw), &names); err != nil {
+		return
+	}
+	seen := make(map[string]bool)
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		c.varPoolNames = append(c.varPoolNames, n)
+	}
+}
+
+func (c *Controller) saveVarPoolPrefs() {
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	data, _ := json.Marshal(c.varPoolNames)
+	c.app.Preferences().SetString(prefVarPoolNames, string(data))
+}
+
+func (c *Controller) addVarPoolName(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	for _, n := range c.varPoolNames {
+		if n == name {
+			return
+		}
+	}
+	c.varPoolNames = append(c.varPoolNames, name)
+	c.saveVarPoolPrefs()
+	c.refreshVarPoolUI()
+}
+
+func (c *Controller) fetchVarPoolAll() {
+	if len(c.varPoolNames) == 0 {
+		return
+	}
+	for _, n := range c.varPoolNames {
+		name := n
+		go c.sendVarGet(name)
+	}
+}
+
+func (c *Controller) sendVarGet(name string) {
+	if strings.TrimSpace(name) == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "get",
+		"data": map[string]any{
+			"name": name,
+		},
+	})
+	if err != nil {
+		c.appendLog("[VAR][ERR] build get payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(0).
+		WithTargetID(0).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[VAR][ERR] get %s: %v", name, err)
+		return
+	}
+	c.logTx("[VAR TX get "+name+"]", hdr, payload)
+}
+
+func (c *Controller) updateVarPoolValue(name string, val varValue) {
+	if c.varPoolData == nil {
+		c.varPoolData = make(map[string]varValue)
+	}
+	if strings.TrimSpace(name) == "" {
+		return
+	}
+	if !contains(c.varPoolNames, name) {
+		c.varPoolNames = append(c.varPoolNames, name)
+		c.saveVarPoolPrefs()
+	}
+	c.varPoolData[name] = val
+	c.refreshVarPoolUI()
+}
+
+func contains(slice []string, target string) bool {
+	for _, s := range slice {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 func presetHeader(sub uint8, target uint32) *header.HeaderTcp {
