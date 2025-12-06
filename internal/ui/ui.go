@@ -24,6 +24,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+const (
+	actionLoginResp    = "login_resp"
+	actionRegisterResp = "register_resp"
+)
+
 type Controller struct {
 	app     fyne.App
 	ctx     context.Context
@@ -36,8 +41,25 @@ type Controller struct {
 	logView   *logEntry
 	form      *headerForm
 
-	nodeEntry *widget.Entry
-	hexToggle *widget.Check
+	nodeEntry    *widget.Entry
+	hexToggle    *widget.Check
+	truncToggle  *widget.Check
+	showHex      *widget.Check
+	presetSrc    *widget.Entry
+	presetTgt    *widget.Entry
+	homeAddr     *widget.Entry
+	homeAutoCon  *widget.Check
+	homeAutoLog  *widget.Check
+	homeDevice   *widget.Entry
+	homeCred     *widget.Label
+	homeNode     *widget.Label
+	homeRole     *widget.Label
+	homeLoginBtn *widget.Button
+	homeClearBtn *widget.Button
+	storedCred   string
+	storedNode   uint32
+	storedRole   string
+	homeLoading  bool
 
 	configRows []*configRow
 	configList *fyne.Container
@@ -47,6 +69,9 @@ type Controller struct {
 
 	logPopup  *logEntry
 	logWindow fyne.Window
+
+	mainWin   fyne.Window
+	connected bool
 }
 
 func New(app fyne.App, ctx context.Context) *Controller {
@@ -56,19 +81,366 @@ func New(app fyne.App, ctx context.Context) *Controller {
 }
 
 func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
+	c.mainWin = w
+	homeTab := c.buildHomeTab(w)
 	debugTab := c.buildDebugTab(w)
 	configTab := c.buildConfigTab(w)
 	presetTab := c.buildPresetTab(w)
 	tabs := container.NewAppTabs(
-		container.NewTabItem("Config", configTab),
-		container.NewTabItem("Debug", debugTab),
-		container.NewTabItem("Presets", presetTab),
+		container.NewTabItem("首页", homeTab),
+		container.NewTabItem("核心设置", configTab),
+		container.NewTabItem("自定义调试", debugTab),
+		container.NewTabItem("预设调试", presetTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
-	if len(tabs.Items) > 2 {
-		tabs.SelectTabIndex(1) // 默认落在 Debug，保持原体验
-	}
+	tabs.SelectTabIndex(0)
+	c.tryAutoConnectLogin()
 	return tabs
+}
+
+func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
+	c.homeAddr = widget.NewEntry()
+	c.homeAddr.SetPlaceHolder("127.0.0.1:9000")
+	c.homeAutoCon = widget.NewCheck("自动连接", func(checked bool) {
+		if c.homeLoading {
+			return
+		}
+		c.saveHomeAuto()
+		if checked {
+			go c.homeConnect()
+		}
+	})
+	c.homeDevice = widget.NewEntry()
+	c.homeDevice.SetPlaceHolder("device-001")
+	c.homeAutoLog = widget.NewCheck("自动登录", func(checked bool) {
+		if c.homeLoading {
+			return
+		}
+		c.saveHomeAuto()
+		if checked && c.connected {
+			go c.homeLogin()
+		}
+	})
+	c.homeCred = widget.NewLabel("Credential: -")
+	c.homeNode = widget.NewLabel("NodeID: -")
+	c.homeRole = widget.NewLabel("Role: -")
+
+	connectBtn := widget.NewButton("连接", func() { go c.homeConnect() })
+	disconnectBtn := widget.NewButton("断开", func() { c.homeDisconnect() })
+	c.homeLoginBtn = widget.NewButton("登录", func() { go c.homeLogin() })
+	c.homeClearBtn = widget.NewButton("清除凭证", func() { c.clearCredential() })
+
+	c.loadHomePrefs()
+	c.updateHomeInfo()
+	c.updateHomeLoginButton()
+
+	connBar := container.NewBorder(nil, nil, nil, container.NewHBox(connectBtn, disconnectBtn, c.homeAutoCon), c.homeAddr)
+	loginInputs := container.NewVBox(
+		widget.NewLabel("DeviceID"),
+		c.homeDevice,
+		container.NewHBox(c.homeLoginBtn, c.homeAutoLog),
+	)
+	infoBox := container.NewVBox(
+		c.homeCred,
+		c.homeNode,
+		c.homeRole,
+	)
+	statusCard := widget.NewCard("状态", "显示最近一次登录返回的信息（已持久化 credential）",
+		container.NewBorder(nil, c.homeClearBtn, nil, nil, infoBox))
+	return container.NewVBox(
+		widget.NewCard("连接", "填写服务器地址并可选择自动连接", connBar),
+		widget.NewCard("登录", "输入 DeviceID，自动登录会在连接后自动触发", loginInputs),
+		statusCard,
+	)
+}
+
+func (c *Controller) loadHomePrefs() {
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	c.homeLoading = true
+	defer func() { c.homeLoading = false }()
+	p := c.app.Preferences()
+	if c.homeAutoCon != nil {
+		c.homeAutoCon.SetChecked(p.BoolWithFallback(prefHomeAutoCon, false))
+	}
+	if c.homeAutoLog != nil {
+		c.homeAutoLog.SetChecked(p.BoolWithFallback(prefHomeAutoLog, false))
+	}
+	if c.homeDevice != nil {
+		c.homeDevice.SetText(p.StringWithFallback(prefHomeDeviceID, ""))
+	}
+	c.storedCred = p.StringWithFallback(prefHomeCredential, "")
+	c.storedNode = uint32(p.IntWithFallback(prefHomeNodeID, 0))
+	c.storedRole = p.StringWithFallback(prefHomeRole, "")
+}
+
+func (c *Controller) saveHomeAuto() {
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	p := c.app.Preferences()
+	if c.homeAutoCon != nil {
+		p.SetBool(prefHomeAutoCon, c.homeAutoCon.Checked)
+	}
+	if c.homeAutoLog != nil {
+		p.SetBool(prefHomeAutoLog, c.homeAutoLog.Checked)
+	}
+}
+
+func (c *Controller) updateHomeInfo() {
+	cred := c.storedCred
+	if cred == "" {
+		cred = "-"
+	}
+	nodeText := "-"
+	if c.storedNode != 0 {
+		nodeText = fmt.Sprintf("%d", c.storedNode)
+	}
+	role := c.storedRole
+	if role == "" {
+		role = "-"
+	}
+	if c.homeCred != nil {
+		c.homeCred.SetText("Credential: " + cred)
+	}
+	if c.homeNode != nil {
+		c.homeNode.SetText("NodeID: " + nodeText)
+	}
+	if c.homeRole != nil {
+		c.homeRole.SetText("Role: " + role)
+	}
+	c.updateHomeLoginButton()
+}
+
+func (c *Controller) clearCredential() {
+	c.storedCred = ""
+	c.storedNode = 0
+	c.storedRole = ""
+	if c.app != nil && c.app.Preferences() != nil {
+		p := c.app.Preferences()
+		p.SetString(prefHomeCredential, "")
+		p.SetInt(prefHomeNodeID, 0)
+		p.SetString(prefHomeRole, "")
+	}
+	c.updateHomeInfo()
+	c.appendLog("[HOME] 已清除本地凭证")
+}
+
+func (c *Controller) showInfo(title, msg string) {
+	if c.mainWin != nil {
+		dialog.ShowInformation(title, msg, c.mainWin)
+		return
+	}
+	if c.app != nil {
+		if win := c.app.Driver().AllWindows(); len(win) > 0 {
+			dialog.ShowInformation(title, msg, win[0])
+			return
+		}
+	}
+}
+
+func (c *Controller) updateHomeLoginButton() {
+	if c.homeLoginBtn == nil {
+		return
+	}
+	if c.storedCred == "" {
+		c.homeLoginBtn.SetText("注册")
+	} else {
+		c.homeLoginBtn.SetText("登录")
+	}
+}
+
+func (c *Controller) tryAutoConnectLogin() {
+	if c.homeAutoCon != nil && c.homeAutoCon.Checked {
+		go c.homeConnect()
+	}
+}
+
+func (c *Controller) homeConnect() {
+	addr := valueOrPlaceholder(c.homeAddr)
+	if addr == "" {
+		c.appendLog("[HOME] 连接地址为空")
+		return
+	}
+	if err := c.session.Connect(addr); err != nil {
+		if strings.Contains(err.Error(), "已经连接") {
+			c.connected = true
+			c.appendLog("[HOME] 已连接")
+		} else {
+			c.appendLog("[HOME][ERR] connect: %v", err)
+			return
+		}
+	}
+	c.connected = true
+	c.appendLog("[HOME][OK] connected %s", addr)
+	if c.homeAutoLog != nil && c.homeAutoLog.Checked {
+		go c.homeLogin()
+	}
+}
+
+func (c *Controller) homeDisconnect() {
+	c.session.Close()
+	c.connected = false
+	c.appendLog("[HOME] 手动断开")
+}
+
+func (c *Controller) homeLogin() {
+	deviceID := strings.TrimSpace(valueOrPlaceholder(c.homeDevice))
+	if deviceID == "" {
+		c.appendLog("[HOME][ERR] DeviceID 不能为空")
+		return
+	}
+	if c.app != nil && c.app.Preferences() != nil && deviceID != "" {
+		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+	}
+	if c.storedCred == "" {
+		c.homeRegister(deviceID)
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "login",
+		"data": map[string]any{
+			"device_id":  deviceID,
+			"credential": c.storedCred,
+		},
+	})
+	if err != nil {
+		c.appendLog("[HOME][ERR] build login payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(2).
+		WithSourceID(0).
+		WithTargetID(0).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[HOME][ERR] login send: %v", err)
+		return
+	}
+	if c.app != nil && c.app.Preferences() != nil {
+		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+	}
+	c.logTx("[HOME TX login]", hdr, payload)
+}
+
+func (c *Controller) homeRegister(deviceID string) {
+	payload, err := json.Marshal(map[string]any{
+		"action": "register",
+		"data": map[string]any{
+			"device_id": deviceID,
+		},
+	})
+	if err != nil {
+		c.appendLog("[HOME][ERR] build register payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(2).
+		WithSourceID(0).
+		WithTargetID(0).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[HOME][ERR] register send: %v", err)
+		return
+	}
+	if c.app != nil && c.app.Preferences() != nil {
+		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+	}
+	c.logTx("[HOME TX register]", hdr, payload)
+}
+
+func (c *Controller) persistCredential(deviceID string, nodeID uint32, credential, role string) {
+	if credential != "" {
+		c.storedCred = credential
+	}
+	if nodeID != 0 {
+		c.storedNode = nodeID
+	}
+	if role != "" {
+		c.storedRole = role
+	}
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	p := c.app.Preferences()
+	if credential != "" {
+		p.SetString(prefHomeCredential, credential)
+	}
+	if nodeID != 0 {
+		p.SetInt(prefHomeNodeID, int(nodeID))
+	}
+	if role != "" {
+		p.SetString(prefHomeRole, role)
+	}
+	if deviceID != "" {
+		p.SetString(prefHomeDeviceID, deviceID)
+	}
+}
+
+func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
+	if h == nil || h.SubProto() != 2 {
+		return
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return
+	}
+	act := strings.ToLower(strings.TrimSpace(msg.Action))
+	switch act {
+	case actionLoginResp:
+		var resp struct {
+			Code       int    `json:"code"`
+			Msg        string `json:"msg"`
+			DeviceID   string `json:"device_id"`
+			NodeID     uint32 `json:"node_id"`
+			Credential string `json:"credential"`
+			Role       string `json:"role"`
+		}
+		if err := json.Unmarshal(msg.Data, &resp); err != nil {
+			return
+		}
+		if resp.Code != 1 {
+			return
+		}
+		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
+		c.updateHomeInfo()
+		if c.homeDevice != nil && resp.DeviceID != "" {
+			c.homeDevice.SetText(resp.DeviceID)
+		}
+		c.showInfo("登录成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nCredential: %s\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.Credential, resp.Role))
+	case actionRegisterResp:
+		var resp struct {
+			Code       int    `json:"code"`
+			Msg        string `json:"msg"`
+			DeviceID   string `json:"device_id"`
+			NodeID     uint32 `json:"node_id"`
+			Credential string `json:"credential"`
+			Role       string `json:"role"`
+		}
+		if err := json.Unmarshal(msg.Data, &resp); err != nil {
+			return
+		}
+		if resp.Code != 1 {
+			return
+		}
+		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
+		c.updateHomeInfo()
+		if c.homeDevice != nil && resp.DeviceID != "" {
+			c.homeDevice.SetText(resp.DeviceID)
+		}
+		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nCredential: %s\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.Credential, resp.Role))
+	default:
+	}
 }
 
 func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
@@ -121,7 +493,7 @@ func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
 			c.appendLog("[ERR] send: %v", err)
 			return
 		}
-		c.appendLog("[TX] sub=%d len=%d", hdr.SubProto(), len(payload))
+		c.logTx("TX", hdr, payload)
 	})
 	openLogBtn := widget.NewButton("弹出日志窗口", func() {
 		c.openLogWindow()
@@ -176,12 +548,14 @@ func (c *Controller) buildConfigTab(w fyne.Window) fyne.CanvasObject {
 func (c *Controller) Shutdown() { c.session.Close() }
 
 func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
-	preview := formatPayloadPreview(payload)
+	preview := c.formatPayloadPreview(payload)
 	c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
 		h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
+	c.handleAuthFrame(h, payload)
 }
 
 func (c *Controller) handleError(err error) {
+	c.connected = false
 	c.appendLog("[ERR] %v", err)
 }
 
@@ -202,6 +576,50 @@ func (c *Controller) appendLog(format string, args ...any) {
 	}
 }
 
+func (c *Controller) logTx(tag string, hdr core.IHeader, payload []byte) {
+	prefix := normalizeTag(tag)
+	preview := c.formatPayloadPreview(payload)
+	if hdr == nil {
+		c.appendLog("%s header=<nil> %s", prefix, preview)
+		return
+	}
+	c.appendLog("%s header{major=%d sub=%d src=%d tgt=%d msgID=%d flags=%d ts=%d len=%d} %s",
+		prefix,
+		hdr.Major(), hdr.SubProto(), hdr.SourceID(), hdr.TargetID(),
+		hdr.GetMsgID(), hdr.GetFlags(), hdr.GetTimestamp(), len(payload),
+		preview,
+	)
+}
+
+func (c *Controller) formatPayloadPreview(payload []byte) string {
+	truncate := true
+	if c.truncToggle != nil {
+		truncate = c.truncToggle.Checked
+	}
+	showHex := false
+	if c.showHex != nil {
+		showHex = c.showHex.Checked
+	}
+	maxBytes := payloadPreviewLimit
+	textLimit := payloadTextRuneLimit
+	if !truncate {
+		maxBytes = -1  // 不截断
+		textLimit = -1 // 不截断文本预览
+	}
+	return formatPayloadPreview(payload, maxBytes, textLimit, showHex)
+}
+
+func normalizeTag(tag string) string {
+	t := strings.TrimSpace(tag)
+	if t == "" {
+		return "[TX]"
+	}
+	if strings.HasPrefix(t, "[") {
+		return t
+	}
+	return "[" + t + "]"
+}
+
 // UI helpers
 func (c *Controller) buildHeaderCard() fyne.CanvasObject {
 	c.form = newHeaderForm()
@@ -217,7 +635,13 @@ func (c *Controller) buildPayloadCard() fyne.CanvasObject {
 
 func (c *Controller) buildLogCard() fyne.CanvasObject {
 	c.logView = newLogEntry()
-	return widget.NewCard("日志", "", c.logView)
+	c.truncToggle = widget.NewCheck("截断日志预览", nil)
+	c.truncToggle.SetChecked(true)
+	c.showHex = widget.NewCheck("显示 Hex", nil)
+	c.showHex.SetChecked(false)
+	toggles := container.NewHBox(c.truncToggle, c.showHex)
+	content := container.NewBorder(toggles, nil, nil, nil, c.logView)
+	return widget.NewCard("日志", "", content)
 }
 
 func (c *Controller) buildPresetTab(w fyne.Window) fyne.CanvasObject {
@@ -226,9 +650,17 @@ func (c *Controller) buildPresetTab(w fyne.Window) fyne.CanvasObject {
 	for _, def := range defs {
 		list.Add(c.buildPresetCard(def, w))
 	}
+	c.presetSrc = widget.NewEntry()
+	c.presetSrc.SetPlaceHolder("1")
+	c.presetTgt = widget.NewEntry()
+	c.presetTgt.SetPlaceHolder("0")
+	commonHeader := widget.NewCard("公共 Header", "空则使用占位值，应用于所有预设发送", container.NewGridWithColumns(2,
+		labeledEntry("SourceID", c.presetSrc),
+		labeledEntry("TargetID", c.presetTgt),
+	))
 	scroll := container.NewVScroll(list)
 	scroll.SetMinSize(fyne.NewSize(0, 400))
-	return scroll
+	return container.NewVBox(commonHeader, scroll)
 }
 
 // header form parsing
@@ -353,38 +785,45 @@ const (
 	payloadTextRuneLimit = 128
 )
 
-func formatPayloadPreview(payload []byte) string {
+func formatPayloadPreview(payload []byte, maxBytes int, textLimit int, showHex bool) string {
 	if len(payload) == 0 {
 		return "payload=<empty>"
 	}
 
-	truncated := len(payload) > payloadPreviewLimit
+	truncated := false
 	preview := payload
-	if truncated {
-		preview = payload[:payloadPreviewLimit]
+	if maxBytes >= 0 && len(payload) > maxBytes {
+		preview = payload[:maxBytes]
+		truncated = true
 	}
 
-	textPart := buildTextPreview(preview)
-	hexPart := bytesToSpacedHex(preview)
+	textPart := buildTextPreview(preview, textLimit)
+	hexPart := ""
+	if showHex {
+		hexPart = " hex=" + bytesToSpacedHex(preview)
+	}
 
 	suffix := ""
 	if truncated {
 		suffix = fmt.Sprintf("...(总长 %d bytes)", len(payload))
 	}
-	return fmt.Sprintf("payload=text(%s)%s hex=%s%s", textPart, suffix, hexPart,
-		ternarySuffix(truncated))
+	return fmt.Sprintf("payload=text(%s)%s%s%s", textPart, suffix, hexPart, ternarySuffix(truncated))
 }
 
-func buildTextPreview(data []byte) string {
+func buildTextPreview(data []byte, limit int) string {
 	if utf8.Valid(data) {
 		runes := []rune(string(data))
-		if len(runes) > payloadTextRuneLimit {
-			return string(runes[:payloadTextRuneLimit]) + "..."
+		if limit >= 0 && len(runes) > limit {
+			return string(runes[:limit]) + "..."
 		}
 		return string(runes)
 	}
 	var b strings.Builder
-	for _, bt := range data {
+	for i, bt := range data {
+		if limit >= 0 && i >= limit {
+			b.WriteString("...")
+			break
+		}
 		if bt >= 32 && bt <= 126 {
 			b.WriteByte(bt)
 			continue
@@ -476,6 +915,14 @@ type configRow struct {
 }
 
 const prefConfigKey = "config.entries"
+const (
+	prefHomeCredential = "home.credential"
+	prefHomeDeviceID   = "home.device_id"
+	prefHomeNodeID     = "home.node_id"
+	prefHomeRole       = "home.role"
+	prefHomeAutoCon    = "home.auto_connect"
+	prefHomeAutoLog    = "home.auto_login"
+)
 
 var configKeys = []string{
 	coreconfig.KeyProcChannelCount,
@@ -760,7 +1207,7 @@ func (c *Controller) buildPresetCard(def presetDefinition, w fyne.Window) fyne.C
 	p2 := widget.NewEntry()
 	p2.SetPlaceHolder(def.param2Ph)
 	sendBtn := widget.NewButton("发送", func() {
-		if err := c.sendPreset(def, p1.Text, p2.Text); err != nil {
+		if err := c.sendPreset(def, valueOrPlaceholder(p1), valueOrPlaceholder(p2)); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
@@ -780,11 +1227,40 @@ func (c *Controller) sendPreset(def presetDefinition, p1, p2 string) error {
 	if err != nil {
 		return err
 	}
+	hdr, err = c.applyPresetHeaderOverrides(hdr)
+	if err != nil {
+		return err
+	}
 	if err := c.session.Send(hdr, payload); err != nil {
 		return err
 	}
-	c.appendLog("[TX preset] %s sub=%d len=%d", def.name, hdr.SubProto(), len(payload))
+	c.logTx("[TX preset] "+def.name, hdr, payload)
 	return nil
+}
+
+func (c *Controller) applyPresetHeaderOverrides(h core.IHeader) (core.IHeader, error) {
+	if h == nil {
+		return h, nil
+	}
+	if c.presetSrc != nil {
+		if s := strings.TrimSpace(valueOrPlaceholder(c.presetSrc)); s != "" {
+			v, err := parseOptionalUint32(s, "SourceID")
+			if err != nil {
+				return nil, err
+			}
+			h = h.WithSourceID(v)
+		}
+	}
+	if c.presetTgt != nil {
+		if s := strings.TrimSpace(valueOrPlaceholder(c.presetTgt)); s != "" {
+			v, err := parseOptionalUint32(s, "TargetID")
+			if err != nil {
+				return nil, err
+			}
+			h = h.WithTargetID(v)
+		}
+	}
+	return h, nil
 }
 
 func presetHeader(sub uint8, target uint32) *header.HeaderTcp {
