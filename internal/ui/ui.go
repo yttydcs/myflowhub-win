@@ -56,6 +56,8 @@ type Controller struct {
 	homeRole     *widget.Label
 	homeLoginBtn *widget.Button
 	homeClearBtn *widget.Button
+	homeLastAddr string
+	homeConnCard *widget.Card
 	storedCred   string
 	storedNode   uint32
 	storedRole   string
@@ -88,21 +90,33 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.mainWin = w
 	c.loadVarPoolPrefs()
 	homeTab := c.buildHomeTab(w)
+	varPoolTab := c.buildVarPoolTab(w)
 	debugTab := c.buildDebugTab(w)
 	configTab := c.buildConfigTab(w)
 	presetTab := c.buildPresetTab(w)
-	varPoolTab := c.buildVarPoolTab(w)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
-		container.NewTabItem("核心设置", configTab),
-		container.NewTabItem("自定义调试", debugTab),
-		container.NewTabItem("预设调试", presetTab),
 		container.NewTabItem("变量池", varPoolTab),
+		container.NewTabItem("自定义调试", debugTab),
+		container.NewTabItem("核心设置", configTab),
+		container.NewTabItem("预设调试", presetTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 	tabs.SelectTabIndex(0)
 	c.tryAutoConnectLogin()
 	return tabs
+}
+
+// tryAutoConnectLogin 在启动时根据用户偏好自动连接并按需登录。
+func (c *Controller) tryAutoConnectLogin() {
+	if c.homeAutoCon != nil && c.homeAutoCon.Checked {
+		go c.homeConnect()
+		return
+	}
+	// 已经连接且仅勾选自动登录时触发一次登录
+	if c.homeAutoLog != nil && c.homeAutoLog.Checked && c.connected {
+		go c.homeLogin()
+	}
 }
 
 func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
@@ -140,8 +154,10 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	c.loadHomePrefs()
 	c.updateHomeInfo()
 	c.updateHomeLoginButton()
+	c.setHomeConnStatus(false, "")
 
 	connBar := container.NewBorder(nil, nil, nil, container.NewHBox(connectBtn, disconnectBtn, c.homeAutoCon), c.homeAddr)
+	c.homeConnCard = widget.NewCard("连接", "未连接", connBar)
 	loginInputs := container.NewVBox(
 		widget.NewLabel("DeviceID"),
 		c.homeDevice,
@@ -155,8 +171,8 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	statusCard := widget.NewCard("状态", "显示最近一次登录返回的信息（已持久化 credential）",
 		container.NewBorder(nil, c.homeClearBtn, nil, nil, infoBox))
 	return container.NewVBox(
-		widget.NewCard("连接", "填写服务器地址并可选择自动连接", connBar),
-		widget.NewCard("登录", "输入 DeviceID，自动登录会在连接后自动触发", loginInputs),
+		c.homeConnCard,
+		widget.NewCard("登录/注册", "输入 DeviceID，自动登录会在连接后自动触发", loginInputs),
 		statusCard,
 	)
 }
@@ -220,6 +236,20 @@ func (c *Controller) updateHomeInfo() {
 	c.updateHomeLoginButton()
 }
 
+func (c *Controller) setHomeConnStatus(connected bool, addr string) {
+	status := "未连接"
+	if connected {
+		if strings.TrimSpace(addr) == "" {
+			addr = "未知"
+		}
+		status = "已连接: " + addr
+	}
+	if c.homeConnCard != nil {
+		c.homeConnCard.Subtitle = status
+		c.homeConnCard.Refresh()
+	}
+}
+
 func (c *Controller) clearCredential() {
 	c.storedCred = ""
 	c.storedNode = 0
@@ -258,29 +288,27 @@ func (c *Controller) updateHomeLoginButton() {
 	}
 }
 
-func (c *Controller) tryAutoConnectLogin() {
-	if c.homeAutoCon != nil && c.homeAutoCon.Checked {
-		go c.homeConnect()
-	}
-}
-
 func (c *Controller) homeConnect() {
 	addr := valueOrPlaceholder(c.homeAddr)
 	if addr == "" {
-		c.appendLog("[HOME] 连接地址为空")
+		c.appendLog("HOME 连接地址为空")
 		return
 	}
 	if err := c.session.Connect(addr); err != nil {
 		if strings.Contains(err.Error(), "已经连接") {
 			c.connected = true
-			c.appendLog("[HOME] 已连接")
+			c.appendLog("HOME 已连接")
+			c.homeLastAddr = addr
+			c.setHomeConnStatus(true, addr)
 		} else {
-			c.appendLog("[HOME][ERR] connect: %v", err)
+			c.appendLog("HOME connect error: %v", err)
 			return
 		}
 	}
 	c.connected = true
-	c.appendLog("[HOME][OK] connected %s", addr)
+	c.homeLastAddr = addr
+	c.appendLog("HOME connected %s", addr)
+	c.setHomeConnStatus(true, addr)
 	if c.homeAutoLog != nil && c.homeAutoLog.Checked {
 		go c.homeLogin()
 	}
@@ -289,7 +317,8 @@ func (c *Controller) homeConnect() {
 func (c *Controller) homeDisconnect() {
 	c.session.Close()
 	c.connected = false
-	c.appendLog("[HOME] 手动断开")
+	c.appendLog("HOME 手动断开")
+	c.setHomeConnStatus(false, c.homeLastAddr)
 }
 
 func (c *Controller) homeLogin() {
@@ -387,7 +416,7 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 	if deviceID != "" {
 		p.SetString(prefHomeDeviceID, deviceID)
 	}
-	// 登录成功后尝试拉取变量池
+	// 登录成功后拉取变量池
 	c.fetchVarPoolAll()
 }
 
@@ -486,7 +515,7 @@ func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
 	c.nodeEntry = widget.NewEntry()
 	c.nodeEntry.SetPlaceHolder("debugclient")
 
-	connectBtn := widget.NewButton("连接", func() {
+	connectBtn := widget.NewButton("杩炴帴", func() {
 		addr := valueOrPlaceholder(c.addrEntry)
 		go func() {
 			if err := c.session.Connect(addr); err != nil {
@@ -592,6 +621,7 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 
 func (c *Controller) handleError(err error) {
 	c.connected = false
+	c.setHomeConnStatus(false, c.homeLastAddr)
 	c.appendLog("[ERR] %v", err)
 }
 
@@ -793,7 +823,7 @@ func parseUint(field, text string, min, max uint64) (uint64, error) {
 	}
 	v, err := strconv.ParseUint(strings.TrimSpace(text), 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("%s 不是合法整数", field)
+		return 0, fmt.Errorf("%s 不是合法数字", field)
 	}
 	if v < min || v > max {
 		return 0, fmt.Errorf("%s 超出范围[%d,%d]", field, min, max)
@@ -885,7 +915,7 @@ func bytesToSpacedHex(data []byte) string {
 
 func ternarySuffix(cond bool) string {
 	if cond {
-		return " (截断)"
+		return " (已截断)"
 	}
 	return ""
 }
@@ -922,7 +952,7 @@ func (e *logEntry) TypedKey(event *fyne.KeyEvent) {
 func (e *logEntry) TypedShortcut(shortcut fyne.Shortcut) {
 	switch shortcut.(type) {
 	case *fyne.ShortcutCopy, *fyne.ShortcutSelectAll, *fyne.ShortcutPaste:
-		// 允许复制/全选/粘贴（粘贴只改变剪贴板，不写入本区域）。
+		// 允许复制/全选/粘贴，禁止其他快捷键修改内容
 		e.Entry.TypedShortcut(shortcut)
 	}
 }
@@ -939,7 +969,7 @@ func (c *Controller) openLogWindow() {
 	c.logPopup = newLogEntry()
 	c.logPopup.SetText(c.logBuf.String())
 	c.logPopup.CursorRow = strings.Count(c.logBuf.String(), "\n")
-	win := c.app.NewWindow("日志窗口")
+	win := c.app.NewWindow("鏃ュ織绐楀彛")
 	win.SetContent(container.NewBorder(nil, nil, nil, nil, c.logPopup))
 	win.Resize(fyne.NewSize(700, 500))
 	win.SetOnClosed(func() {
@@ -1053,7 +1083,7 @@ func (c *Controller) refreshConfigListFromRows() {
 }
 
 func (c *Controller) buildConfigRowContainer(r *configRow) fyne.CanvasObject {
-	removeBtn := widget.NewButton("删除", func() { c.removeConfigRow(r) })
+	removeBtn := widget.NewButton("鍒犻櫎", func() { c.removeConfigRow(r) })
 	keyRow := container.NewVBox(
 		widget.NewLabel("Key"),
 		r.key,
@@ -1137,7 +1167,7 @@ func presetDefinitions() []presetDefinition {
 	return []presetDefinition{
 		{
 			name:        "Echo",
-			desc:        "SubProto=1，直接回显字符串（TargetID 可选）",
+			desc:        "SubProto=1，回显字符串（TargetID 可选）",
 			param1Label: "参数1（消息文本）",
 			param1Ph:    "hello",
 			param2Label: "参数2（TargetID，可选）",
@@ -1316,9 +1346,45 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 		c.varPoolList = container.NewVBox()
 	}
 	c.refreshVarPoolUI()
+
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("变量名")
+	valEntry := widget.NewEntry()
+	valEntry.SetPlaceHolder("初始值")
+	visSelect := widget.NewSelect([]string{"public", "private"}, nil)
+	visSelect.SetSelected("public")
+	addBtn := widget.NewButton("新增变量", func() {
+		name := strings.TrimSpace(valueOrPlaceholder(nameEntry))
+		val := valEntry.Text
+		vis := visSelect.Selected
+		if vis == "" {
+			vis = "public"
+		}
+		if name == "" {
+			dialog.ShowError(fmt.Errorf("变量名不能为空"), w)
+			return
+		}
+		if val == "" {
+			dialog.ShowError(fmt.Errorf("变量值不能为空"), w)
+			return
+		}
+		if err := c.sendVarSet(name, val, vis); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+	})
+	addCard := widget.NewCard("新增变量", "用于新增变量并同步到上级；列表记录会自动刷新", container.NewGridWithColumns(2,
+		labeledEntry("变量名", nameEntry),
+		labeledEntry("初始值", valEntry),
+		container.NewVBox(widget.NewLabel("可见性"), visSelect),
+		container.NewVBox(widget.NewLabel("操作"), addBtn),
+	))
 	refreshBtn := widget.NewButton("刷新变量", func() { c.fetchVarPoolAll() })
 	info := widget.NewLabel("展示本地缓存的变量名（VarSet 发送后记录），登录成功后自动向上级查询最新值")
-	return container.NewBorder(info, refreshBtn, nil, nil, c.varPoolList)
+	return container.NewVBox(
+		addCard,
+		container.NewBorder(info, refreshBtn, nil, nil, c.varPoolList),
+	)
 }
 
 func (c *Controller) refreshVarPoolUI() {
@@ -1434,6 +1500,46 @@ func (c *Controller) sendVarGet(name string) {
 	c.logTx("[VAR TX get "+name+"]", hdr, payload)
 }
 
+func (c *Controller) sendVarSet(name, value, visibility string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("变量名不能为空")
+	}
+	if visibility == "" {
+		visibility = "public"
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "set",
+		"data": map[string]any{
+			"name":       name,
+			"value":      value,
+			"visibility": visibility,
+			"type":       "string",
+		},
+	})
+	if err != nil {
+		return err
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(0).
+		WithTargetID(0).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		return err
+	}
+	c.addVarPoolName(name)
+	c.updateVarPoolValue(name, varValue{
+		value:      value,
+		owner:      c.storedNode,
+		visibility: visibility,
+		typ:        "string",
+	})
+	c.logTx("[VAR TX set "+name+"]", hdr, payload)
+	return nil
+}
+
 func (c *Controller) updateVarPoolValue(name string, val varValue) {
 	if c.varPoolData == nil {
 		c.varPoolData = make(map[string]varValue)
@@ -1474,7 +1580,7 @@ func parseOptionalUint32(text, field string) (uint32, error) {
 	}
 	v, err := strconv.ParseUint(strings.TrimSpace(text), 10, 32)
 	if err != nil {
-		return 0, fmt.Errorf("%s 不是合法整数", field)
+		return 0, fmt.Errorf("%s 不是合法数字", field)
 	}
 	return uint32(v), nil
 }
