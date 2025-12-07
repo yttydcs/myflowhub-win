@@ -55,6 +55,7 @@ type Controller struct {
 	homeDevice     *widget.Entry
 	homeCred       *widget.Label
 	homeNode       *widget.Label
+	homeHub        *widget.Label
 	homeRole       *widget.Label
 	homeLoginBtn   *widget.Button
 	homeClearBtn   *widget.Button
@@ -62,6 +63,7 @@ type Controller struct {
 	homeConnCard   *widget.Card
 	storedCred     string
 	storedNode     uint32
+	storedHub      uint32
 	storedRole     string
 	currentProfile string
 	profiles       []string
@@ -79,9 +81,10 @@ type Controller struct {
 	mainWin   fyne.Window
 	connected bool
 
-	varPoolNames []string
-	varPoolData  map[string]varValue
-	varPoolList  *fyne.Container
+	varPoolNames  []string
+	varPoolData   map[string]varValue
+	varPoolList   *fyne.Container
+	varPoolTarget *widget.Entry
 }
 
 func New(app fyne.App, ctx context.Context) *Controller {
@@ -194,6 +197,7 @@ func (c *Controller) migrateLegacyPrefs() {
 	copyString(prefHomeDeviceID, c.prefKey(prefHomeDeviceID))
 	copyString(prefHomeRole, c.prefKey(prefHomeRole))
 	copyInt(prefHomeNodeID, c.prefKey(prefHomeNodeID))
+	copyInt(prefHomeHubID, c.prefKey(prefHomeHubID))
 	copyBool(prefHomeAutoCon, c.prefKey(prefHomeAutoCon))
 	copyBool(prefHomeAutoLog, c.prefKey(prefHomeAutoLog))
 	copyString(prefVarPoolNames, c.prefKey(prefVarPoolNames))
@@ -324,6 +328,7 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	})
 	c.homeCred = widget.NewLabel("Credential: -")
 	c.homeNode = widget.NewLabel("NodeID: -")
+	c.homeHub = widget.NewLabel("HubID: -")
 	c.homeRole = widget.NewLabel("Role: -")
 
 	connectBtn := widget.NewButton("连接", func() { go c.homeConnect() })
@@ -346,6 +351,7 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	infoBox := container.NewVBox(
 		c.homeCred,
 		c.homeNode,
+		c.homeHub,
 		c.homeRole,
 	)
 	statusCard := widget.NewCard("状态", "显示最近一次登录返回的信息（已持久化 credential）",
@@ -376,6 +382,7 @@ func (c *Controller) loadHomePrefs() {
 	}
 	c.storedCred = p.StringWithFallback(c.prefKey(prefHomeCredential), "")
 	c.storedNode = uint32(p.IntWithFallback(c.prefKey(prefHomeNodeID), 0))
+	c.storedHub = uint32(p.IntWithFallback(c.prefKey(prefHomeHubID), 0))
 	c.storedRole = p.StringWithFallback(c.prefKey(prefHomeRole), "")
 }
 
@@ -401,6 +408,10 @@ func (c *Controller) updateHomeInfo() {
 	if c.storedNode != 0 {
 		nodeText = fmt.Sprintf("%d", c.storedNode)
 	}
+	hubText := "-"
+	if c.storedHub != 0 {
+		hubText = fmt.Sprintf("%d", c.storedHub)
+	}
 	role := c.storedRole
 	if role == "" {
 		role = "-"
@@ -410,6 +421,9 @@ func (c *Controller) updateHomeInfo() {
 	}
 	if c.homeNode != nil {
 		c.homeNode.SetText("NodeID: " + nodeText)
+	}
+	if c.homeHub != nil {
+		c.homeHub.SetText("HubID: " + hubText)
 	}
 	if c.homeRole != nil {
 		c.homeRole.SetText("Role: " + role)
@@ -434,11 +448,13 @@ func (c *Controller) setHomeConnStatus(connected bool, addr string) {
 func (c *Controller) clearCredential() {
 	c.storedCred = ""
 	c.storedNode = 0
+	c.storedHub = 0
 	c.storedRole = ""
 	if c.app != nil && c.app.Preferences() != nil {
 		p := c.app.Preferences()
 		p.SetString(c.prefKey(prefHomeCredential), "")
 		p.SetInt(c.prefKey(prefHomeNodeID), 0)
+		p.SetInt(c.prefKey(prefHomeHubID), 0)
 		p.SetString(c.prefKey(prefHomeRole), "")
 	}
 	c.updateHomeInfo()
@@ -578,6 +594,7 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 	if nodeID != 0 {
 		c.storedNode = nodeID
 	}
+	// hub id在 login/register 响应中返回，存储由调用方处理
 	if role != "" {
 		c.storedRole = role
 	}
@@ -620,6 +637,7 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 			Msg        string `json:"msg"`
 			DeviceID   string `json:"device_id"`
 			NodeID     uint32 `json:"node_id"`
+			HubID      uint32 `json:"hub_id"`
 			Credential string `json:"credential"`
 			Role       string `json:"role"`
 		}
@@ -629,19 +647,27 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if resp.Code != 1 {
 			return
 		}
+		c.storedHub = resp.HubID
+		if resp.HubID != 0 && c.app != nil && c.app.Preferences() != nil {
+			c.app.Preferences().SetInt(c.prefKey(prefHomeHubID), int(resp.HubID))
+		}
+		if c.varPoolTarget != nil && resp.HubID != 0 {
+			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
+		}
 		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
-		c.showInfo("登录成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nCredential: %s\nRole: %s",
-			resp.DeviceID, resp.NodeID, resp.Credential, resp.Role))
+		c.showInfo("登录成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nCredential: %s\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.HubID, resp.Credential, resp.Role))
 	case actionRegisterResp:
 		var resp struct {
 			Code       int    `json:"code"`
 			Msg        string `json:"msg"`
 			DeviceID   string `json:"device_id"`
 			NodeID     uint32 `json:"node_id"`
+			HubID      uint32 `json:"hub_id"`
 			Credential string `json:"credential"`
 			Role       string `json:"role"`
 		}
@@ -651,42 +677,62 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if resp.Code != 1 {
 			return
 		}
+		c.storedHub = resp.HubID
+		if resp.HubID != 0 && c.app != nil && c.app.Preferences() != nil {
+			c.app.Preferences().SetInt(c.prefKey(prefHomeHubID), int(resp.HubID))
+		}
+		if c.varPoolTarget != nil && resp.HubID != 0 {
+			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
+		}
 		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
-		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nCredential: %s\nRole: %s",
-			resp.DeviceID, resp.NodeID, resp.Credential, resp.Role))
+		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nCredential: %s\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.HubID, resp.Credential, resp.Role))
 	default:
-		// varstore responses
-		if act == "get_resp" {
-			var resp struct {
-				Code       int    `json:"code"`
-				Msg        string `json:"msg"`
-				Name       string `json:"name"`
-				Value      string `json:"value"`
-				Owner      uint32 `json:"owner"`
-				Visibility string `json:"visibility"`
-				Type       string `json:"type"`
-			}
-			if err := json.Unmarshal(msg.Data, &resp); err != nil {
-				return
-			}
-			if resp.Name == "" {
-				return
-			}
-			if resp.Code != 1 {
-				return
-			}
-			c.updateVarPoolValue(resp.Name, varValue{
-				value:      resp.Value,
-				owner:      resp.Owner,
-				visibility: resp.Visibility,
-				typ:        resp.Type,
-			})
-		}
+		// no-op for other actions
 	}
+}
+
+// handleVarStoreFrame processes varstore responses (SubProto=3).
+func (c *Controller) handleVarStoreFrame(payload []byte) {
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return
+	}
+	act := strings.ToLower(strings.TrimSpace(msg.Action))
+	if act != "get_resp" && act != "assist_get_resp" && act != "notify_update" {
+		return
+	}
+	var resp struct {
+		Code       int    `json:"code"`
+		Msg        string `json:"msg"`
+		Name       string `json:"name"`
+		Value      string `json:"value"`
+		Owner      uint32 `json:"owner"`
+		Visibility string `json:"visibility"`
+		Type       string `json:"type"`
+	}
+	if err := json.Unmarshal(msg.Data, &resp); err != nil {
+		return
+	}
+	if strings.TrimSpace(resp.Name) == "" {
+		return
+	}
+	if act != "notify_update" && resp.Code != 1 {
+		return
+	}
+	c.updateVarPoolValue(resp.Name, varValue{
+		value:      resp.Value,
+		owner:      resp.Owner,
+		visibility: resp.Visibility,
+		typ:        resp.Type,
+	})
 }
 
 func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
@@ -789,6 +835,9 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 	c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
 		h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
 	c.handleAuthFrame(h, payload)
+	if h != nil && h.SubProto() == 3 {
+		c.handleVarStoreFrame(payload)
+	}
 }
 
 func (c *Controller) handleError(err error) {
@@ -1181,6 +1230,7 @@ const (
 	prefHomeCredential = "home.credential"
 	prefHomeDeviceID   = "home.device_id"
 	prefHomeNodeID     = "home.node_id"
+	prefHomeHubID      = "home.hub_id"
 	prefHomeRole       = "home.role"
 	prefHomeAutoCon    = "home.auto_connect"
 	prefHomeAutoLog    = "home.auto_login"
@@ -1545,12 +1595,22 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	valEntry.SetPlaceHolder("初始值")
 	visSelect := widget.NewSelect([]string{"public", "private"}, nil)
 	visSelect.SetSelected("public")
+	c.varPoolTarget = widget.NewEntry()
+	c.varPoolTarget.SetPlaceHolder("路由 TargetID（留空=当前登录 HubID）")
+	if c.storedHub != 0 {
+		c.varPoolTarget.SetText(fmt.Sprintf("%d", c.storedHub))
+	}
 	addBtn := widget.NewButton("新增变量", func() {
 		name := strings.TrimSpace(valueOrPlaceholder(nameEntry))
 		val := valEntry.Text
 		vis := visSelect.Selected
 		if vis == "" {
 			vis = "public"
+		}
+		targetID, err := c.parseVarTarget()
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
 		}
 		if name == "" {
 			dialog.ShowError(fmt.Errorf("变量名不能为空"), w)
@@ -1560,7 +1620,7 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 			dialog.ShowError(fmt.Errorf("变量值不能为空"), w)
 			return
 		}
-		if err := c.sendVarSet(name, val, vis); err != nil {
+		if err := c.sendVarSet(name, val, vis, targetID); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
@@ -1568,11 +1628,12 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	addCard := widget.NewCard("新增变量", "用于新增变量并同步到上级；列表记录会自动刷新", container.NewGridWithColumns(2,
 		labeledEntry("变量名", nameEntry),
 		labeledEntry("初始值", valEntry),
+		labeledEntry("目标 NodeID", c.varPoolTarget),
 		container.NewVBox(widget.NewLabel("可见性"), visSelect),
 		container.NewVBox(widget.NewLabel("操作"), addBtn),
 	))
 	refreshBtn := widget.NewButton("刷新变量", func() { c.fetchVarPoolAll() })
-	info := widget.NewLabel("展示本地缓存的变量名（VarSet 发送后记录），登录成功后自动向上级查询最新值")
+	info := widget.NewLabel("展示本地缓存的变量名（VarSet 发送后记录），默认使用登录 HubID 作为 TargetID 进行查询/设置")
 	return container.NewVBox(
 		addCard,
 		container.NewBorder(info, refreshBtn, nil, nil, c.varPoolList),
@@ -1599,7 +1660,19 @@ func (c *Controller) refreshVarPoolUI() {
 			typ = "-"
 		}
 		meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", val.owner, vis, typ)
-		card := widget.NewCard(name, meta, widget.NewLabel(value))
+		valueLabel := widget.NewLabel(value)
+		editBtn := widget.NewButton("修改", func(n string, v varValue) func() {
+			return func() {
+				c.openVarEditDialog(n, v)
+			}
+		}(name, val))
+		removeBtn := widget.NewButton("本地移除", func(n string) func() {
+			return func() {
+				c.removeVarPoolName(n)
+			}
+		}(name))
+		actions := container.NewHBox(editBtn, removeBtn)
+		card := widget.NewCard(name, meta, container.NewBorder(nil, actions, nil, nil, valueLabel))
 		c.varPoolList.Add(card)
 	}
 	c.varPoolList.Refresh()
@@ -1658,13 +1731,18 @@ func (c *Controller) fetchVarPoolAll() {
 	if len(c.varPoolNames) == 0 {
 		return
 	}
+	targetID, err := c.parseVarTarget()
+	if err != nil {
+		c.appendLog("[VAR][ERR] parse target: %v", err)
+		return
+	}
 	for _, n := range c.varPoolNames {
 		name := n
-		go c.sendVarGet(name)
+		go c.sendVarGet(name, targetID)
 	}
 }
 
-func (c *Controller) sendVarGet(name string) {
+func (c *Controller) sendVarGet(name string, targetID uint32) {
 	if strings.TrimSpace(name) == "" {
 		return
 	}
@@ -1678,11 +1756,12 @@ func (c *Controller) sendVarGet(name string) {
 		c.appendLog("[VAR][ERR] build get payload: %v", err)
 		return
 	}
+	sourceID := c.storedNode
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(3).
-		WithSourceID(0).
-		WithTargetID(0).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
 		WithMsgID(uint32(time.Now().UnixNano())).
 		WithTimestamp(uint32(time.Now().Unix()))
 	if err := c.session.Send(hdr, payload); err != nil {
@@ -1692,7 +1771,7 @@ func (c *Controller) sendVarGet(name string) {
 	c.logTx("[VAR TX get "+name+"]", hdr, payload)
 }
 
-func (c *Controller) sendVarSet(name, value, visibility string) error {
+func (c *Controller) sendVarSet(name, value, visibility string, targetID uint32) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("变量名不能为空")
 	}
@@ -1711,11 +1790,12 @@ func (c *Controller) sendVarSet(name, value, visibility string) error {
 	if err != nil {
 		return err
 	}
+	sourceID := c.storedNode
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(3).
-		WithSourceID(0).
-		WithTargetID(0).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
 		WithMsgID(uint32(time.Now().UnixNano())).
 		WithTimestamp(uint32(time.Now().Unix()))
 	if err := c.session.Send(hdr, payload); err != nil {
@@ -1744,7 +1824,104 @@ func (c *Controller) updateVarPoolValue(name string, val varValue) {
 		c.saveVarPoolPrefs()
 	}
 	c.varPoolData[name] = val
+	// 尝试在主线程刷新 UI，避免后台回调直接操作组件
+	if c.app != nil {
+		if drv := c.app.Driver(); drv != nil {
+			if runner, ok := drv.(interface{ RunOnMain(func()) }); ok {
+				runner.RunOnMain(c.refreshVarPoolUI)
+				return
+			}
+		}
+	}
 	c.refreshVarPoolUI()
+}
+
+func (c *Controller) removeVarPoolName(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	filtered := make([]string, 0, len(c.varPoolNames))
+	for _, n := range c.varPoolNames {
+		if n != name {
+			filtered = append(filtered, n)
+		}
+	}
+	c.varPoolNames = filtered
+	delete(c.varPoolData, name)
+	c.saveVarPoolPrefs()
+	c.refreshVarPoolUI()
+}
+
+func (c *Controller) openVarEditDialog(name string, val varValue) {
+	win := c.mainWin
+	if win == nil && c.app != nil {
+		if ws := c.app.Driver().AllWindows(); len(ws) > 0 {
+			win = ws[0]
+		}
+	}
+	if win == nil {
+		return
+	}
+	valEntry := widget.NewEntry()
+	valEntry.SetText(val.value)
+	visSelect := widget.NewSelect([]string{"public", "private"}, nil)
+	if strings.TrimSpace(val.visibility) != "" {
+		visSelect.SetSelected(val.visibility)
+	} else {
+		visSelect.SetSelected("public")
+	}
+	content := container.NewVBox(
+		widget.NewLabel(fmt.Sprintf("变量名: %s", name)),
+		widget.NewLabel("变量值"),
+		valEntry,
+		widget.NewLabel("可见性（对他人节点不生效）"),
+		visSelect,
+	)
+	dialog.ShowCustomConfirm("修改变量", "保存", "取消", content, func(ok bool) {
+		if !ok {
+			return
+		}
+		targetID, err := c.parseVarTarget()
+		if err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+		value := valEntry.Text
+		if strings.TrimSpace(value) == "" {
+			dialog.ShowError(fmt.Errorf("变量值不能为空"), win)
+			return
+		}
+		vis := visSelect.Selected
+		if vis == "" {
+			vis = "public"
+		}
+		if err := c.sendVarSet(name, value, vis, targetID); err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+	}, win)
+}
+
+func (c *Controller) parseVarTarget() (uint32, error) {
+	if c.varPoolTarget == nil {
+		if c.storedHub != 0 {
+			return c.storedHub, nil
+		}
+		return 0, nil
+	}
+	text := strings.TrimSpace(c.varPoolTarget.Text)
+	if text == "" {
+		if c.storedHub != 0 {
+			return c.storedHub, nil
+		}
+		return 0, nil
+	}
+	v, err := strconv.ParseUint(text, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("目标 NodeID 不是合法数字")
+	}
+	return uint32(v), nil
 }
 
 func contains(slice []string, target string) bool {
