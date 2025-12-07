@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -41,27 +42,30 @@ type Controller struct {
 	logView   *logEntry
 	form      *headerForm
 
-	nodeEntry    *widget.Entry
-	hexToggle    *widget.Check
-	truncToggle  *widget.Check
-	showHex      *widget.Check
-	presetSrc    *widget.Entry
-	presetTgt    *widget.Entry
-	homeAddr     *widget.Entry
-	homeAutoCon  *widget.Check
-	homeAutoLog  *widget.Check
-	homeDevice   *widget.Entry
-	homeCred     *widget.Label
-	homeNode     *widget.Label
-	homeRole     *widget.Label
-	homeLoginBtn *widget.Button
-	homeClearBtn *widget.Button
-	homeLastAddr string
-	homeConnCard *widget.Card
-	storedCred   string
-	storedNode   uint32
-	storedRole   string
-	homeLoading  bool
+	nodeEntry      *widget.Entry
+	hexToggle      *widget.Check
+	truncToggle    *widget.Check
+	showHex        *widget.Check
+	presetSrc      *widget.Entry
+	presetTgt      *widget.Entry
+	homeAddr       *widget.Entry
+	homeAutoCon    *widget.Check
+	homeAutoLog    *widget.Check
+	profileSelect  *widget.Select
+	homeDevice     *widget.Entry
+	homeCred       *widget.Label
+	homeNode       *widget.Label
+	homeRole       *widget.Label
+	homeLoginBtn   *widget.Button
+	homeClearBtn   *widget.Button
+	homeLastAddr   string
+	homeConnCard   *widget.Card
+	storedCred     string
+	storedNode     uint32
+	storedRole     string
+	currentProfile string
+	profiles       []string
+	homeLoading    bool
 
 	configRows []*configRow
 	configList *fyne.Container
@@ -88,16 +92,19 @@ func New(app fyne.App, ctx context.Context) *Controller {
 
 func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.mainWin = w
+	c.initProfiles()
 	c.loadVarPoolPrefs()
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
 	debugTab := c.buildDebugTab(w)
+	logTab := c.buildLogTab(w)
 	configTab := c.buildConfigTab(w)
 	presetTab := c.buildPresetTab(w)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("变量池", varPoolTab),
 		container.NewTabItem("自定义调试", debugTab),
+		container.NewTabItem("日志", logTab),
 		container.NewTabItem("核心设置", configTab),
 		container.NewTabItem("预设调试", presetTab),
 	)
@@ -105,6 +112,178 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	tabs.SelectTabIndex(0)
 	c.tryAutoConnectLogin()
 	return tabs
+}
+
+func (c *Controller) initProfiles() {
+	if c.app == nil || c.app.Preferences() == nil {
+		c.currentProfile = defaultProfileName
+		c.profiles = []string{defaultProfileName}
+		return
+	}
+	p := c.app.Preferences()
+	raw := p.StringWithFallback(prefProfilesList, "")
+	var list []string
+	_ = json.Unmarshal([]byte(raw), &list)
+	if len(list) == 0 {
+		list = []string{defaultProfileName}
+		prev := c.currentProfile
+		c.currentProfile = defaultProfileName
+		c.migrateLegacyPrefs()
+		c.currentProfile = prev
+		c.saveProfiles(list, defaultProfileName)
+	}
+	last := p.StringWithFallback(prefProfilesLast, "")
+	if last == "" || !contains(list, last) {
+		last = list[0]
+	}
+	c.profiles = list
+	c.currentProfile = last
+}
+
+func (c *Controller) saveProfiles(list []string, last string) {
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	p := c.app.Preferences()
+	data, _ := json.Marshal(list)
+	p.SetString(prefProfilesList, string(data))
+	if strings.TrimSpace(last) != "" {
+		p.SetString(prefProfilesLast, last)
+	}
+}
+
+// migrateLegacyPrefs copies old无profile前缀的配置到默认profile，避免用户数据丢失。
+func (c *Controller) migrateLegacyPrefs() {
+	if c.app == nil || c.app.Preferences() == nil {
+		return
+	}
+	p := c.app.Preferences()
+	origProfile := c.currentProfile
+	if strings.TrimSpace(origProfile) == "" {
+		c.currentProfile = defaultProfileName
+	}
+	copyString := func(oldKey, newKey string) {
+		oldVal := p.StringWithFallback(oldKey, "")
+		if strings.TrimSpace(oldVal) == "" {
+			return
+		}
+		if strings.TrimSpace(p.StringWithFallback(newKey, "")) == "" {
+			p.SetString(newKey, oldVal)
+		}
+	}
+	copyInt := func(oldKey, newKey string) {
+		oldVal := p.IntWithFallback(oldKey, 0)
+		if oldVal == 0 {
+			return
+		}
+		if p.IntWithFallback(newKey, 0) == 0 {
+			p.SetInt(newKey, oldVal)
+		}
+	}
+	copyBool := func(oldKey, newKey string) {
+		oldVal := p.BoolWithFallback(oldKey, false)
+		if !oldVal {
+			return
+		}
+		if !p.BoolWithFallback(newKey, false) {
+			p.SetBool(newKey, oldVal)
+		}
+	}
+
+	copyString(prefHomeCredential, c.prefKey(prefHomeCredential))
+	copyString(prefHomeDeviceID, c.prefKey(prefHomeDeviceID))
+	copyString(prefHomeRole, c.prefKey(prefHomeRole))
+	copyInt(prefHomeNodeID, c.prefKey(prefHomeNodeID))
+	copyBool(prefHomeAutoCon, c.prefKey(prefHomeAutoCon))
+	copyBool(prefHomeAutoLog, c.prefKey(prefHomeAutoLog))
+	copyString(prefVarPoolNames, c.prefKey(prefVarPoolNames))
+	copyString(prefConfigKey, c.prefKey(prefConfigKey))
+
+	c.currentProfile = origProfile
+}
+
+func (c *Controller) buildProfileBar(w fyne.Window) fyne.CanvasObject {
+	if len(c.profiles) == 0 {
+		c.profiles = []string{defaultProfileName}
+	}
+	if strings.TrimSpace(c.currentProfile) == "" {
+		c.currentProfile = c.profiles[0]
+	}
+	c.profileSelect = widget.NewSelect(c.profiles, func(name string) {
+		c.switchProfile(strings.TrimSpace(name))
+	})
+	c.profileSelect.PlaceHolder = "选择配置"
+	c.profileSelect.SetSelected(c.currentProfile)
+
+	newEntry := widget.NewEntry()
+	newEntry.SetPlaceHolder("新配置名")
+	entryWrap := container.New(layout.NewGridWrapLayout(fyne.NewSize(180, newEntry.MinSize().Height)), newEntry)
+	addBtn := widget.NewButton("新建配置", func() {
+		name := strings.TrimSpace(newEntry.Text)
+		if name == "" {
+			dialog.ShowError(fmt.Errorf("配置名不能为空"), w)
+			return
+		}
+		if contains(c.profiles, name) {
+			c.switchProfile(name)
+			return
+		}
+		c.profiles = append(c.profiles, name)
+		c.saveProfiles(c.profiles, name)
+		if c.profileSelect != nil {
+			c.profileSelect.Options = c.profiles
+			c.profileSelect.Refresh()
+		}
+		newEntry.SetText("")
+		c.switchProfile(name)
+	})
+
+	bar := container.NewHBox(
+		widget.NewLabel("配置/身份"),
+		c.profileSelect,
+		entryWrap,
+		addBtn,
+	)
+	return widget.NewCard("配置切换", "选择或新建独立配置，便于多身份测试", bar)
+}
+
+func (c *Controller) switchProfile(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" || name == c.currentProfile {
+		return
+	}
+	if !contains(c.profiles, name) {
+		c.profiles = append(c.profiles, name)
+		if c.profileSelect != nil {
+			c.profileSelect.Options = c.profiles
+			c.profileSelect.Refresh()
+		}
+	}
+	c.currentProfile = name
+	c.saveProfiles(c.profiles, c.currentProfile)
+	if c.profileSelect != nil {
+		c.profileSelect.SetSelected(c.currentProfile)
+	}
+
+	// 重置状态与缓存
+	c.session.Close()
+	c.connected = false
+	c.setHomeConnStatus(false, c.homeLastAddr)
+	c.storedCred = ""
+	c.storedNode = 0
+	c.storedRole = ""
+	c.varPoolNames = nil
+	c.varPoolData = make(map[string]varValue)
+
+	// 重新加载当前配置数据
+	c.loadHomePrefs()
+	c.updateHomeInfo()
+	c.loadVarPoolPrefs()
+	c.refreshVarPoolUI()
+	if c.configList != nil {
+		c.reloadConfigUI(true)
+	}
+	c.appendLog("[INFO] 已切换配置: %s", c.currentProfile)
 }
 
 // tryAutoConnectLogin 在启动时根据用户偏好自动连接并按需登录。
@@ -120,6 +299,7 @@ func (c *Controller) tryAutoConnectLogin() {
 }
 
 func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
+	profileBar := c.buildProfileBar(w)
 	c.homeAddr = widget.NewEntry()
 	c.homeAddr.SetPlaceHolder("127.0.0.1:9000")
 	c.homeAutoCon = widget.NewCheck("自动连接", func(checked bool) {
@@ -171,6 +351,7 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	statusCard := widget.NewCard("状态", "显示最近一次登录返回的信息（已持久化 credential）",
 		container.NewBorder(nil, c.homeClearBtn, nil, nil, infoBox))
 	return container.NewVBox(
+		profileBar,
 		c.homeConnCard,
 		widget.NewCard("登录/注册", "输入 DeviceID，自动登录会在连接后自动触发", loginInputs),
 		statusCard,
@@ -185,17 +366,17 @@ func (c *Controller) loadHomePrefs() {
 	defer func() { c.homeLoading = false }()
 	p := c.app.Preferences()
 	if c.homeAutoCon != nil {
-		c.homeAutoCon.SetChecked(p.BoolWithFallback(prefHomeAutoCon, false))
+		c.homeAutoCon.SetChecked(p.BoolWithFallback(c.prefKey(prefHomeAutoCon), false))
 	}
 	if c.homeAutoLog != nil {
-		c.homeAutoLog.SetChecked(p.BoolWithFallback(prefHomeAutoLog, false))
+		c.homeAutoLog.SetChecked(p.BoolWithFallback(c.prefKey(prefHomeAutoLog), false))
 	}
 	if c.homeDevice != nil {
-		c.homeDevice.SetText(p.StringWithFallback(prefHomeDeviceID, ""))
+		c.homeDevice.SetText(p.StringWithFallback(c.prefKey(prefHomeDeviceID), ""))
 	}
-	c.storedCred = p.StringWithFallback(prefHomeCredential, "")
-	c.storedNode = uint32(p.IntWithFallback(prefHomeNodeID, 0))
-	c.storedRole = p.StringWithFallback(prefHomeRole, "")
+	c.storedCred = p.StringWithFallback(c.prefKey(prefHomeCredential), "")
+	c.storedNode = uint32(p.IntWithFallback(c.prefKey(prefHomeNodeID), 0))
+	c.storedRole = p.StringWithFallback(c.prefKey(prefHomeRole), "")
 }
 
 func (c *Controller) saveHomeAuto() {
@@ -204,10 +385,10 @@ func (c *Controller) saveHomeAuto() {
 	}
 	p := c.app.Preferences()
 	if c.homeAutoCon != nil {
-		p.SetBool(prefHomeAutoCon, c.homeAutoCon.Checked)
+		p.SetBool(c.prefKey(prefHomeAutoCon), c.homeAutoCon.Checked)
 	}
 	if c.homeAutoLog != nil {
-		p.SetBool(prefHomeAutoLog, c.homeAutoLog.Checked)
+		p.SetBool(c.prefKey(prefHomeAutoLog), c.homeAutoLog.Checked)
 	}
 }
 
@@ -256,9 +437,9 @@ func (c *Controller) clearCredential() {
 	c.storedRole = ""
 	if c.app != nil && c.app.Preferences() != nil {
 		p := c.app.Preferences()
-		p.SetString(prefHomeCredential, "")
-		p.SetInt(prefHomeNodeID, 0)
-		p.SetString(prefHomeRole, "")
+		p.SetString(c.prefKey(prefHomeCredential), "")
+		p.SetInt(c.prefKey(prefHomeNodeID), 0)
+		p.SetString(c.prefKey(prefHomeRole), "")
 	}
 	c.updateHomeInfo()
 	c.appendLog("[HOME] 已清除本地凭证")
@@ -328,7 +509,7 @@ func (c *Controller) homeLogin() {
 		return
 	}
 	if c.app != nil && c.app.Preferences() != nil && deviceID != "" {
-		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+		c.app.Preferences().SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
 	if c.storedCred == "" {
 		c.homeRegister(deviceID)
@@ -357,7 +538,7 @@ func (c *Controller) homeLogin() {
 		return
 	}
 	if c.app != nil && c.app.Preferences() != nil {
-		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+		c.app.Preferences().SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
 	c.logTx("[HOME TX login]", hdr, payload)
 }
@@ -385,7 +566,7 @@ func (c *Controller) homeRegister(deviceID string) {
 		return
 	}
 	if c.app != nil && c.app.Preferences() != nil {
-		c.app.Preferences().SetString(prefHomeDeviceID, deviceID)
+		c.app.Preferences().SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
 	c.logTx("[HOME TX register]", hdr, payload)
 }
@@ -405,16 +586,16 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 	}
 	p := c.app.Preferences()
 	if credential != "" {
-		p.SetString(prefHomeCredential, credential)
+		p.SetString(c.prefKey(prefHomeCredential), credential)
 	}
 	if nodeID != 0 {
-		p.SetInt(prefHomeNodeID, int(nodeID))
+		p.SetInt(c.prefKey(prefHomeNodeID), int(nodeID))
 	}
 	if role != "" {
-		p.SetString(prefHomeRole, role)
+		p.SetString(c.prefKey(prefHomeRole), role)
 	}
 	if deviceID != "" {
-		p.SetString(prefHomeDeviceID, deviceID)
+		p.SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
 	// 登录成功后拉取变量池
 	c.fetchVarPoolAll()
@@ -515,7 +696,7 @@ func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
 	c.nodeEntry = widget.NewEntry()
 	c.nodeEntry.SetPlaceHolder("debugclient")
 
-	connectBtn := widget.NewButton("杩炴帴", func() {
+	connectBtn := widget.NewButton("连接", func() {
 		addr := valueOrPlaceholder(c.addrEntry)
 		go func() {
 			if err := c.session.Connect(addr); err != nil {
@@ -541,7 +722,6 @@ func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
 
 	headerCard := c.buildHeaderCard()
 	payloadCard := c.buildPayloadCard()
-	logCard := c.buildLogCard()
 
 	sendBtn := widget.NewButton("发送", func() {
 		hdr, err := c.form.Parse()
@@ -560,22 +740,14 @@ func (c *Controller) buildDebugTab(w fyne.Window) fyne.CanvasObject {
 		}
 		c.logTx("TX", hdr, payload)
 	})
-	openLogBtn := widget.NewButton("弹出日志窗口", func() {
-		c.openLogWindow()
-	})
 
 	topBar := container.NewBorder(nil, nil,
 		widget.NewLabel("Server"),
 		container.NewHBox(connectBtn, disconnectBtn),
 		container.NewMax(c.addrEntry))
 
-	content := container.NewVSplit(
-		container.NewVBox(headerCard, payloadCard),
-		logCard,
-	)
-	content.SetOffset(0.55)
-
-	btns := container.NewHBox(sendBtn, openLogBtn)
+	content := container.NewVBox(headerCard, payloadCard)
+	btns := container.NewHBox(sendBtn)
 	return container.NewBorder(topBar, btns, nil, nil, content)
 }
 
@@ -710,6 +882,14 @@ func (c *Controller) buildLogCard() fyne.CanvasObject {
 	return widget.NewCard("日志", "", content)
 }
 
+func (c *Controller) buildLogTab(w fyne.Window) fyne.CanvasObject {
+	logCard := c.buildLogCard()
+	openLogBtn := widget.NewButton("弹出日志窗口", func() {
+		c.openLogWindow()
+	})
+	return container.NewBorder(nil, openLogBtn, nil, nil, logCard)
+}
+
 func (c *Controller) buildPresetTab(w fyne.Window) fyne.CanvasObject {
 	defs := presetDefinitions()
 	list := container.NewVBox()
@@ -778,6 +958,15 @@ func valueOrPlaceholder(e *widget.Entry) string {
 		return strings.TrimSpace(e.Text)
 	}
 	return strings.TrimSpace(e.PlaceHolder)
+}
+
+// prefKey applies current profile prefix to a preference key.
+func (c *Controller) prefKey(key string) string {
+	p := strings.TrimSpace(c.currentProfile)
+	if p == "" {
+		return key
+	}
+	return fmt.Sprintf("profile.%s.%s", p, key)
 }
 
 func (f *headerForm) Parse() (core.IHeader, error) {
@@ -996,6 +1185,9 @@ const (
 	prefHomeAutoCon    = "home.auto_connect"
 	prefHomeAutoLog    = "home.auto_login"
 	prefVarPoolNames   = "varpool.names"
+	prefProfilesList   = "profiles.list"
+	prefProfilesLast   = "profiles.last"
+	defaultProfileName = "default"
 )
 
 var configKeys = []string{
@@ -1110,7 +1302,7 @@ func (c *Controller) saveConfigFromUI() error {
 		return err
 	}
 	if c.app != nil && c.app.Preferences() != nil {
-		c.app.Preferences().SetString(prefConfigKey, string(data))
+		c.app.Preferences().SetString(c.prefKey(prefConfigKey), string(data))
 	}
 	return nil
 }
@@ -1144,7 +1336,7 @@ func (c *Controller) readStoredConfig() map[string]string {
 	if c.app == nil || c.app.Preferences() == nil {
 		return out
 	}
-	raw := c.app.Preferences().StringWithFallback(prefConfigKey, "")
+	raw := c.app.Preferences().StringWithFallback(c.prefKey(prefConfigKey), "")
 	if strings.TrimSpace(raw) == "" {
 		return out
 	}
@@ -1420,7 +1612,7 @@ func (c *Controller) loadVarPoolPrefs() {
 	if c.app == nil || c.app.Preferences() == nil {
 		return
 	}
-	raw := c.app.Preferences().StringWithFallback(prefVarPoolNames, "")
+	raw := c.app.Preferences().StringWithFallback(c.prefKey(prefVarPoolNames), "")
 	if strings.TrimSpace(raw) == "" {
 		return
 	}
@@ -1444,7 +1636,7 @@ func (c *Controller) saveVarPoolPrefs() {
 		return
 	}
 	data, _ := json.Marshal(c.varPoolNames)
-	c.app.Preferences().SetString(prefVarPoolNames, string(data))
+	c.app.Preferences().SetString(c.prefKey(prefVarPoolNames), string(data))
 }
 
 func (c *Controller) addVarPoolName(name string) {
