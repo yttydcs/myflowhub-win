@@ -1819,11 +1819,26 @@ func (c *Controller) updateVarPoolValue(name string, val varValue) {
 	if strings.TrimSpace(name) == "" {
 		return
 	}
+	existing, ok := c.varPoolData[name]
+	merged := existing
+	// 仅在新值存在时覆盖，否则保留旧值
+	if val.value != "" || !ok {
+		merged.value = val.value
+	}
+	if val.owner != 0 || !ok {
+		merged.owner = val.owner
+	}
+	if strings.TrimSpace(val.visibility) != "" || !ok {
+		merged.visibility = val.visibility
+	}
+	if strings.TrimSpace(val.typ) != "" || !ok {
+		merged.typ = val.typ
+	}
 	if !contains(c.varPoolNames, name) {
 		c.varPoolNames = append(c.varPoolNames, name)
 		c.saveVarPoolPrefs()
 	}
-	c.varPoolData[name] = val
+	c.varPoolData[name] = merged
 	// 尝试在主线程刷新 UI，避免后台回调直接操作组件
 	if c.app != nil {
 		if drv := c.app.Driver(); drv != nil {
