@@ -1212,7 +1212,7 @@ func (c *Controller) openLogWindow() {
 	c.logPopup = newLogEntry()
 	c.logPopup.SetText(c.logBuf.String())
 	c.logPopup.CursorRow = strings.Count(c.logBuf.String(), "\n")
-	win := c.app.NewWindow("鏃ュ織绐楀彛")
+	win := c.app.NewWindow("日志窗口")
 	win.SetContent(container.NewBorder(nil, nil, nil, nil, c.logPopup))
 	win.Resize(fyne.NewSize(700, 500))
 	win.SetOnClosed(func() {
@@ -1906,10 +1906,19 @@ func (c *Controller) sendVarGet(key varKey, targetID uint32) {
 	if key.Name == "" {
 		return
 	}
+	owner := key.Owner
+	if owner == 0 {
+		owner = c.storedNode
+	}
+	if owner == 0 {
+		c.appendLog("[VAR][ERR] get %s: owner not set", key.Name)
+		return
+	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "get",
 		"data": map[string]any{
-			"name": key.Name,
+			"name":  key.Name,
+			"owner": owner,
 		},
 	})
 	if err != nil {
@@ -1925,10 +1934,10 @@ func (c *Controller) sendVarGet(key varKey, targetID uint32) {
 		WithMsgID(uint32(time.Now().UnixNano())).
 		WithTimestamp(uint32(time.Now().Unix()))
 	if err := c.session.Send(hdr, payload); err != nil {
-		c.appendLog("[VAR][ERR] get %s(owner=%d): %v", key.Name, key.Owner, err)
+		c.appendLog("[VAR][ERR] get %s(owner=%d): %v", key.Name, owner, err)
 		return
 	}
-	c.logTx(fmt.Sprintf("[VAR TX get %s#%d]", key.Name, key.Owner), hdr, payload)
+	c.logTx(fmt.Sprintf("[VAR TX get %s#%d]", key.Name, owner), hdr, payload)
 }
 
 func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID uint32) error {
@@ -1945,6 +1954,10 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 	if c.storedNode == 0 {
 		return fmt.Errorf("请先登录获取 NodeID 后再新增变量")
 	}
+	owner := key.Owner
+	if owner == 0 {
+		owner = c.storedNode
+	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "set",
 		"data": map[string]any{
@@ -1952,6 +1965,7 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 			"value":      value,
 			"visibility": visibility,
 			"type":       "string",
+			"owner":      owner,
 		},
 	})
 	if err != nil {
@@ -1970,7 +1984,7 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 	}
 	ownerForCache := key.Owner
 	if ownerForCache == 0 {
-		ownerForCache = c.storedNode
+		ownerForCache = owner
 	}
 	cacheKey := varKey{Name: key.Name, Owner: ownerForCache}
 	c.updateVarPoolValue(cacheKey, varValue{
