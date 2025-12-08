@@ -706,25 +706,34 @@ func (c *Controller) handleVarStoreFrame(payload []byte) {
 		return
 	}
 	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	if act != "get_resp" && act != "assist_get_resp" && act != "notify_update" {
+	if act != "get_resp" && act != "assist_get_resp" && act != "notify_update" && act != "list_resp" && act != "assist_list_resp" {
 		return
 	}
 	var resp struct {
-		Code       int    `json:"code"`
-		Msg        string `json:"msg"`
-		Name       string `json:"name"`
-		Value      string `json:"value"`
-		Owner      uint32 `json:"owner"`
-		Visibility string `json:"visibility"`
-		Type       string `json:"type"`
+		Code       int      `json:"code"`
+		Msg        string   `json:"msg"`
+		Name       string   `json:"name"`
+		Value      string   `json:"value"`
+		Owner      uint32   `json:"owner"`
+		Visibility string   `json:"visibility"`
+		Type       string   `json:"type"`
+		Names      []string `json:"names"`
 	}
 	if err := json.Unmarshal(msg.Data, &resp); err != nil {
 		return
 	}
-	if strings.TrimSpace(resp.Name) == "" {
+	if act == "list_resp" || act == "assist_list_resp" {
+		c.handleVarListResp(resp)
+		return
+	}
+	name := strings.TrimSpace(resp.Name)
+	if name == "" {
 		return
 	}
 	if act != "notify_update" && resp.Code != 1 {
+		if resp.Owner != 0 && resp.Owner == c.storedNode {
+			c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
+		}
 		return
 	}
 	c.updateVarPoolValue(varKey{Name: resp.Name, Owner: resp.Owner}, varValue{
@@ -1723,6 +1732,9 @@ func (c *Controller) loadVarPoolPrefs() {
 		if k.Name == "" || seen[k] {
 			continue
 		}
+		if c.storedNode != 0 && k.Owner == c.storedNode {
+			continue
+		}
 		seen[k] = true
 		c.varPoolKeys = append(c.varPoolKeys, k)
 	}
@@ -1732,7 +1744,14 @@ func (c *Controller) saveVarPoolPrefs() {
 	if c.app == nil || c.app.Preferences() == nil {
 		return
 	}
-	data, _ := json.Marshal(c.varPoolKeys)
+	filtered := make([]varKey, 0, len(c.varPoolKeys))
+	for _, k := range c.varPoolKeys {
+		if c.storedNode != 0 && k.Owner == c.storedNode {
+			continue
+		}
+		filtered = append(filtered, k)
+	}
+	data, _ := json.Marshal(filtered)
 	c.app.Preferences().SetString(c.prefKey(prefVarPoolNames), string(data))
 }
 
@@ -1887,18 +1906,53 @@ func (c *Controller) openAddWatchDialog(w fyne.Window) {
 }
 
 func (c *Controller) fetchVarPoolAll() {
-	if len(c.varPoolKeys) == 0 {
-		return
-	}
 	targetID, err := c.parseVarTarget()
 	if err != nil {
 		c.appendLog("[VAR][ERR] parse target: %v", err)
 		return
 	}
+	// mine: refresh via list
+	if c.storedNode != 0 {
+		go c.sendVarList(c.storedNode, targetID)
+	}
+	if len(c.varPoolKeys) == 0 {
+		return
+	}
 	for _, k := range c.varPoolKeys {
+		if c.storedNode != 0 && k.Owner == c.storedNode {
+			continue // mine will be driven by list_resp
+		}
 		key := k
 		go c.sendVarGet(key, targetID)
 	}
+}
+
+func (c *Controller) sendVarList(owner uint32, targetID uint32) {
+	if owner == 0 {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "list",
+		"data": map[string]any{
+			"owner": owner,
+		},
+	})
+	if err != nil {
+		c.appendLog("[VAR][ERR] build list payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(c.storedNode).
+		WithTargetID(targetID).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[VAR][ERR] list owner=%d: %v", owner, err)
+		return
+	}
+	c.logTx(fmt.Sprintf("[VAR TX list owner=%d]", owner), hdr, payload)
 }
 
 func (c *Controller) sendVarGet(key varKey, targetID uint32) {
@@ -1995,6 +2049,54 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 	})
 	c.logTx(fmt.Sprintf("[VAR TX set %s#%d]", key.Name, ownerForCache), hdr, payload)
 	return nil
+}
+
+func (c *Controller) handleVarListResp(resp struct {
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg"`
+	Name       string   `json:"name"`
+	Value      string   `json:"value"`
+	Owner      uint32   `json:"owner"`
+	Visibility string   `json:"visibility"`
+	Type       string   `json:"type"`
+	Names      []string `json:"names"`
+}) {
+	if resp.Code != 1 || resp.Owner == 0 {
+		return
+	}
+	if c.storedNode != 0 && resp.Owner != c.storedNode {
+		return
+	}
+	// replace current mine keys
+	filtered := make([]varKey, 0, len(c.varPoolKeys))
+	for _, k := range c.varPoolKeys {
+		if resp.Owner != 0 && k.Owner == resp.Owner {
+			continue
+		}
+		filtered = append(filtered, k)
+	}
+	for _, name := range resp.Names {
+		n := strings.TrimSpace(name)
+		if n == "" {
+			continue
+		}
+		filtered = append(filtered, varKey{Name: n, Owner: resp.Owner})
+	}
+	c.varPoolKeys = filtered
+	c.refreshVarPoolUI()
+
+	targetID, err := c.parseVarTarget()
+	if err != nil {
+		c.appendLog("[VAR][ERR] parse target after list: %v", err)
+		return
+	}
+	for _, name := range resp.Names {
+		n := strings.TrimSpace(name)
+		if n == "" {
+			continue
+		}
+		go c.sendVarGet(varKey{Name: n, Owner: resp.Owner}, targetID)
+	}
 }
 
 func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
