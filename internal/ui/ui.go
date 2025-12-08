@@ -81,8 +81,8 @@ type Controller struct {
 	mainWin   fyne.Window
 	connected bool
 
-	varPoolNames  []string
-	varPoolData   map[string]varValue
+	varPoolKeys   []varKey
+	varPoolData   map[varKey]varValue
 	varPoolList   *fyne.Container
 	varPoolTarget *widget.Entry
 }
@@ -276,8 +276,8 @@ func (c *Controller) switchProfile(name string) {
 	c.storedCred = ""
 	c.storedNode = 0
 	c.storedRole = ""
-	c.varPoolNames = nil
-	c.varPoolData = make(map[string]varValue)
+	c.varPoolKeys = nil
+	c.varPoolData = make(map[varKey]varValue)
 
 	// 重新加载当前配置数据
 	c.loadHomePrefs()
@@ -727,7 +727,7 @@ func (c *Controller) handleVarStoreFrame(payload []byte) {
 	if act != "notify_update" && resp.Code != 1 {
 		return
 	}
-	c.updateVarPoolValue(resp.Name, varValue{
+	c.updateVarPoolValue(varKey{Name: resp.Name, Owner: resp.Owner}, varValue{
 		value:      resp.Value,
 		owner:      resp.Owner,
 		visibility: resp.Visibility,
@@ -1162,6 +1162,11 @@ type logEntry struct {
 	widget.Entry
 }
 
+type varKey struct {
+	Name  string `json:"name"`
+	Owner uint32 `json:"owner,omitempty"`
+}
+
 type varValue struct {
 	value      string
 	owner      uint32
@@ -1544,7 +1549,7 @@ func (c *Controller) sendPreset(def presetDefinition, p1, p2 string) error {
 		return err
 	}
 	if strings.EqualFold(def.name, "VarSet") {
-		c.addVarPoolName(strings.TrimSpace(p1))
+		c.addVarPoolKey(varKey{Name: strings.TrimSpace(p1), Owner: c.storedNode})
 	}
 	hdr, err = c.applyPresetHeaderOverrides(hdr)
 	if err != nil {
@@ -1589,55 +1594,21 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	}
 	c.refreshVarPoolUI()
 
-	nameEntry := widget.NewEntry()
-	nameEntry.SetPlaceHolder("变量名")
-	valEntry := widget.NewEntry()
-	valEntry.SetPlaceHolder("初始值")
-	visSelect := widget.NewSelect([]string{"public", "private"}, nil)
-	visSelect.SetSelected("public")
 	c.varPoolTarget = widget.NewEntry()
 	c.varPoolTarget.SetPlaceHolder("路由 TargetID（留空=当前登录 HubID）")
 	if c.storedHub != 0 {
 		c.varPoolTarget.SetText(fmt.Sprintf("%d", c.storedHub))
 	}
-	addBtn := widget.NewButton("新增变量", func() {
-		name := strings.TrimSpace(valueOrPlaceholder(nameEntry))
-		val := valEntry.Text
-		vis := visSelect.Selected
-		if vis == "" {
-			vis = "public"
-		}
-		targetID, err := c.parseVarTarget()
-		if err != nil {
-			dialog.ShowError(err, w)
-			return
-		}
-		if name == "" {
-			dialog.ShowError(fmt.Errorf("变量名不能为空"), w)
-			return
-		}
-		if val == "" {
-			dialog.ShowError(fmt.Errorf("变量值不能为空"), w)
-			return
-		}
-		if err := c.sendVarSet(name, val, vis, targetID); err != nil {
-			dialog.ShowError(err, w)
-			return
-		}
-	})
-	addCard := widget.NewCard("新增变量", "用于新增变量并同步到上级；列表记录会自动刷新", container.NewGridWithColumns(2,
-		labeledEntry("变量名", nameEntry),
-		labeledEntry("初始值", valEntry),
-		labeledEntry("目标 NodeID", c.varPoolTarget),
-		container.NewVBox(widget.NewLabel("可见性"), visSelect),
-		container.NewVBox(widget.NewLabel("操作"), addBtn),
-	))
-	refreshBtn := widget.NewButton("刷新变量", func() { c.fetchVarPoolAll() })
-	info := widget.NewLabel("展示本地缓存的变量名（VarSet 发送后记录），默认使用登录 HubID 作为 TargetID 进行查询/设置")
-	return container.NewVBox(
-		addCard,
-		container.NewBorder(info, refreshBtn, nil, nil, c.varPoolList),
-	)
+	refreshBtn := widget.NewButton("刷新全部", func() { c.fetchVarPoolAll() })
+	addMineBtn := widget.NewButton("新增我的变量", func() { c.openAddMineDialog(w) })
+	addWatchBtn := widget.NewButton("新增监视", func() { c.openAddWatchDialog(w) })
+	actions := container.NewHBox(refreshBtn, addMineBtn, addWatchBtn)
+	info := widget.NewLabel("按 owner 分组展示缓存变量，默认使用登录 HubID 进行 get")
+	listScroll := container.NewVScroll(c.varPoolList)
+
+	targetCard := widget.NewCard("查询 TargetID", "留空使用当前登录 HubID 进行 get/set", labeledEntry("TargetID", c.varPoolTarget))
+	listArea := container.NewBorder(info, actions, nil, nil, listScroll)
+	return container.NewBorder(targetCard, nil, nil, nil, listArea)
 }
 
 func (c *Controller) refreshVarPoolUI() {
@@ -1645,42 +1616,85 @@ func (c *Controller) refreshVarPoolUI() {
 		return
 	}
 	c.varPoolList.Objects = nil
-	for _, name := range c.varPoolNames {
-		val := c.varPoolData[name]
-		value := val.value
-		if value == "" {
-			value = "-"
+	mine := make([]varKey, 0)
+	others := make([]varKey, 0)
+	for _, k := range c.varPoolKeys {
+		if k.Owner != 0 && c.storedNode != 0 && k.Owner == c.storedNode {
+			mine = append(mine, k)
+		} else {
+			others = append(others, k)
 		}
-		vis := val.visibility
-		if strings.TrimSpace(vis) == "" {
-			vis = "-"
-		}
-		typ := val.typ
-		if typ == "" {
-			typ = "-"
-		}
-		meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", val.owner, vis, typ)
-		valueLabel := widget.NewLabel(value)
-		editBtn := widget.NewButton("修改", func(n string, v varValue) func() {
-			return func() {
-				c.openVarEditDialog(n, v)
-			}
-		}(name, val))
-		removeBtn := widget.NewButton("本地移除", func(n string) func() {
-			return func() {
-				c.removeVarPoolName(n)
-			}
-		}(name))
-		actions := container.NewHBox(editBtn, removeBtn)
-		card := widget.NewCard(name, meta, container.NewBorder(nil, actions, nil, nil, valueLabel))
-		c.varPoolList.Add(card)
 	}
+	addGroup := func(title string, keys []varKey, showPlaceholder bool) {
+		header := widget.NewLabel(title)
+		header.TextStyle = fyne.TextStyle{Bold: true}
+		c.varPoolList.Add(header)
+		if len(keys) == 0 {
+			if showPlaceholder {
+				c.varPoolList.Add(widget.NewLabel("暂无记录"))
+			}
+			return
+		}
+		for _, key := range keys {
+			val := c.varPoolData[key]
+			displayOwner := key.Owner
+			if val.owner != 0 {
+				displayOwner = val.owner
+			}
+			value := strings.TrimSpace(val.value)
+			if value == "" {
+				value = "-"
+			}
+			vis := strings.TrimSpace(val.visibility)
+			if vis == "" {
+				vis = "-"
+			}
+			typ := strings.TrimSpace(val.typ)
+			if typ == "" {
+				typ = "-"
+			}
+			meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", displayOwner, vis, typ)
+			valueLabel := widget.NewLabel(value)
+
+			var buttons []fyne.CanvasObject
+			refreshBtn := widget.NewButton("刷新", func(k varKey) func() {
+				return func() {
+					targetID, err := c.parseVarTarget()
+					if err != nil {
+						c.appendLog("[VAR][ERR] parse target: %v", err)
+						return
+					}
+					go c.sendVarGet(k, targetID)
+				}
+			}(key))
+			buttons = append(buttons, refreshBtn)
+			editBtn := widget.NewButton("修改", func(k varKey, v varValue) func() {
+				return func() {
+					c.openVarEditDialog(k, v)
+				}
+			}(key, val))
+			buttons = append(buttons, editBtn)
+			removeBtn := widget.NewButton("本地移除", func(k varKey) func() {
+				return func() {
+					c.removeVarPoolKey(k)
+				}
+			}(key))
+			buttons = append(buttons, removeBtn)
+			actionRow := container.NewHBox(buttons...)
+
+			card := widget.NewCard(key.Name, meta, container.NewBorder(nil, actionRow, nil, nil, valueLabel))
+			c.varPoolList.Add(card)
+		}
+	}
+	addGroup("我的变量", mine, true)
+	c.varPoolList.Add(widget.NewSeparator())
+	addGroup("别人的变量", others, true)
 	c.varPoolList.Refresh()
 }
 
 func (c *Controller) loadVarPoolPrefs() {
 	if c.varPoolData == nil {
-		c.varPoolData = make(map[string]varValue)
+		c.varPoolData = make(map[varKey]varValue)
 	}
 	if c.app == nil || c.app.Preferences() == nil {
 		return
@@ -1689,18 +1703,28 @@ func (c *Controller) loadVarPoolPrefs() {
 	if strings.TrimSpace(raw) == "" {
 		return
 	}
-	var names []string
-	if err := json.Unmarshal([]byte(raw), &names); err != nil {
-		return
+	var keys []varKey
+	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+		var names []string
+		if err2 := json.Unmarshal([]byte(raw), &names); err2 != nil {
+			return
+		}
+		for _, n := range names {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			keys = append(keys, varKey{Name: n})
+		}
 	}
-	seen := make(map[string]bool)
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" || seen[n] {
+	seen := make(map[varKey]bool)
+	for _, k := range keys {
+		k = normalizeVarKey(k)
+		if k.Name == "" || seen[k] {
 			continue
 		}
-		seen[n] = true
-		c.varPoolNames = append(c.varPoolNames, n)
+		seen[k] = true
+		c.varPoolKeys = append(c.varPoolKeys, k)
 	}
 }
 
@@ -1708,27 +1732,162 @@ func (c *Controller) saveVarPoolPrefs() {
 	if c.app == nil || c.app.Preferences() == nil {
 		return
 	}
-	data, _ := json.Marshal(c.varPoolNames)
+	data, _ := json.Marshal(c.varPoolKeys)
 	c.app.Preferences().SetString(c.prefKey(prefVarPoolNames), string(data))
 }
 
-func (c *Controller) addVarPoolName(name string) {
-	name = strings.TrimSpace(name)
-	if name == "" {
+func (c *Controller) addVarPoolKey(key varKey) {
+	key, changed := c.upsertVarKey(key)
+	if key.Name == "" {
 		return
 	}
-	for _, n := range c.varPoolNames {
-		if n == name {
-			return
-		}
+	if changed {
+		c.saveVarPoolPrefs()
 	}
-	c.varPoolNames = append(c.varPoolNames, name)
-	c.saveVarPoolPrefs()
 	c.refreshVarPoolUI()
 }
 
+func (c *Controller) upsertVarKey(key varKey) (varKey, bool) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return key, false
+	}
+	if c.varPoolData == nil {
+		c.varPoolData = make(map[varKey]varValue)
+	}
+	for i, k := range c.varPoolKeys {
+		if k == key {
+			return key, false
+		}
+		if k.Name == key.Name && k.Owner == 0 && key.Owner != 0 {
+			if val, ok := c.varPoolData[k]; ok {
+				c.varPoolData[key] = val
+			}
+			delete(c.varPoolData, k)
+			c.varPoolKeys[i] = key
+			return key, true
+		}
+	}
+	c.varPoolKeys = append(c.varPoolKeys, key)
+	return key, true
+}
+
+func normalizeVarKey(key varKey) varKey {
+	key.Name = strings.TrimSpace(key.Name)
+	return key
+}
+
+func (c *Controller) openAddMineDialog(w fyne.Window) {
+	win := w
+	if win == nil {
+		win = c.mainWin
+		if win == nil && c.app != nil {
+			if ws := c.app.Driver().AllWindows(); len(ws) > 0 {
+				win = ws[0]
+			}
+		}
+	}
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("变量名")
+	valEntry := widget.NewEntry()
+	valEntry.SetPlaceHolder("初始值")
+	visSelect := widget.NewSelect([]string{"public", "private"}, nil)
+	visSelect.SetSelected("public")
+	content := container.NewVBox(
+		widget.NewLabel("变量名"),
+		nameEntry,
+		widget.NewLabel("变量值"),
+		valEntry,
+		widget.NewLabel("可见性"),
+		visSelect,
+	)
+	dialog.ShowCustomConfirm("新增我的变量", "保存", "取消", content, func(ok bool) {
+		if !ok {
+			return
+		}
+		name := strings.TrimSpace(valueOrPlaceholder(nameEntry))
+		val := valEntry.Text
+		vis := visSelect.Selected
+		if vis == "" {
+			vis = "public"
+		}
+		if name == "" {
+			dialog.ShowError(fmt.Errorf("变量名不能为空"), win)
+			return
+		}
+		if strings.TrimSpace(val) == "" {
+			dialog.ShowError(fmt.Errorf("变量值不能为空"), win)
+			return
+		}
+		if c.storedNode == 0 {
+			dialog.ShowError(fmt.Errorf("请先登录获取 NodeID 后再新增变量"), win)
+			return
+		}
+		targetID, err := c.parseVarTarget()
+		if err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+		key := varKey{Name: name, Owner: c.storedNode}
+		if err := c.sendVarSet(key, val, vis, targetID); err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+	}, win)
+}
+
+func (c *Controller) openAddWatchDialog(w fyne.Window) {
+	win := w
+	if win == nil {
+		win = c.mainWin
+		if win == nil && c.app != nil {
+			if ws := c.app.Driver().AllWindows(); len(ws) > 0 {
+				win = ws[0]
+			}
+		}
+	}
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("变量名")
+	ownerEntry := widget.NewEntry()
+	ownerEntry.SetPlaceHolder("Owner NodeID")
+	content := container.NewVBox(
+		widget.NewLabel("变量名"),
+		nameEntry,
+		widget.NewLabel("Owner NodeID"),
+		ownerEntry,
+	)
+	dialog.ShowCustomConfirm("新增监视变量", "保存", "取消", content, func(ok bool) {
+		if !ok {
+			return
+		}
+		name := strings.TrimSpace(valueOrPlaceholder(nameEntry))
+		ownerText := strings.TrimSpace(ownerEntry.Text)
+		if name == "" {
+			dialog.ShowError(fmt.Errorf("变量名不能为空"), win)
+			return
+		}
+		if ownerText == "" {
+			dialog.ShowError(fmt.Errorf("Owner NodeID 不能为空"), win)
+			return
+		}
+		ownerID, err := strconv.ParseUint(ownerText, 10, 32)
+		if err != nil || ownerID == 0 {
+			dialog.ShowError(fmt.Errorf("Owner NodeID 必须是正整数"), win)
+			return
+		}
+		key := varKey{Name: name, Owner: uint32(ownerID)}
+		c.addVarPoolKey(key)
+		targetID, err := c.parseVarTarget()
+		if err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+		go c.sendVarGet(key, targetID)
+	}, win)
+}
+
 func (c *Controller) fetchVarPoolAll() {
-	if len(c.varPoolNames) == 0 {
+	if len(c.varPoolKeys) == 0 {
 		return
 	}
 	targetID, err := c.parseVarTarget()
@@ -1736,20 +1895,21 @@ func (c *Controller) fetchVarPoolAll() {
 		c.appendLog("[VAR][ERR] parse target: %v", err)
 		return
 	}
-	for _, n := range c.varPoolNames {
-		name := n
-		go c.sendVarGet(name, targetID)
+	for _, k := range c.varPoolKeys {
+		key := k
+		go c.sendVarGet(key, targetID)
 	}
 }
 
-func (c *Controller) sendVarGet(name string, targetID uint32) {
-	if strings.TrimSpace(name) == "" {
+func (c *Controller) sendVarGet(key varKey, targetID uint32) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
 		return
 	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "get",
 		"data": map[string]any{
-			"name": name,
+			"name": key.Name,
 		},
 	})
 	if err != nil {
@@ -1765,23 +1925,30 @@ func (c *Controller) sendVarGet(name string, targetID uint32) {
 		WithMsgID(uint32(time.Now().UnixNano())).
 		WithTimestamp(uint32(time.Now().Unix()))
 	if err := c.session.Send(hdr, payload); err != nil {
-		c.appendLog("[VAR][ERR] get %s: %v", name, err)
+		c.appendLog("[VAR][ERR] get %s(owner=%d): %v", key.Name, key.Owner, err)
 		return
 	}
-	c.logTx("[VAR TX get "+name+"]", hdr, payload)
+	c.logTx(fmt.Sprintf("[VAR TX get %s#%d]", key.Name, key.Owner), hdr, payload)
 }
 
-func (c *Controller) sendVarSet(name, value, visibility string, targetID uint32) error {
-	if strings.TrimSpace(name) == "" {
+func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID uint32) error {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
 		return fmt.Errorf("变量名不能为空")
+	}
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("变量值不能为空")
 	}
 	if visibility == "" {
 		visibility = "public"
 	}
+	if c.storedNode == 0 {
+		return fmt.Errorf("请先登录获取 NodeID 后再新增变量")
+	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "set",
 		"data": map[string]any{
-			"name":       name,
+			"name":       key.Name,
 			"value":      value,
 			"visibility": visibility,
 			"type":       "string",
@@ -1801,25 +1968,30 @@ func (c *Controller) sendVarSet(name, value, visibility string, targetID uint32)
 	if err := c.session.Send(hdr, payload); err != nil {
 		return err
 	}
-	c.addVarPoolName(name)
-	c.updateVarPoolValue(name, varValue{
+	ownerForCache := key.Owner
+	if ownerForCache == 0 {
+		ownerForCache = c.storedNode
+	}
+	cacheKey := varKey{Name: key.Name, Owner: ownerForCache}
+	c.updateVarPoolValue(cacheKey, varValue{
 		value:      value,
-		owner:      c.storedNode,
+		owner:      ownerForCache,
 		visibility: visibility,
 		typ:        "string",
 	})
-	c.logTx("[VAR TX set "+name+"]", hdr, payload)
+	c.logTx(fmt.Sprintf("[VAR TX set %s#%d]", key.Name, ownerForCache), hdr, payload)
 	return nil
 }
 
-func (c *Controller) updateVarPoolValue(name string, val varValue) {
+func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
 	if c.varPoolData == nil {
-		c.varPoolData = make(map[string]varValue)
+		c.varPoolData = make(map[varKey]varValue)
 	}
-	if strings.TrimSpace(name) == "" {
+	key, changed := c.upsertVarKey(key)
+	if key.Name == "" {
 		return
 	}
-	existing, ok := c.varPoolData[name]
+	existing, ok := c.varPoolData[key]
 	merged := existing
 	// 仅在新值存在时覆盖，否则保留旧值
 	if val.value != "" || !ok {
@@ -1834,11 +2006,10 @@ func (c *Controller) updateVarPoolValue(name string, val varValue) {
 	if strings.TrimSpace(val.typ) != "" || !ok {
 		merged.typ = val.typ
 	}
-	if !contains(c.varPoolNames, name) {
-		c.varPoolNames = append(c.varPoolNames, name)
+	c.varPoolData[key] = merged
+	if changed {
 		c.saveVarPoolPrefs()
 	}
-	c.varPoolData[name] = merged
 	// 尝试在主线程刷新 UI，避免后台回调直接操作组件
 	if c.app != nil {
 		if drv := c.app.Driver(); drv != nil {
@@ -1850,25 +2021,24 @@ func (c *Controller) updateVarPoolValue(name string, val varValue) {
 	}
 	c.refreshVarPoolUI()
 }
-
-func (c *Controller) removeVarPoolName(name string) {
-	name = strings.TrimSpace(name)
-	if name == "" {
+func (c *Controller) removeVarPoolKey(key varKey) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
 		return
 	}
-	filtered := make([]string, 0, len(c.varPoolNames))
-	for _, n := range c.varPoolNames {
-		if n != name {
-			filtered = append(filtered, n)
+	filtered := make([]varKey, 0, len(c.varPoolKeys))
+	for _, k := range c.varPoolKeys {
+		if k != key {
+			filtered = append(filtered, k)
 		}
 	}
-	c.varPoolNames = filtered
-	delete(c.varPoolData, name)
+	c.varPoolKeys = filtered
+	delete(c.varPoolData, key)
 	c.saveVarPoolPrefs()
 	c.refreshVarPoolUI()
 }
 
-func (c *Controller) openVarEditDialog(name string, val varValue) {
+func (c *Controller) openVarEditDialog(key varKey, val varValue) {
 	win := c.mainWin
 	if win == nil && c.app != nil {
 		if ws := c.app.Driver().AllWindows(); len(ws) > 0 {
@@ -1887,7 +2057,7 @@ func (c *Controller) openVarEditDialog(name string, val varValue) {
 		visSelect.SetSelected("public")
 	}
 	content := container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("变量名: %s", name)),
+		widget.NewLabel(fmt.Sprintf("变量名: %s", key.Name)),
 		widget.NewLabel("变量值"),
 		valEntry,
 		widget.NewLabel("可见性（对他人节点不生效）"),
@@ -1911,7 +2081,7 @@ func (c *Controller) openVarEditDialog(name string, val varValue) {
 		if vis == "" {
 			vis = "public"
 		}
-		if err := c.sendVarSet(name, value, vis, targetID); err != nil {
+		if err := c.sendVarSet(key, value, vis, targetID); err != nil {
 			dialog.ShowError(err, win)
 			return
 		}
