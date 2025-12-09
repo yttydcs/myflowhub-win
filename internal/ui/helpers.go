@@ -307,12 +307,3 @@ func (c *Controller) buildPayloadCard() fyne.CanvasObject {
 	card := widget.NewCard("Payload", "输入文本或十六进制（Hex payload 开启）", c.payload)
 	return card
 }
-
-func (c *Controller) buildLogTab(w fyne.Window) fyne.CanvasObject {
-	c.logView = newLogEntry()
-	c.logView.Wrapping = fyne.TextWrapWord
-	c.logView.Disable()
-	openWinBtn := widget.NewButton("弹窗", func() { c.openLogWindow() })
-	top := container.NewBorder(nil, nil, nil, openWinBtn, widget.NewLabel("运行日志"))
-	return wrapScroll(container.NewBorder(top, nil, nil, nil, c.logView))
-}

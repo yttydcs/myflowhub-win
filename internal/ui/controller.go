@@ -96,15 +96,15 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.loadVarPoolPrefs()
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
-	debugTab := c.buildDebugTab(w)
 	logTab := c.buildLogTab(w)
+	debugTab := c.buildDebugTab(w)
 	configTab := c.buildConfigTab(w)
 	presetTab := c.buildPresetTab(w)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("变量池", varPoolTab),
-		container.NewTabItem("自定义调试", debugTab),
 		container.NewTabItem("日志", logTab),
+		container.NewTabItem("自定义调试", debugTab),
 		container.NewTabItem("核心设置", configTab),
 		container.NewTabItem("预设调试", presetTab),
 	)

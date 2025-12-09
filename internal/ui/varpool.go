@@ -101,6 +101,17 @@ func (c *Controller) refreshVarPoolUI() {
 				}
 			}(key, val))
 			buttons = append(buttons, editBtn)
+			revokeBtn := widget.NewButton("撤销", func(k varKey) func() {
+				return func() {
+					targetID, err := c.parseVarTarget()
+					if err != nil {
+						c.appendLog("[VAR][ERR] parse target: %v", err)
+						return
+					}
+					go c.sendVarRevoke(k, targetID)
+				}
+			}(key))
+			buttons = append(buttons, revokeBtn)
 			removeBtn := widget.NewButton("本地移除", func(k varKey) func() {
 				return func() {
 					c.removeVarPoolKey(k)
@@ -452,6 +463,45 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 	return nil
 }
 
+func (c *Controller) sendVarRevoke(key varKey, targetID uint32) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return
+	}
+	owner := key.Owner
+	if owner == 0 {
+		owner = c.storedNode
+	}
+	if owner == 0 {
+		c.appendLog("[VAR][ERR] revoke %s: owner not set", key.Name)
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "revoke",
+		"data": map[string]any{
+			"name":  key.Name,
+			"owner": owner,
+		},
+	})
+	if err != nil {
+		c.appendLog("[VAR][ERR] build revoke payload: %v", err)
+		return
+	}
+	sourceID := c.storedNode
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[VAR][ERR] revoke %s(owner=%d): %v", key.Name, owner, err)
+		return
+	}
+	c.logTx(fmt.Sprintf("[VAR TX revoke %s#%d]", key.Name, owner), hdr, payload)
+}
+
 func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
 	if c.varPoolData == nil {
 		c.varPoolData = make(map[varKey]varValue)
@@ -560,9 +610,6 @@ func (c *Controller) handleVarStoreFrame(payload []byte) {
 		return
 	}
 	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	if act != "get_resp" && act != "assist_get_resp" && act != "notify_update" && act != "list_resp" && act != "assist_list_resp" {
-		return
-	}
 	var resp struct {
 		Code       int      `json:"code"`
 		Msg        string   `json:"msg"`
@@ -576,26 +623,30 @@ func (c *Controller) handleVarStoreFrame(payload []byte) {
 	if err := json.Unmarshal(msg.Data, &resp); err != nil {
 		return
 	}
-	if act == "list_resp" || act == "assist_list_resp" {
+	switch act {
+	case "list_resp", "assist_list_resp":
 		c.handleVarListResp(resp)
-		return
-	}
-	name := strings.TrimSpace(resp.Name)
-	if name == "" {
-		return
-	}
-	if act != "notify_update" && resp.Code != 1 {
-		if resp.Owner != 0 && resp.Owner == c.storedNode {
-			c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
+	case "get_resp", "assist_get_resp", "notify_set", "set_resp", "assist_set_resp":
+		name := strings.TrimSpace(resp.Name)
+		if name == "" {
+			return
 		}
-		return
+		if (act == "get_resp" || act == "assist_get_resp" || act == "set_resp" || act == "assist_set_resp") && resp.Code != 1 {
+			if resp.Owner != 0 && resp.Owner == c.storedNode {
+				c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
+			}
+			return
+		}
+		c.updateVarPoolValue(varKey{Name: resp.Name, Owner: resp.Owner}, varValue{
+			value:      resp.Value,
+			owner:      resp.Owner,
+			visibility: resp.Visibility,
+			typ:        resp.Type,
+		})
+	case "revoke_resp", "assist_revoke_resp", "notify_revoke":
+		c.handleVarRevokeResp(act, resp)
+	default:
 	}
-	c.updateVarPoolValue(varKey{Name: resp.Name, Owner: resp.Owner}, varValue{
-		value:      resp.Value,
-		owner:      resp.Owner,
-		visibility: resp.Visibility,
-		typ:        resp.Type,
-	})
 }
 
 func (c *Controller) handleVarListResp(resp struct {
@@ -643,6 +694,27 @@ func (c *Controller) handleVarListResp(resp struct {
 		}
 		go c.sendVarGet(varKey{Name: n, Owner: resp.Owner}, targetID)
 	}
+}
+
+func (c *Controller) handleVarRevokeResp(action string, resp struct {
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg"`
+	Name       string   `json:"name"`
+	Value      string   `json:"value"`
+	Owner      uint32   `json:"owner"`
+	Visibility string   `json:"visibility"`
+	Type       string   `json:"type"`
+	Names      []string `json:"names"`
+}) {
+	name := strings.TrimSpace(resp.Name)
+	if name == "" {
+		return
+	}
+	if action != "notify_revoke" && resp.Code != 1 {
+		c.appendLog("[VAR][WARN] revoke %s#%d failed code=%d msg=%s", name, resp.Owner, resp.Code, resp.Msg)
+		return
+	}
+	c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
 }
 
 func (c *Controller) parseVarTarget() (uint32, error) {

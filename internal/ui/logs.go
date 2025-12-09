@@ -49,7 +49,8 @@ func (c *Controller) openLogWindow() {
 	c.logPopup.SetText(c.logBuf.String())
 	c.logPopup.CursorRow = strings.Count(c.logBuf.String(), "\n")
 	win := c.app.NewWindow("日志窗口")
-	win.SetContent(container.NewBorder(nil, nil, nil, nil, c.logPopup))
+	toggles := c.logToggles()
+	win.SetContent(container.NewBorder(toggles, nil, nil, nil, c.logPopup))
 	win.Resize(fyne.NewSize(700, 500))
 	win.SetOnClosed(func() {
 		c.logWindow = nil
@@ -75,15 +76,33 @@ func (c *Controller) appendLog(format string, args ...any) {
 	}
 }
 
+// shared toggles for log preview (trunc/hex)
+func (c *Controller) logToggles() fyne.CanvasObject {
+	if c.truncToggle == nil {
+		c.truncToggle = widget.NewCheck("短 preview", nil)
+	}
+	if c.showHex == nil {
+		c.showHex = widget.NewCheck("预览显示 HEX", nil)
+	}
+	return container.NewHBox(c.truncToggle, c.showHex)
+}
+
+// log tab UI
+func (c *Controller) buildLogTab(w fyne.Window) fyne.CanvasObject {
+	if c.logView == nil {
+		c.logView = newLogEntry()
+		c.logView.Wrapping = fyne.TextWrapWord
+	}
+	top := container.NewBorder(nil, nil, nil, container.NewHBox(c.logToggles(), widget.NewButton("弹窗", func() { c.openLogWindow() })), widget.NewLabel("运行日志"))
+	return wrapScroll(container.NewBorder(top, nil, nil, nil, c.logView))
+}
+
 func (c *Controller) formatPayloadPreview(payload []byte) string {
 	if len(payload) == 0 {
 		return "payload=empty"
 	}
 	limit := 64
-	showHex := false
-	if c.showHex != nil && c.showHex.Checked {
-		showHex = true
-	}
+	showHex := c.showHex != nil && c.showHex.Checked
 	textLimit := limit
 	if c.truncToggle != nil && c.truncToggle.Checked {
 		textLimit = 16
