@@ -80,6 +80,11 @@ type Controller struct {
 	varPoolData   map[varKey]varValue
 	varPoolList   *fyne.Container
 	varPoolTarget *widget.Entry
+
+	// management tab
+	mgmtNodes []mgmtNodeEntry
+	mgmtList  *widget.List
+	mgmtInfo  *widget.Label
 }
 
 // New 创建 UI 控制器。
@@ -96,6 +101,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.loadVarPoolPrefs()
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
+	mgmtTab := c.buildManagementTab(w)
 	logTab := c.buildLogTab(w)
 	debugTab := c.buildDebugTab(w)
 	configTab := c.buildConfigTab(w)
@@ -103,6 +109,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("变量池", varPoolTab),
+		container.NewTabItem("管理", mgmtTab),
 		container.NewTabItem("日志", logTab),
 		container.NewTabItem("自定义调试", debugTab),
 		container.NewTabItem("核心设置", configTab),
@@ -123,7 +130,9 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 	c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
 		h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
 	c.handleAuthFrame(h, payload)
-	if h != nil && h.SubProto() == 3 {
+	if h != nil && h.SubProto() == 1 {
+		c.handleManagementFrame(payload)
+	} else if h != nil && h.SubProto() == 3 {
 		c.handleVarStoreFrame(payload)
 	}
 }
