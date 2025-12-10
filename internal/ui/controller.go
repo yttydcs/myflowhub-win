@@ -3,6 +3,8 @@ package ui
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 
 	core "github.com/yttydcs/myflowhub-core"
@@ -34,9 +36,10 @@ type Controller struct {
 	// profile & home
 	profileSelect  *widget.Select
 	currentProfile string
-	profiles       []string
-	homeLoading    bool
-	homeLastAddr   string
+	profiles     []string
+	homeLoading  bool
+	homeLastAddr string
+	baseTitle    string
 
 	addrEntry    *widget.Entry
 	homeAddr     *widget.Entry
@@ -80,11 +83,19 @@ type Controller struct {
 	varPoolData   map[varKey]varValue
 	varPoolList   *fyne.Container
 	varPoolTarget *widget.Entry
+	varPoolNodeInfo *widget.Label
 
 	// management tab
-	mgmtNodes []mgmtNodeEntry
-	mgmtList  *widget.List
-	mgmtInfo  *widget.Label
+	mgmtNodes     []mgmtNodeEntry
+	mgmtList      *widget.List
+	mgmtInfo      *widget.Label
+	mgmtTarget    *widget.Entry
+	mgmtLastTarget uint32
+	mgmtCfgTarget uint32
+	mgmtCfgKeys   []string
+	mgmtCfgValues map[string]string
+	mgmtCfgList   *widget.List
+	mgmtCfgWin    fyne.Window
 }
 
 // New 创建 UI 控制器。
@@ -97,8 +108,10 @@ func New(app fyne.App, ctx context.Context) *Controller {
 // Build 构建主窗口内容。
 func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.mainWin = w
+	c.baseTitle = w.Title()
 	c.initProfiles()
 	c.loadVarPoolPrefs()
+	c.refreshWindowTitle()
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
 	mgmtTab := c.buildManagementTab(w)
@@ -124,6 +137,22 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 // Shutdown 清理资源。
 func (c *Controller) Shutdown() { c.session.Close() }
 
+// refreshWindowTitle 更新窗口标题显示的登录信息。
+func (c *Controller) refreshWindowTitle() {
+	if c.mainWin == nil {
+		return
+	}
+	base := c.baseTitle
+	if strings.TrimSpace(base) == "" {
+		base = "MyFlowHub Debug Client"
+	}
+	if c.connected && c.storedNode != 0 {
+		c.mainWin.SetTitle(fmt.Sprintf("%s - 已登录 NodeID: %d", base, c.storedNode))
+		return
+	}
+	c.mainWin.SetTitle(base)
+}
+
 // handleFrame 分发网络帧。
 func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 	preview := c.formatPayloadPreview(payload)
@@ -131,7 +160,7 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 		h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
 	c.handleAuthFrame(h, payload)
 	if h != nil && h.SubProto() == 1 {
-		c.handleManagementFrame(payload)
+		c.handleManagementFrame(h, payload)
 	} else if h != nil && h.SubProto() == 3 {
 		c.handleVarStoreFrame(payload)
 	}

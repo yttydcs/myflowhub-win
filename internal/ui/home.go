@@ -157,6 +157,7 @@ func (c *Controller) switchProfile(name string) {
 	c.updateHomeInfo()
 	c.loadVarPoolPrefs()
 	c.refreshVarPoolUI()
+	c.refreshWindowTitle()
 	if c.configList != nil {
 		c.reloadConfigUI(true)
 	}
@@ -238,6 +239,8 @@ func (c *Controller) updateHomeInfo() {
 		c.homeRole.SetText("Role: " + role)
 	}
 	c.updateHomeLoginButton()
+	c.refreshVarPoolLoginInfo()
+	c.refreshWindowTitle()
 }
 
 func (c *Controller) setHomeConnStatus(connected bool, addr string) {
@@ -252,6 +255,7 @@ func (c *Controller) setHomeConnStatus(connected bool, addr string) {
 		c.homeConnCard.Subtitle = status
 		c.homeConnCard.Refresh()
 	}
+	c.refreshWindowTitle()
 }
 
 func (c *Controller) clearCredential() {
@@ -268,6 +272,7 @@ func (c *Controller) clearCredential() {
 	}
 	c.updateHomeInfo()
 	c.appendLog("[HOME] 已清除本地凭证")
+	c.refreshWindowTitle()
 }
 
 func (c *Controller) showInfo(title, msg string) {
@@ -423,6 +428,8 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 		p.SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
 	c.fetchVarPoolAll()
+	c.refreshVarPoolLoginInfo()
+	c.refreshWindowTitle()
 }
 
 // handleAuthFrame 处理 SubProto=2 登录/注册响应。

@@ -11,6 +11,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
@@ -22,10 +23,12 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	c.refreshVarPoolUI()
 
 	c.varPoolTarget = widget.NewEntry()
-	c.varPoolTarget.SetPlaceHolder("路由 TargetID（留空=当前登录 HubID）")
+	c.varPoolTarget.SetPlaceHolder("TargetID")
 	if c.storedHub != 0 {
 		c.varPoolTarget.SetText(fmt.Sprintf("%d", c.storedHub))
 	}
+	c.varPoolNodeInfo = widget.NewLabel("")
+	c.refreshVarPoolLoginInfo()
 	refreshBtn := widget.NewButton("刷新全部", func() { c.fetchVarPoolAll() })
 	addMineBtn := widget.NewButton("新增我的变量", func() { c.openAddMineDialog(w) })
 	addWatchBtn := widget.NewButton("新增监视", func() { c.openAddWatchDialog(w) })
@@ -33,7 +36,8 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	info := widget.NewLabel("按 owner 分组展示缓存变量，默认使用登录 HubID 进行 get")
 	listScroll := container.NewVScroll(c.varPoolList)
 
-	targetCard := widget.NewCard("查询 TargetID", "留空使用当前登录 HubID 进行 get/set", labeledEntry("TargetID", c.varPoolTarget))
+	targetRow := container.NewHBox(widget.NewLabel("TargetID"), c.varPoolTarget, layout.NewSpacer(), c.varPoolNodeInfo)
+	targetCard := widget.NewCard("查询 TargetID", "留空使用当前登录 HubID 进行 get/set", targetRow)
 	listArea := container.NewBorder(info, actions, nil, nil, listScroll)
 	return wrapScroll(container.NewBorder(targetCard, nil, nil, nil, listArea))
 }
@@ -42,6 +46,7 @@ func (c *Controller) refreshVarPoolUI() {
 	if c.varPoolList == nil {
 		return
 	}
+	c.refreshVarPoolLoginInfo()
 	c.varPoolList.Objects = nil
 	mine := make([]varKey, 0)
 	others := make([]varKey, 0)
@@ -748,4 +753,15 @@ type varValue struct {
 	owner      uint32
 	visibility string
 	typ        string
+}
+
+func (c *Controller) refreshVarPoolLoginInfo() {
+	if c.varPoolNodeInfo == nil {
+		return
+	}
+	if c.storedNode != 0 {
+		c.varPoolNodeInfo.SetText(fmt.Sprintf("已登录 NodeID: %d", c.storedNode))
+	} else {
+		c.varPoolNodeInfo.SetText("未登录")
+	}
 }
