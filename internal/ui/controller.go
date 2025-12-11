@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-win/internal/session"
@@ -36,10 +37,10 @@ type Controller struct {
 	// profile & home
 	profileSelect  *widget.Select
 	currentProfile string
-	profiles     []string
-	homeLoading  bool
-	homeLastAddr string
-	baseTitle    string
+	profiles       []string
+	homeLoading    bool
+	homeLastAddr   string
+	baseTitle      string
 
 	addrEntry    *widget.Entry
 	homeAddr     *widget.Entry
@@ -79,23 +80,25 @@ type Controller struct {
 	presetCards []*widget.Card
 
 	// var pool tab
-	varPoolKeys   []varKey
-	varPoolData   map[varKey]varValue
-	varPoolList   *fyne.Container
-	varPoolTarget *widget.Entry
+	varPoolKeys     []varKey
+	varPoolData     map[varKey]varValue
+	varPoolList     *fyne.Container
+	varPoolTarget   *widget.Entry
 	varPoolNodeInfo *widget.Label
 
 	// management tab
-	mgmtNodes     []mgmtNodeEntry
-	mgmtList      *widget.List
-	mgmtInfo      *widget.Label
-	mgmtTarget    *widget.Entry
+	mgmtNodes      []mgmtNodeEntry
+	mgmtList       *widget.List
+	mgmtInfo       *widget.Label
+	mgmtTarget     *widget.Entry
 	mgmtLastTarget uint32
-	mgmtCfgTarget uint32
-	mgmtCfgKeys   []string
-	mgmtCfgValues map[string]string
-	mgmtCfgList   *widget.List
-	mgmtCfgWin    fyne.Window
+	mgmtCfgTarget  uint32
+	mgmtCfgEntries []mgmtConfigEntry
+	mgmtCfgValues  map[string]string
+	mgmtCfgList    *widget.List
+	mgmtCfgWin     fyne.Window
+	mgmtCfgLastKey string
+	mgmtCfgLastTap time.Time
 }
 
 // New 创建 UI 控制器。
