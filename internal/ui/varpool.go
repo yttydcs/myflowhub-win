@@ -85,7 +85,11 @@ func (c *Controller) refreshVarPoolUI() {
 			if typ == "" {
 				typ = "-"
 			}
-			meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", displayOwner, vis, typ)
+			subStatus := "未订阅"
+			if val.subKnown && val.subscribed {
+				subStatus = "订阅中"
+			}
+			meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s  %s", displayOwner, vis, typ, subStatus)
 			valueLabel := widget.NewLabel(value)
 
 			var buttons []fyne.CanvasObject
@@ -123,6 +127,24 @@ func (c *Controller) refreshVarPoolUI() {
 				}
 			}(key))
 			buttons = append(buttons, removeBtn)
+			subBtn := widget.NewButton("订阅", func(k varKey, subscribed bool) func() {
+				return func() {
+					targetID, err := c.parseVarTarget()
+					if err != nil {
+						c.appendLog("[VAR][ERR] parse target: %v", err)
+						return
+					}
+					if subscribed {
+						go c.sendVarUnsubscribe(k, targetID)
+					} else {
+						go c.sendVarSubscribe(k, targetID)
+					}
+				}
+			}(key, val.subKnown && val.subscribed))
+			if val.subKnown && val.subscribed {
+				subBtn.SetText("退订")
+			}
+			buttons = append(buttons, subBtn)
 			actionRow := container.NewHBox(buttons...)
 
 			card := widget.NewCard(key.Name, meta, container.NewBorder(nil, actionRow, nil, nil, valueLabel))
@@ -526,6 +548,95 @@ func (c *Controller) sendVarRevoke(key varKey, targetID uint32) {
 	c.logTx(fmt.Sprintf("[VAR TX revoke %s#%d]", key.Name, owner), hdr, payload)
 }
 
+func (c *Controller) sendVarSubscribe(key varKey, targetID uint32) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return
+	}
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略 subscribe 请求")
+		return
+	}
+	if c.storedNode == 0 {
+		c.appendLog("[VAR][ERR] 未登录节点，无法订阅")
+		return
+	}
+	owner := key.Owner
+	if owner == 0 {
+		c.appendLog("[VAR][ERR] subscribe %s: owner not set", key.Name)
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "subscribe",
+		"data": map[string]any{
+			"name":       key.Name,
+			"owner":      owner,
+			"subscriber": c.storedNode,
+		},
+	})
+	if err != nil {
+		c.appendLog("[VAR][ERR] build subscribe payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(c.storedNode).
+		WithTargetID(targetID).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[VAR][ERR] subscribe %s#%d: %v", key.Name, owner, err)
+		return
+	}
+	c.logTx(fmt.Sprintf("[VAR TX subscribe %s#%d]", key.Name, owner), hdr, payload)
+}
+
+func (c *Controller) sendVarUnsubscribe(key varKey, targetID uint32) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return
+	}
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略 unsubscribe 请求")
+		return
+	}
+	if c.storedNode == 0 {
+		c.appendLog("[VAR][ERR] 未登录节点，无法退订")
+		return
+	}
+	owner := key.Owner
+	if owner == 0 {
+		c.appendLog("[VAR][ERR] unsubscribe %s: owner not set", key.Name)
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action": "unsubscribe",
+		"data": map[string]any{
+			"name":       key.Name,
+			"owner":      owner,
+			"subscriber": c.storedNode,
+		},
+	})
+	if err != nil {
+		c.appendLog("[VAR][ERR] build unsubscribe payload: %v", err)
+		return
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(c.storedNode).
+		WithTargetID(targetID).
+		WithMsgID(uint32(time.Now().UnixNano())).
+		WithTimestamp(uint32(time.Now().Unix()))
+	if err := c.session.Send(hdr, payload); err != nil {
+		c.appendLog("[VAR][ERR] unsubscribe %s#%d: %v", key.Name, owner, err)
+		return
+	}
+	c.updateVarPoolValue(key, varValue{subscribed: false, subKnown: true})
+	c.logTx(fmt.Sprintf("[VAR TX unsubscribe %s#%d]", key.Name, owner), hdr, payload)
+}
+
 func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
 	if c.varPoolData == nil {
 		c.varPoolData = make(map[varKey]varValue)
@@ -548,6 +659,10 @@ func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
 	if strings.TrimSpace(val.typ) != "" || !ok {
 		merged.typ = val.typ
 	}
+	if val.subKnown || !ok {
+		merged.subscribed = val.subscribed
+		merged.subKnown = true
+	}
 	c.varPoolData[key] = merged
 	if changed {
 		c.saveVarPoolPrefs()
@@ -567,6 +682,11 @@ func (c *Controller) removeVarPoolKey(key varKey) {
 	key = normalizeVarKey(key)
 	if key.Name == "" {
 		return
+	}
+	if val, ok := c.varPoolData[key]; ok && val.subKnown && val.subscribed {
+		if targetID, err := c.parseVarTarget(); err == nil {
+			go c.sendVarUnsubscribe(key, targetID)
+		}
 	}
 	filtered := make([]varKey, 0, len(c.varPoolKeys))
 	for _, k := range c.varPoolKeys {
@@ -669,6 +789,12 @@ func (c *Controller) handleVarStoreFrame(payload []byte) {
 		})
 	case "revoke_resp", "assist_revoke_resp", "notify_revoke":
 		c.handleVarRevokeResp(act, resp)
+	case "subscribe_resp", "assist_subscribe_resp":
+		c.handleVarSubscribeResp(resp)
+	case "var_changed":
+		c.handleVarChanged(resp)
+	case "var_deleted":
+		c.handleVarDeleted(resp)
 	default:
 	}
 }
@@ -741,6 +867,75 @@ func (c *Controller) handleVarRevokeResp(action string, resp struct {
 	c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
 }
 
+func (c *Controller) handleVarSubscribeResp(resp struct {
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg"`
+	Name       string   `json:"name"`
+	Value      string   `json:"value"`
+	Owner      uint32   `json:"owner"`
+	Visibility string   `json:"visibility"`
+	Type       string   `json:"type"`
+	Names      []string `json:"names"`
+}) {
+	name := strings.TrimSpace(resp.Name)
+	if name == "" {
+		return
+	}
+	if resp.Code != 1 {
+		c.appendLog("[VAR][WARN] subscribe %s#%d failed code=%d msg=%s", name, resp.Owner, resp.Code, resp.Msg)
+		return
+	}
+	c.updateVarPoolValue(varKey{Name: name, Owner: resp.Owner}, varValue{
+		value:      resp.Value,
+		owner:      resp.Owner,
+		visibility: resp.Visibility,
+		typ:        resp.Type,
+		subscribed: true,
+		subKnown:   true,
+	})
+}
+
+func (c *Controller) handleVarChanged(resp struct {
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg"`
+	Name       string   `json:"name"`
+	Value      string   `json:"value"`
+	Owner      uint32   `json:"owner"`
+	Visibility string   `json:"visibility"`
+	Type       string   `json:"type"`
+	Names      []string `json:"names"`
+}) {
+	name := strings.TrimSpace(resp.Name)
+	if name == "" || resp.Owner == 0 {
+		return
+	}
+	c.appendLog("[VAR][INFO] changed %s#%d vis=%s type=%s", name, resp.Owner, resp.Visibility, resp.Type)
+	c.updateVarPoolValue(varKey{Name: name, Owner: resp.Owner}, varValue{
+		value:      resp.Value,
+		owner:      resp.Owner,
+		visibility: resp.Visibility,
+		typ:        resp.Type,
+	})
+}
+
+func (c *Controller) handleVarDeleted(resp struct {
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg"`
+	Name       string   `json:"name"`
+	Value      string   `json:"value"`
+	Owner      uint32   `json:"owner"`
+	Visibility string   `json:"visibility"`
+	Type       string   `json:"type"`
+	Names      []string `json:"names"`
+}) {
+	name := strings.TrimSpace(resp.Name)
+	if name == "" || resp.Owner == 0 {
+		return
+	}
+	c.appendLog("[VAR][INFO] deleted %s#%d", name, resp.Owner)
+	c.removeVarPoolKey(varKey{Name: name, Owner: resp.Owner})
+}
+
 func (c *Controller) parseVarTarget() (uint32, error) {
 	if c.varPoolTarget == nil {
 		if c.storedHub != 0 {
@@ -772,6 +967,8 @@ type varValue struct {
 	owner      uint32
 	visibility string
 	typ        string
+	subscribed bool
+	subKnown   bool
 }
 
 func (c *Controller) refreshVarPoolLoginInfo() {
