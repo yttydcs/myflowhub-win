@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"strings"
 	"sync"
@@ -47,7 +48,6 @@ type Controller struct {
 	homeAutoCon  *widget.Check
 	homeAutoLog  *widget.Check
 	homeDevice   *widget.Entry
-	homeCred     *widget.Label
 	homeNode     *widget.Label
 	homeHub      *widget.Label
 	homeRole     *widget.Label
@@ -55,10 +55,12 @@ type Controller struct {
 	homeClearBtn *widget.Button
 	homeConnCard *widget.Card
 
-	storedCred string
 	storedNode uint32
 	storedHub  uint32
 	storedRole string
+
+	nodePriv   *ecdsa.PrivateKey
+	nodePubB64 string
 
 	// debug tab
 	payload     *widget.Entry

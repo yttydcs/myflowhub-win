@@ -40,7 +40,6 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 			go c.homeLogin()
 		}
 	})
-	c.homeCred = widget.NewLabel("Credential: -")
 	c.homeNode = widget.NewLabel("NodeID: -")
 	c.homeHub = widget.NewLabel("HubID: -")
 	c.homeRole = widget.NewLabel("Role: -")
@@ -48,7 +47,7 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 	connectBtn := widget.NewButton("连接", func() { go c.homeConnect() })
 	disconnectBtn := widget.NewButton("断开", func() { c.homeDisconnect() })
 	c.homeLoginBtn = widget.NewButton("登录", func() { go c.homeLogin() })
-	c.homeClearBtn = widget.NewButton("清除凭证", func() { c.clearCredential() })
+	c.homeClearBtn = widget.NewButton("清除登录信息", func() { c.clearAuthState() })
 
 	c.loadHomePrefs()
 	c.updateHomeInfo()
@@ -63,12 +62,11 @@ func (c *Controller) buildHomeTab(w fyne.Window) fyne.CanvasObject {
 		container.NewHBox(c.homeLoginBtn, c.homeAutoLog),
 	)
 	infoBox := container.NewVBox(
-		c.homeCred,
 		c.homeNode,
 		c.homeHub,
 		c.homeRole,
 	)
-	statusCard := widget.NewCard("状态", "显示最近一次登录返回的信息（已持久化 credential）",
+	statusCard := widget.NewCard("状态", "显示最近一次登录/注册返回的信息",
 		container.NewBorder(nil, c.homeClearBtn, nil, nil, infoBox))
 	body := container.NewVBox(
 		profileBar,
@@ -146,9 +144,11 @@ func (c *Controller) switchProfile(name string) {
 	c.session.Close()
 	c.connected = false
 	c.setHomeConnStatus(false, c.homeLastAddr)
-	c.storedCred = ""
 	c.storedNode = 0
+	c.storedHub = 0
 	c.storedRole = ""
+	c.nodePriv = nil
+	c.nodePubB64 = ""
 	c.varPoolKeys = nil
 	c.varPoolData = make(map[varKey]varValue)
 
@@ -190,7 +190,6 @@ func (c *Controller) loadHomePrefs() {
 	if c.homeDevice != nil {
 		c.homeDevice.SetText(p.StringWithFallback(c.prefKey(prefHomeDeviceID), ""))
 	}
-	c.storedCred = p.StringWithFallback(c.prefKey(prefHomeCredential), "")
 	c.storedNode = uint32(p.IntWithFallback(c.prefKey(prefHomeNodeID), 0))
 	c.storedHub = uint32(p.IntWithFallback(c.prefKey(prefHomeHubID), 0))
 	c.storedRole = p.StringWithFallback(c.prefKey(prefHomeRole), "")
@@ -210,10 +209,6 @@ func (c *Controller) saveHomeAuto() {
 }
 
 func (c *Controller) updateHomeInfo() {
-	cred := c.storedCred
-	if cred == "" {
-		cred = "-"
-	}
 	nodeText := "-"
 	if c.storedNode != 0 {
 		nodeText = fmt.Sprintf("%d", c.storedNode)
@@ -225,9 +220,6 @@ func (c *Controller) updateHomeInfo() {
 	role := c.storedRole
 	if role == "" {
 		role = "-"
-	}
-	if c.homeCred != nil {
-		c.homeCred.SetText("Credential: " + cred)
 	}
 	if c.homeNode != nil {
 		c.homeNode.SetText("NodeID: " + nodeText)
@@ -258,20 +250,18 @@ func (c *Controller) setHomeConnStatus(connected bool, addr string) {
 	c.refreshWindowTitle()
 }
 
-func (c *Controller) clearCredential() {
-	c.storedCred = ""
+func (c *Controller) clearAuthState() {
 	c.storedNode = 0
 	c.storedHub = 0
 	c.storedRole = ""
 	if c.app != nil && c.app.Preferences() != nil {
 		p := c.app.Preferences()
-		p.SetString(c.prefKey(prefHomeCredential), "")
 		p.SetInt(c.prefKey(prefHomeNodeID), 0)
 		p.SetInt(c.prefKey(prefHomeHubID), 0)
 		p.SetString(c.prefKey(prefHomeRole), "")
 	}
 	c.updateHomeInfo()
-	c.appendLog("[HOME] 已清除本地凭证")
+	c.appendLog("[HOME] 已清除本地登录信息")
 	c.refreshWindowTitle()
 }
 
@@ -292,11 +282,11 @@ func (c *Controller) updateHomeLoginButton() {
 	if c.homeLoginBtn == nil {
 		return
 	}
-	if c.storedCred == "" {
+	if c.storedNode == 0 {
 		c.homeLoginBtn.SetText("注册")
-	} else {
-		c.homeLoginBtn.SetText("登录")
+		return
 	}
+	c.homeLoginBtn.SetText("登录")
 }
 
 func (c *Controller) homeConnect() {
@@ -341,15 +331,31 @@ func (c *Controller) homeLogin() {
 	if c.app != nil && c.app.Preferences() != nil && deviceID != "" {
 		c.app.Preferences().SetString(c.prefKey(prefHomeDeviceID), deviceID)
 	}
-	if c.storedCred == "" {
+	if err := c.ensureNodeKeys(); err != nil {
+		c.appendLog("[HOME][ERR] 加载本地密钥失败: %v", err)
+		return
+	}
+	// 未持有 NodeID 则先注册
+	if c.storedNode == 0 {
 		c.homeRegister(deviceID)
+		return
+	}
+	ts := time.Now().Unix()
+	nonce := generateNonce(12)
+	sig, err := signLogin(c.nodePriv, deviceID, c.storedNode, ts, nonce)
+	if err != nil {
+		c.appendLog("[HOME][ERR] 构造签名失败: %v", err)
 		return
 	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "login",
 		"data": map[string]any{
-			"device_id":  deviceID,
-			"credential": c.storedCred,
+			"device_id": deviceID,
+			"node_id":   c.storedNode,
+			"ts":        ts,
+			"nonce":     nonce,
+			"sig":       sig,
+			"alg":       "ES256",
 		},
 	})
 	if err != nil {
@@ -374,10 +380,16 @@ func (c *Controller) homeLogin() {
 }
 
 func (c *Controller) homeRegister(deviceID string) {
+	if err := c.ensureNodeKeys(); err != nil {
+		c.appendLog("[HOME][ERR] 加载本地密钥失败: %v", err)
+		return
+	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "register",
 		"data": map[string]any{
 			"device_id": deviceID,
+			"pubkey":    c.nodePubB64,
+			"node_pub":  c.nodePubB64,
 		},
 	})
 	if err != nil {
@@ -401,12 +413,12 @@ func (c *Controller) homeRegister(deviceID string) {
 	c.logTx("[HOME TX register]", hdr, payload)
 }
 
-func (c *Controller) persistCredential(deviceID string, nodeID uint32, credential, role string) {
-	if credential != "" {
-		c.storedCred = credential
-	}
+func (c *Controller) persistAuthState(deviceID string, nodeID, hubID uint32, role string) {
 	if nodeID != 0 {
 		c.storedNode = nodeID
+	}
+	if hubID != 0 {
+		c.storedHub = hubID
 	}
 	if role != "" {
 		c.storedRole = role
@@ -415,11 +427,11 @@ func (c *Controller) persistCredential(deviceID string, nodeID uint32, credentia
 		return
 	}
 	p := c.app.Preferences()
-	if credential != "" {
-		p.SetString(c.prefKey(prefHomeCredential), credential)
-	}
 	if nodeID != 0 {
 		p.SetInt(c.prefKey(prefHomeNodeID), int(nodeID))
+	}
+	if hubID != 0 {
+		p.SetInt(c.prefKey(prefHomeHubID), int(hubID))
 	}
 	if role != "" {
 		p.SetString(c.prefKey(prefHomeRole), role)
@@ -448,13 +460,13 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 	switch act {
 	case actionLoginResp:
 		var resp struct {
-			Code       int    `json:"code"`
-			Msg        string `json:"msg"`
-			DeviceID   string `json:"device_id"`
-			NodeID     uint32 `json:"node_id"`
-			HubID      uint32 `json:"hub_id"`
-			Credential string `json:"credential"`
-			Role       string `json:"role"`
+			Code     int    `json:"code"`
+			Msg      string `json:"msg"`
+			DeviceID string `json:"device_id"`
+			NodeID   uint32 `json:"node_id"`
+			HubID    uint32 `json:"hub_id"`
+			Role     string `json:"role"`
+			PubKey   string `json:"pubkey"`
 		}
 		if err := json.Unmarshal(msg.Data, &resp); err != nil {
 			return
@@ -469,22 +481,22 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if c.varPoolTarget != nil && resp.HubID != 0 {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
-		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
+		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
-		c.showInfo("登录成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nCredential: %s\nRole: %s",
-			resp.DeviceID, resp.NodeID, resp.HubID, resp.Credential, resp.Role))
+		c.showInfo("登录成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.HubID, resp.Role))
 	case actionRegisterResp:
 		var resp struct {
-			Code       int    `json:"code"`
-			Msg        string `json:"msg"`
-			DeviceID   string `json:"device_id"`
-			NodeID     uint32 `json:"node_id"`
-			HubID      uint32 `json:"hub_id"`
-			Credential string `json:"credential"`
-			Role       string `json:"role"`
+			Code     int    `json:"code"`
+			Msg      string `json:"msg"`
+			DeviceID string `json:"device_id"`
+			NodeID   uint32 `json:"node_id"`
+			HubID    uint32 `json:"hub_id"`
+			Role     string `json:"role"`
+			PubKey   string `json:"pubkey"`
 		}
 		if err := json.Unmarshal(msg.Data, &resp); err != nil {
 			return
@@ -499,13 +511,13 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if c.varPoolTarget != nil && resp.HubID != 0 {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
-		c.persistCredential(resp.DeviceID, resp.NodeID, resp.Credential, resp.Role)
+		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
-		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nCredential: %s\nRole: %s",
-			resp.DeviceID, resp.NodeID, resp.HubID, resp.Credential, resp.Role))
+		c.showInfo("注册成功", fmt.Sprintf("DeviceID: %s\nNodeID: %d\nHubID: %d\nRole: %s",
+			resp.DeviceID, resp.NodeID, resp.HubID, resp.Role))
 	default:
 	}
 }

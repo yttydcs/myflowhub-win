@@ -18,7 +18,6 @@ import (
 
 const prefConfigKey = "config.entries"
 const (
-	prefHomeCredential = "home.credential"
 	prefHomeDeviceID   = "home.device_id"
 	prefHomeNodeID     = "home.node_id"
 	prefHomeHubID      = "home.hub_id"
@@ -129,7 +128,6 @@ func (c *Controller) migrateLegacyPrefs() {
 		}
 	}
 
-	copyString(prefHomeCredential, c.prefKey(prefHomeCredential))
 	copyString(prefHomeDeviceID, c.prefKey(prefHomeDeviceID))
 	copyString(prefHomeRole, c.prefKey(prefHomeRole))
 	copyInt(prefHomeNodeID, c.prefKey(prefHomeNodeID))

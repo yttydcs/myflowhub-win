@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,7 +108,7 @@ func (c *Controller) buildConfigTab(w fyne.Window) fyne.CanvasObject {
 }
 
 func (c *Controller) buildPresetTab(w fyne.Window) fyne.CanvasObject {
-	defs := presetDefinitions()
+	defs := c.presetDefinitions()
 	list := container.NewVBox()
 	for _, def := range defs {
 		list.Add(c.buildPresetCard(def, w))
@@ -191,7 +192,7 @@ type presetDefinition struct {
 	build       func(p1, p2 string) (core.IHeader, []byte, error)
 }
 
-func presetDefinitions() []presetDefinition {
+func (c *Controller) presetDefinitions() []presetDefinition {
 	return []presetDefinition{
 		{
 			name:        "Echo",
@@ -217,17 +218,38 @@ func presetDefinitions() []presetDefinition {
 			desc:        "SubProto=2，action=login，payload JSON",
 			param1Label: "参数1（DeviceID）",
 			param1Ph:    "device-001",
-			param2Label: "参数2（Credential）",
-			param2Ph:    "cred-token",
+			param2Label: "参数2（NodeID，可选，默认使用已登录的 NodeID）",
+			param2Ph:    "",
 			build: func(p1, p2 string) (core.IHeader, []byte, error) {
-				if strings.TrimSpace(p1) == "" || strings.TrimSpace(p2) == "" {
-					return nil, nil, fmt.Errorf("DeviceID/Credential 不能为空")
+				if strings.TrimSpace(p1) == "" {
+					return nil, nil, fmt.Errorf("DeviceID 不能为空")
+				}
+				nodeID := c.storedNode
+				if strings.TrimSpace(p2) != "" {
+					val, err := strconv.ParseUint(strings.TrimSpace(p2), 10, 32)
+					if err != nil {
+						return nil, nil, fmt.Errorf("NodeID 无法解析: %w", err)
+					}
+					nodeID = uint32(val)
+				}
+				if err := c.ensureNodeKeys(); err != nil {
+					return nil, nil, fmt.Errorf("加载本地密钥失败: %w", err)
+				}
+				ts := time.Now().Unix()
+				nonce := generateNonce(12)
+				sig, err := signLogin(c.nodePriv, p1, nodeID, ts, nonce)
+				if err != nil {
+					return nil, nil, fmt.Errorf("签名失败: %w", err)
 				}
 				payload, _ := json.Marshal(map[string]any{
 					"action": "login",
 					"data": map[string]any{
-						"device_id":  p1,
-						"credential": p2,
+						"device_id": p1,
+						"node_id":   nodeID,
+						"ts":        ts,
+						"nonce":     nonce,
+						"sig":       sig,
+						"alg":       "ES256",
 					},
 				})
 				hdr := presetHeader(2, 0)
@@ -239,16 +261,21 @@ func presetDefinitions() []presetDefinition {
 			desc:        "SubProto=2，action=register，payload JSON",
 			param1Label: "参数1（DeviceID）",
 			param1Ph:    "device-001",
-			param2Label: "参数2（预留，可空）",
+			param2Label: "参数2（无）",
 			param2Ph:    "",
 			build: func(p1, _ string) (core.IHeader, []byte, error) {
 				if strings.TrimSpace(p1) == "" {
 					return nil, nil, fmt.Errorf("DeviceID 不能为空")
 				}
+				if err := c.ensureNodeKeys(); err != nil {
+					return nil, nil, fmt.Errorf("加载本地密钥失败: %w", err)
+				}
 				payload, _ := json.Marshal(map[string]any{
 					"action": "register",
 					"data": map[string]any{
 						"device_id": p1,
+						"pubkey":    c.nodePubB64,
+						"node_pub":  c.nodePubB64,
 					},
 				})
 				hdr := presetHeader(2, 0)
