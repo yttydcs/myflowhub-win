@@ -30,6 +30,7 @@ type Controller struct {
 	// main window
 	mainWin   fyne.Window
 	connected bool
+	loggedIn  bool
 
 	// log window/popup
 	logPopup  *logEntry
@@ -174,6 +175,7 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 // handleError 处理 session 错误。
 func (c *Controller) handleError(err error) {
 	c.connected = false
+	c.loggedIn = false
 	c.setHomeConnStatus(false, c.homeLastAddr)
 	c.appendLog("[ERR] %v", err)
 }

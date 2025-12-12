@@ -11,8 +11,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -324,6 +324,10 @@ func (c *Controller) openAddWatchDialog(w fyne.Window) {
 }
 
 func (c *Controller) fetchVarPoolAll() {
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略变量刷新")
+		return
+	}
 	targetID, err := c.parseVarTarget()
 	if err != nil {
 		c.appendLog("[VAR][ERR] parse target: %v", err)
@@ -346,6 +350,10 @@ func (c *Controller) fetchVarPoolAll() {
 
 func (c *Controller) sendVarList(owner uint32, targetID uint32) {
 	if owner == 0 {
+		return
+	}
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略 list 请求")
 		return
 	}
 	payload, err := json.Marshal(map[string]any{
@@ -375,6 +383,10 @@ func (c *Controller) sendVarList(owner uint32, targetID uint32) {
 func (c *Controller) sendVarGet(key varKey, targetID uint32) {
 	key = normalizeVarKey(key)
 	if key.Name == "" {
+		return
+	}
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略 get 请求")
 		return
 	}
 	owner := key.Owner
@@ -425,6 +437,9 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 	if c.storedNode == 0 {
 		return fmt.Errorf("请先登录获取 NodeID 后再新增变量")
 	}
+	if !c.loggedIn {
+		return fmt.Errorf("未登录，无法发送 set")
+	}
 	owner := key.Owner
 	if owner == 0 {
 		owner = c.storedNode
@@ -471,6 +486,10 @@ func (c *Controller) sendVarSet(key varKey, value, visibility string, targetID u
 func (c *Controller) sendVarRevoke(key varKey, targetID uint32) {
 	key = normalizeVarKey(key)
 	if key.Name == "" {
+		return
+	}
+	if !c.loggedIn {
+		c.appendLog("[VAR][WARN] 未登录，忽略 revoke 请求")
 		return
 	}
 	owner := key.Owner

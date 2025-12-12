@@ -143,6 +143,7 @@ func (c *Controller) switchProfile(name string) {
 	// 重置状态与缓存
 	c.session.Close()
 	c.connected = false
+	c.loggedIn = false
 	c.setHomeConnStatus(false, c.homeLastAddr)
 	c.storedNode = 0
 	c.storedHub = 0
@@ -254,6 +255,7 @@ func (c *Controller) clearAuthState() {
 	c.storedNode = 0
 	c.storedHub = 0
 	c.storedRole = ""
+	c.loggedIn = false
 	if c.app != nil && c.app.Preferences() != nil {
 		p := c.app.Preferences()
 		p.SetInt(c.prefKey(prefHomeNodeID), 0)
@@ -298,6 +300,7 @@ func (c *Controller) homeConnect() {
 	if err := c.session.Connect(addr); err != nil {
 		if strings.Contains(err.Error(), "已经连接") {
 			c.connected = true
+			c.loggedIn = false
 			c.appendLog("HOME 已连接")
 			c.homeLastAddr = addr
 			c.setHomeConnStatus(true, addr)
@@ -307,6 +310,7 @@ func (c *Controller) homeConnect() {
 		}
 	}
 	c.connected = true
+	c.loggedIn = false
 	c.homeLastAddr = addr
 	c.appendLog("HOME connected %s", addr)
 	c.setHomeConnStatus(true, addr)
@@ -318,6 +322,7 @@ func (c *Controller) homeConnect() {
 func (c *Controller) homeDisconnect() {
 	c.session.Close()
 	c.connected = false
+	c.loggedIn = false
 	c.appendLog("HOME 手动断开")
 	c.setHomeConnStatus(false, c.homeLastAddr)
 }
@@ -482,6 +487,7 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
 		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
+		c.loggedIn = true
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
@@ -512,6 +518,7 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
 		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
+		c.loggedIn = true
 		c.updateHomeInfo()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)

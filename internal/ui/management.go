@@ -48,6 +48,10 @@ func (c *Controller) buildManagementTab(w fyne.Window) fyne.CanvasObject {
 }
 
 func (c *Controller) fetchMgmtNodes() {
+	if !c.loggedIn {
+		c.appendLog("[MGMT][WARN] 未登录，忽略 list_nodes 请求")
+		return
+	}
 	target, err := c.parseMgmtTarget()
 	if err != nil {
 		c.appendLog("[MGMT][ERR] parse target: %v", err)
@@ -76,6 +80,10 @@ func (c *Controller) fetchMgmtNodes() {
 }
 
 func (c *Controller) fetchMgmtSubtree() {
+	if !c.loggedIn {
+		c.appendLog("[MGMT][WARN] 未登录，忽略 list_subtree 请求")
+		return
+	}
 	target, err := c.parseMgmtTarget()
 	if err != nil {
 		c.appendLog("[MGMT][ERR] parse target: %v", err)

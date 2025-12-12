@@ -10,13 +10,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-const nodeKeysPath = "config/node_keys.json"
+const (
+	defaultNodeKeysPath     = "config/node_keys.json"
+	defaultTrustedNodesPath = "config/trusted_nodes.json"
+)
 
 type nodeKeys struct {
 	PrivKey string `json:"privkey"` // base64 DER
@@ -28,7 +33,7 @@ func (c *Controller) ensureNodeKeys() error {
 	if c.nodePriv != nil && strings.TrimSpace(c.nodePubB64) != "" {
 		return nil
 	}
-	priv, pub, err := loadOrCreateNodeKeys()
+	priv, pub, err := loadOrCreateNodeKeys(c.nodeKeysPath())
 	if err != nil {
 		return err
 	}
@@ -37,8 +42,8 @@ func (c *Controller) ensureNodeKeys() error {
 	return nil
 }
 
-func loadOrCreateNodeKeys() (*ecdsa.PrivateKey, string, error) {
-	if priv, pub, err := readNodeKeys(); err == nil && priv != nil && strings.TrimSpace(pub) != "" {
+func loadOrCreateNodeKeys(path string) (*ecdsa.PrivateKey, string, error) {
+	if priv, pub, err := readNodeKeys(path); err == nil && priv != nil && strings.TrimSpace(pub) != "" {
 		return priv, pub, nil
 	}
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -49,12 +54,12 @@ func loadOrCreateNodeKeys() (*ecdsa.PrivateKey, string, error) {
 	pubDER, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
 	privB64 := base64.StdEncoding.EncodeToString(privDER)
 	pubB64 := base64.StdEncoding.EncodeToString(pubDER)
-	_ = writeNodeKeys(nodeKeys{PrivKey: privB64, PubKey: pubB64})
+	_ = writeNodeKeys(path, nodeKeys{PrivKey: privB64, PubKey: pubB64})
 	return priv, pubB64, nil
 }
 
-func readNodeKeys() (*ecdsa.PrivateKey, string, error) {
-	path := filepath.Clean(nodeKeysPath)
+func readNodeKeys(path string) (*ecdsa.PrivateKey, string, error) {
+	path = filepath.Clean(path)
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) == 0 {
 		return nil, "", err
@@ -73,8 +78,8 @@ func readNodeKeys() (*ecdsa.PrivateKey, string, error) {
 	return priv, k.PubKey, nil
 }
 
-func writeNodeKeys(k nodeKeys) error {
-	path := filepath.Clean(nodeKeysPath)
+func writeNodeKeys(path string, k nodeKeys) error {
+	path = filepath.Clean(path)
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	data, _ := json.MarshalIndent(k, "", "  ")
 	return os.WriteFile(path, data, 0o600)
@@ -144,4 +149,33 @@ func generateNonce(n int) string {
 		return ""
 	}
 	return hex.EncodeToString(buf)
+}
+
+// nodeKeysPath 根据当前配置生成隔离的密钥文件路径（默认 config/node_keys.json）。
+func (c *Controller) nodeKeysPath() string {
+	name := strings.TrimSpace(c.currentProfile)
+	if name == "" || name == defaultProfileName {
+		return defaultNodeKeysPath
+	}
+	safe := sanitizeProfile(name)
+	return filepath.Join("config", fmt.Sprintf("node_keys_%s.json", safe))
+}
+
+// trustedNodesPath 预留：按配置切换 trusted_nodes 文件。
+func (c *Controller) trustedNodesPath() string {
+	name := strings.TrimSpace(c.currentProfile)
+	if name == "" || name == defaultProfileName {
+		return defaultTrustedNodesPath
+	}
+	safe := sanitizeProfile(name)
+	return filepath.Join("config", fmt.Sprintf("trusted_nodes_%s.json", safe))
+}
+
+func sanitizeProfile(name string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+	out := strings.Trim(re.ReplaceAllString(name, "_"), "_")
+	if out == "" {
+		return "default"
+	}
+	return out
 }
