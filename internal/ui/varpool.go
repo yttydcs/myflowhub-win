@@ -20,6 +20,9 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	if c.varPoolList == nil {
 		c.varPoolList = container.NewVBox()
 	}
+	if c.varSubList == nil {
+		c.varSubList = container.NewVBox()
+	}
 	c.refreshVarPoolUI()
 
 	c.varPoolTarget = widget.NewEntry()
@@ -32,7 +35,11 @@ func (c *Controller) buildVarPoolTab(w fyne.Window) fyne.CanvasObject {
 	refreshBtn := widget.NewButton("刷新全部", func() { c.fetchVarPoolAll() })
 	addMineBtn := widget.NewButton("新增我的变量", func() { c.openAddMineDialog(w) })
 	addWatchBtn := widget.NewButton("新增监视", func() { c.openAddWatchDialog(w) })
-	actions := container.NewHBox(refreshBtn, addMineBtn, addWatchBtn)
+	viewSubsBtn := widget.NewButton("订阅列表", func() {
+		c.refreshVarSubsUI()
+		dialog.ShowCustom("订阅列表", "关闭", container.NewVScroll(c.varSubList), w)
+	})
+	actions := container.NewHBox(refreshBtn, addMineBtn, addWatchBtn, viewSubsBtn)
 	info := widget.NewLabel("按 owner 分组展示缓存变量，默认使用登录 HubID 进行 get")
 	listScroll := container.NewVScroll(c.varPoolList)
 
@@ -85,11 +92,10 @@ func (c *Controller) refreshVarPoolUI() {
 			if typ == "" {
 				typ = "-"
 			}
-			subStatus := "未订阅"
+			meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s", displayOwner, vis, typ)
 			if val.subKnown && val.subscribed {
-				subStatus = "订阅中"
+				meta = fmt.Sprintf("%s  订阅中", meta)
 			}
-			meta := fmt.Sprintf("Owner=%d  Vis=%s  Type=%s  %s", displayOwner, vis, typ, subStatus)
 			valueLabel := widget.NewLabel(value)
 
 			var buttons []fyne.CanvasObject
@@ -127,24 +133,26 @@ func (c *Controller) refreshVarPoolUI() {
 				}
 			}(key))
 			buttons = append(buttons, removeBtn)
-			subBtn := widget.NewButton("订阅", func(k varKey, subscribed bool) func() {
-				return func() {
-					targetID, err := c.parseVarTarget()
-					if err != nil {
-						c.appendLog("[VAR][ERR] parse target: %v", err)
-						return
+			if !(c.storedNode != 0 && key.Owner == c.storedNode) {
+				subBtn := widget.NewButton("订阅", func(k varKey, subscribed bool) func() {
+					return func() {
+						targetID, err := c.parseVarTarget()
+						if err != nil {
+							c.appendLog("[VAR][ERR] parse target: %v", err)
+							return
+						}
+						if subscribed {
+							go c.sendVarUnsubscribe(k, targetID)
+						} else {
+							go c.sendVarSubscribe(k, targetID)
+						}
 					}
-					if subscribed {
-						go c.sendVarUnsubscribe(k, targetID)
-					} else {
-						go c.sendVarSubscribe(k, targetID)
-					}
+				}(key, val.subKnown && val.subscribed))
+				if val.subKnown && val.subscribed {
+					subBtn.SetText("退订")
 				}
-			}(key, val.subKnown && val.subscribed))
-			if val.subKnown && val.subscribed {
-				subBtn.SetText("退订")
+				buttons = append(buttons, subBtn)
 			}
-			buttons = append(buttons, subBtn)
 			actionRow := container.NewHBox(buttons...)
 
 			card := widget.NewCard(key.Name, meta, container.NewBorder(nil, actionRow, nil, nil, valueLabel))
@@ -155,6 +163,7 @@ func (c *Controller) refreshVarPoolUI() {
 	c.varPoolList.Add(widget.NewSeparator())
 	addGroup("别人的变量", others, true)
 	c.varPoolList.Refresh()
+	c.refreshVarSubsUI()
 }
 
 func (c *Controller) loadVarPoolPrefs() {
@@ -563,6 +572,9 @@ func (c *Controller) sendVarSubscribe(key varKey, targetID uint32) {
 	}
 	owner := key.Owner
 	if owner == 0 {
+		owner = c.storedNode
+	}
+	if owner == 0 {
 		c.appendLog("[VAR][ERR] subscribe %s: owner not set", key.Name)
 		return
 	}
@@ -607,6 +619,9 @@ func (c *Controller) sendVarUnsubscribe(key varKey, targetID uint32) {
 	}
 	owner := key.Owner
 	if owner == 0 {
+		owner = c.storedNode
+	}
+	if owner == 0 {
 		c.appendLog("[VAR][ERR] unsubscribe %s: owner not set", key.Name)
 		return
 	}
@@ -633,7 +648,12 @@ func (c *Controller) sendVarUnsubscribe(key varKey, targetID uint32) {
 		c.appendLog("[VAR][ERR] unsubscribe %s#%d: %v", key.Name, owner, err)
 		return
 	}
-	c.updateVarPoolValue(key, varValue{subscribed: false, subKnown: true})
+	updateKey := varKey{Name: key.Name, Owner: owner}
+	c.updateVarPoolValue(updateKey, varValue{subscribed: false, subKnown: true})
+	if key.Owner != updateKey.Owner {
+		// 同步清理原始键（如果存在）。
+		c.updateVarPoolValue(key, varValue{subscribed: false, subKnown: true})
+	}
 	c.logTx(fmt.Sprintf("[VAR TX unsubscribe %s#%d]", key.Name, owner), hdr, payload)
 }
 
@@ -670,12 +690,16 @@ func (c *Controller) updateVarPoolValue(key varKey, val varValue) {
 	if c.app != nil {
 		if drv := c.app.Driver(); drv != nil {
 			if runner, ok := drv.(interface{ RunOnMain(func()) }); ok {
-				runner.RunOnMain(c.refreshVarPoolUI)
+				runner.RunOnMain(func() {
+					c.refreshVarPoolUI()
+					c.refreshVarSubsUI()
+				})
 				return
 			}
 		}
 	}
 	c.refreshVarPoolUI()
+	c.refreshVarSubsUI()
 }
 
 func (c *Controller) removeVarPoolKey(key varKey) {
@@ -698,6 +722,25 @@ func (c *Controller) removeVarPoolKey(key varKey) {
 	delete(c.varPoolData, key)
 	c.saveVarPoolPrefs()
 	c.refreshVarPoolUI()
+	c.refreshVarSubsUI()
+}
+
+func (c *Controller) refreshVarSubsUI() {
+	if c.varSubList == nil {
+		return
+	}
+	c.varSubList.Objects = nil
+	for key, val := range c.varPoolData {
+		if !val.subKnown || !val.subscribed {
+			continue
+		}
+		label := fmt.Sprintf("%s#%d  Vis=%s  Type=%s", key.Name, key.Owner, strings.TrimSpace(val.visibility), strings.TrimSpace(val.typ))
+		c.varSubList.Add(widget.NewLabel(label))
+	}
+	if len(c.varSubList.Objects) == 0 {
+		c.varSubList.Add(widget.NewLabel("暂无订阅"))
+	}
+	c.varSubList.Refresh()
 }
 
 func (c *Controller) openVarEditDialog(key varKey, val varValue) {

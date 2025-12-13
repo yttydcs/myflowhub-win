@@ -88,6 +88,7 @@ type Controller struct {
 	varPoolList     *fyne.Container
 	varPoolTarget   *widget.Entry
 	varPoolNodeInfo *widget.Label
+	varSubList      *fyne.Container
 
 	// management tab
 	mgmtNodes      []mgmtNodeEntry
