@@ -101,28 +101,13 @@ func (c *Controller) formatPayloadPreview(payload []byte) string {
 	if len(payload) == 0 {
 		return "payload=empty"
 	}
-	limit := 64
 	showHex := c.showHex != nil && c.showHex.Checked
-	textLimit := limit
-	if c.truncToggle != nil && c.truncToggle.Checked {
-		textLimit = 16
-	}
-	preview := payload
-	truncated := false
-	if len(payload) > limit {
-		preview = payload[:limit]
-		truncated = true
-	}
-	textPart := buildTextPreview(preview, textLimit)
+	textPart := buildTextPreview(payload, -1) // 不截断
 	hexPart := ""
 	if showHex {
-		hexPart = " hex=" + bytesToSpacedHex(preview)
+		hexPart = " hex=" + bytesToSpacedHex(payload)
 	}
-	suffix := ""
-	if truncated {
-		suffix = fmt.Sprintf("...(总长 %d bytes)", len(payload))
-	}
-	return fmt.Sprintf("payload=text(%s)%s%s%s", textPart, suffix, hexPart, ternarySuffix(truncated))
+	return fmt.Sprintf("payload=text(%s)%s", textPart, hexPart)
 }
 
 func buildTextPreview(data []byte, limit int) string {

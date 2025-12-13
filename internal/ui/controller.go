@@ -89,6 +89,7 @@ type Controller struct {
 	varPoolTarget   *widget.Entry
 	varPoolNodeInfo *widget.Label
 	varSubList      *fyne.Container
+	varSubDesired   map[varKey]bool
 
 	// management tab
 	mgmtNodes      []mgmtNodeEntry
@@ -153,7 +154,7 @@ func (c *Controller) refreshWindowTitle() {
 	if strings.TrimSpace(base) == "" {
 		base = "MyFlowHub Debug Client"
 	}
-	if c.connected && c.storedNode != 0 {
+	if c.loggedIn && c.storedNode != 0 {
 		c.mainWin.SetTitle(fmt.Sprintf("%s - 已登录 NodeID: %d", base, c.storedNode))
 		return
 	}
@@ -177,6 +178,10 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 func (c *Controller) handleError(err error) {
 	c.connected = false
 	c.loggedIn = false
+	c.storedNode = 0
+	c.storedHub = 0
+	c.storedRole = ""
 	c.setHomeConnStatus(false, c.homeLastAddr)
+	c.refreshWindowTitle()
 	c.appendLog("[ERR] %v", err)
 }

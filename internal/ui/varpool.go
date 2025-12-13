@@ -578,6 +578,11 @@ func (c *Controller) sendVarSubscribe(key varKey, targetID uint32) {
 		c.appendLog("[VAR][ERR] subscribe %s: owner not set", key.Name)
 		return
 	}
+	desiredKey := varKey{Name: key.Name, Owner: owner}
+	c.setDesiredSubscribe(desiredKey, true)
+	if desiredKey != key {
+		c.setDesiredSubscribe(key, true)
+	}
 	payload, err := json.Marshal(map[string]any{
 		"action": "subscribe",
 		"data": map[string]any{
@@ -625,6 +630,21 @@ func (c *Controller) sendVarUnsubscribe(key varKey, targetID uint32) {
 		c.appendLog("[VAR][ERR] unsubscribe %s: owner not set", key.Name)
 		return
 	}
+	// 本地先行标记为未订阅，保证按钮即时恢复
+	updateKey := varKey{Name: key.Name, Owner: owner}
+	c.updateVarPoolValue(updateKey, varValue{subscribed: false, subKnown: true})
+	if key != updateKey {
+		c.updateVarPoolValue(key, varValue{subscribed: false, subKnown: true})
+	}
+	runOnMain(c, func() {
+		c.refreshVarPoolUI()
+		c.refreshVarSubsUI()
+	})
+	c.setDesiredSubscribe(updateKey, false)
+	if key != updateKey {
+		c.setDesiredSubscribe(key, false)
+	}
+
 	payload, err := json.Marshal(map[string]any{
 		"action": "unsubscribe",
 		"data": map[string]any{
@@ -647,12 +667,6 @@ func (c *Controller) sendVarUnsubscribe(key varKey, targetID uint32) {
 	if err := c.session.Send(hdr, payload); err != nil {
 		c.appendLog("[VAR][ERR] unsubscribe %s#%d: %v", key.Name, owner, err)
 		return
-	}
-	updateKey := varKey{Name: key.Name, Owner: owner}
-	c.updateVarPoolValue(updateKey, varValue{subscribed: false, subKnown: true})
-	if key.Owner != updateKey.Owner {
-		// 同步清理原始键（如果存在）。
-		c.updateVarPoolValue(key, varValue{subscribed: false, subKnown: true})
 	}
 	c.logTx(fmt.Sprintf("[VAR TX unsubscribe %s#%d]", key.Name, owner), hdr, payload)
 }
@@ -741,6 +755,46 @@ func (c *Controller) refreshVarSubsUI() {
 		c.varSubList.Add(widget.NewLabel("暂无订阅"))
 	}
 	c.varSubList.Refresh()
+}
+
+func runOnMain(c *Controller, fn func()) {
+	if c == nil || fn == nil {
+		return
+	}
+	if c.app != nil {
+		if drv := c.app.Driver(); drv != nil {
+			if runner, ok := drv.(interface{ RunOnMain(func()) }); ok {
+				runner.RunOnMain(fn)
+				return
+			}
+		}
+	}
+	fn()
+}
+
+func (c *Controller) setDesiredSubscribe(key varKey, desired bool) {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return
+	}
+	if c.varSubDesired == nil {
+		c.varSubDesired = make(map[varKey]bool)
+	}
+	c.varSubDesired[key] = desired
+}
+
+func (c *Controller) desiredSubscribe(key varKey) bool {
+	key = normalizeVarKey(key)
+	if key.Name == "" {
+		return false
+	}
+	if c.varSubDesired == nil {
+		return true
+	}
+	if v, ok := c.varSubDesired[key]; ok {
+		return v
+	}
+	return true
 }
 
 func (c *Controller) openVarEditDialog(key varKey, val varValue) {
@@ -924,11 +978,16 @@ func (c *Controller) handleVarSubscribeResp(resp struct {
 	if name == "" {
 		return
 	}
+	key := varKey{Name: name, Owner: resp.Owner}
+	if !c.desiredSubscribe(key) {
+		c.appendLog("[VAR][INFO] subscribe_resp ignored (not desired) %s#%d code=%d msg=%s", name, resp.Owner, resp.Code, resp.Msg)
+		return
+	}
 	if resp.Code != 1 {
 		c.appendLog("[VAR][WARN] subscribe %s#%d failed code=%d msg=%s", name, resp.Owner, resp.Code, resp.Msg)
 		return
 	}
-	c.updateVarPoolValue(varKey{Name: name, Owner: resp.Owner}, varValue{
+	c.updateVarPoolValue(key, varValue{
 		value:      resp.Value,
 		owner:      resp.Owner,
 		visibility: resp.Visibility,
