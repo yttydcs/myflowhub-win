@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
@@ -62,6 +63,9 @@ func (c *Controller) openLogWindow() {
 
 // log helpers
 func (c *Controller) appendLog(format string, args ...any) {
+	if c == nil || c.isLogPaused() {
+		return
+	}
 	c.logMu.Lock()
 	defer c.logMu.Unlock()
 	text := fmt.Sprintf(format, args...)
@@ -76,6 +80,13 @@ func (c *Controller) appendLog(format string, args ...any) {
 	}
 }
 
+func (c *Controller) isLogPaused() bool {
+	if c == nil {
+		return false
+	}
+	return atomic.LoadUint32(&c.logPaused) == 1
+}
+
 // shared toggles for log preview (trunc/hex)
 func (c *Controller) logToggles() fyne.CanvasObject {
 	if c.truncToggle == nil {
@@ -84,7 +95,16 @@ func (c *Controller) logToggles() fyne.CanvasObject {
 	if c.showHex == nil {
 		c.showHex = widget.NewCheck("预览显示 HEX", nil)
 	}
-	return container.NewHBox(c.truncToggle, c.showHex)
+	if c.pauseLog == nil {
+		c.pauseLog = widget.NewCheck("暂停日志", func(checked bool) {
+			if checked {
+				atomic.StoreUint32(&c.logPaused, 1)
+				return
+			}
+			atomic.StoreUint32(&c.logPaused, 0)
+		})
+	}
+	return container.NewHBox(c.truncToggle, c.showHex, c.pauseLog)
 }
 
 // log tab UI

@@ -108,8 +108,11 @@ func (c *Controller) buildConfigTab(w fyne.Window) fyne.CanvasObject {
 }
 
 func (c *Controller) buildPresetTab(w fyne.Window) fyne.CanvasObject {
-	defs := c.presetDefinitions()
 	list := container.NewVBox()
+	list.Add(c.buildTopicBusStressReceiverCard(w))
+	list.Add(c.buildTopicBusStressSenderCard(w))
+	list.Add(widget.NewSeparator())
+	defs := c.presetDefinitions()
 	for _, def := range defs {
 		list.Add(c.buildPresetCard(def, w))
 	}

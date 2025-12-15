@@ -10,6 +10,7 @@ import (
 	"time"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-win/internal/session"
 
 	"fyne.io/fyne/v2"
@@ -23,9 +24,11 @@ type Controller struct {
 	ctx context.Context
 
 	// session & logs
-	session *session.Session
-	logBuf  bytes.Buffer
-	logMu   sync.Mutex
+	session   *session.Session
+	logBuf    bytes.Buffer
+	logMu     sync.Mutex
+	logPaused uint32 // 1=暂停写入，避免高频日志拖慢 UI
+	bus       eventbus.IBus
 
 	// main window
 	mainWin   fyne.Window
@@ -71,6 +74,7 @@ type Controller struct {
 	hexToggle   *widget.Check
 	truncToggle *widget.Check
 	showHex     *widget.Check
+	pauseLog    *widget.Check
 	presetSrc   *widget.Entry
 	presetTgt   *widget.Entry
 
@@ -91,6 +95,62 @@ type Controller struct {
 	varSubList      *fyne.Container
 	varSubDesired   map[varKey]bool
 
+	// topicbus tab (SubProto=4)
+	topicBusMu          sync.RWMutex
+	topicBusTarget      *widget.Entry
+	topicBusInput       *widget.Entry
+	topicBusPubTopic    *widget.Entry
+	topicBusPubName     *widget.Entry
+	topicBusPubPayload  *widget.Entry
+	topicBusSubs        []string
+	topicBusSubsList    *widget.List
+	topicBusSelectedSub int // 0=全部，>0=topics[idx-1]
+
+	topicBusMaxEvents int
+	topicBusMaxEntry  *widget.Entry
+
+	topicBusEvents       []topicBusEvent
+	topicBusFilteredIdx  []int
+	topicBusEventList    *widget.List
+	topicBusDetail       *logEntry
+	topicBusLoginToken   string
+	topicBusEventsLastUI time.Time
+
+	// topicbus stress test (preset tab)
+	topicBusStressMu sync.Mutex
+
+	topicBusStressRecvActive      bool
+	topicBusStressRecvTopic       string
+	topicBusStressRecvRun         string
+	topicBusStressRecvExpected    int
+	topicBusStressRecvPayloadSize int
+	topicBusStressRecvStartedAt   time.Time
+	topicBusStressRecvLastUI      time.Time
+
+	topicBusStressRecvBitset     []uint64
+	topicBusStressRecvRx         int
+	topicBusStressRecvUnique     int
+	topicBusStressRecvDup        int
+	topicBusStressRecvCorrupt    int
+	topicBusStressRecvInvalid    int
+	topicBusStressRecvOutOfOrder int
+	topicBusStressRecvLastSeq    int
+
+	topicBusStressRecvStatus *widget.Label
+
+	topicBusStressSendActive      bool
+	topicBusStressSendCancel      context.CancelFunc
+	topicBusStressSendTopic       string
+	topicBusStressSendRun         string
+	topicBusStressSendTotal       int
+	topicBusStressSendPayloadSize int
+	topicBusStressSendStartedAt   time.Time
+	topicBusStressSendLastUI      time.Time
+
+	topicBusStressSendSent   int
+	topicBusStressSendErrors int
+	topicBusStressSendStatus *widget.Label
+
 	// management tab
 	mgmtNodes      []mgmtNodeEntry
 	mgmtList       *widget.List
@@ -109,6 +169,7 @@ type Controller struct {
 // New 创建 UI 控制器。
 func New(app fyne.App, ctx context.Context) *Controller {
 	c := &Controller{app: app, ctx: ctx}
+	c.bus = eventbus.New(eventbus.Options{})
 	c.session = session.New(c.ctx, c.handleFrame, c.handleError)
 	return c
 }
@@ -119,9 +180,11 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	c.baseTitle = w.Title()
 	c.initProfiles()
 	c.loadVarPoolPrefs()
+	c.loadTopicBusPrefs()
 	c.refreshWindowTitle()
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
+	topicBusTab := c.buildTopicBusTab(w)
 	mgmtTab := c.buildManagementTab(w)
 	logTab := c.buildLogTab(w)
 	debugTab := c.buildDebugTab(w)
@@ -130,6 +193,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	tabs := container.NewAppTabs(
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("变量池", varPoolTab),
+		container.NewTabItem("消息订阅", topicBusTab),
 		container.NewTabItem("管理", mgmtTab),
 		container.NewTabItem("日志", logTab),
 		container.NewTabItem("自定义调试", debugTab),
@@ -143,7 +207,12 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 }
 
 // Shutdown 清理资源。
-func (c *Controller) Shutdown() { c.session.Close() }
+func (c *Controller) Shutdown() {
+	c.session.Close()
+	if c.bus != nil {
+		c.bus.Close()
+	}
+}
 
 // refreshWindowTitle 更新窗口标题显示的登录信息。
 func (c *Controller) refreshWindowTitle() {
@@ -163,14 +232,18 @@ func (c *Controller) refreshWindowTitle() {
 
 // handleFrame 分发网络帧。
 func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
-	preview := c.formatPayloadPreview(payload)
-	c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
-		h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
+	if !c.isLogPaused() {
+		preview := c.formatPayloadPreview(payload)
+		c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
+			h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
+	}
 	c.handleAuthFrame(h, payload)
 	if h != nil && h.SubProto() == 1 {
 		c.handleManagementFrame(h, payload)
 	} else if h != nil && h.SubProto() == 3 {
 		c.handleVarStoreFrame(payload)
+	} else if h != nil && h.SubProto() == 4 {
+		c.handleTopicBusFrame(payload)
 	}
 }
 

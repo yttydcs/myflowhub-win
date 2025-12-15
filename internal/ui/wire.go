@@ -13,7 +13,7 @@ const (
 
 // logTx 打印发送日志。
 func (c *Controller) logTx(prefix string, hdr core.IHeader, payload []byte) {
-	if hdr == nil {
+	if c == nil || c.isLogPaused() || hdr == nil {
 		return
 	}
 	line := fmt.Sprintf("%s major=%d sub=%d src=%d tgt=%d len=%d", prefix, hdr.Major(), hdr.SubProto(), hdr.SourceID(), hdr.TargetID(), len(payload))

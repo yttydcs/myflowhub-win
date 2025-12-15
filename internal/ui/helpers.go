@@ -25,6 +25,8 @@ const (
 	prefHomeAutoCon    = "home.auto_connect"
 	prefHomeAutoLog    = "home.auto_login"
 	prefVarPoolNames   = "varpool.names"
+	prefTopicBusSubs   = "topicbus.subs"
+	prefTopicBusMaxEvt = "topicbus.max_events"
 	prefProfilesList   = "profiles.list"
 	prefProfilesLast   = "profiles.last"
 	defaultProfileName = "default"

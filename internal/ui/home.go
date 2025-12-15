@@ -152,12 +152,18 @@ func (c *Controller) switchProfile(name string) {
 	c.nodePubB64 = ""
 	c.varPoolKeys = nil
 	c.varPoolData = make(map[varKey]varValue)
+	c.topicBusSubs = nil
+	c.topicBusEvents = nil
+	c.topicBusFilteredIdx = nil
+	c.topicBusSelectedSub = 0
 
 	// 重新加载当前配置数据
 	c.loadHomePrefs()
 	c.updateHomeInfo()
 	c.loadVarPoolPrefs()
+	c.loadTopicBusPrefs()
 	c.refreshVarPoolUI()
+	c.refreshTopicBusUI()
 	c.refreshWindowTitle()
 	if c.configList != nil {
 		c.reloadConfigUI(true)
@@ -486,9 +492,13 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if c.varPoolTarget != nil && resp.HubID != 0 {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
+		if c.topicBusTarget != nil && resp.HubID != 0 {
+			c.topicBusTarget.SetText(fmt.Sprintf("%d", resp.HubID))
+		}
 		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
 		c.loggedIn = true
 		c.updateHomeInfo()
+		c.emitLoggedIn()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
@@ -517,9 +527,13 @@ func (c *Controller) handleAuthFrame(h core.IHeader, payload []byte) {
 		if c.varPoolTarget != nil && resp.HubID != 0 {
 			c.varPoolTarget.SetText(fmt.Sprintf("%d", resp.HubID))
 		}
+		if c.topicBusTarget != nil && resp.HubID != 0 {
+			c.topicBusTarget.SetText(fmt.Sprintf("%d", resp.HubID))
+		}
 		c.persistAuthState(resp.DeviceID, resp.NodeID, resp.HubID, resp.Role)
 		c.loggedIn = true
 		c.updateHomeInfo()
+		c.emitLoggedIn()
 		if c.homeDevice != nil && resp.DeviceID != "" {
 			c.homeDevice.SetText(resp.DeviceID)
 		}
