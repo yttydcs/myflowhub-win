@@ -54,7 +54,7 @@ func (c *Controller) buildTopicBusStressReceiverCard(w fyne.Window) fyne.CanvasO
 
 	startBtn := widget.NewButton("开始接收(订阅)", func() {
 		win := resolveWindow(c.app, c.mainWin, w)
-		cfg, err := c.parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry, true)
+		cfg, err := c.parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry, nil, true)
 		if err != nil {
 			dialog.ShowError(err, win)
 			return
@@ -111,6 +111,8 @@ func (c *Controller) buildTopicBusStressSenderCard(w fyne.Window) fyne.CanvasObj
 	totalEntry.SetPlaceHolder("发送条数（例如 10000）")
 	sizeEntry := widget.NewEntry()
 	sizeEntry.SetPlaceHolder("payload 大小（字节，可选，默认 0）")
+	rateEntry := widget.NewEntry()
+	rateEntry.SetPlaceHolder("每秒最大发送条数（可选，0=不限）")
 
 	status := widget.NewLabel("未开始")
 	status.Wrapping = fyne.TextWrapWord
@@ -128,7 +130,7 @@ func (c *Controller) buildTopicBusStressSenderCard(w fyne.Window) fyne.CanvasObj
 		if strings.TrimSpace(runEntry.Text) == "" {
 			runEntry.SetText(buildStressRunID())
 		}
-		cfg, err := c.parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry, false)
+		cfg, err := c.parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry, rateEntry, false)
 		if err != nil {
 			dialog.ShowError(err, win)
 			return
@@ -148,6 +150,7 @@ func (c *Controller) buildTopicBusStressSenderCard(w fyne.Window) fyne.CanvasObj
 			container.NewBorder(nil, nil, nil, genRunBtn, labeledEntry("RunID", runEntry)),
 			labeledEntry("发送条数", totalEntry),
 			labeledEntry("PayloadSize", sizeEntry),
+			labeledEntry("限速(msg/s)", rateEntry),
 			container.NewHBox(startBtn, stopBtn, layout.NewSpacer()),
 		),
 		widget.NewSeparator(),
@@ -162,9 +165,10 @@ type topicBusStressConfig struct {
 	Run         string
 	Total       int
 	PayloadSize int
+	MaxPerSec   int
 }
 
-func (c *Controller) parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry *widget.Entry, requireRun bool) (topicBusStressConfig, error) {
+func (c *Controller) parseTopicBusStressConfig(targetEntry, topicEntry, runEntry, totalEntry, sizeEntry, rateEntry *widget.Entry, requireRun bool) (topicBusStressConfig, error) {
 	target, err := c.parseTargetWithFallback(targetEntry)
 	if err != nil {
 		return topicBusStressConfig{}, err
@@ -192,7 +196,15 @@ func (c *Controller) parseTopicBusStressConfig(targetEntry, topicEntry, runEntry
 		}
 		size = v
 	}
-	return topicBusStressConfig{Target: target, Topic: topic, Run: run, Total: total, PayloadSize: size}, nil
+	maxPerSec := 0
+	if rateEntry != nil && strings.TrimSpace(valueOrPlaceholder(rateEntry)) != "" {
+		v, err := parseNonNegativeInt(valueOrPlaceholder(rateEntry), "限速(msg/s)")
+		if err != nil {
+			return topicBusStressConfig{}, err
+		}
+		maxPerSec = v
+	}
+	return topicBusStressConfig{Target: target, Topic: topic, Run: run, Total: total, PayloadSize: size, MaxPerSec: maxPerSec}, nil
 }
 
 func (c *Controller) parseTargetWithFallback(entry *widget.Entry) (uint32, error) {
@@ -335,6 +347,7 @@ func (c *Controller) startTopicBusStressSender(cfg topicBusStressConfig) error {
 	c.topicBusStressSendRun = cfg.Run
 	c.topicBusStressSendTotal = cfg.Total
 	c.topicBusStressSendPayloadSize = cfg.PayloadSize
+	c.topicBusStressSendMaxPerSec = cfg.MaxPerSec
 	c.topicBusStressSendStartedAt = time.Now()
 	c.topicBusStressSendLastUI = time.Time{}
 	c.topicBusStressSendSent = 0
@@ -372,12 +385,39 @@ func (c *Controller) runTopicBusStressSender(ctx context.Context, cfg topicBusSt
 		WithTargetID(cfg.Target)
 
 	buf := make([]byte, 0, len(cfg.Run)+len(data)+64)
+	interval := time.Duration(0)
+	nextSend := time.Time{}
+	if cfg.MaxPerSec > 0 {
+		interval = time.Second / time.Duration(cfg.MaxPerSec)
+		if interval > 0 {
+			nextSend = time.Now()
+		} else {
+			interval = 0
+		}
+	}
 	for seq := 1; seq <= cfg.Total; seq++ {
 		select {
 		case <-ctx.Done():
 			c.finishTopicBusStressSender()
 			return
 		default:
+		}
+		if interval > 0 {
+			now := time.Now()
+			if now.Before(nextSend) {
+				timer := time.NewTimer(nextSend.Sub(now))
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					c.finishTopicBusStressSender()
+					return
+				case <-timer.C:
+				}
+			} else {
+				// 避免因系统调度导致“补发追赶”形成突发。
+				nextSend = now
+			}
+			nextSend = nextSend.Add(interval)
 		}
 		payload := topicBusStressPayload{
 			Run:   cfg.Run,
@@ -428,6 +468,7 @@ func (c *Controller) finishTopicBusStressSender() {
 	c.topicBusStressMu.Lock()
 	c.topicBusStressSendActive = false
 	c.topicBusStressSendCancel = nil
+	c.topicBusStressSendMaxPerSec = 0
 	c.topicBusStressMu.Unlock()
 	c.refreshTopicBusStressSendStatus()
 }
@@ -627,17 +668,21 @@ func (c *Controller) topicBusStressSendStatusText() string {
 			state = "已完成"
 		}
 	}
+	limitText := "不限"
+	if c.topicBusStressSendMaxPerSec > 0 {
+		limitText = strconv.Itoa(c.topicBusStressSendMaxPerSec)
+	}
 	return fmt.Sprintf(
-		"%s\nTopic=%s\nRun=%s\nTotal=%d  PayloadSize=%d\nSent=%d  Errors=%d\nElapsed=%s  Rate=%.0f msg/s",
+		"%s\nTopic=%s\nRun=%s\nTotal=%d  PayloadSize=%d  MaxRate=%s msg/s\nSent=%d  Errors=%d\nElapsed=%s  Rate=%.0f msg/s",
 		state,
 		c.topicBusStressSendTopic,
 		c.topicBusStressSendRun,
 		c.topicBusStressSendTotal,
 		c.topicBusStressSendPayloadSize,
+		limitText,
 		c.topicBusStressSendSent,
 		c.topicBusStressSendErrors,
 		elapsed.Round(100*time.Millisecond),
 		rate,
 	)
 }
-

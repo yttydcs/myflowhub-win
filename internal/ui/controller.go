@@ -144,6 +144,7 @@ type Controller struct {
 	topicBusStressSendRun         string
 	topicBusStressSendTotal       int
 	topicBusStressSendPayloadSize int
+	topicBusStressSendMaxPerSec   int
 	topicBusStressSendStartedAt   time.Time
 	topicBusStressSendLastUI      time.Time
 
