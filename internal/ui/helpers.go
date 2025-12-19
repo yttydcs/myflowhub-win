@@ -27,6 +27,7 @@ const (
 	prefVarPoolNames   = "varpool.names"
 	prefTopicBusSubs   = "topicbus.subs"
 	prefTopicBusMaxEvt = "topicbus.max_events"
+	prefFileBrowserNodes = "file.browser.nodes"
 	prefProfilesList   = "profiles.list"
 	prefProfilesLast   = "profiles.last"
 	defaultProfileName = "default"

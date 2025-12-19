@@ -110,5 +110,13 @@ func defaultConfig() map[string]string {
 		coreconfig.KeySendWorkersPerChan: "1",
 		coreconfig.KeySendChannelBuffer:  "64",
 		coreconfig.KeySendConnBuffer:     "64",
+
+		// file 子协议（SubProto=5）
+		cfgFileBaseDir:          "./file",
+		cfgFileMaxSizeBytes:     "0",
+		cfgFileMaxConcurrent:    "4",
+		cfgFileChunkBytes:       "262144",
+		cfgFileIncompleteTTLSec: "3600",
+		cfgFileWantSHA256:       "true",
 	}
 }

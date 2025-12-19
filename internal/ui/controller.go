@@ -165,6 +165,10 @@ type Controller struct {
 	mgmtCfgWin     fyne.Window
 	mgmtCfgLastKey string
 	mgmtCfgLastTap time.Time
+
+	// file transfer tab (SubProto=5)
+	file *fileState
+	fileBrowser *fileBrowserState
 }
 
 // New 创建 UI 控制器。
@@ -172,6 +176,8 @@ func New(app fyne.App, ctx context.Context) *Controller {
 	c := &Controller{app: app, ctx: ctx}
 	c.bus = eventbus.New(eventbus.Options{})
 	c.session = session.New(c.ctx, c.handleFrame, c.handleError)
+	c.file = newFileState()
+	c.fileBrowser = newFileBrowserState()
 	return c
 }
 
@@ -186,6 +192,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	homeTab := c.buildHomeTab(w)
 	varPoolTab := c.buildVarPoolTab(w)
 	topicBusTab := c.buildTopicBusTab(w)
+	fileTab := c.buildFileTab(w)
 	mgmtTab := c.buildManagementTab(w)
 	logTab := c.buildLogTab(w)
 	debugTab := c.buildDebugTab(w)
@@ -195,6 +202,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 		container.NewTabItem("首页", homeTab),
 		container.NewTabItem("变量池", varPoolTab),
 		container.NewTabItem("消息订阅", topicBusTab),
+		container.NewTabItem("文件传输", fileTab),
 		container.NewTabItem("管理", mgmtTab),
 		container.NewTabItem("日志", logTab),
 		container.NewTabItem("自定义调试", debugTab),
@@ -212,6 +220,15 @@ func (c *Controller) Shutdown() {
 	c.session.Close()
 	if c.bus != nil {
 		c.bus.Close()
+	}
+	if c.file != nil {
+		c.file.mu.Lock()
+		cancel := c.file.janitorCancel
+		c.file.janitorCancel = nil
+		c.file.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 	}
 }
 
@@ -233,7 +250,11 @@ func (c *Controller) refreshWindowTitle() {
 
 // handleFrame 分发网络帧。
 func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
-	if !c.isLogPaused() {
+	shouldLog := !c.isLogPaused()
+	if shouldLog && h != nil && h.SubProto() == subProtoFile && len(payload) > 0 && (payload[0] == fileKindData || payload[0] == fileKindAck) {
+		shouldLog = false
+	}
+	if shouldLog {
 		preview := c.formatPayloadPreview(payload)
 		c.appendLog("[RX] major=%d sub=%d src=%d tgt=%d len=%d %s",
 			h.Major(), h.SubProto(), h.SourceID(), h.TargetID(), len(payload), preview)
@@ -245,6 +266,8 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 		c.handleVarStoreFrame(payload)
 	} else if h != nil && h.SubProto() == 4 {
 		c.handleTopicBusFrame(payload)
+	} else if h != nil && h.SubProto() == subProtoFile {
+		c.handleFileFrame(h, payload)
 	}
 }
 
@@ -255,6 +278,7 @@ func (c *Controller) handleError(err error) {
 	c.storedNode = 0
 	c.storedHub = 0
 	c.storedRole = ""
+	c.fileOnDisconnect(err)
 	c.setHomeConnStatus(false, c.homeLastAddr)
 	c.refreshWindowTitle()
 	c.appendLog("[ERR] %v", err)

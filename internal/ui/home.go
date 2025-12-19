@@ -453,6 +453,14 @@ func (c *Controller) persistAuthState(deviceID string, nodeID, hubID uint32, rol
 	c.fetchVarPoolAll()
 	c.refreshVarPoolLoginInfo()
 	c.refreshWindowTitle()
+	if c.fileBrowser != nil {
+		c.fileBrowser.mu.Lock()
+		tree := c.fileBrowser.tree
+		c.fileBrowser.mu.Unlock()
+		if tree != nil {
+			runOnMain(c, tree.Refresh)
+		}
+	}
 }
 
 // handleAuthFrame 处理 SubProto=2 登录/注册响应。
