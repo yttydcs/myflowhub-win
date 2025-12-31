@@ -167,8 +167,11 @@ type Controller struct {
 	mgmtCfgLastTap time.Time
 
 	// file transfer tab (SubProto=5)
-	file *fileState
+	file        *fileState
 	fileBrowser *fileBrowserState
+
+	// flow tab (SubProto=6)
+	flow *flowUIState
 }
 
 // New 创建 UI 控制器。
@@ -178,6 +181,7 @@ func New(app fyne.App, ctx context.Context) *Controller {
 	c.session = session.New(c.ctx, c.handleFrame, c.handleError)
 	c.file = newFileState()
 	c.fileBrowser = newFileBrowserState()
+	c.flow = newFlowUIState()
 	return c
 }
 
@@ -193,6 +197,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 	varPoolTab := c.buildVarPoolTab(w)
 	topicBusTab := c.buildTopicBusTab(w)
 	fileTab := c.buildFileTab(w)
+	flowTab := c.buildFlowTab(w)
 	mgmtTab := c.buildManagementTab(w)
 	logTab := c.buildLogTab(w)
 	debugTab := c.buildDebugTab(w)
@@ -203,6 +208,7 @@ func (c *Controller) Build(w fyne.Window) fyne.CanvasObject {
 		container.NewTabItem("变量池", varPoolTab),
 		container.NewTabItem("消息订阅", topicBusTab),
 		container.NewTabItem("文件传输", fileTab),
+		container.NewTabItem("工作流", flowTab),
 		container.NewTabItem("管理", mgmtTab),
 		container.NewTabItem("日志", logTab),
 		container.NewTabItem("自定义调试", debugTab),
@@ -268,6 +274,8 @@ func (c *Controller) handleFrame(h core.IHeader, payload []byte) {
 		c.handleTopicBusFrame(payload)
 	} else if h != nil && h.SubProto() == subProtoFile {
 		c.handleFileFrame(h, payload)
+	} else if h != nil && h.SubProto() == subProtoFlow {
+		c.handleFlowFrame(h, payload)
 	}
 }
 
