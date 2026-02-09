@@ -1,1 +1,8 @@
 cmd/config/**
+cmd/file/**
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.keep
+frontend/.vite/
+frontend/wailsjs/
+build/

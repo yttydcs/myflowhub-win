@@ -1,0 +1,93 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 36 33% 98%;
+  --foreground: 215 28% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 28% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 28% 14%;
+  --primary: 205 70% 32%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 32 38% 92%;
+  --secondary-foreground: 216 22% 24%;
+  --muted: 30 20% 92%;
+  --muted-foreground: 216 16% 42%;
+  --accent: 186 48% 88%;
+  --accent-foreground: 216 28% 18%;
+  --destructive: 0 78% 52%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 27 20% 85%;
+  --input: 27 20% 85%;
+  --ring: 205 70% 32%;
+  --radius: 0.85rem;
+}
+
+.dark {
+  --background: 215 28% 12%;
+  --foreground: 210 40% 96%;
+  --card: 215 28% 14%;
+  --card-foreground: 210 40% 96%;
+  --popover: 215 28% 14%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 188 70% 62%;
+  --primary-foreground: 215 28% 12%;
+  --secondary: 215 20% 20%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 215 20% 20%;
+  --muted-foreground: 214 15% 70%;
+  --accent: 215 24% 18%;
+  --accent-foreground: 210 40% 96%;
+  --destructive: 0 64% 40%;
+  --destructive-foreground: 210 40% 96%;
+  --border: 215 20% 22%;
+  --input: 215 20% 22%;
+  --ring: 188 70% 62%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+.app-surface {
+  background-image: radial-gradient(
+      1200px 600px at 15% -10%,
+      hsl(189 68% 90% / 0.7),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 700px at 110% 25%,
+      hsl(34 70% 92% / 0.7),
+      transparent 55%
+    ),
+    linear-gradient(180deg, hsl(36 33% 98%), hsl(38 33% 96%));
+  background-attachment: fixed;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(12px);
+  }
+}
+
+.animate-float {
+  animation: float 12s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float 18s ease-in-out infinite;
+}
