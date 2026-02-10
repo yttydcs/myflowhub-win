@@ -21,6 +21,8 @@
 ### 修改
 - `go.mod` / `go.sum`：移除 Fyne 相关依赖并 `go mod tidy` 收敛依赖集合。
 - `.gitignore`：忽略 `frontend/node_modules`、`frontend/dist`、`build/` 等构建产物；保留 `frontend/dist/.keep` 用于满足 `go:embed` 编译期路径匹配。
+- `.gitignore`：忽略 `frontend/package.json.md5`（Wails 前端依赖安装缓存文件，构建/安装时会更新，不应纳入版本控制）。
+- `frontend/package.json`：构建脚本在 `vite build` 后补写 `dist/.keep`，避免前端构建清理目录导致 `.keep` 被删除而出现脏工作区。
 
 ### 删除
 - 旧 Fyne UI 与入口：
@@ -38,7 +40,7 @@
 - 采用分层：前端仅做 UI/交互；协议与逻辑尽量复用 `myflowhub-core` + `myflowhub-server/protocol/*`，避免重复序列化/校验。
 - `frontend/dist/.keep`：
   - 目的：避免 `go test` 因 `//go:embed all:frontend/dist` 在未构建前端时无法匹配路径而失败。
-  - 权衡：构建依然依赖真实 `frontend/dist`（由 `wails build` 自动生成），`.keep` 仅用于开发/测试阶段的编译占位。
+  - 权衡：构建依然依赖真实 `frontend/dist`（由 `wails build` 自动生成），`.keep` 仅用于编译期占位；同时通过前端构建脚本保证 `.keep` 在构建后仍存在，避免影响 git 状态。
 
 ## 测试与验证方式 / 结果
 - `go test ./...`：通过。
@@ -51,4 +53,3 @@
 
 ### 回滚方案
 - 回滚对应提交即可恢复旧 UI 文件与依赖；但建议仅在确认 Wails 版本不可用时执行。
-
