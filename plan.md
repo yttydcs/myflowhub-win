@@ -1,95 +1,113 @@
-# Plan - MyFlowHub-Win 移除 Fyne + Windows 打包验收（Wails）
+# Plan - HeaderTcp v2（32B）+ Core 路由统一（Win）
+
+## Workflow 信息
+- Repo：`MyFlowHub-Win`
+- 分支：`refactor/hdrtcp-v2`
+- Worktree：`d:\\project\\MyFlowHub3\\worktrees\\hdrtcp-v2\\MyFlowHub-Win`
+- 目标 PR：PR1（跨 3 个 repo 同步提交/合并）
 
 ## 项目目标
-1) 在 `MyFlowHub-Win` 中彻底移除 Fyne（代码路径与依赖），确保仅保留 Wails（Vue3/Vite/Tailwind 前端 + Go 后端服务）作为唯一 UI 实现。  
-2) 完成 Windows 单文件打包与冒烟验证文档：能启动并连到 `MyFlowHub-Server`，跑通最小功能链路。
+1) 配合 Core/Server 完成 **HeaderTcp v2（32B）big-bang** 升级，Win 端能正常与 Server 互通。  
+2) Win 端不再“重新实现一套协议机制”：transport codec 与协议类型尽量复用 Core/Server（或后续的协议库），减少漂移。  
+3) 输出可执行的冒烟验证步骤：能启动 Win 并连接到 Server，跑通最小链路（本 PR 仅验证关键路径，Linux 构建暂忽略）。
 
-## 当前状态（事实）
-- 本 worktree 分支：`refactor/remove-fyne`（从 `main` 创建）。
-- 原主 worktree（`d:\project\MyFlowHub3\repo\MyFlowHub-Win`）存在：
-  - 大量未跟踪文件：Wails 入口文件、`frontend/**`、`internal/services/**`、`internal/storage/**` 等。
-  - `go.mod/go.sum` 曾包含 Fyne 相关依赖，且代码里存在 `internal/ui/**`、`internal/app/**` 等 Fyne UI 路径引用（本 workflow 将其彻底移除）。
-- Linux 构建验收：本轮暂忽略（仅要求 Windows）。
+## 范围
+### 必须（PR1）
+- 适配 Core 的 `IHeader` v2 接口变更（编译通过）
+- transport 编解码切换到 HeaderTcp v2（32B）
+- 更新 Win 侧构造 header 的位置（`Major/SubProto/Source/Target/MsgID/Timestamp/...`），确保与新路由规则兼容
+- 冒烟验证步骤（启动 + 连接 server）
 
-## 非目标 / 约束
-- 不在主 worktree（`repo/MyFlowHub-Win`）直接做实现性改动；所有改动在本 worktree 完成。
-- 不提交 `node_modules/`、`dist/` 等构建产物；前端锁文件保留（当前为 `package-lock.json`）。
+### 不做（本 PR）
+- Linux 构建/验收（用户已允许忽略）
+- UI/前端大重构（与本次 wire 升级无关）
+- 子协议拆独立 repo/go module（另起 PR2+）
+
+## 已确认的关键决策（来自阶段 2）
+- 兼容策略：**S3 / big-bang**；切换后 **v1 不再兼容**。
+- HeaderTcp v2：**32B（+8B）**。
+- 路由框架规则：**MajorCmd 不由 Core 自动转发，必须进 handler；MajorMsg/OK/Err 走 Core 快速转发**。
+- 语义基线：`TargetID=0` 仅表示“下行广播不回父”，不能表示上送父节点。
+- Win 定位：UI 以 SDK/hook/事件流方式调用，尽量不复刻协议细节。
+
+## 问题清单（阻塞：是）
+> 与 Core/Server 共用的 wire 细节确认项；未确认禁止进入阶段 3.2。
+
+1) HeaderTcp v2 `magic` 值（建议 `0x4D48`）是否确认？
+2) `hop_limit` 默认值/语义是否确认？（建议默认 `16`，转发递减）
+3) `trace_id` 生成策略是否确认？（建议发送侧自动补齐随机 uint32；响应继承；转发不改）
+4) `timestamp` 单位是否确认？（建议保持 Unix 秒 `uint32`）
 
 ## 任务清单（Checklist）
 
-### W1 - 将主 worktree 的 WIP 迁移到本 worktree（并清理构建产物）
-- 目标：把主 worktree 的未提交修改与未跟踪新增文件完整迁入本 worktree，排除 `node_modules/`、`dist/` 等。
+### W1 - transport codec 适配 HeaderTcp v2（32B）
+- 目标：Win 端收发使用 v2 头部，消除与 Server 的重复实现/漂移点（优先复用 Core 的 header codec）。
 - 涉及模块/文件（预期）：
-  - Wails 入口：`main.go`、`wails.json`、`app*.go`
-  - 前端：`frontend/**`（排除 `frontend/node_modules`、`frontend/dist`）
-  - 后端服务：`internal/services/**`
-  - 存储与迁移：`internal/storage/**`
+  - `internal/services/transport/codec.go`（编解码）
+  - `internal/session/session.go`、`internal/services/session/service.go`（连接/登录链路 header 构造）
+  - 其他服务中直接构造 `header.HeaderTcp` 的位置（`rg WithMajor` 排查）
 - 验收条件：
-  - 本 worktree 的变更集合与主 worktree 目标一致（功能不回退）。
-  - `go test ./...` 通过。
+  - `go test ./...` 通过（若本 repo 有测试）。
+  - 本地可与同批次的 Server worktree 建立连接并完成一次最小交互（见 W3）。
 - 测试点：
-  - `go test ./...`
+  - 收包：能解出 v2 头（magic/ver/hdr_len 校验通过），payload 长度正确。
+  - 发包：server 能识别并响应。
 - 回滚点：
-  - 删除本 worktree 目录 + 删除分支 `refactor/remove-fyne`。
+  - 将 v2 适配独立提交；可 revert。
 
-### W2 - 彻底移除 Fyne 代码路径
-- 目标：删除/下线所有 Fyne UI 相关包与入口，不再编译、引用或保留死代码路径。
-- 涉及模块/文件：
-  - 预期删除：`internal/ui/**`、`internal/app/**`（以实际为准）
-  - 以及任何仅为 Fyne 服务的辅助文件（以 `rg fyne` 搜索结果为准）
+### W2 - 与 Core 路由规则对齐（Major/Target 语义）
+- 目标：确保 Win 端各协议调用在 `Major` 使用上符合新框架规则，避免依赖旧的 Core “自动转发 Cmd” 行为。
+- 涉及模块/文件（预期）：
+  - `internal/services/**`（尤其 file：CTRL/DATA/ACK）
 - 验收条件：
-  - `rg -n "fyne\\.io/fyne|fyne\\.io" -S .` 无命中（确保无 Fyne 依赖/引用）。
-  - 若存在遗留数据迁移需要的“旧路径/目录名”字面量（如旧配置目录名），仅允许出现在迁移相关代码中，且不引入任何 Fyne 相关 Go 依赖。
-  - `go test ./...` 通过。
-- 测试点：
-  - `go test ./...`
+  - 控制面请求使用 `MajorCmd`；通知/数据使用 `MajorMsg`；响应使用 `MajorOKResp/MajorErrResp`（以实际协议约定为准）。
 - 回滚点：
-  - 单独提交可回滚；必要时 `git revert`。
+  - 每个协议按提交拆分，可单独回滚。
 
-### W3 - 移除 Fyne 依赖并收敛 Go 模块
-- 目标：从 `go.mod/go.sum` 中移除所有 Fyne 相关依赖，保持最小依赖集合。
-- 涉及模块/文件：
-  - `go.mod`、`go.sum`
+### W3 - 冒烟验证步骤（启动并连接 server）
+- 目标：提供“可复制粘贴执行”的验证步骤，覆盖最小链路：启动 server → 启动 win → 连接 → 触发至少一个 Cmd → 得到 OK/Err 响应。
 - 验收条件：
-  - `go mod tidy` 后 `go.mod` 不再包含任何 Fyne 相关依赖。
-  - `go test ./...` 通过。
-- 测试点：
-  - `go test ./...`
+  - 步骤可在干净环境复现（仅依赖本仓库与同批次 Core/Server worktree）。
+- 测试点（建议最小集合）：
+  - connect/disconnect
+  - login（或 register/login）
+  - varstore list/get（任选其一，确保 Cmd→OK）
 - 回滚点：
-  - 回滚该提交即可恢复。
+  - 文档变更独立提交；可 revert。
 
-### W4 - Windows 单文件打包 + 冒烟验证步骤（T14 子集）
-- 目标：确保 `wails build -platform windows/amd64` 可成功产出（默认生成单个 `.exe`），并补齐“启动并连到 server”的冒烟验证步骤。
-- 涉及模块/文件：
-  - `wails.json`（如需调整 build profile）
-  - 新增 `README.md`（当前仓库无 README；用于 build/run/smoke 指南）
-- 冒烟步骤（需落入 README）：
-  - 启动 `MyFlowHub-Server`（给出命令与必要配置/端口）。
-  - 启动 Win 应用。
-  - 在 Home 页面执行 Connect → Login/Register（给出最小字段说明）。
-  - 观察“Connected”状态与基础信息/日志无错误。
-- 验收条件：
-  - `wails build -platform windows/amd64` 成功产出可运行的 `.exe`。
-  - README 中包含可复现的 build/run/smoke 步骤。
-- 测试点：
-  - `wails build ...`（Windows）
-  - 手工冒烟：按 README 步骤跑通一次，并记录预期现象。
-- 回滚点：
-  - 回滚 README/配置提交，不影响核心功能提交。
+**步骤（Windows，本 PR 批次 worktree）**
+1) 启动 HubServer（终端 1）：
+   - `cd d:\project\MyFlowHub3\worktrees\hdrtcp-v2\MyFlowHub-Server`
+   - `go run ./cmd/hub_server -addr 127.0.0.1:9000 -node-id 1`
 
-### W5 - 提交、Code Review（阶段 3.3）与归档（阶段 4）
-- 目标：把 W1-W4 形成清晰提交序列；按要求输出 Review；在本 worktree 根目录创建 `docs/change/YYYY-MM-DD_remove-fyne.md` 归档。
+2) 启动 Win App（终端 2）：
+   - `cd d:\project\MyFlowHub3\worktrees\hdrtcp-v2\MyFlowHub-Win`
+   - `wails dev`
+
+3) App 内操作（Home/Auth）：
+   - Address：`127.0.0.1:9000` → 点击 **Connect**
+   - Device ID：填写任意非空字符串（例如 `smoke-1`）
+   - 首次运行：点击 **Register**（NodeID=0），从响应/日志中记录分配到的 `node_id`
+   - 随后：点击 **Login**（使用上一步的 `node_id`）
+   - 期望：状态显示 Connected；Logs 中无明显 error
+
+4) 触发至少一个业务 Cmd→OK（VarPool/VarStore）：
+   - 进入 **VarPool** 页面，执行一次 **List**（或 **Get**）
+   - 期望：收到 OK 响应（Frame/Logs 中能看到对应返回），且界面数据刷新
+
+5) 退出验证：
+   - App 点击 **Disconnect**（或关闭窗口）
+   - 终端 1 Ctrl+C 停止 HubServer
+
+### W4 - Code Review（阶段 3.3）与归档（阶段 4）
+- 目标：完成 Review 清单并在本 worktree 根目录创建 `docs/change/2026-02-10_hdrtcp-v2.md`。
 - 验收条件：
-  - `git status` 干净；提交信息清晰。
-  - Review 清单逐项结论明确；不通过则回到阶段 3.2 修正。
-  - `docs/change` 文档包含：背景、具体变更、任务映射（W1-W4）、关键决策/权衡、测试结果、影响与回滚。
+  - Review 逐项“通过/不通过”结论明确；不通过则回到阶段 3.2 修正。
+  - 归档文档包含：背景/目标、具体变更、任务映射（W1-W3）、关键决策与权衡、测试结果、影响与回滚方案。
 
 ## 依赖关系
-- W1 完成后才能进入 W2/W3。
-- W2/W3 完成后才能进入 W4（避免构建被旧依赖干扰）。
-- 全部完成后进入阶段 3.3 Review，再进入阶段 4 归档。
+- 依赖同批次 Core/Server 的 v2 头部升级；任一端未升级将无法互通。
 
 ## 风险与注意事项
-- 主 worktree 存在 `frontend/node_modules`、`frontend/dist`：迁移时必须排除并确保 `.gitignore` 覆盖，避免误提交大体积目录。
-- “读取旧 Fyne prefs 数据”的迁移逻辑必须改为不依赖 Fyne 库（只读取旧路径/文件并解析）。
-- 若 Wails 生成的 `frontend/wailsjs` 对构建是必需的，需在 W1/W4 中明确是否提交（默认：提交稳定生成物，且不包含构建产物如 dist）。
+- go.mod 的 `replace` 路径需保持指向同批次 worktree（避免误链接到旧 header）。
+- 这是 wire 破坏性变更：建议在本地联调通过后再推远端 PR。

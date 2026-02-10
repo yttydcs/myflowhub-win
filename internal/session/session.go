@@ -3,15 +3,37 @@ package session
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 )
+
+var traceSeq atomic.Uint32
+var traceSeqInit sync.Once
+
+func nextTraceID() uint32 {
+	traceSeqInit.Do(func() {
+		var seed [4]byte
+		if _, err := rand.Read(seed[:]); err != nil {
+			traceSeq.Store(uint32(time.Now().UnixNano()))
+			return
+		}
+		traceSeq.Store(binary.BigEndian.Uint32(seed[:]))
+	})
+	v := traceSeq.Add(1)
+	if v == 0 {
+		v = traceSeq.Add(1)
+	}
+	return v
+}
 
 type Session struct {
 	mu      sync.Mutex
@@ -81,13 +103,22 @@ func (s *Session) Close() {
 	}
 }
 
-func (s *Session) Send(header core.IHeader, payload []byte) error {
+func (s *Session) Send(hdr core.IHeader, payload []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conn == nil {
 		return fmt.Errorf("尚未连接")
 	}
-	frame, err := s.codec.Encode(header, payload)
+	if hdr == nil {
+		return errors.New("header is required")
+	}
+	if hdr.GetHopLimit() == 0 {
+		hdr.WithHopLimit(header.DefaultHopLimit)
+	}
+	if hdr.GetTraceID() == 0 {
+		hdr.WithTraceID(nextTraceID())
+	}
+	frame, err := s.codec.Encode(hdr, payload)
 	if err != nil {
 		return err
 	}
