@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/yttydcs/myflowhub-server/protocol/varstore"
+	"github.com/yttydcs/myflowhub-proto/protocol/varstore"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"

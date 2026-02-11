@@ -20,7 +20,7 @@ import (
 
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
-	protocol "github.com/yttydcs/myflowhub-server/protocol/file"
+	protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
 )
@@ -2061,27 +2061,27 @@ func (s *FileService) snapshotTasks() []FileTaskView {
 		}
 		task.mu.Lock()
 		view := FileTaskView{
-			TaskID:    fileUUIDToString(task.taskID),
-			SessionID: "",
-			CreatedAt: task.createdAt.Format(time.RFC3339),
-			UpdatedAt: task.updatedAt.Format(time.RFC3339),
-			Op:        task.op,
-			Direction: task.direction,
-			Status:    task.status,
-			LastError: task.lastError,
-			Provider:  task.provider,
-			Consumer:  task.consumer,
-			Peer:      task.peer,
-			Dir:       task.dir,
-			Name:      task.name,
-			Size:      task.size,
-			Sha256:    task.sha256,
-			WantHash:  task.wantHash,
-			LocalDir:  task.localDir,
-			LocalName: task.localName,
-			LocalPath: task.localPath,
-			FilePath:  task.filePath,
-			SentBytes: task.sentBytes,
+			TaskID:     fileUUIDToString(task.taskID),
+			SessionID:  "",
+			CreatedAt:  task.createdAt.Format(time.RFC3339),
+			UpdatedAt:  task.updatedAt.Format(time.RFC3339),
+			Op:         task.op,
+			Direction:  task.direction,
+			Status:     task.status,
+			LastError:  task.lastError,
+			Provider:   task.provider,
+			Consumer:   task.consumer,
+			Peer:       task.peer,
+			Dir:        task.dir,
+			Name:       task.name,
+			Size:       task.size,
+			Sha256:     task.sha256,
+			WantHash:   task.wantHash,
+			LocalDir:   task.localDir,
+			LocalName:  task.localName,
+			LocalPath:  task.localPath,
+			FilePath:   task.filePath,
+			SentBytes:  task.sentBytes,
 			AckedBytes: task.ackedBytes,
 			DoneBytes:  task.doneBytes,
 		}

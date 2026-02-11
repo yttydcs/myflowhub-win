@@ -12,7 +12,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
-	protocolfile "github.com/yttydcs/myflowhub-server/protocol/file"
+	protocolfile "github.com/yttydcs/myflowhub-proto/protocol/file"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	winsession "github.com/yttydcs/myflowhub-win/internal/session"
 )

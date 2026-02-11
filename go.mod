@@ -7,6 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/yttydcs/myflowhub-core v0.1.0
+	github.com/yttydcs/myflowhub-proto v0.0.0
 )
 
 require (
@@ -33,7 +34,6 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	github.com/yttydcs/myflowhub-server v0.0.0
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
@@ -42,4 +42,4 @@ require (
 
 replace github.com/yttydcs/myflowhub-core => ../MyFlowHub-Core
 
-replace github.com/yttydcs/myflowhub-server => ../MyFlowHub-Server
+replace github.com/yttydcs/myflowhub-proto => ../MyFlowHub-Proto

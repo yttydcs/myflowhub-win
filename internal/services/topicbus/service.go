@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yttydcs/myflowhub-server/protocol/topicbus"
+	"github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"

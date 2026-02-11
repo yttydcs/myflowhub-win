@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/protocol/topicbus"
+	"github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
 )
 

@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/yttydcs/myflowhub-core/eventbus"
-	protocol "github.com/yttydcs/myflowhub-server/protocol/file"
+	protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
@@ -24,8 +24,8 @@ type FileService struct {
 	localNode uint32
 	hubID     uint32
 
-	state      *fileState
-	busTokens  []busToken
+	state     *fileState
+	busTokens []busToken
 }
 
 func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, store *storage.Store, bus eventbus.IBus) *FileService {
