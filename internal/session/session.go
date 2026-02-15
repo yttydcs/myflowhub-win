@@ -2,12 +2,15 @@ package session
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 	sdksession "github.com/yttydcs/myflowhub-sdk/session"
 )
+
+var ErrSessionNotInitialized = errors.New("session not initialized")
 
 type Session struct {
 	sess *sdksession.Session
@@ -19,7 +22,7 @@ func New(ctx context.Context, onFrame func(core.IHeader, []byte), onError func(e
 
 func (s *Session) Connect(addr string) error {
 	if s == nil || s.sess == nil {
-		return sdksession.ErrNotConnected
+		return ErrSessionNotInitialized
 	}
 	return s.sess.Connect(addr)
 }
@@ -47,7 +50,7 @@ func (s *Session) Close() {
 
 func (s *Session) Send(hdr core.IHeader, payload []byte) error {
 	if s == nil || s.sess == nil {
-		return sdksession.ErrNotConnected
+		return ErrSessionNotInitialized
 	}
 	// 兼容：保留 Win 侧显式补齐逻辑，但底层实际由 SDK 统一处理。
 	if hdr != nil {
