@@ -1,10 +1,6 @@
 package transport
 
-import (
-	"encoding/json"
-	"errors"
-	"strings"
-)
+import sdktransport "github.com/yttydcs/myflowhub-sdk/transport"
 
 type Message struct {
 	Action string `json:"action"`
@@ -12,8 +8,5 @@ type Message struct {
 }
 
 func EncodeMessage(action string, data any) ([]byte, error) {
-	if strings.TrimSpace(action) == "" {
-		return nil, errors.New("action is required")
-	}
-	return json.Marshal(Message{Action: action, Data: data})
+	return sdktransport.EncodeMessage(action, data)
 }
