@@ -18,6 +18,7 @@
   - resp 业务判定规则（`varstore.VarResp`）：
     - `code == 1` 视为成功，返回 `nil`
     - `code != 1` 视为失败，返回 `error`（优先 `msg`，否则携带 `code`）
+  - 实现细节：`sendAndAwait` 内部预先 `TrimSpace` action/name，减少重复处理（不影响 wire 行为）。
 
 ## Plan.md 任务映射
 - VPA1：VarPool：动作改为 send+await
@@ -53,4 +54,3 @@
   - 若服务端响应 action 不匹配或未继承 MsgID，可能导致 await 超时（调用方可见）。
 - 回滚：
   - 回退本 PR 提交（恢复为 fire-and-forget 的 `SendCommand`）。
-
