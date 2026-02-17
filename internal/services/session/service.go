@@ -173,16 +173,11 @@ func (s *SessionService) SendCommandAndAwait(ctx context.Context, subProto uint8
 		ctx = context.Background()
 	}
 
-	msgID := uint32(time.Now().UnixNano())
-	if msgID == 0 {
-		msgID = 1
-	}
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(subProto).
 		WithSourceID(sourceID).
 		WithTargetID(targetID).
-		WithMsgID(msgID).
 		WithTimestamp(uint32(time.Now().Unix()))
 
 	// 不持锁等待：避免长时间占用 mu，影响 Close/Connect 等操作。
@@ -196,8 +191,8 @@ func (s *SessionService) SendCommandAndAwait(ctx context.Context, subProto uint8
 	if s.logs != nil {
 		trimmed, truncated := trimPayload(payload, logPayloadLimit)
 		s.logs.AppendPayload("info",
-			fmt.Sprintf("[TX] major=%d sub=%d src=%d tgt=%d msg=%d len=%d",
-				hdr.Major(), hdr.SubProto(), hdr.SourceID(), hdr.TargetID(), hdr.GetMsgID(), len(payload)),
+			fmt.Sprintf("[TX] major=%d sub=%d src=%d tgt=%d len=%d",
+				hdr.Major(), hdr.SubProto(), hdr.SourceID(), hdr.TargetID(), len(payload)),
 			trimmed,
 			len(payload),
 			truncated,
