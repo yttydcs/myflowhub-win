@@ -163,9 +163,12 @@ func (s *VarPoolService) sendAndAwait(ctx context.Context, sourceID, targetID ui
 	if s.session == nil {
 		return errors.New("session service not initialized")
 	}
+	trimmedAction := strings.TrimSpace(reqAction)
+	trimmedName := strings.TrimSpace(name)
+
 	resp, err := s.session.SendCommandAndAwait(ctx, varstore.SubProtoVarStore, sourceID, targetID, payload, respAction)
 	if err != nil {
-		return fmt.Errorf("varpool %s await: %w", strings.TrimSpace(reqAction), err)
+		return fmt.Errorf("varpool %s await: %w", trimmedAction, err)
 	}
 
 	var out varstore.VarResp
@@ -177,13 +180,13 @@ func (s *VarPoolService) sendAndAwait(ctx context.Context, sourceID, targetID ui
 		if msg != "" {
 			return fmt.Errorf("%s (code=%d)", msg, out.Code)
 		}
-		return fmt.Errorf("varpool %s failed (code=%d)", strings.TrimSpace(reqAction), out.Code)
+		return fmt.Errorf("varpool %s failed (code=%d)", trimmedAction, out.Code)
 	}
 	if s.logs != nil {
-		if strings.TrimSpace(name) != "" {
-			s.logs.Appendf("info", "varpool %s ok name=%s", strings.TrimSpace(reqAction), strings.TrimSpace(name))
+		if trimmedName != "" {
+			s.logs.Appendf("info", "varpool %s ok name=%s", trimmedAction, trimmedName)
 		} else {
-			s.logs.Appendf("info", "varpool %s ok", strings.TrimSpace(reqAction))
+			s.logs.Appendf("info", "varpool %s ok", trimmedAction)
 		}
 	}
 	return nil
