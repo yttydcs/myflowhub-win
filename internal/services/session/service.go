@@ -12,6 +12,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
+	sdkawait "github.com/yttydcs/myflowhub-sdk/await"
 	protocolfile "github.com/yttydcs/myflowhub-proto/protocol/file"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	winsession "github.com/yttydcs/myflowhub-win/internal/session"
@@ -162,6 +163,48 @@ func (s *SessionService) SendCommand(subProto uint8, sourceID, targetID uint32, 
 		)
 	}
 	return nil
+}
+
+func (s *SessionService) SendCommandAndAwait(ctx context.Context, subProto uint8, sourceID, targetID uint32, payload []byte, expectAction string) (sdkawait.Response, error) {
+	if subProto == 0 {
+		return sdkawait.Response{}, errors.New("subProto is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	msgID := uint32(time.Now().UnixNano())
+	if msgID == 0 {
+		msgID = 1
+	}
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(subProto).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
+		WithMsgID(msgID).
+		WithTimestamp(uint32(time.Now().Unix()))
+
+	// 不持锁等待：避免长时间占用 mu，影响 Close/Connect 等操作。
+	s.mu.Lock()
+	sess := s.sess
+	s.mu.Unlock()
+	if sess == nil {
+		return sdkawait.Response{}, errors.New("session not initialized")
+	}
+
+	if s.logs != nil {
+		trimmed, truncated := trimPayload(payload, logPayloadLimit)
+		s.logs.AppendPayload("info",
+			fmt.Sprintf("[TX] major=%d sub=%d src=%d tgt=%d msg=%d len=%d",
+				hdr.Major(), hdr.SubProto(), hdr.SourceID(), hdr.TargetID(), hdr.GetMsgID(), len(payload)),
+			trimmed,
+			len(payload),
+			truncated,
+		)
+	}
+
+	return sess.SendAndAwait(ctx, hdr, payload, expectAction)
 }
 
 func (s *SessionService) handleFrame(hdr core.IHeader, payload []byte) {

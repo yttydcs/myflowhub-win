@@ -7,24 +7,28 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
-	sdksession "github.com/yttydcs/myflowhub-sdk/session"
+	sdkawait "github.com/yttydcs/myflowhub-sdk/await"
 )
 
 var ErrSessionNotInitialized = errors.New("session not initialized")
 
 type Session struct {
-	sess *sdksession.Session
+	client *sdkawait.Client
 }
 
 func New(ctx context.Context, onFrame func(core.IHeader, []byte), onError func(error)) *Session {
-	return &Session{sess: sdksession.New(ctx, onFrame, onError)}
+	c := sdkawait.NewClient(ctx, nil, onError)
+	if onFrame != nil {
+		c.SetOnFrame(onFrame)
+	}
+	return &Session{client: c}
 }
 
 func (s *Session) Connect(addr string) error {
-	if s == nil || s.sess == nil {
+	if s == nil || s.client == nil {
 		return ErrSessionNotInitialized
 	}
-	return s.sess.Connect(addr)
+	return s.client.Connect(addr)
 }
 
 func (s *Session) Login(nodeName string) error {
@@ -42,14 +46,14 @@ func (s *Session) Login(nodeName string) error {
 }
 
 func (s *Session) Close() {
-	if s == nil || s.sess == nil {
+	if s == nil || s.client == nil {
 		return
 	}
-	s.sess.Close()
+	s.client.Close()
 }
 
 func (s *Session) Send(hdr core.IHeader, payload []byte) error {
-	if s == nil || s.sess == nil {
+	if s == nil || s.client == nil {
 		return ErrSessionNotInitialized
 	}
 	// 兼容：保留 Win 侧显式补齐逻辑，但底层实际由 SDK 统一处理。
@@ -58,5 +62,12 @@ func (s *Session) Send(hdr core.IHeader, payload []byte) error {
 			hdr.WithHopLimit(header.DefaultHopLimit)
 		}
 	}
-	return s.sess.Send(hdr, payload)
+	return s.client.Send(hdr, payload)
+}
+
+func (s *Session) SendAndAwait(ctx context.Context, hdr core.IHeader, payload []byte, expectAction string) (sdkawait.Response, error) {
+	if s == nil || s.client == nil {
+		return sdkawait.Response{}, ErrSessionNotInitialized
+	}
+	return s.client.SendAndAwait(ctx, hdr, payload, expectAction)
 }
