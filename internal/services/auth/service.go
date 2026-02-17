@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +18,8 @@ import (
 )
 
 const defaultNodeKeysPath = "config/node_keys.json"
+
+const defaultAuthTimeout = 8 * time.Second
 
 type AuthService struct {
 	session  *sessionsvc.SessionService
@@ -83,15 +87,19 @@ func (s *AuthService) Register(ctx context.Context, sourceID, targetID uint32, d
 	if err != nil {
 		return err
 	}
-	if err := s.send(ctx, sourceID, targetID, payload); err != nil {
+	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionRegisterResp)
+	if err != nil {
+		s.logs.Appendf("warn", "auth register failed device=%s: %v", deviceID, err)
 		return err
 	}
-	s.logs.Appendf("info", "auth register sent device=%s", deviceID)
+	s.logs.Appendf("info", "auth register ok device=%s node=%d hub=%d role=%s", deviceID, resp.NodeID, resp.HubID, resp.Role)
 	return nil
 }
 
 func (s *AuthService) RegisterSimple(sourceID, targetID uint32, deviceID string) error {
-	return s.Register(context.Background(), sourceID, targetID, deviceID)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
+	defer cancel()
+	return s.Register(ctx, sourceID, targetID, deviceID)
 }
 
 func (s *AuthService) Login(ctx context.Context, sourceID, targetID uint32, deviceID string, nodeID uint32) error {
@@ -110,15 +118,19 @@ func (s *AuthService) Login(ctx context.Context, sourceID, targetID uint32, devi
 	if err != nil {
 		return err
 	}
-	if err := s.send(ctx, sourceID, targetID, payload); err != nil {
+	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionLoginResp)
+	if err != nil {
+		s.logs.Appendf("warn", "auth login failed device=%s node=%d: %v", deviceID, nodeID, err)
 		return err
 	}
-	s.logs.Appendf("info", "auth login sent device=%s node=%d", deviceID, nodeID)
+	s.logs.Appendf("info", "auth login ok device=%s node=%d hub=%d role=%s", deviceID, resp.NodeID, resp.HubID, resp.Role)
 	return nil
 }
 
 func (s *AuthService) LoginSimple(sourceID, targetID uint32, deviceID string, nodeID uint32) error {
-	return s.Login(context.Background(), sourceID, targetID, deviceID, nodeID)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
+	defer cancel()
+	return s.Login(ctx, sourceID, targetID, deviceID, nodeID)
 }
 
 func (s *AuthService) Send(ctx context.Context, sourceID, targetID uint32, action string, data any) error {
@@ -172,4 +184,26 @@ func (s *AuthService) send(_ context.Context, sourceID, targetID uint32, payload
 		return errors.New("session service not initialized")
 	}
 	return s.session.SendCommand(auth.SubProtoAuth, sourceID, targetID, payload)
+}
+
+func (s *AuthService) sendAndAwait(ctx context.Context, sourceID, targetID uint32, payload []byte, expectAction string) (auth.RespData, error) {
+	if s.session == nil {
+		return auth.RespData{}, errors.New("session service not initialized")
+	}
+	resp, err := s.session.SendCommandAndAwait(ctx, auth.SubProtoAuth, sourceID, targetID, payload, expectAction)
+	if err != nil {
+		return auth.RespData{}, err
+	}
+	var data auth.RespData
+	if err := json.Unmarshal(resp.Message.Data, &data); err != nil {
+		return auth.RespData{}, err
+	}
+	if data.Code != 1 {
+		msg := strings.TrimSpace(data.Msg)
+		if msg != "" {
+			return auth.RespData{}, fmt.Errorf("%s (code=%d)", msg, data.Code)
+		}
+		return auth.RespData{}, fmt.Errorf("auth failed (code=%d)", data.Code)
+	}
+	return data, nil
 }
