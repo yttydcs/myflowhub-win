@@ -10,17 +10,16 @@
    - `cd ../MyFlowHub-Server`
    - `go run ./cmd/hub_server`
 2) Start the app:
-   - `cd ../myflowhub-win_remove-fyne`
+   - `cd ../MyFlowHub-Win`
    - `wails dev`
-3) Smoke test (in the app Home page):
+3) Smoke test:
    - Address: `127.0.0.1:9000`
    - Device ID: any non-empty string (e.g. `dev-1`)
    - Click **Connect**
-   - Click **Register** (NodeID=0) or **Login** (if NodeID already assigned)
-   - Expect: status shows **Connected** and no obvious errors in Logs.
+   - Go to **Presets** → **Node Echo** → click **Send**
+   - Expect: toast shows success (e.g. “Node echo sent.”) and no obvious errors in Logs.
 
 ## Build (Windows)
-- `cd d:\project\MyFlowHub3\worktrees\myflowhub-win_remove-fyne`
 - `wails build -platform windows/amd64`
 
 Output:
