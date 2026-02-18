@@ -1,5 +1,4 @@
 import { reactive } from "vue"
-import { EventsOn } from "../../wailsjs/runtime/runtime"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -22,6 +21,30 @@ export type MgmtConfigEntry = {
   value: string
 }
 
+type MgmtNodeWire = {
+  node_id: number
+  has_children?: boolean
+}
+
+type MgmtListNodesResp = {
+  code: number
+  msg?: string
+  nodes?: MgmtNodeWire[]
+}
+
+type MgmtConfigListResp = {
+  code: number
+  msg?: string
+  keys?: string[]
+}
+
+type MgmtConfigResp = {
+  code: number
+  msg?: string
+  key?: string
+  value?: string
+}
+
 type MgmtState = {
   targetId: string
   selfNodeId: number
@@ -31,7 +54,6 @@ type MgmtState = {
   selectedNodeId: number
   configEntries: MgmtConfigEntry[]
   message: string
-  lastFrameAt: string
 }
 
 const state = reactive<MgmtState>({
@@ -42,43 +64,8 @@ const state = reactive<MgmtState>({
   nodes: [],
   selectedNodeId: 0,
   configEntries: [],
-  message: "",
-  lastFrameAt: ""
+  message: ""
 })
-
-let initialized = false
-
-const nowIso = () => new Date().toISOString()
-
-const toByteArray = (payload: any): Uint8Array | null => {
-  if (!payload) return null
-  if (payload instanceof Uint8Array) return payload
-  if (payload instanceof ArrayBuffer) return new Uint8Array(payload)
-  if (Array.isArray(payload)) return new Uint8Array(payload)
-  if (payload && typeof payload === "object" && Array.isArray(payload.data)) {
-    return new Uint8Array(payload.data)
-  }
-  return null
-}
-
-const decodePayloadText = (payload: any): string | null => {
-  const bytes = toByteArray(payload)
-  if (bytes) {
-    return new TextDecoder().decode(bytes)
-  }
-  if (typeof payload === "string") {
-    const trimmed = payload.trim()
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return payload
-    }
-    try {
-      return atob(trimmed)
-    } catch {
-      return payload
-    }
-  }
-  return null
-}
 
 const resolveTargetNode = () => {
   const raw = state.targetId.trim()
@@ -105,16 +92,78 @@ const ensureIdentity = () => {
   return { sourceID: state.selfNodeId, hubID: state.hubId }
 }
 
+const applyListResp = (resp: MgmtListNodesResp, mode: "direct" | "subtree") => {
+  const nodes = Array.isArray(resp?.nodes) ? resp.nodes : []
+  const list = nodes
+    .map((node) => ({
+      nodeId: Number(node?.node_id ?? 0),
+      hasChildren: Boolean(node?.has_children ?? false)
+    }))
+    .filter((node: MgmtNode) => node.nodeId > 0)
+    .sort((a: MgmtNode, b: MgmtNode) => a.nodeId - b.nodeId)
+  const target = Number.parseInt(state.targetId || "0", 10)
+  if (target && list.some((node) => node.nodeId === target)) {
+    const current = list.find((node) => node.nodeId === target)
+    const rest = list.filter((node) => node.nodeId !== target)
+    state.nodes = current ? [current, ...rest] : list
+  } else {
+    state.nodes = list
+  }
+  state.listMode = mode
+  state.message = mode === "direct" ? "Direct nodes loaded." : "Subtree loaded."
+}
+
+const applyConfigResp = (resp: MgmtConfigResp, fallbackKey: string) => {
+  const key = String(resp?.key ?? fallbackKey ?? "").trim()
+  if (!key) return
+  const value = String(resp?.value ?? "")
+  const idx = state.configEntries.findIndex((entry) => entry.key === key)
+  if (idx >= 0) {
+    state.configEntries[idx].value = value
+  } else {
+    state.configEntries.push({ key, value })
+  }
+}
+
 const listNodes = async () => {
   const { sourceID } = ensureIdentity()
   const targetID = resolveTargetNode()
-  await callMgmt("ListNodesSimple", sourceID, targetID)
+  const resp = await callMgmt<MgmtListNodesResp>("ListNodesSimple", sourceID, targetID)
+  applyListResp(resp, "direct")
 }
 
 const listSubtree = async () => {
   const { sourceID } = ensureIdentity()
   const targetID = resolveTargetNode()
-  await callMgmt("ListSubtreeSimple", sourceID, targetID)
+  const resp = await callMgmt<MgmtListNodesResp>("ListSubtreeSimple", sourceID, targetID)
+  applyListResp(resp, "subtree")
+}
+
+const loadConfigValue = async (sourceID: number, nodeId: number, key: string) => {
+  try {
+    const resp = await callMgmt<MgmtConfigResp>("ConfigGetSimple", sourceID, nodeId, key)
+    if (state.selectedNodeId !== nodeId) return
+    applyConfigResp(resp, key)
+  } catch {
+    // ignore per-key errors to keep UI responsive
+  }
+}
+
+const loadConfigKeys = async (sourceID: number, nodeId: number) => {
+  const resp = await callMgmt<MgmtConfigListResp>("ConfigListSimple", sourceID, nodeId)
+  if (state.selectedNodeId !== nodeId) return
+  const keys = Array.isArray(resp?.keys) ? resp.keys : []
+  state.configEntries = keys
+    .map((key) => String(key ?? "").trim())
+    .filter((key) => key)
+    .map((key) => ({ key, value: "" }))
+  if (!state.selfNodeId) {
+    return
+  }
+  const caller = state.selfNodeId
+  for (const entry of state.configEntries) {
+    void loadConfigValue(caller, nodeId, entry.key)
+  }
 }
 
 const selectNode = async (nodeId: number) => {
@@ -122,7 +171,7 @@ const selectNode = async (nodeId: number) => {
   state.configEntries = []
   if (!nodeId) return
   const { sourceID } = ensureIdentity()
-  await callMgmt("ConfigListSimple", sourceID, nodeId)
+  await loadConfigKeys(sourceID, nodeId)
 }
 
 const refreshConfig = async () => {
@@ -130,7 +179,8 @@ const refreshConfig = async () => {
     throw new Error("Select a node to load config.")
   }
   const { sourceID } = ensureIdentity()
-  await callMgmt("ConfigListSimple", sourceID, state.selectedNodeId)
+  const nodeId = state.selectedNodeId
+  await loadConfigKeys(sourceID, nodeId)
 }
 
 const setConfig = async (key: string, value: string) => {
@@ -142,159 +192,14 @@ const setConfig = async (key: string, value: string) => {
     throw new Error("Select a node to update config.")
   }
   const { sourceID } = ensureIdentity()
-  await callMgmt("ConfigSetSimple", sourceID, state.selectedNodeId, trimmed, value)
-}
-
-const handleListResp = (data: any, mode: "direct" | "subtree") => {
-  const code = Number(data?.code ?? 0)
-  const msg = String(data?.msg ?? "")
-  if (code !== 1) {
-    state.message = msg || "Management list failed."
-    return
-  }
-  const nodes = Array.isArray(data?.nodes) ? data.nodes : []
-  const list = nodes
-    .map((node: any) => ({
-      nodeId: Number(node?.node_id ?? 0),
-      hasChildren: Boolean(node?.has_children ?? false)
-    }))
-    .filter((node: MgmtNode) => node.nodeId > 0)
-    .sort((a: MgmtNode, b: MgmtNode) => a.nodeId - b.nodeId)
-  const target = Number.parseInt(state.targetId || "0", 10)
-  if (target && list.some((node) => node.nodeId === target)) {
-    const current = list.find((node) => node.nodeId === target)
-    const rest = list.filter((node) => node.nodeId !== target)
-    if (current) {
-      state.nodes = [current, ...rest]
-    } else {
-      state.nodes = list
-    }
-  } else {
-    state.nodes = list
-  }
-  state.listMode = mode
-  state.message = mode === "direct" ? "Direct nodes loaded." : "Subtree loaded."
-}
-
-const handleConfigListResp = (data: any, sourceID: number) => {
-  if (!state.selectedNodeId || sourceID !== state.selectedNodeId) {
-    return
-  }
-  const code = Number(data?.code ?? 0)
-  const msg = String(data?.msg ?? "")
-  if (code !== 1) {
-    state.message = msg || "Config list failed."
-    return
-  }
-  const keys = Array.isArray(data?.keys) ? data.keys : []
-  state.configEntries = keys
-    .map((key: any) => String(key ?? "").trim())
-    .filter((key: string) => key)
-    .map((key: string) => ({ key, value: "" }))
-  if (!state.selfNodeId) {
-    return
-  }
-  const caller = state.selfNodeId
-  for (const entry of state.configEntries) {
-    void callMgmt("ConfigGetSimple", caller, state.selectedNodeId, entry.key).catch(() => {})
-  }
-}
-
-const handleConfigGetResp = (data: any, sourceID: number) => {
-  if (!state.selectedNodeId || sourceID !== state.selectedNodeId) {
-    return
-  }
-  const code = Number(data?.code ?? 0)
-  if (code !== 1) {
-    return
-  }
-  const key = String(data?.key ?? "").trim()
-  if (!key) return
-  const value = String(data?.value ?? "")
-  const idx = state.configEntries.findIndex((entry) => entry.key === key)
-  if (idx >= 0) {
-    state.configEntries[idx].value = value
-  } else {
-    state.configEntries.push({ key, value })
-  }
-}
-
-const handleConfigSetResp = (data: any, sourceID: number) => {
-  if (!state.selectedNodeId || sourceID !== state.selectedNodeId) {
-    return
-  }
-  const code = Number(data?.code ?? 0)
-  const msg = String(data?.msg ?? "")
-  if (code !== 1) {
-    state.message = msg || "Config update failed."
-    return
-  }
-  const key = String(data?.key ?? "").trim()
-  if (!key) return
-  const value = String(data?.value ?? "")
-  const idx = state.configEntries.findIndex((entry) => entry.key === key)
-  if (idx >= 0) {
-    state.configEntries[idx].value = value
-  } else {
-    state.configEntries.push({ key, value })
-  }
+  const nodeId = state.selectedNodeId
+  const resp = await callMgmt<MgmtConfigResp>("ConfigSetSimple", sourceID, nodeId, trimmed, value)
+  if (state.selectedNodeId !== nodeId) return
+  applyConfigResp(resp, trimmed)
   state.message = "Config updated."
 }
 
-const handleFrame = (payload: any, sourceID: number) => {
-  const text = decodePayloadText(payload)
-  if (!text) return
-  let message: any
-  try {
-    message = JSON.parse(text)
-  } catch {
-    return
-  }
-  const action = String(message?.action ?? "").toLowerCase()
-  if (!action) return
-  let data: any = message?.data ?? {}
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data)
-    } catch {
-      data = {}
-    }
-  }
-  switch (action) {
-    case "list_nodes_resp":
-      handleListResp(data, "direct")
-      break
-    case "list_subtree_resp":
-      handleListResp(data, "subtree")
-      break
-    case "config_list_resp":
-      handleConfigListResp(data, sourceID)
-      break
-    case "config_get_resp":
-      handleConfigGetResp(data, sourceID)
-      break
-    case "config_set_resp":
-      handleConfigSetResp(data, sourceID)
-      break
-    default:
-      break
-  }
-}
-
-const ensureListeners = () => {
-  if (initialized) return
-  initialized = true
-  EventsOn("session.frame", (evt: any) => {
-    state.lastFrameAt = nowIso()
-    const subProto = Number(evt?.sub_proto ?? evt?.subProto ?? 0)
-    if (subProto !== 1) return
-    const sourceID = Number(evt?.source_id ?? evt?.sourceId ?? 0)
-    handleFrame(evt?.payload, sourceID)
-  })
-}
-
 export const useManagementStore = () => {
-  ensureListeners()
   return {
     state,
     listNodes,

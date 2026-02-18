@@ -25,103 +25,121 @@ func New(session *sessionsvc.SessionService, logsSvc *logs.LogService) *Manageme
 	return &ManagementService{session: session, logs: logsSvc}
 }
 
-func (s *ManagementService) NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) error {
+func (s *ManagementService) NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) (management.NodeEchoResp, error) {
 	message = strings.TrimSpace(message)
 	if message == "" {
-		return errors.New("message is required")
+		return management.NodeEchoResp{}, errors.New("message is required")
 	}
 	payload, err := transport.EncodeMessage(management.ActionNodeEcho, management.NodeEchoReq{Message: message})
 	if err != nil {
-		return err
+		return management.NodeEchoResp{}, err
 	}
 	var resp management.NodeEchoResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionNodeEcho, management.ActionNodeEchoResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionNodeEcho, management.ActionNodeEchoResp, &resp); err != nil {
+		return management.NodeEchoResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message string) error {
+func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message string) (management.NodeEchoResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.NodeEcho(ctx, sourceID, targetID, message)
 }
 
-func (s *ManagementService) ListNodes(ctx context.Context, sourceID, targetID uint32) error {
+func (s *ManagementService) ListNodes(ctx context.Context, sourceID, targetID uint32) (management.ListNodesResp, error) {
 	payload, err := transport.EncodeMessage(management.ActionListNodes, management.ListNodesReq{})
 	if err != nil {
-		return err
+		return management.ListNodesResp{}, err
 	}
 	var resp management.ListNodesResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionListNodes, management.ActionListNodesResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionListNodes, management.ActionListNodesResp, &resp); err != nil {
+		return management.ListNodesResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) ListNodesSimple(sourceID, targetID uint32) error {
+func (s *ManagementService) ListNodesSimple(sourceID, targetID uint32) (management.ListNodesResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.ListNodes(ctx, sourceID, targetID)
 }
 
-func (s *ManagementService) ListSubtree(ctx context.Context, sourceID, targetID uint32) error {
+func (s *ManagementService) ListSubtree(ctx context.Context, sourceID, targetID uint32) (management.ListSubtreeResp, error) {
 	payload, err := transport.EncodeMessage(management.ActionListSubtree, management.ListSubtreeReq{})
 	if err != nil {
-		return err
+		return management.ListSubtreeResp{}, err
 	}
 	var resp management.ListSubtreeResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionListSubtree, management.ActionListSubtreeResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionListSubtree, management.ActionListSubtreeResp, &resp); err != nil {
+		return management.ListSubtreeResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) ListSubtreeSimple(sourceID, targetID uint32) error {
+func (s *ManagementService) ListSubtreeSimple(sourceID, targetID uint32) (management.ListSubtreeResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.ListSubtree(ctx, sourceID, targetID)
 }
 
-func (s *ManagementService) ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) error {
+func (s *ManagementService) ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (management.ConfigResp, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return errors.New("key is required")
+		return management.ConfigResp{}, errors.New("key is required")
 	}
 	payload, err := transport.EncodeMessage(management.ActionConfigGet, management.ConfigGetReq{Key: key})
 	if err != nil {
-		return err
+		return management.ConfigResp{}, err
 	}
 	var resp management.ConfigResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigGet, management.ActionConfigGetResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigGet, management.ActionConfigGetResp, &resp); err != nil {
+		return management.ConfigResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) ConfigGetSimple(sourceID, targetID uint32, key string) error {
+func (s *ManagementService) ConfigGetSimple(sourceID, targetID uint32, key string) (management.ConfigResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.ConfigGet(ctx, sourceID, targetID, key)
 }
 
-func (s *ManagementService) ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) error {
+func (s *ManagementService) ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) (management.ConfigResp, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return errors.New("key is required")
+		return management.ConfigResp{}, errors.New("key is required")
 	}
 	payload, err := transport.EncodeMessage(management.ActionConfigSet, management.ConfigSetReq{Key: key, Value: value})
 	if err != nil {
-		return err
+		return management.ConfigResp{}, err
 	}
 	var resp management.ConfigResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigSet, management.ActionConfigSetResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigSet, management.ActionConfigSetResp, &resp); err != nil {
+		return management.ConfigResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) ConfigSetSimple(sourceID, targetID uint32, key, value string) error {
+func (s *ManagementService) ConfigSetSimple(sourceID, targetID uint32, key, value string) (management.ConfigResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.ConfigSet(ctx, sourceID, targetID, key, value)
 }
 
-func (s *ManagementService) ConfigList(ctx context.Context, sourceID, targetID uint32) error {
+func (s *ManagementService) ConfigList(ctx context.Context, sourceID, targetID uint32) (management.ConfigListResp, error) {
 	payload, err := transport.EncodeMessage(management.ActionConfigList, management.ConfigListReq{})
 	if err != nil {
-		return err
+		return management.ConfigListResp{}, err
 	}
 	var resp management.ConfigListResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigList, management.ActionConfigListResp, &resp)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionConfigList, management.ActionConfigListResp, &resp); err != nil {
+		return management.ConfigListResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *ManagementService) ConfigListSimple(sourceID, targetID uint32) error {
+func (s *ManagementService) ConfigListSimple(sourceID, targetID uint32) (management.ConfigListResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.ConfigList(ctx, sourceID, targetID)
@@ -154,19 +172,31 @@ func (s *ManagementService) sendAndAwait(ctx context.Context, sourceID, targetID
 	}
 	resp, err := s.session.SendCommandAndAwait(ctx, management.SubProtoManagement, sourceID, targetID, payload, respAction)
 	if err != nil {
-		return fmt.Errorf("management %s await: %w", strings.TrimSpace(reqAction), err)
+		if s.logs != nil {
+			s.logs.Appendf("error", "management %s await failed: %v", strings.TrimSpace(reqAction), err)
+		}
+		return fmt.Errorf("management %s: %w", strings.TrimSpace(reqAction), toUIError(err))
 	}
 	if out == nil {
 		return nil
 	}
 	if err := json.Unmarshal(resp.Message.Data, out); err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "management %s decode failed: %v", strings.TrimSpace(reqAction), err)
+		}
 		return err
 	}
 	code, msg := extractCodeMsg(out)
 	if code != 1 {
 		msg = strings.TrimSpace(msg)
 		if msg != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "management %s failed (code=%d msg=%q)", strings.TrimSpace(reqAction), code, msg)
+			}
 			return fmt.Errorf("%s (code=%d)", msg, code)
+		}
+		if s.logs != nil {
+			s.logs.Appendf("warn", "management %s failed (code=%d)", strings.TrimSpace(reqAction), code)
 		}
 		return fmt.Errorf("management %s failed (code=%d)", strings.TrimSpace(reqAction), code)
 	}
@@ -174,6 +204,27 @@ func (s *ManagementService) sendAndAwait(ctx context.Context, sourceID, targetID
 		s.logs.Appendf("info", "management %s ok", strings.TrimSpace(reqAction))
 	}
 	return nil
+}
+
+func toUIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("request timed out")
+	}
+	if errors.Is(err, context.Canceled) {
+		return errors.New("request canceled")
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "session not initialized"):
+		return errors.New("not connected")
+	case strings.Contains(msg, "connection") && strings.Contains(msg, "closed"):
+		return errors.New("connection closed")
+	default:
+		return err
+	}
 }
 
 func extractCodeMsg(v any) (int, string) {
