@@ -208,7 +208,15 @@ const requestList = async (nodeId: number, dir: string) => {
   state.listMessage = ""
   const sourceID = state.selfNodeId
   const hubID = state.hubId
-  await callFile("ListSimple", sourceID, hubID, target, normalizedDir, false)
+  try {
+    await callFile("ListSimple", sourceID, hubID, target, normalizedDir, false)
+  } catch (err: any) {
+    state.listing = false
+    state.entries = []
+    state.selected = null
+    const msg = String(err?.message ?? err ?? "error")
+    state.listMessage = `List failed: ${msg}`
+  }
 }
 
 const requestReadText = async (nodeId: number, dir: string, name: string) => {
@@ -275,7 +283,14 @@ const openPreview = async (nodeId: number, dir: string, name: string) => {
   state.previewText = ""
   state.previewInfo = ""
   state.previewTarget = { nodeId, dir, name }
-  await requestReadText(nodeId, dir, name)
+  try {
+    await requestReadText(nodeId, dir, name)
+  } catch (err: any) {
+    state.previewLoading = false
+    state.previewText = ""
+    const msg = String(err?.message ?? err ?? "error")
+    state.previewInfo = `Preview failed: ${msg}`
+  }
 }
 
 const closePreview = () => {

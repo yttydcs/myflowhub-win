@@ -2,9 +2,12 @@ package file
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
@@ -13,6 +16,8 @@ import (
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
 	"github.com/yttydcs/myflowhub-win/internal/storage"
 )
+
+const defaultFileTimeout = 8 * time.Second
 
 type FileService struct {
 	session *sessionsvc.SessionService
@@ -54,20 +59,24 @@ func (s *FileService) SetIdentity(nodeID, hubID uint32) {
 
 func (s *FileService) List(ctx context.Context, sourceID, hubID, targetID uint32, dir string, recursive bool) error {
 	req := protocol.ReadReq{Op: protocol.OpList, Target: targetID, Dir: strings.TrimSpace(dir), Recursive: recursive}
-	return s.Read(ctx, sourceID, hubID, req)
+	return s.readAndAwait(ctx, sourceID, hubID, req)
 }
 
 func (s *FileService) ListSimple(sourceID, hubID, targetID uint32, dir string, recursive bool) error {
-	return s.List(context.Background(), sourceID, hubID, targetID, dir, recursive)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFileTimeout)
+	defer cancel()
+	return s.List(ctx, sourceID, hubID, targetID, dir, recursive)
 }
 
 func (s *FileService) ReadText(ctx context.Context, sourceID, hubID, targetID uint32, dir, name string, maxBytes uint32) error {
 	req := protocol.ReadReq{Op: protocol.OpReadText, Target: targetID, Dir: strings.TrimSpace(dir), Name: strings.TrimSpace(name), MaxBytes: maxBytes}
-	return s.Read(ctx, sourceID, hubID, req)
+	return s.readAndAwait(ctx, sourceID, hubID, req)
 }
 
 func (s *FileService) ReadTextSimple(sourceID, hubID, targetID uint32, dir, name string, maxBytes uint32) error {
-	return s.ReadText(context.Background(), sourceID, hubID, targetID, dir, name, maxBytes)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFileTimeout)
+	defer cancel()
+	return s.ReadText(ctx, sourceID, hubID, targetID, dir, name, maxBytes)
 }
 
 func (s *FileService) Pull(ctx context.Context, sourceID, hubID uint32, req protocol.ReadReq) error {
@@ -106,6 +115,57 @@ func (s *FileService) Read(ctx context.Context, sourceID, hubID uint32, req prot
 		return err
 	}
 	return s.sendCtrl(ctx, sourceID, hubID, payload, "read", req.Op)
+}
+
+func (s *FileService) readAndAwait(ctx context.Context, sourceID, hubID uint32, req protocol.ReadReq) error {
+	if strings.TrimSpace(req.Op) == "" {
+		return errors.New("op is required")
+	}
+	if req.Target == 0 {
+		return errors.New("target is required")
+	}
+	if req.Target == sourceID {
+		return s.handleLocalRead(req)
+	}
+	if hubID == 0 {
+		return errors.New("hub_id is required")
+	}
+	if s.session == nil {
+		return errors.New("session service not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	payload, err := transport.EncodeMessage(protocol.ActionRead, req)
+	if err != nil {
+		return err
+	}
+	ctrlPayload := make([]byte, 1+len(payload))
+	ctrlPayload[0] = protocol.KindCtrl
+	copy(ctrlPayload[1:], payload)
+
+	resp, err := s.session.SendCommandAndAwait(ctx, protocol.SubProtoFile, sourceID, hubID, ctrlPayload, protocol.ActionReadResp)
+	if err != nil {
+		return fmt.Errorf("file read await: %w", err)
+	}
+
+	var out protocol.ReadResp
+	if err := json.Unmarshal(resp.Message.Data, &out); err != nil {
+		return err
+	}
+	if out.Code != 1 {
+		msg := strings.TrimSpace(out.Msg)
+		if msg != "" {
+			return fmt.Errorf("%s (code=%d)", msg, out.Code)
+		}
+		return fmt.Errorf("file read failed (code=%d)", out.Code)
+	}
+
+	if s.logs != nil {
+		s.logs.Appendf("info", "file read ok op=%s", strings.TrimSpace(req.Op))
+	}
+	return nil
 }
 
 func (s *FileService) Write(ctx context.Context, sourceID, hubID uint32, req protocol.WriteReq) error {

@@ -937,6 +937,13 @@ func (s *FileService) handleLocalRead(req protocol.ReadReq) error {
 			Dirs:   dirs,
 			Files:  files,
 		})
+		if code != 1 {
+			msg = strings.TrimSpace(msg)
+			if msg != "" {
+				return fmt.Errorf("%s (code=%d)", msg, code)
+			}
+			return fmt.Errorf("file list failed (code=%d)", code)
+		}
 	case protocol.OpReadText:
 		text, truncated, size, err := s.localReadText(req.Dir, req.Name, int(req.MaxBytes))
 		code := 1
@@ -955,6 +962,13 @@ func (s *FileService) handleLocalRead(req protocol.ReadReq) error {
 			Text:      text,
 			Truncated: truncated,
 		})
+		if code != 1 {
+			msg = strings.TrimSpace(msg)
+			if msg != "" {
+				return fmt.Errorf("%s (code=%d)", msg, code)
+			}
+			return fmt.Errorf("file read_text failed (code=%d)", code)
+		}
 	default:
 		return errors.New("unsupported op")
 	}
