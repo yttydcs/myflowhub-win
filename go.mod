@@ -6,9 +6,9 @@ toolchain go1.24.5
 
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
-	github.com/yttydcs/myflowhub-core v0.1.0
-	github.com/yttydcs/myflowhub-proto v0.0.0
-	github.com/yttydcs/myflowhub-sdk v0.0.0
+	github.com/yttydcs/myflowhub-core v0.2.0
+	github.com/yttydcs/myflowhub-proto v0.1.0
+	github.com/yttydcs/myflowhub-sdk v0.1.0
 )
 
 require (
@@ -40,9 +40,3 @@ require (
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 )
-
-replace github.com/yttydcs/myflowhub-core => ../MyFlowHub-Core
-
-replace github.com/yttydcs/myflowhub-proto => ../MyFlowHub-Proto
-
-replace github.com/yttydcs/myflowhub-sdk => ../MyFlowHub-SDK
