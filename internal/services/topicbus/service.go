@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	corebus "github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
@@ -19,98 +20,122 @@ const defaultTopicBusTimeout = 8 * time.Second
 type TopicBusService struct {
 	session *sessionsvc.SessionService
 	logs    *logs.LogService
+	bus     corebus.IBus
+
+	busTokens []busToken
 }
 
-func New(session *sessionsvc.SessionService, logsSvc *logs.LogService) *TopicBusService {
-	return &TopicBusService{session: session, logs: logsSvc}
+func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, bus corebus.IBus) *TopicBusService {
+	svc := &TopicBusService{session: session, logs: logsSvc, bus: bus}
+	svc.bindBus()
+	return svc
 }
 
-func (s *TopicBusService) Subscribe(ctx context.Context, sourceID, targetID uint32, topic string) error {
+func (s *TopicBusService) Close() {
+	s.unbindBus()
+}
+
+func (s *TopicBusService) Subscribe(ctx context.Context, sourceID, targetID uint32, topic string) (topicbus.Resp, error) {
 	topic = strings.TrimSpace(topic)
 	if topic == "" {
-		return errors.New("topic is required")
+		return topicbus.Resp{}, errors.New("topic is required")
 	}
 	payload, err := transport.EncodeMessage(topicbus.ActionSubscribe, topicbus.SubscribeReq{Topic: topic})
 	if err != nil {
-		return err
+		return topicbus.Resp{}, err
 	}
 	var resp topicbus.Resp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionSubscribe, topicbus.ActionSubscribeResp, &resp, topic)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionSubscribe, topicbus.ActionSubscribeResp, &resp, topic); err != nil {
+		return topicbus.Resp{}, err
+	}
+	return resp, nil
 }
 
-func (s *TopicBusService) SubscribeSimple(sourceID, targetID uint32, topic string) error {
+func (s *TopicBusService) SubscribeSimple(sourceID, targetID uint32, topic string) (topicbus.Resp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTopicBusTimeout)
 	defer cancel()
 	return s.Subscribe(ctx, sourceID, targetID, topic)
 }
 
-func (s *TopicBusService) SubscribeBatch(ctx context.Context, sourceID, targetID uint32, topics []string) error {
+func (s *TopicBusService) SubscribeBatch(ctx context.Context, sourceID, targetID uint32, topics []string) (topicbus.Resp, error) {
 	topics = normalizeTopics(topics)
 	if len(topics) == 0 {
-		return errors.New("topics are required")
+		return topicbus.Resp{}, errors.New("topics are required")
 	}
 	payload, err := transport.EncodeMessage(topicbus.ActionSubscribeBatch, topicbus.SubscribeBatchReq{Topics: topics})
 	if err != nil {
-		return err
+		return topicbus.Resp{}, err
 	}
 	var resp topicbus.Resp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionSubscribeBatch, topicbus.ActionSubscribeBatchResp, &resp, "")
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionSubscribeBatch, topicbus.ActionSubscribeBatchResp, &resp, ""); err != nil {
+		return topicbus.Resp{}, err
+	}
+	return resp, nil
 }
 
-func (s *TopicBusService) SubscribeBatchSimple(sourceID, targetID uint32, topics []string) error {
+func (s *TopicBusService) SubscribeBatchSimple(sourceID, targetID uint32, topics []string) (topicbus.Resp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTopicBusTimeout)
 	defer cancel()
 	return s.SubscribeBatch(ctx, sourceID, targetID, topics)
 }
 
-func (s *TopicBusService) Unsubscribe(ctx context.Context, sourceID, targetID uint32, topic string) error {
+func (s *TopicBusService) Unsubscribe(ctx context.Context, sourceID, targetID uint32, topic string) (topicbus.Resp, error) {
 	topic = strings.TrimSpace(topic)
 	if topic == "" {
-		return errors.New("topic is required")
+		return topicbus.Resp{}, errors.New("topic is required")
 	}
 	payload, err := transport.EncodeMessage(topicbus.ActionUnsubscribe, topicbus.SubscribeReq{Topic: topic})
 	if err != nil {
-		return err
+		return topicbus.Resp{}, err
 	}
 	var resp topicbus.Resp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionUnsubscribe, topicbus.ActionUnsubscribeResp, &resp, topic)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionUnsubscribe, topicbus.ActionUnsubscribeResp, &resp, topic); err != nil {
+		return topicbus.Resp{}, err
+	}
+	return resp, nil
 }
 
-func (s *TopicBusService) UnsubscribeSimple(sourceID, targetID uint32, topic string) error {
+func (s *TopicBusService) UnsubscribeSimple(sourceID, targetID uint32, topic string) (topicbus.Resp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTopicBusTimeout)
 	defer cancel()
 	return s.Unsubscribe(ctx, sourceID, targetID, topic)
 }
 
-func (s *TopicBusService) UnsubscribeBatch(ctx context.Context, sourceID, targetID uint32, topics []string) error {
+func (s *TopicBusService) UnsubscribeBatch(ctx context.Context, sourceID, targetID uint32, topics []string) (topicbus.Resp, error) {
 	topics = normalizeTopics(topics)
 	if len(topics) == 0 {
-		return errors.New("topics are required")
+		return topicbus.Resp{}, errors.New("topics are required")
 	}
 	payload, err := transport.EncodeMessage(topicbus.ActionUnsubscribeBatch, topicbus.SubscribeBatchReq{Topics: topics})
 	if err != nil {
-		return err
+		return topicbus.Resp{}, err
 	}
 	var resp topicbus.Resp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionUnsubscribeBatch, topicbus.ActionUnsubscribeBatchResp, &resp, "")
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionUnsubscribeBatch, topicbus.ActionUnsubscribeBatchResp, &resp, ""); err != nil {
+		return topicbus.Resp{}, err
+	}
+	return resp, nil
 }
 
-func (s *TopicBusService) UnsubscribeBatchSimple(sourceID, targetID uint32, topics []string) error {
+func (s *TopicBusService) UnsubscribeBatchSimple(sourceID, targetID uint32, topics []string) (topicbus.Resp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTopicBusTimeout)
 	defer cancel()
 	return s.UnsubscribeBatch(ctx, sourceID, targetID, topics)
 }
 
-func (s *TopicBusService) ListSubs(ctx context.Context, sourceID, targetID uint32) error {
+func (s *TopicBusService) ListSubs(ctx context.Context, sourceID, targetID uint32) (topicbus.ListResp, error) {
 	payload, err := transport.EncodeMessage(topicbus.ActionListSubs, map[string]any{})
 	if err != nil {
-		return err
+		return topicbus.ListResp{}, err
 	}
 	var resp topicbus.ListResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionListSubs, topicbus.ActionListSubsResp, &resp, "")
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, topicbus.ActionListSubs, topicbus.ActionListSubsResp, &resp, ""); err != nil {
+		return topicbus.ListResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *TopicBusService) ListSubsSimple(sourceID, targetID uint32) error {
+func (s *TopicBusService) ListSubsSimple(sourceID, targetID uint32) (topicbus.ListResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTopicBusTimeout)
 	defer cancel()
 	return s.ListSubs(ctx, sourceID, targetID)
@@ -184,17 +209,29 @@ func (s *TopicBusService) sendAndAwait(ctx context.Context, sourceID, targetID u
 
 	resp, err := s.session.SendCommandAndAwait(ctx, topicbus.SubProtoTopicBus, sourceID, targetID, payload, respAction)
 	if err != nil {
-		return fmt.Errorf("topicbus %s await: %w", trimmedAction, err)
+		if s.logs != nil {
+			s.logs.Appendf("error", "topicbus %s await failed: %v", trimmedAction, err)
+		}
+		return fmt.Errorf("topicbus %s: %w", trimmedAction, toUIError(err))
 	}
 
 	if err := json.Unmarshal(resp.Message.Data, out); err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "topicbus %s decode failed: %v", trimmedAction, err)
+		}
 		return err
 	}
 	code, msg := extractCodeMsg(out)
 	if code != 1 {
 		msg = strings.TrimSpace(msg)
 		if msg != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "topicbus %s failed (code=%d msg=%q)", trimmedAction, code, msg)
+			}
 			return fmt.Errorf("%s (code=%d)", msg, code)
+		}
+		if s.logs != nil {
+			s.logs.Appendf("warn", "topicbus %s failed (code=%d)", trimmedAction, code)
 		}
 		return fmt.Errorf("topicbus %s failed (code=%d)", trimmedAction, code)
 	}
@@ -207,6 +244,27 @@ func (s *TopicBusService) sendAndAwait(ctx context.Context, sourceID, targetID u
 		}
 	}
 	return nil
+}
+
+func toUIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("request timed out")
+	}
+	if errors.Is(err, context.Canceled) {
+		return errors.New("request canceled")
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "session not initialized"):
+		return errors.New("not connected")
+	case strings.Contains(msg, "connection") && strings.Contains(msg, "closed"):
+		return errors.New("connection closed")
+	default:
+		return err
+	}
 }
 
 func extractCodeMsg(v any) (int, string) {

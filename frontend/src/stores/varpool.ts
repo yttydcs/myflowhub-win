@@ -65,36 +65,6 @@ const normalizeKey = (key: VarPoolKey): VarPoolKey => ({
   owner: Number(key.owner ?? 0) || 0
 })
 
-const toByteArray = (payload: any): Uint8Array | null => {
-  if (!payload) return null
-  if (payload instanceof Uint8Array) return payload
-  if (payload instanceof ArrayBuffer) return new Uint8Array(payload)
-  if (Array.isArray(payload)) return new Uint8Array(payload)
-  if (payload && typeof payload === "object" && Array.isArray(payload.data)) {
-    return new Uint8Array(payload.data)
-  }
-  return null
-}
-
-const decodePayloadText = (payload: any): string | null => {
-  const bytes = toByteArray(payload)
-  if (bytes) {
-    return new TextDecoder().decode(bytes)
-  }
-  if (typeof payload === "string") {
-    const trimmed = payload.trim()
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return payload
-    }
-    try {
-      return atob(trimmed)
-    } catch {
-      return payload
-    }
-  }
-  return null
-}
-
 const normalizeKeys = (keys: VarPoolKey[]) => {
   const out: VarPoolKey[] = []
   for (const raw of keys) {
@@ -235,7 +205,8 @@ const ensureSourceID = () => {
 const listMine = async () => {
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
-  await callVarPool("ListSimple", sourceID, targetID, { owner: sourceID })
+  const resp = parseResp(await callVarPool<any>("ListSimple", sourceID, targetID, { owner: sourceID }))
+  handleVarListResp(resp)
 }
 
 const getVar = async (input: VarPoolKey) => {
@@ -245,7 +216,8 @@ const getVar = async (input: VarPoolKey) => {
   const owner = key.owner || sourceID
   if (!key.name) throw new Error("Variable name is required.")
   if (!owner) throw new Error("Owner is required.")
-  await callVarPool("GetSimple", sourceID, targetID, { name: key.name, owner })
+  const resp = parseResp(await callVarPool<any>("GetSimple", sourceID, targetID, { name: key.name, owner }))
+  handleVarChanged(resp)
 }
 
 const setVar = async (input: VarPoolKey, value: string, visibility: string, kind = "string") => {
@@ -255,17 +227,19 @@ const setVar = async (input: VarPoolKey, value: string, visibility: string, kind
   const owner = key.owner || sourceID
   if (!key.name) throw new Error("Variable name is required.")
   if (!value.trim()) throw new Error("Variable value is required.")
-  await callVarPool("SetSimple", sourceID, targetID, {
+  const resp = parseResp(await callVarPool<any>("SetSimple", sourceID, targetID, {
     name: key.name,
     value,
     visibility: visibility || "public",
     type: kind,
     owner
+  }))
+  handleVarChanged({
+    ...resp,
+    value: resp.value || value,
+    visibility: resp.visibility || visibility || "public",
+    type: resp.type || kind
   })
-  updateValue(
-    { name: key.name, owner },
-    { value, owner, visibility: visibility || "public", kind }
-  )
 }
 
 const revokeVar = async (input: VarPoolKey) => {
@@ -275,7 +249,8 @@ const revokeVar = async (input: VarPoolKey) => {
   const owner = key.owner || sourceID
   if (!key.name) throw new Error("Variable name is required.")
   if (!owner) throw new Error("Owner is required.")
-  await callVarPool("RevokeSimple", sourceID, targetID, { name: key.name, owner })
+  const resp = parseResp(await callVarPool<any>("RevokeSimple", sourceID, targetID, { name: key.name, owner }))
+  handleVarRevokeResp("revoke_resp", resp)
 }
 
 const subscribeVar = async (input: VarPoolKey) => {
@@ -290,11 +265,12 @@ const subscribeVar = async (input: VarPoolKey) => {
   if (desiredKey.owner !== key.owner) {
     setDesiredSubscribe(key, true)
   }
-  await callVarPool("SubscribeSimple", sourceID, targetID, {
+  const resp = parseResp(await callVarPool<any>("SubscribeSimple", sourceID, targetID, {
     name: key.name,
     owner,
     subscriber: sourceID
-  })
+  }))
+  handleVarSubscribeResp(resp)
 }
 
 const unsubscribeVar = async (input: VarPoolKey) => {
@@ -384,10 +360,12 @@ const handleVarListResp = (resp: VarResp) => {
   for (const name of resp.names) {
     const trimmed = String(name).trim()
     if (!trimmed) continue
-    void callVarPool("GetSimple", state.selfNodeId, targetID, {
+    void callVarPool<any>("GetSimple", state.selfNodeId, targetID, {
       name: trimmed,
       owner: resp.owner
-    }).catch(() => {})
+    })
+      .then((raw) => handleVarChanged(parseResp(raw)))
+      .catch(() => {})
   }
 }
 
@@ -435,85 +413,16 @@ const handleVarDeleted = (resp: VarResp) => {
   removeLocalKey({ name, owner: resp.owner })
 }
 
-const handleFrame = (payload: any) => {
-  const text = decodePayloadText(payload)
-  if (!text) return
-  let message: any
-  try {
-    message = JSON.parse(text)
-  } catch {
-    return
-  }
-  const action = String(message?.action ?? "").toLowerCase()
-  if (!action) return
-  let data: any = message?.data ?? {}
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data)
-    } catch {
-      data = {}
-    }
-  }
-  const resp = parseResp(data)
-  switch (action) {
-    case "list_resp":
-    case "assist_list_resp":
-      handleVarListResp(resp)
-      break
-    case "get_resp":
-    case "assist_get_resp":
-    case "notify_set":
-    case "set_resp":
-    case "assist_set_resp": {
-      const name = resp.name.trim()
-      if (!name) return
-      if (
-        (action === "get_resp" ||
-          action === "assist_get_resp" ||
-          action === "set_resp" ||
-          action === "assist_set_resp") &&
-        resp.code !== 1
-      ) {
-        if (resp.owner && resp.owner === state.selfNodeId) {
-          removeLocalKey({ name, owner: resp.owner })
-        }
-        return
-      }
-      updateValue(
-        { name: resp.name, owner: resp.owner },
-        { value: resp.value, owner: resp.owner, visibility: resp.visibility, kind: resp.type }
-      )
-      break
-    }
-    case "revoke_resp":
-    case "assist_revoke_resp":
-    case "notify_revoke":
-      handleVarRevokeResp(action, resp)
-      break
-    case "subscribe_resp":
-    case "assist_subscribe_resp":
-      handleVarSubscribeResp(resp)
-      break
-    case "var_changed":
-      handleVarChanged(resp)
-      break
-    case "var_deleted":
-      handleVarDeleted(resp)
-      break
-    default:
-      break
-  }
-}
-
 const ensureListeners = () => {
   if (initialized) return
   initialized = true
-  EventsOn("session.frame", (evt: any) => {
+  EventsOn("varpool.changed", (evt: any) => {
     state.lastFrameAt = nowIso()
-    const subProto = Number(evt?.sub_proto ?? evt?.subProto ?? 0)
-    if (subProto === 3) {
-      handleFrame(evt?.payload)
-    }
+    handleVarChanged(parseResp(evt))
+  })
+  EventsOn("varpool.deleted", (evt: any) => {
+    state.lastFrameAt = nowIso()
+    handleVarDeleted(parseResp(evt))
   })
 }
 

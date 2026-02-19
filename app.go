@@ -62,8 +62,8 @@ func NewApp() *App {
 		logs:       logs,
 		session:    session,
 		auth:       authsvc.New(session, logs),
-		varpool:    varpoolsvc.New(session, logs),
-		topicbus:   topicbussvc.New(session, logs),
+		varpool:    varpoolsvc.New(session, logs, bus),
+		topicbus:   topicbussvc.New(session, logs, bus),
 		file:       filesvc.New(session, logs, store, bus),
 		flow:       flowsvc.New(session, logs),
 		management: mgmtsvc.New(session, logs),
@@ -93,6 +93,12 @@ func (a *App) Startup(ctx context.Context) {
 func (a *App) Shutdown(ctx context.Context) {
 	_ = ctx
 	a.unbridgeEvents()
+	if a.topicbus != nil {
+		a.topicbus.Close()
+	}
+	if a.varpool != nil {
+		a.varpool.Close()
+	}
 	if a.presets != nil {
 		a.presets.Close()
 	}
@@ -129,6 +135,9 @@ func (a *App) bridgeEvents() {
 	bind(filesvc.EventFileOffer)
 	bind(presetssvc.EventTopicStressSender)
 	bind(presetssvc.EventTopicStressReceiver)
+	bind(topicbussvc.EventTopicBusEvent)
+	bind(varpoolsvc.EventVarPoolChanged)
+	bind(varpoolsvc.EventVarPoolDeleted)
 }
 
 func (a *App) unbridgeEvents() {

@@ -59,36 +59,6 @@ let initialized = false
 
 const nowIso = () => new Date().toISOString()
 
-const toByteArray = (payload: any): Uint8Array | null => {
-  if (!payload) return null
-  if (payload instanceof Uint8Array) return payload
-  if (payload instanceof ArrayBuffer) return new Uint8Array(payload)
-  if (Array.isArray(payload)) return new Uint8Array(payload)
-  if (payload && typeof payload === "object" && Array.isArray(payload.data)) {
-    return new Uint8Array(payload.data)
-  }
-  return null
-}
-
-const decodePayloadText = (payload: any): string | null => {
-  const bytes = toByteArray(payload)
-  if (bytes) {
-    return new TextDecoder().decode(bytes)
-  }
-  if (typeof payload === "string") {
-    const trimmed = payload.trim()
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return payload
-    }
-    try {
-      return atob(trimmed)
-    } catch {
-      return payload
-    }
-  }
-  return null
-}
-
 const formatDetail = (input: any): string => {
   if (input === null || input === undefined) return ""
   if (typeof input === "string") {
@@ -190,30 +160,12 @@ const pushEvent = (ev: TopicBusEvent) => {
   scheduleFlush()
 }
 
-const handleFrame = (payload: any) => {
-  const text = decodePayloadText(payload)
-  if (!text) return
-  let message: any
-  try {
-    message = JSON.parse(text)
-  } catch {
-    return
-  }
-  const action = String(message?.action ?? "").toLowerCase()
-  if (action !== "publish") return
-  let data: any = message?.data ?? {}
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data)
-    } catch {
-      return
-    }
-  }
-  const topic = String(data?.topic ?? "").trim()
-  const name = String(data?.name ?? "").trim()
+const handleEvent = (evt: any) => {
+  const topic = String(evt?.topic ?? "").trim()
+  const name = String(evt?.name ?? "").trim()
   if (!topic || !name) return
-  const ts = Number(data?.ts ?? 0)
-  const dataRaw = formatDetail(typeof message?.data === "string" ? message.data : data)
+  const ts = Number(evt?.ts ?? 0)
+  const dataRaw = formatDetail(evt)
   pushEvent({ topic, name, ts, dataRaw })
 }
 
@@ -335,12 +287,9 @@ const setMaxEvents = async (value: number) => {
 const ensureListeners = () => {
   if (initialized) return
   initialized = true
-  EventsOn("session.frame", (evt: any) => {
+  EventsOn("topicbus.event", (evt: any) => {
     state.lastFrameAt = nowIso()
-    const subProto = Number(evt?.sub_proto ?? evt?.subProto ?? 0)
-    if (subProto === 4) {
-      handleFrame(evt?.payload)
-    }
+    handleEvent(evt)
   })
 }
 
