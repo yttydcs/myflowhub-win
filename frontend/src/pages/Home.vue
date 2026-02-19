@@ -57,6 +57,8 @@ const loginLabel = computed(() => (home.nodeId ? "Login" : "Register"))
 
 const formatId = (value: number) => (value > 0 ? String(value) : "-")
 
+const nowIso = () => new Date().toISOString()
+
 const syncStoreAuth = () => {
   sessionStore.auth.deviceId = home.deviceId
   sessionStore.auth.nodeId = home.nodeId
@@ -171,14 +173,38 @@ const loginOrRegister = async () => {
   try {
     await EnsureKeys()
     await persistHomeState({ deviceId })
-    if (home.nodeId) {
-      await LoginSimple(0, 0, deviceId, home.nodeId)
-    } else {
-      await RegisterSimple(0, 0, deviceId)
-    }
+    const isLogin = Boolean(home.nodeId)
+    const resp = isLogin
+      ? await LoginSimple(0, 0, deviceId, home.nodeId)
+      : await RegisterSimple(0, 0, deviceId)
+    const nodeId = Number(resp?.node_id ?? resp?.nodeId ?? 0)
+    const hubId = Number(resp?.hub_id ?? resp?.hubId ?? 0)
+    const role = String(resp?.role ?? "")
+    const authMsg = String(resp?.msg ?? "")
+
+    sessionStore.auth.lastAuthAction = isLogin ? "login_resp" : "register_resp"
+    sessionStore.auth.lastAuthMessage = authMsg || "OK"
+    sessionStore.auth.lastAuthAt = nowIso()
+    sessionStore.auth.loggedIn = true
+    sessionStore.auth.deviceId = deviceId
+    if (nodeId) sessionStore.auth.nodeId = nodeId
+    if (hubId) sessionStore.auth.hubId = hubId
+    if (role) sessionStore.auth.role = role
+
+    await persistHomeState({
+      deviceId,
+      nodeId: nodeId || home.nodeId,
+      hubId: hubId || home.hubId,
+      role: role || home.role
+    })
   } catch (err) {
     console.warn(err)
-    message.value = "Login/register failed."
+    const errMsg = (err as Error)?.message || String(err ?? "") || "Login/register failed."
+    message.value = errMsg
+    sessionStore.auth.lastAuthAction = home.nodeId ? "login_resp" : "register_resp"
+    sessionStore.auth.lastAuthMessage = errMsg
+    sessionStore.auth.lastAuthAt = nowIso()
+    sessionStore.auth.loggedIn = false
   } finally {
     authBusy.value = false
   }
@@ -225,23 +251,6 @@ watch(
     if (!connected) {
       sessionStore.auth.loggedIn = false
     }
-  }
-)
-
-watch(
-  () => sessionStore.auth.lastAuthAt,
-  () => {
-    if (!sessionStore.auth.lastAuthAt) return
-    home.deviceId = sessionStore.auth.deviceId || home.deviceId
-    home.nodeId = sessionStore.auth.nodeId || home.nodeId
-    home.hubId = sessionStore.auth.hubId || home.hubId
-    home.role = sessionStore.auth.role || home.role
-    void persistHomeState({
-      deviceId: home.deviceId,
-      nodeId: home.nodeId,
-      hubId: home.hubId,
-      role: home.role
-    })
   }
 )
 

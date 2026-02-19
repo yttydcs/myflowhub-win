@@ -70,14 +70,14 @@ func (s *AuthService) EnsureKeys() (string, error) {
 	return pub, nil
 }
 
-func (s *AuthService) Register(ctx context.Context, sourceID, targetID uint32, deviceID string) error {
+func (s *AuthService) Register(ctx context.Context, sourceID, targetID uint32, deviceID string) (auth.RespData, error) {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
-		return errors.New("device_id is required")
+		return auth.RespData{}, errors.New("device_id is required")
 	}
 	pub, err := s.EnsureKeys()
 	if err != nil {
-		return err
+		return auth.RespData{}, err
 	}
 	payload, err := transport.EncodeMessage(auth.ActionRegister, auth.RegisterData{
 		DeviceID: deviceID,
@@ -85,49 +85,49 @@ func (s *AuthService) Register(ctx context.Context, sourceID, targetID uint32, d
 		NodePub:  pub,
 	})
 	if err != nil {
-		return err
+		return auth.RespData{}, err
 	}
-	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionRegisterResp)
+	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionRegister, auth.ActionRegisterResp)
 	if err != nil {
 		s.logs.Appendf("warn", "auth register failed device=%s: %v", deviceID, err)
-		return err
+		return auth.RespData{}, err
 	}
 	s.logs.Appendf("info", "auth register ok device=%s node=%d hub=%d role=%s", deviceID, resp.NodeID, resp.HubID, resp.Role)
-	return nil
+	return resp, nil
 }
 
-func (s *AuthService) RegisterSimple(sourceID, targetID uint32, deviceID string) error {
+func (s *AuthService) RegisterSimple(sourceID, targetID uint32, deviceID string) (auth.RespData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
 	defer cancel()
 	return s.Register(ctx, sourceID, targetID, deviceID)
 }
 
-func (s *AuthService) Login(ctx context.Context, sourceID, targetID uint32, deviceID string, nodeID uint32) error {
+func (s *AuthService) Login(ctx context.Context, sourceID, targetID uint32, deviceID string, nodeID uint32) (auth.RespData, error) {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
-		return errors.New("device_id is required")
+		return auth.RespData{}, errors.New("device_id is required")
 	}
 	if nodeID == 0 {
-		return errors.New("node_id is required")
+		return auth.RespData{}, errors.New("node_id is required")
 	}
 	login, err := s.SignLogin(deviceID, nodeID)
 	if err != nil {
-		return err
+		return auth.RespData{}, err
 	}
 	payload, err := transport.EncodeMessage(auth.ActionLogin, login)
 	if err != nil {
-		return err
+		return auth.RespData{}, err
 	}
-	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionLoginResp)
+	resp, err := s.sendAndAwait(ctx, sourceID, targetID, payload, auth.ActionLogin, auth.ActionLoginResp)
 	if err != nil {
 		s.logs.Appendf("warn", "auth login failed device=%s node=%d: %v", deviceID, nodeID, err)
-		return err
+		return auth.RespData{}, err
 	}
 	s.logs.Appendf("info", "auth login ok device=%s node=%d hub=%d role=%s", deviceID, resp.NodeID, resp.HubID, resp.Role)
-	return nil
+	return resp, nil
 }
 
-func (s *AuthService) LoginSimple(sourceID, targetID uint32, deviceID string, nodeID uint32) error {
+func (s *AuthService) LoginSimple(sourceID, targetID uint32, deviceID string, nodeID uint32) (auth.RespData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
 	defer cancel()
 	return s.Login(ctx, sourceID, targetID, deviceID, nodeID)
@@ -186,24 +186,58 @@ func (s *AuthService) send(_ context.Context, sourceID, targetID uint32, payload
 	return s.session.SendCommand(auth.SubProtoAuth, sourceID, targetID, payload)
 }
 
-func (s *AuthService) sendAndAwait(ctx context.Context, sourceID, targetID uint32, payload []byte, expectAction string) (auth.RespData, error) {
+func (s *AuthService) sendAndAwait(ctx context.Context, sourceID, targetID uint32, payload []byte, reqAction, respAction string) (auth.RespData, error) {
 	if s.session == nil {
 		return auth.RespData{}, errors.New("session service not initialized")
 	}
-	resp, err := s.session.SendCommandAndAwait(ctx, auth.SubProtoAuth, sourceID, targetID, payload, expectAction)
+	trimmedAction := strings.TrimSpace(reqAction)
+	resp, err := s.session.SendCommandAndAwait(ctx, auth.SubProtoAuth, sourceID, targetID, payload, respAction)
 	if err != nil {
-		return auth.RespData{}, err
+		if s.logs != nil {
+			s.logs.Appendf("error", "auth %s await failed: %v", trimmedAction, err)
+		}
+		return auth.RespData{}, fmt.Errorf("auth %s: %w", trimmedAction, toUIError(err))
 	}
 	var data auth.RespData
 	if err := json.Unmarshal(resp.Message.Data, &data); err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "auth %s decode failed: %v", trimmedAction, err)
+		}
 		return auth.RespData{}, err
 	}
 	if data.Code != 1 {
 		msg := strings.TrimSpace(data.Msg)
 		if msg != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "auth %s failed (code=%d msg=%q)", trimmedAction, data.Code, msg)
+			}
 			return auth.RespData{}, fmt.Errorf("%s (code=%d)", msg, data.Code)
+		}
+		if s.logs != nil {
+			s.logs.Appendf("warn", "auth %s failed (code=%d)", trimmedAction, data.Code)
 		}
 		return auth.RespData{}, fmt.Errorf("auth failed (code=%d)", data.Code)
 	}
 	return data, nil
+}
+
+func toUIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("request timed out")
+	}
+	if errors.Is(err, context.Canceled) {
+		return errors.New("request canceled")
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "session not initialized"):
+		return errors.New("not connected")
+	case strings.Contains(msg, "connection") && strings.Contains(msg, "closed"):
+		return errors.New("connection closed")
+	default:
+		return err
+	}
 }

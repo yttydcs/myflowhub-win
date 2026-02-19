@@ -1,5 +1,4 @@
 import { reactive } from "vue"
-import { EventsOn } from "../../wailsjs/runtime/runtime"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -65,7 +64,6 @@ type FlowState = {
   statusRunId: string
   lastStatus: FlowStatus
   message: string
-  lastFrameAt: string
 }
 
 const state = reactive<FlowState>({
@@ -87,49 +85,14 @@ const state = reactive<FlowState>({
     executorNode: 0,
     nodes: []
   },
-  message: "",
-  lastFrameAt: ""
+  message: ""
 })
-
-let initialized = false
-
-const nowIso = () => new Date().toISOString()
 
 const newReqId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID()
   }
   return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
-}
-
-const toByteArray = (payload: any): Uint8Array | null => {
-  if (!payload) return null
-  if (payload instanceof Uint8Array) return payload
-  if (payload instanceof ArrayBuffer) return new Uint8Array(payload)
-  if (Array.isArray(payload)) return new Uint8Array(payload)
-  if (payload && typeof payload === "object" && Array.isArray(payload.data)) {
-    return new Uint8Array(payload.data)
-  }
-  return null
-}
-
-const decodePayloadText = (payload: any): string | null => {
-  const bytes = toByteArray(payload)
-  if (bytes) {
-    return new TextDecoder().decode(bytes)
-  }
-  if (typeof payload === "string") {
-    const trimmed = payload.trim()
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return payload
-    }
-    try {
-      return atob(trimmed)
-    } catch {
-      return payload
-    }
-  }
-  return null
 }
 
 const resolveTargetNode = () => {
@@ -344,7 +307,8 @@ const listFlows = async () => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
   const req = { req_id: newReqId(), origin_node: sourceID, executor_node: executorNode }
-  await callFlow("ListSimple", sourceID, hubID, req)
+  const resp = await callFlow<any>("ListSimple", sourceID, hubID, req)
+  handleListResp(resp)
 }
 
 const getFlow = async (flowId: string) => {
@@ -360,7 +324,8 @@ const getFlow = async (flowId: string) => {
     executor_node: executorNode,
     flow_id: trimmed
   }
-  await callFlow("GetSimple", sourceID, hubID, req)
+  const resp = await callFlow<any>("GetSimple", sourceID, hubID, req)
+  handleGetResp(resp)
 }
 
 const saveFlow = async () => {
@@ -384,7 +349,8 @@ const saveFlow = async () => {
     trigger: { type: "interval", every_ms: everyMs },
     graph
   }
-  await callFlow("SetSimple", sourceID, hubID, req)
+  const resp = await callFlow<any>("SetSimple", sourceID, hubID, req)
+  handleSetResp(resp)
 }
 
 const runFlow = async () => {
@@ -400,7 +366,8 @@ const runFlow = async () => {
     executor_node: executorNode,
     flow_id: flowId
   }
-  await callFlow("RunSimple", sourceID, hubID, req)
+  const resp = await callFlow<any>("RunSimple", sourceID, hubID, req)
+  handleRunResp(resp)
 }
 
 const statusFlow = async (runId?: string) => {
@@ -417,7 +384,8 @@ const statusFlow = async (runId?: string) => {
     flow_id: flowId,
     run_id: runId?.trim() || undefined
   }
-  await callFlow("StatusSimple", sourceID, hubID, req)
+  const resp = await callFlow<any>("StatusSimple", sourceID, hubID, req)
+  handleStatusResp(resp)
 }
 
 const handleListResp = (data: any) => {
@@ -506,59 +474,7 @@ const handleStatusResp = (data: any) => {
   state.message = "Status updated."
 }
 
-const handleFrame = (payload: any) => {
-  const text = decodePayloadText(payload)
-  if (!text) return
-  let message: any
-  try {
-    message = JSON.parse(text)
-  } catch {
-    return
-  }
-  const action = String(message?.action ?? "").toLowerCase()
-  if (!action) return
-  let data: any = message?.data ?? {}
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data)
-    } catch {
-      data = {}
-    }
-  }
-  switch (action) {
-    case "list_resp":
-      handleListResp(data)
-      break
-    case "get_resp":
-      handleGetResp(data)
-      break
-    case "set_resp":
-      handleSetResp(data)
-      break
-    case "run_resp":
-      handleRunResp(data)
-      break
-    case "status_resp":
-      handleStatusResp(data)
-      break
-    default:
-      break
-  }
-}
-
-const ensureListeners = () => {
-  if (initialized) return
-  initialized = true
-  EventsOn("session.frame", (evt: any) => {
-    state.lastFrameAt = nowIso()
-    const subProto = Number(evt?.sub_proto ?? evt?.subProto ?? 0)
-    if (subProto !== 6) return
-    handleFrame(evt?.payload)
-  })
-}
-
 export const useFlowStore = () => {
-  ensureListeners()
   return {
     state,
     addEdge,

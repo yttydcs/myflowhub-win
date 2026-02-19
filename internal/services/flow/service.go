@@ -25,103 +25,118 @@ func New(session *sessionsvc.SessionService, logsSvc *logs.LogService) *FlowServ
 	return &FlowService{session: session, logs: logsSvc}
 }
 
-func (s *FlowService) Set(ctx context.Context, sourceID, targetID uint32, req flow.SetReq) error {
+func (s *FlowService) Set(ctx context.Context, sourceID, targetID uint32, req flow.SetReq) (flow.SetResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return errors.New("req_id is required")
+		return flow.SetResp{}, errors.New("req_id is required")
 	}
 	if strings.TrimSpace(req.FlowID) == "" {
-		return errors.New("flow_id is required")
+		return flow.SetResp{}, errors.New("flow_id is required")
 	}
 	payload, err := transport.EncodeMessage(flow.ActionSet, req)
 	if err != nil {
-		return err
+		return flow.SetResp{}, err
 	}
 	var resp flow.SetResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionSet, flow.ActionSetResp, &resp, req.FlowID)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionSet, flow.ActionSetResp, &resp, req.FlowID); err != nil {
+		return flow.SetResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *FlowService) SetSimple(sourceID, targetID uint32, req flow.SetReq) error {
+func (s *FlowService) SetSimple(sourceID, targetID uint32, req flow.SetReq) (flow.SetResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Set(ctx, sourceID, targetID, req)
 }
 
-func (s *FlowService) Run(ctx context.Context, sourceID, targetID uint32, req flow.RunReq) error {
+func (s *FlowService) Run(ctx context.Context, sourceID, targetID uint32, req flow.RunReq) (flow.RunResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return errors.New("req_id is required")
+		return flow.RunResp{}, errors.New("req_id is required")
 	}
 	if strings.TrimSpace(req.FlowID) == "" {
-		return errors.New("flow_id is required")
+		return flow.RunResp{}, errors.New("flow_id is required")
 	}
 	payload, err := transport.EncodeMessage(flow.ActionRun, req)
 	if err != nil {
-		return err
+		return flow.RunResp{}, err
 	}
 	var resp flow.RunResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionRun, flow.ActionRunResp, &resp, req.FlowID)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionRun, flow.ActionRunResp, &resp, req.FlowID); err != nil {
+		return flow.RunResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *FlowService) RunSimple(sourceID, targetID uint32, req flow.RunReq) error {
+func (s *FlowService) RunSimple(sourceID, targetID uint32, req flow.RunReq) (flow.RunResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Run(ctx, sourceID, targetID, req)
 }
 
-func (s *FlowService) Status(ctx context.Context, sourceID, targetID uint32, req flow.StatusReq) error {
+func (s *FlowService) Status(ctx context.Context, sourceID, targetID uint32, req flow.StatusReq) (flow.StatusResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return errors.New("req_id is required")
+		return flow.StatusResp{}, errors.New("req_id is required")
 	}
 	if strings.TrimSpace(req.FlowID) == "" {
-		return errors.New("flow_id is required")
+		return flow.StatusResp{}, errors.New("flow_id is required")
 	}
 	payload, err := transport.EncodeMessage(flow.ActionStatus, req)
 	if err != nil {
-		return err
+		return flow.StatusResp{}, err
 	}
 	var resp flow.StatusResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionStatus, flow.ActionStatusResp, &resp, req.FlowID)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionStatus, flow.ActionStatusResp, &resp, req.FlowID); err != nil {
+		return flow.StatusResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *FlowService) StatusSimple(sourceID, targetID uint32, req flow.StatusReq) error {
+func (s *FlowService) StatusSimple(sourceID, targetID uint32, req flow.StatusReq) (flow.StatusResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Status(ctx, sourceID, targetID, req)
 }
 
-func (s *FlowService) List(ctx context.Context, sourceID, targetID uint32, req flow.ListReq) error {
+func (s *FlowService) List(ctx context.Context, sourceID, targetID uint32, req flow.ListReq) (flow.ListResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return errors.New("req_id is required")
+		return flow.ListResp{}, errors.New("req_id is required")
 	}
 	payload, err := transport.EncodeMessage(flow.ActionList, req)
 	if err != nil {
-		return err
+		return flow.ListResp{}, err
 	}
 	var resp flow.ListResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionList, flow.ActionListResp, &resp, "")
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionList, flow.ActionListResp, &resp, ""); err != nil {
+		return flow.ListResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *FlowService) ListSimple(sourceID, targetID uint32, req flow.ListReq) error {
+func (s *FlowService) ListSimple(sourceID, targetID uint32, req flow.ListReq) (flow.ListResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.List(ctx, sourceID, targetID, req)
 }
 
-func (s *FlowService) Get(ctx context.Context, sourceID, targetID uint32, req flow.GetReq) error {
+func (s *FlowService) Get(ctx context.Context, sourceID, targetID uint32, req flow.GetReq) (flow.GetResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return errors.New("req_id is required")
+		return flow.GetResp{}, errors.New("req_id is required")
 	}
 	if strings.TrimSpace(req.FlowID) == "" {
-		return errors.New("flow_id is required")
+		return flow.GetResp{}, errors.New("flow_id is required")
 	}
 	payload, err := transport.EncodeMessage(flow.ActionGet, req)
 	if err != nil {
-		return err
+		return flow.GetResp{}, err
 	}
 	var resp flow.GetResp
-	return s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionGet, flow.ActionGetResp, &resp, req.FlowID)
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionGet, flow.ActionGetResp, &resp, req.FlowID); err != nil {
+		return flow.GetResp{}, err
+	}
+	return resp, nil
 }
 
-func (s *FlowService) GetSimple(sourceID, targetID uint32, req flow.GetReq) error {
+func (s *FlowService) GetSimple(sourceID, targetID uint32, req flow.GetReq) (flow.GetResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Get(ctx, sourceID, targetID, req)
@@ -164,20 +179,35 @@ func (s *FlowService) sendAndAwait(ctx context.Context, sourceID, targetID uint3
 
 	resp, err := s.session.SendCommandAndAwait(ctx, flow.SubProtoFlow, sourceID, targetID, payload, respAction)
 	if err != nil {
-		return fmt.Errorf("flow %s await: %w", trimmedAction, err)
+		if s.logs != nil {
+			s.logs.Appendf("error", "flow %s await failed: %v", trimmedAction, err)
+		}
+		return fmt.Errorf("flow %s: %w", trimmedAction, toUIError(err))
 	}
 
 	if err := json.Unmarshal(resp.Message.Data, out); err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "flow %s decode failed: %v", trimmedAction, err)
+		}
 		return err
 	}
 	code, msg := extractCodeMsg(out)
 	if code != 1 {
 		msg = strings.TrimSpace(msg)
 		if msg != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "flow %s failed (code=%d msg=%q)", trimmedAction, code, msg)
+			}
 			return fmt.Errorf("%s (code=%d)", msg, code)
 		}
 		if trimmedFlowID != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "flow %s failed flow_id=%s (code=%d)", trimmedAction, trimmedFlowID, code)
+			}
 			return fmt.Errorf("flow %s failed flow_id=%s (code=%d)", trimmedAction, trimmedFlowID, code)
+		}
+		if s.logs != nil {
+			s.logs.Appendf("warn", "flow %s failed (code=%d)", trimmedAction, code)
 		}
 		return fmt.Errorf("flow %s failed (code=%d)", trimmedAction, code)
 	}
@@ -190,6 +220,27 @@ func (s *FlowService) sendAndAwait(ctx context.Context, sourceID, targetID uint3
 		}
 	}
 	return nil
+}
+
+func toUIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("request timed out")
+	}
+	if errors.Is(err, context.Canceled) {
+		return errors.New("request canceled")
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "session not initialized"):
+		return errors.New("not connected")
+	case strings.Contains(msg, "connection") && strings.Contains(msg, "closed"):
+		return errors.New("connection closed")
+	default:
+		return err
+	}
 }
 
 func extractCodeMsg(v any) (int, string) {
