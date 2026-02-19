@@ -241,7 +241,7 @@
 ### WINALL0 - 计划归档
 - 目标：保留上一轮 Management workflow 的 `plan.md`，避免覆盖丢失。
 - 涉及文件：
-  - `plan_archive_2026-02-19_win-mgmt-service.md`
+  - `docs/plan_archive/plan_archive_2026-02-19_win-mgmt-service.md`
 - 验收条件：归档文件可独立阅读复现上一轮结论。
 - 回滚点：删除该归档文件。
 
