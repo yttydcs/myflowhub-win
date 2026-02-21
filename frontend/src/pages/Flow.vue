@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue"
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useFlowStore } from "@/stores/flow"
@@ -25,6 +25,11 @@ const selectedEdge = computed(
   () => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null
 )
 
+const canUndo = computed(() => flowStore.state.historyIndex > 0)
+const canRedo = computed(
+  () => flowStore.state.historyIndex >= 0 && flowStore.state.historyIndex < flowStore.state.historyLength - 1
+)
+
 const refreshList = async () => {
   message.value = ""
   try {
@@ -48,6 +53,26 @@ const saveFlow = async () => {
     console.warn(err)
     message.value = (err as Error)?.message || "Failed to save flow."
   }
+}
+
+const autoLayout = () => {
+  message.value = ""
+  try {
+    flowStore.autoLayoutTB()
+  } catch (err) {
+    console.warn(err)
+    message.value = (err as Error)?.message || "Failed to auto layout."
+  }
+}
+
+const undo = () => {
+  message.value = ""
+  flowStore.undo()
+}
+
+const redo = () => {
+  message.value = ""
+  flowStore.redo()
 }
 
 const runFlow = async () => {
@@ -125,10 +150,57 @@ const onCanvasSelectEdge = (from: string, to: string) => {
 
 const onCanvasNodeMoved = (nodeId: string, x: number, y: number) => {
   flowStore.setNodePosition(nodeId, x, y)
+  flowStore.commitHistory()
 }
 
 const onCanvasClear = () => {
   flowStore.clearSelection()
+}
+
+const isEditableTarget = (target: EventTarget | null) => {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  if (el.isContentEditable) return true
+  const tag = el.tagName?.toLowerCase()
+  return tag === "input" || tag === "textarea" || tag === "select"
+}
+
+const onKeyDown = (event: KeyboardEvent) => {
+  if (addNodeOpen.value) return
+
+  const key = event.key || ""
+  const lower = key.toLowerCase()
+  const ctrl = event.ctrlKey || event.metaKey
+
+  if (ctrl && lower === "s") {
+    event.preventDefault()
+    void saveFlow()
+    return
+  }
+
+  const editable = isEditableTarget(event.target)
+  if (editable) return
+
+  if (key === "Delete") {
+    event.preventDefault()
+    if (flowStore.state.selectedEdgeIndex >= 0) {
+      flowStore.removeSelectedEdge()
+    } else if (flowStore.state.selectedNodeIndex >= 0) {
+      flowStore.removeSelectedNode()
+    }
+    return
+  }
+
+  if (ctrl && lower === "z" && !event.shiftKey) {
+    event.preventDefault()
+    flowStore.undo()
+    return
+  }
+
+  if (ctrl && (lower === "y" || (lower === "z" && event.shiftKey))) {
+    event.preventDefault()
+    flowStore.redo()
+  }
 }
 
 watch(
@@ -139,13 +211,12 @@ watch(
   { immediate: true }
 )
 
-onMounted(async () => {
-  try {
-    await refreshList()
-  } catch {
-    // handled in refreshList
-  }
+onMounted(() => {
+  void refreshList().catch(() => {})
+  window.addEventListener("keydown", onKeyDown)
 })
+
+onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
 </script>
 
 <template>
@@ -171,6 +242,9 @@ onMounted(async () => {
         </div>
         <Button variant="outline" size="sm" @click="refreshList">Refresh</Button>
         <Button variant="outline" size="sm" @click="startNew">New</Button>
+        <Button variant="outline" size="sm" :disabled="!canUndo" @click="undo">Undo</Button>
+        <Button variant="outline" size="sm" :disabled="!canRedo" @click="redo">Redo</Button>
+        <Button variant="outline" size="sm" @click="autoLayout">Auto Layout</Button>
         <Button size="sm" @click="saveFlow">Save</Button>
         <Button variant="outline" size="sm" @click="runFlow">Run</Button>
         <Button variant="outline" size="sm" @click="statusFlow">Status</Button>
@@ -271,6 +345,7 @@ onMounted(async () => {
             :edges="flowStore.state.edges"
             :selected-node-id="selectedNode?.id ?? null"
             :selected-edge="selectedEdge"
+            :status-nodes="flowStore.state.lastStatus.nodes"
             @connect="onCanvasConnect"
             @select-node="onCanvasSelectNode"
             @select-edge="onCanvasSelectEdge"
@@ -304,6 +379,7 @@ onMounted(async () => {
                 </label>
                 <select
                   v-model="selectedNode.kind"
+                  @change="flowStore.commitHistory()"
                   class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="local">local</option>
@@ -315,7 +391,12 @@ onMounted(async () => {
                   Allow Fail
                 </label>
                 <div class="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <input v-model="selectedNode.allowFail" type="checkbox" class="h-4 w-4 rounded border" />
+                  <input
+                    v-model="selectedNode.allowFail"
+                    type="checkbox"
+                    class="h-4 w-4 rounded border"
+                    @change="flowStore.commitHistory()"
+                  />
                   <span>Continue on error</span>
                 </div>
               </div>
@@ -330,6 +411,7 @@ onMounted(async () => {
                   type="number"
                   min="0"
                   class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @blur="flowStore.commitHistory()"
                 />
               </div>
               <div>
@@ -341,6 +423,7 @@ onMounted(async () => {
                   type="number"
                   min="0"
                   class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @blur="flowStore.commitHistory()"
                 />
               </div>
             </div>
@@ -352,6 +435,7 @@ onMounted(async () => {
                 v-model="selectedNode.method"
                 class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 placeholder="method name"
+                @blur="flowStore.commitHistory()"
               />
             </div>
             <div v-if="selectedNode.kind === 'exec'">
@@ -363,6 +447,7 @@ onMounted(async () => {
                 type="number"
                 min="0"
                 class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                @blur="flowStore.commitHistory()"
               />
             </div>
             <div>
@@ -373,6 +458,7 @@ onMounted(async () => {
                 v-model="selectedNode.args"
                 rows="5"
                 class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                @blur="flowStore.commitHistory()"
               />
             </div>
           </div>

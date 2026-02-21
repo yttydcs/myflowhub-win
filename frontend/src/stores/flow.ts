@@ -51,6 +51,16 @@ export type FlowStatus = {
   nodes: FlowStatusNode[]
 }
 
+type FlowDraftSnapshot = {
+  flowId: string
+  flowName: string
+  everyMs: number
+  nodes: FlowNodeDraft[]
+  edges: FlowEdge[]
+  selectedNodeIndex: number
+  selectedEdgeIndex: number
+}
+
 type FlowState = {
   targetId: string
   selfNodeId: number
@@ -66,6 +76,8 @@ type FlowState = {
   statusRunId: string
   lastStatus: FlowStatus
   message: string
+  historyIndex: number
+  historyLength: number
 }
 
 const state = reactive<FlowState>({
@@ -87,8 +99,108 @@ const state = reactive<FlowState>({
     executorNode: 0,
     nodes: []
   },
-  message: ""
+  message: "",
+  historyIndex: 0,
+  historyLength: 1
 })
+
+const MAX_HISTORY = 120
+let draftHistory: FlowDraftSnapshot[] = []
+let draftHistoryIndex = 0
+
+const snapshotToJSON = (snapshot: FlowDraftSnapshot) => JSON.stringify(snapshot)
+
+const takeSnapshot = (): FlowDraftSnapshot => ({
+  flowId: state.flowId,
+  flowName: state.flowName,
+  everyMs: state.everyMs,
+  nodes: state.nodes.map((node) => ({
+    id: node.id,
+    kind: node.kind,
+    allowFail: node.allowFail,
+    retry: node.retry,
+    timeoutMs: node.timeoutMs,
+    method: node.method,
+    target: node.target,
+    args: node.args,
+    x: node.x,
+    y: node.y
+  })),
+  edges: state.edges.map((edge) => ({ from: edge.from, to: edge.to })),
+  selectedNodeIndex: state.selectedNodeIndex,
+  selectedEdgeIndex: state.selectedEdgeIndex
+})
+
+const updateHistoryState = () => {
+  state.historyIndex = draftHistoryIndex
+  state.historyLength = draftHistory.length
+}
+
+const resetHistory = () => {
+  draftHistory = [takeSnapshot()]
+  draftHistoryIndex = 0
+  updateHistoryState()
+}
+
+const applySnapshot = (snapshot: FlowDraftSnapshot) => {
+  state.flowId = snapshot.flowId
+  state.flowName = snapshot.flowName
+  state.everyMs = snapshot.everyMs
+  state.nodes = snapshot.nodes.map((node) => ({ ...node }))
+  state.edges = snapshot.edges.map((edge) => ({ ...edge }))
+  state.selectedNodeIndex =
+    snapshot.selectedNodeIndex >= 0 && snapshot.selectedNodeIndex < state.nodes.length
+      ? snapshot.selectedNodeIndex
+      : -1
+  state.selectedEdgeIndex =
+    snapshot.selectedEdgeIndex >= 0 && snapshot.selectedEdgeIndex < state.edges.length
+      ? snapshot.selectedEdgeIndex
+      : -1
+}
+
+const commitHistory = () => {
+  const snapshot = takeSnapshot()
+  if (!draftHistory.length) {
+    draftHistory = [snapshot]
+    draftHistoryIndex = 0
+    updateHistoryState()
+    return false
+  }
+  const current = draftHistory[draftHistoryIndex]
+  if (current && snapshotToJSON(current) === snapshotToJSON(snapshot)) {
+    return false
+  }
+  if (draftHistoryIndex < draftHistory.length - 1) {
+    draftHistory = draftHistory.slice(0, draftHistoryIndex + 1)
+  }
+  draftHistory.push(snapshot)
+  draftHistoryIndex = draftHistory.length - 1
+  if (draftHistory.length > MAX_HISTORY) {
+    const overflow = draftHistory.length - MAX_HISTORY
+    draftHistory.splice(0, overflow)
+    draftHistoryIndex = Math.max(0, draftHistoryIndex - overflow)
+  }
+  updateHistoryState()
+  return true
+}
+
+const undo = () => {
+  if (draftHistoryIndex <= 0) return false
+  draftHistoryIndex -= 1
+  applySnapshot(draftHistory[draftHistoryIndex])
+  updateHistoryState()
+  state.message = "Undo applied."
+  return true
+}
+
+const redo = () => {
+  if (draftHistoryIndex >= draftHistory.length - 1) return false
+  draftHistoryIndex += 1
+  applySnapshot(draftHistory[draftHistoryIndex])
+  updateHistoryState()
+  state.message = "Redo applied."
+  return true
+}
 
 const newReqId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -204,6 +316,7 @@ const newDraft = () => {
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   state.statusRunId = ""
+  resetHistory()
 }
 
 const addNode = (id: string, kind: "local" | "exec") => {
@@ -230,6 +343,7 @@ const addNode = (id: string, kind: "local" | "exec") => {
   state.nodes.push(node)
   state.selectedNodeIndex = state.nodes.length - 1
   state.selectedEdgeIndex = -1
+  commitHistory()
 }
 
 const removeSelectedNode = () => {
@@ -242,6 +356,7 @@ const removeSelectedNode = () => {
   )
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
+  commitHistory()
 }
 
 const buildAdjacency = (edges: FlowEdge[]) => {
@@ -299,6 +414,7 @@ const addEdge = (from: string, to: string) => {
   state.edges.push({ from: fromId, to: toId })
   state.selectedEdgeIndex = state.edges.length - 1
   state.selectedNodeIndex = -1
+  commitHistory()
 }
 
 const removeSelectedEdge = () => {
@@ -306,6 +422,104 @@ const removeSelectedEdge = () => {
   if (idx < 0 || idx >= state.edges.length) return
   state.edges = state.edges.filter((_, i) => i !== idx)
   state.selectedEdgeIndex = -1
+  commitHistory()
+}
+
+const autoLayoutTB = () => {
+  if (!state.nodes.length) {
+    throw new Error("No nodes to layout.")
+  }
+
+  const ids = state.nodes.map((node) => node.id.trim()).filter(Boolean)
+  const idSet = new Set(ids)
+  const nodeOrder = new Map<string, number>()
+  for (const [idx, id] of ids.entries()) {
+    nodeOrder.set(id, idx)
+  }
+
+  const indegree = new Map<string, number>()
+  const next = new Map<string, string[]>()
+  for (const id of ids) {
+    indegree.set(id, 0)
+    next.set(id, [])
+  }
+
+  for (const edge of state.edges) {
+    const from = edge.from.trim()
+    const to = edge.to.trim()
+    if (!from || !to) continue
+    if (!idSet.has(from) || !idSet.has(to)) {
+      throw new Error("Flow graph contains invalid edge endpoints.")
+    }
+    next.get(from)?.push(to)
+    indegree.set(to, (indegree.get(to) ?? 0) + 1)
+  }
+
+  const level = new Map<string, number>()
+  const queue: string[] = []
+  for (const id of ids) {
+    if ((indegree.get(id) ?? 0) === 0) {
+      queue.push(id)
+      level.set(id, 0)
+    }
+  }
+  queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
+
+  const topo: string[] = []
+  while (queue.length) {
+    const cur = queue.shift()
+    if (!cur) continue
+    topo.push(cur)
+    const base = level.get(cur) ?? 0
+    for (const child of next.get(cur) ?? []) {
+      level.set(child, Math.max(level.get(child) ?? 0, base + 1))
+      const left = (indegree.get(child) ?? 0) - 1
+      indegree.set(child, left)
+      if (left === 0) {
+        queue.push(child)
+        queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
+      }
+    }
+  }
+
+  if (topo.length !== ids.length) {
+    throw new Error("Auto layout requires a DAG (cycle detected).")
+  }
+
+  const groups = new Map<number, string[]>()
+  for (const id of topo) {
+    const depth = level.get(id) ?? 0
+    const list = groups.get(depth)
+    if (list) {
+      list.push(id)
+    } else {
+      groups.set(depth, [id])
+    }
+  }
+
+  const levels = [...groups.keys()].sort((a, b) => a - b)
+  const maxWidth = Math.max(...levels.map((d) => groups.get(d)?.length ?? 0), 1)
+  const xGap = 240
+  const yGap = 170
+
+  const positions = new Map<string, { x: number; y: number }>()
+  for (const depth of levels) {
+    const list = (groups.get(depth) ?? []).slice()
+    list.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
+    const offset = ((maxWidth - list.length) * xGap) / 2
+    for (const [idx, id] of list.entries()) {
+      positions.set(id, { x: Math.round(offset + idx * xGap), y: Math.round(depth * yGap) })
+    }
+  }
+
+  for (const node of state.nodes) {
+    const pos = positions.get(node.id.trim())
+    if (!pos) continue
+    node.x = pos.x
+    node.y = pos.y
+  }
+
+  commitHistory()
 }
 
 const buildSpec = (node: FlowNodeDraft) => {
@@ -494,6 +708,7 @@ const handleGetResp = (data: any) => {
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   state.message = "Flow loaded."
+  resetHistory()
   if (state.selfNodeId && state.hubId) {
     void statusFlow("").catch(() => {})
   }
@@ -549,10 +764,16 @@ const handleStatusResp = (data: any) => {
 }
 
 export const useFlowStore = () => {
+  if (!draftHistory.length) {
+    resetHistory()
+  }
+
   return {
     state,
     addEdge,
     addNode,
+    autoLayoutTB,
+    commitHistory,
     clearSelection: () => {
       state.selectedNodeIndex = -1
       state.selectedEdgeIndex = -1
@@ -562,8 +783,10 @@ export const useFlowStore = () => {
     newDraft,
     removeSelectedEdge,
     removeSelectedNode,
+    redo,
     runFlow,
     saveFlow,
+    undo,
     selectEdgeByEndpoints: (from: string, to: string) => {
       const fromId = from.trim()
       const toId = to.trim()

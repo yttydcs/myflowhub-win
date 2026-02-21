@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { Position, VueFlow, type Connection } from "@vue-flow/core"
-import type { FlowEdge, FlowNodeDraft } from "@/stores/flow"
+import { VueFlow, type Connection } from "@vue-flow/core"
+import { Background } from "@vue-flow/background"
+import { Controls } from "@vue-flow/controls"
+import { MiniMap } from "@vue-flow/minimap"
+import "@vue-flow/controls/dist/style.css"
+import "@vue-flow/minimap/dist/style.css"
+import FlowNode from "@/components/flow/FlowNode.vue"
+import type { FlowEdge, FlowNodeDraft, FlowStatusNode } from "@/stores/flow"
 
 type SelectedEdge = FlowEdge | null
 
@@ -10,6 +16,7 @@ const props = defineProps<{
   edges: FlowEdge[]
   selectedNodeId: string | null
   selectedEdge: SelectedEdge
+  statusNodes: FlowStatusNode[]
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +28,16 @@ const emit = defineEmits<{
 }>()
 
 const hasNode = (id: string) => props.nodes.some((node) => node.id === id)
+
+const statusByNodeId = computed(() => {
+  const map = new Map<string, FlowStatusNode>()
+  for (const node of props.statusNodes) {
+    const id = node.id?.trim() || ""
+    if (!id) continue
+    map.set(id, node)
+  }
+  return map
+})
 
 const isValidConnection = (conn: Connection): boolean => {
   const source = conn.source?.trim() ?? ""
@@ -38,9 +55,8 @@ const canvasNodes = computed(() =>
     .map((node) => ({
       id: node.id,
       position: { x: Number(node.x || 0), y: Number(node.y || 0) },
-      data: { label: node.id },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      data: { label: node.id, status: statusByNodeId.value.get(node.id) },
+      type: "flowNode",
       draggable: true,
       selected: props.selectedNodeId === node.id
     }))
@@ -87,6 +103,10 @@ const onNodeDragStop = (_: unknown, node: any) => {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
   emit("node-moved", id, x, y)
 }
+
+const nodeTypes = {
+  flowNode: FlowNode
+}
 </script>
 
 <template>
@@ -94,6 +114,7 @@ const onNodeDragStop = (_: unknown, node: any) => {
     <VueFlow
       :nodes="canvasNodes"
       :edges="canvasEdges"
+      :node-types="nodeTypes"
       :fit-view-on-init="true"
       :min-zoom="0.2"
       :max-zoom="2"
@@ -103,6 +124,15 @@ const onNodeDragStop = (_: unknown, node: any) => {
       @edgeClick="onEdgeClick"
       @paneClick="onPaneClick"
       @nodeDragStop="onNodeDragStop"
-    />
+    >
+      <Background :gap="18" :size="1" class="opacity-60" />
+      <MiniMap
+        pannable
+        zoomable
+        position="bottom-right"
+        class="rounded-lg border border-border/60 bg-background/70 shadow-sm"
+      />
+      <Controls position="bottom-left" class="rounded-lg border border-border/60 bg-background/70 shadow-sm" />
+    </VueFlow>
   </div>
 </template>
