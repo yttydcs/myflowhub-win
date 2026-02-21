@@ -143,7 +143,7 @@ const buildChildNodes = (parentKey: string, children: NodeInfo[], selfNodeId: nu
     if (!duplicate) {
       seenNodeIDs.add(child.nodeId)
     }
-    const node: DeviceTreeNode = {
+    const node = reactive<DeviceTreeNode>({
       key: makeChildKey(parentKey, child.nodeId),
       nodeId: child.nodeId,
       hasChildrenHint: Boolean(child.hasChildren),
@@ -152,7 +152,7 @@ const buildChildNodes = (parentKey: string, children: NodeInfo[], selfNodeId: nu
       loading: false,
       error: "",
       children: null
-    }
+    }) as DeviceTreeNode
     registerNode(node)
     list.push(node)
   }
@@ -198,7 +198,7 @@ const loadRoot = async () => {
     throw err
   }
 
-  const root: DeviceTreeNode = {
+  const root = reactive<DeviceTreeNode>({
     key: `root:${rootID}`,
     nodeId: rootID,
     hasChildrenHint: true,
@@ -207,7 +207,7 @@ const loadRoot = async () => {
     loading: true,
     error: "",
     children: null
-  }
+  }) as DeviceTreeNode
   state.root = root
   registerNode(root)
   seenNodeIDs.add(rootID)
