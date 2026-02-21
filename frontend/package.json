@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vue-flow/core": "^1.48.2",
     "@wailsapp/runtime": "^1.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

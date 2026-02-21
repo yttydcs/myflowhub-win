@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
+import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useFlowStore } from "@/stores/flow"
 import { useSessionStore } from "@/stores/session"
 
@@ -10,24 +11,18 @@ const sessionStore = useSessionStore()
 const message = ref("")
 
 const addNodeOpen = ref(false)
-const addEdgeOpen = ref(false)
 
 const nodeDraft = reactive({
   id: "",
   kind: "local" as "local" | "exec"
 })
 
-const edgeDraft = reactive({
-  from: "",
-  to: ""
-})
-
 const selectedNode = computed(
   () => flowStore.state.nodes[flowStore.state.selectedNodeIndex] ?? null
 )
 
-const nodeIds = computed(() =>
-  flowStore.state.nodes.map((node) => node.id).filter((id) => id.trim() !== "")
+const selectedEdge = computed(
+  () => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null
 )
 
 const refreshList = async () => {
@@ -106,29 +101,34 @@ const removeNode = () => {
   flowStore.removeSelectedNode()
 }
 
-const openAddEdgeDialog = () => {
-  if (nodeIds.value.length < 2) {
-    message.value = "Add at least two nodes before creating edges."
-    return
-  }
-  edgeDraft.from = nodeIds.value[0] ?? ""
-  edgeDraft.to = nodeIds.value[1] ?? ""
-  addEdgeOpen.value = true
-}
-
-const saveEdge = () => {
-  message.value = ""
-  try {
-    flowStore.addEdge(edgeDraft.from, edgeDraft.to)
-    addEdgeOpen.value = false
-  } catch (err) {
-    console.warn(err)
-    message.value = (err as Error)?.message || "Failed to add edge."
-  }
-}
-
 const removeEdge = () => {
   flowStore.removeSelectedEdge()
+}
+
+const onCanvasConnect = (from: string, to: string) => {
+  message.value = ""
+  try {
+    flowStore.addEdge(from, to)
+  } catch (err) {
+    console.warn(err)
+    message.value = (err as Error)?.message || "Failed to connect nodes."
+  }
+}
+
+const onCanvasSelectNode = (nodeId: string) => {
+  flowStore.selectNodeById(nodeId)
+}
+
+const onCanvasSelectEdge = (from: string, to: string) => {
+  flowStore.selectEdgeByEndpoints(from, to)
+}
+
+const onCanvasNodeMoved = (nodeId: string, x: number, y: number) => {
+  flowStore.setNodePosition(nodeId, x, y)
+}
+
+const onCanvasClear = () => {
+  flowStore.clearSelection()
 }
 
 watch(
@@ -240,73 +240,43 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="mt-6 grid gap-4 lg:grid-cols-2">
-          <div class="rounded-xl border border-border/60 bg-background/60 p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold">Nodes</h3>
-              <div class="flex gap-2">
-                <Button size="sm" variant="outline" @click="openAddNodeDialog">Add</Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  :disabled="flowStore.state.selectedNodeIndex < 0"
-                  @click="removeNode"
-                >
-                  Remove
-                </Button>
-              </div>
+        <div class="mt-6 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="text-xs text-muted-foreground">
+              Drag nodes to reposition. Drag from a node handle to connect nodes.
             </div>
-            <div class="mt-3 max-h-[260px] space-y-2 overflow-y-auto">
-              <button
-                v-for="(node, index) in flowStore.state.nodes"
-                :key="`${node.id}-${index}`"
-                type="button"
-                class="w-full rounded-lg border px-3 py-2 text-left text-xs transition"
-                :class="flowStore.state.selectedNodeIndex === index ? 'border-primary/50 bg-primary/10' : 'border-transparent hover:border-border/60 hover:bg-muted/60'"
-                @click="flowStore.selectNode(index)"
+            <div class="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" @click="openAddNodeDialog">Add Node</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="flowStore.state.selectedNodeIndex < 0"
+                @click="removeNode"
               >
-                <p class="font-semibold">{{ node.id || "Unnamed node" }}</p>
-                <p class="text-[11px] text-muted-foreground">
-                  kind {{ node.kind || "local" }} · retry {{ node.retry }} · timeout {{ node.timeoutMs }} ms
-                </p>
-              </button>
-              <div v-if="!flowStore.state.nodes.length" class="text-xs text-muted-foreground">
-                No nodes yet. Add the first node to start.
-              </div>
+                Remove Node
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="flowStore.state.selectedEdgeIndex < 0"
+                @click="removeEdge"
+              >
+                Remove Edge
+              </Button>
             </div>
           </div>
 
-          <div class="rounded-xl border border-border/60 bg-background/60 p-4">
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold">Edges</h3>
-              <div class="flex gap-2">
-                <Button size="sm" variant="outline" @click="openAddEdgeDialog">Add</Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  :disabled="flowStore.state.selectedEdgeIndex < 0"
-                  @click="removeEdge"
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
-            <div class="mt-3 max-h-[260px] space-y-2 overflow-y-auto">
-              <button
-                v-for="(edge, index) in flowStore.state.edges"
-                :key="`${edge.from}-${edge.to}-${index}`"
-                type="button"
-                class="w-full rounded-lg border px-3 py-2 text-left text-xs transition"
-                :class="flowStore.state.selectedEdgeIndex === index ? 'border-primary/50 bg-primary/10' : 'border-transparent hover:border-border/60 hover:bg-muted/60'"
-                @click="flowStore.selectEdge(index)"
-              >
-                <p class="font-semibold">{{ edge.from }} → {{ edge.to }}</p>
-              </button>
-              <div v-if="!flowStore.state.edges.length" class="text-xs text-muted-foreground">
-                No edges yet. Connect nodes to create the DAG.
-              </div>
-            </div>
-          </div>
+          <FlowCanvas
+            :nodes="flowStore.state.nodes"
+            :edges="flowStore.state.edges"
+            :selected-node-id="selectedNode?.id ?? null"
+            :selected-edge="selectedEdge"
+            @connect="onCanvasConnect"
+            @select-node="onCanvasSelectNode"
+            @select-edge="onCanvasSelectEdge"
+            @node-moved="onCanvasNodeMoved"
+            @clear-selection="onCanvasClear"
+          />
         </div>
       </section>
 
@@ -319,9 +289,13 @@ onMounted(async () => {
                 Node ID
               </label>
               <input
-                v-model="selectedNode.id"
+                :value="selectedNode.id"
+                disabled
                 class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
+              <p class="mt-1 text-[11px] text-muted-foreground">
+                Node ID is the graph key and cannot be changed.
+              </p>
             </div>
             <div class="grid gap-3 md:grid-cols-2">
               <div>
@@ -470,40 +444,6 @@ onMounted(async () => {
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
           <Button @click="saveNode">Add</Button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="addEdgeOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
-      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Add Edge</h2>
-        <div class="mt-4 space-y-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              From
-            </label>
-            <select
-              v-model="edgeDraft.from"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option v-for="id in nodeIds" :key="`from-${id}`" :value="id">{{ id }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              To
-            </label>
-            <select
-              v-model="edgeDraft.to"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option v-for="id in nodeIds" :key="`to-${id}`" :value="id">{{ id }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="addEdgeOpen = false">Cancel</Button>
-          <Button @click="saveEdge">Add</Button>
         </div>
       </div>
     </div>

@@ -28,6 +28,8 @@ export type FlowNodeDraft = {
   method: string
   target: number
   args: string
+  x: number
+  y: number
 }
 
 export type FlowEdge = {
@@ -152,27 +154,45 @@ const parseSpec = (spec: any) => {
   const method = String((parsed as any)?.method ?? "")
   const target = Number((parsed as any)?.target ?? 0)
   const argsText = parseArgsText((parsed as any)?.args)
-  return { method, target, argsText }
+  const ui = (parsed as any)?._ui
+  const x = Number(ui?.x)
+  const y = Number(ui?.y)
+  return {
+    method,
+    target,
+    argsText,
+    x: Number.isFinite(x) ? x : undefined,
+    y: Number.isFinite(y) ? y : undefined
+  }
 }
 
-const mapNode = (input: any): FlowNodeDraft => {
+const defaultNodePosition = (index: number) => {
+  const col = index % 4
+  const row = Math.floor(index / 4)
+  return { x: col * 240, y: row * 160 }
+}
+
+const mapNode = (input: any, index: number): FlowNodeDraft => {
   const kind = String(input?.kind ?? "").toLowerCase()
-  const { method, target, argsText } = parseSpec(input?.spec)
+  const { method, target, argsText, x, y } = parseSpec(input?.spec)
+  const pos = defaultNodePosition(index)
   return {
-    id: String(input?.id ?? ""),
+    id: String(input?.id ?? "").trim(),
     kind: kind === "exec" ? "exec" : "local",
     allowFail: Boolean(input?.allow_fail ?? input?.allowFail ?? false),
     retry: Number(input?.retry ?? 1),
     timeoutMs: Number(input?.timeout_ms ?? input?.timeoutMs ?? 3000),
     method,
     target,
-    args: argsText
+    args: argsText,
+    x: Number.isFinite(x) ? Number(x) : pos.x,
+    y: Number.isFinite(y) ? Number(y) : pos.y
   }
 }
 
 const mapEdge = (input: any): FlowEdge => ({
-  from: String(input?.from ?? ""),
-  to: String(input?.to ?? "")
+  from: String(input?.from ?? "").trim(),
+  to: String(input?.to ?? "").trim()
 })
 
 const newDraft = () => {
@@ -194,6 +214,7 @@ const addNode = (id: string, kind: "local" | "exec") => {
   if (state.nodes.find((node) => node.id.trim() === trimmed)) {
     throw new Error("Node ID must be unique.")
   }
+  const pos = defaultNodePosition(state.nodes.length)
   const node: FlowNodeDraft = {
     id: trimmed,
     kind,
@@ -202,10 +223,13 @@ const addNode = (id: string, kind: "local" | "exec") => {
     timeoutMs: 3000,
     method: "",
     target: 0,
-    args: "{}"
+    args: "{}",
+    x: pos.x,
+    y: pos.y
   }
   state.nodes.push(node)
   state.selectedNodeIndex = state.nodes.length - 1
+  state.selectedEdgeIndex = -1
 }
 
 const removeSelectedNode = () => {
@@ -220,6 +244,39 @@ const removeSelectedNode = () => {
   state.selectedEdgeIndex = -1
 }
 
+const buildAdjacency = (edges: FlowEdge[]) => {
+  const next = new Map<string, string[]>()
+  for (const edge of edges) {
+    const from = edge.from.trim()
+    const to = edge.to.trim()
+    if (!from || !to) continue
+    const list = next.get(from)
+    if (list) {
+      list.push(to)
+    } else {
+      next.set(from, [to])
+    }
+  }
+  return next
+}
+
+const isReachable = (start: string, goal: string, next: Map<string, string[]>) => {
+  const queue: string[] = [start]
+  const visited = new Set<string>()
+  while (queue.length) {
+    const cur = queue.shift()
+    if (!cur) continue
+    if (cur === goal) return true
+    if (visited.has(cur)) continue
+    visited.add(cur)
+    const children = next.get(cur)
+    if (children?.length) {
+      queue.push(...children)
+    }
+  }
+  return false
+}
+
 const addEdge = (from: string, to: string) => {
   const fromId = from.trim()
   const toId = to.trim()
@@ -232,8 +289,16 @@ const addEdge = (from: string, to: string) => {
   if (!state.nodes.find((node) => node.id.trim() === toId)) {
     throw new Error("To node does not exist.")
   }
+  if (state.edges.some((edge) => edge.from === fromId && edge.to === toId)) {
+    throw new Error("Edge already exists.")
+  }
+  const next = buildAdjacency(state.edges)
+  if (isReachable(toId, fromId, next)) {
+    throw new Error("Edge would create a cycle.")
+  }
   state.edges.push({ from: fromId, to: toId })
   state.selectedEdgeIndex = state.edges.length - 1
+  state.selectedNodeIndex = -1
 }
 
 const removeSelectedEdge = () => {
@@ -259,9 +324,18 @@ const buildSpec = (node: FlowNodeDraft) => {
     if (!node.target) {
       throw new Error(`Node ${node.id || "<unnamed>"} requires target node.`)
     }
-    return { target: node.target, method, args: parsedArgs }
+    return {
+      target: node.target,
+      method,
+      args: parsedArgs,
+      _ui: { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+    }
   }
-  return { method, args: parsedArgs }
+  return {
+    method,
+    args: parsedArgs,
+    _ui: { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+  }
 }
 
 const buildGraph = () => {
@@ -415,7 +489,7 @@ const handleGetResp = (data: any) => {
   }
   const nodes = Array.isArray(data?.graph?.nodes) ? data.graph.nodes : []
   const edges = Array.isArray(data?.graph?.edges) ? data.graph.edges : []
-  state.nodes = nodes.map(mapNode)
+  state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
   state.edges = edges.map(mapEdge)
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
@@ -479,6 +553,10 @@ export const useFlowStore = () => {
     state,
     addEdge,
     addNode,
+    clearSelection: () => {
+      state.selectedNodeIndex = -1
+      state.selectedEdgeIndex = -1
+    },
     getFlow,
     listFlows,
     newDraft,
@@ -486,12 +564,33 @@ export const useFlowStore = () => {
     removeSelectedNode,
     runFlow,
     saveFlow,
+    selectEdgeByEndpoints: (from: string, to: string) => {
+      const fromId = from.trim()
+      const toId = to.trim()
+      const idx = state.edges.findIndex((edge) => edge.from === fromId && edge.to === toId)
+      state.selectedEdgeIndex = idx
+      state.selectedNodeIndex = -1
+    },
+    selectNodeById: (nodeId: string) => {
+      const trimmed = nodeId.trim()
+      const idx = state.nodes.findIndex((node) => node.id.trim() === trimmed)
+      state.selectedNodeIndex = idx
+      state.selectedEdgeIndex = -1
+    },
     setIdentity: (nodeId: number, hubId: number) => {
       state.selfNodeId = Number(nodeId || 0)
       state.hubId = Number(hubId || 0)
       if (!state.targetId && state.hubId) {
         state.targetId = String(state.hubId)
       }
+    },
+    setNodePosition: (nodeId: string, x: number, y: number) => {
+      const trimmed = nodeId.trim()
+      const node = state.nodes.find((n) => n.id.trim() === trimmed)
+      if (!node) return
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return
+      node.x = x
+      node.y = y
     },
     selectEdge: (index: number) => {
       state.selectedEdgeIndex = index
