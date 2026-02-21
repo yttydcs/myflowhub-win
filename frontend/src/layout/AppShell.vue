@@ -55,7 +55,7 @@ const headerStatusText = computed(() => {
 
 const navGroups = ref<{ title: string; items: NavItem[] }[]>([
   {
-    title: "Console",
+    title: "Session",
     items: [
       {
         label: "Home",
@@ -63,6 +63,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/home",
         short: "HM",
         tone: "bg-sky-500/15 text-sky-700"
+      },
+      {
+        label: "Devices",
+        description: "Query nodes/devices",
+        to: "/devices",
+        short: "DV",
+        tone: "bg-violet-500/15 text-violet-700"
       }
     ]
   },

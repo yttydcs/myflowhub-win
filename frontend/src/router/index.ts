@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router"
 import Home from "@/pages/Home.vue"
+import Devices from "@/pages/Devices.vue"
 import File from "@/pages/File.vue"
 import Flow from "@/pages/Flow.vue"
 import Management from "@/pages/Management.vue"
@@ -20,6 +21,15 @@ const routes = [
     meta: {
       title: "Home",
       subtitle: "Connect, authenticate, and monitor the current session."
+    }
+  },
+  {
+    path: "/devices",
+    name: "devices",
+    component: Devices,
+    meta: {
+      title: "Devices",
+      subtitle: "Query nodes/devices from the management plane."
     }
   },
   {
