@@ -70,6 +70,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/devices",
         short: "DV",
         tone: "bg-violet-500/15 text-violet-700"
+      },
+      {
+        label: "Local Hub",
+        description: "Download and run hub_server",
+        to: "/local-hub",
+        short: "LH",
+        tone: "bg-emerald-500/15 text-emerald-700"
       }
     ]
   },

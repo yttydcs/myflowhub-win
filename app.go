@@ -13,6 +13,7 @@ import (
 	debugsvc "github.com/yttydcs/myflowhub-win/internal/services/debug"
 	filesvc "github.com/yttydcs/myflowhub-win/internal/services/file"
 	flowsvc "github.com/yttydcs/myflowhub-win/internal/services/flow"
+	localhubsvc "github.com/yttydcs/myflowhub-win/internal/services/localhub"
 	logssvc "github.com/yttydcs/myflowhub-win/internal/services/logs"
 	mgmtsvc "github.com/yttydcs/myflowhub-win/internal/services/management"
 	presetssvc "github.com/yttydcs/myflowhub-win/internal/services/presets"
@@ -27,6 +28,7 @@ type App struct {
 	bus          corebus.IBus
 	logs         *logssvc.LogService
 	session      *sessionsvc.SessionService
+	localhub     *localhubsvc.LocalHubService
 	auth         *authsvc.AuthService
 	varpool      *varpoolsvc.VarPoolService
 	topicbus     *topicbussvc.TopicBusService
@@ -61,6 +63,7 @@ func NewApp() *App {
 		bus:        bus,
 		logs:       logs,
 		session:    session,
+		localhub:   localhubsvc.New(store, logs),
 		auth:       authsvc.New(session, logs),
 		varpool:    varpoolsvc.New(session, logs, bus),
 		topicbus:   topicbussvc.New(session, logs, bus),
@@ -79,7 +82,7 @@ func NewApp() *App {
 }
 
 func (a *App) Bindings() []interface{} {
-	return []interface{}{a, a.logs, a.session, a.auth, a.varpool, a.topicbus, a.file, a.flow, a.management, a.debug, a.presets}
+	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.file, a.flow, a.management, a.debug, a.presets}
 }
 
 func (a *App) Startup(ctx context.Context) {

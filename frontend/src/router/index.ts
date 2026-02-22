@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router"
 import Home from "@/pages/Home.vue"
 import Devices from "@/pages/Devices.vue"
+import LocalHub from "@/pages/LocalHub.vue"
 import File from "@/pages/File.vue"
 import Flow from "@/pages/Flow.vue"
 import Management from "@/pages/Management.vue"
@@ -30,6 +31,15 @@ const routes = [
     meta: {
       title: "Devices",
       subtitle: "Query nodes/devices from the management plane."
+    }
+  },
+  {
+    path: "/local-hub",
+    name: "localHub",
+    component: LocalHub,
+    meta: {
+      title: "Local Hub",
+      subtitle: "Download and run hub_server as a sidecar process."
     }
   },
   {
