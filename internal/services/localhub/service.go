@@ -91,7 +91,10 @@ func (s *LocalHubService) SaveConfig(cfg Config) (Config, error) {
 
 	s.mu.Lock()
 	s.cfg = cfg
-	s.saveConfigLocked()
+	if err := s.saveConfigLocked(); err != nil {
+		s.mu.Unlock()
+		return Config{}, err
+	}
 	out := s.cfg
 	s.mu.Unlock()
 	return out, nil
@@ -262,7 +265,9 @@ func (s *LocalHubService) InstallLatest() (InstallState, error) {
 		BinaryPath:  destBin,
 		InstalledAt: now,
 	}
-	s.saveInstalledLocked(now, rel.Tag)
+	if err := s.saveInstalledLocked(now, rel.Tag); err != nil && s.logs != nil {
+		s.logs.Appendf("warn", "localhub save installed state warning: %v", err)
+	}
 	s.dl.Stage = "done"
 	s.dl.Message = "Installed."
 	s.dl.UpdatedAt = time.Now()
@@ -460,12 +465,17 @@ func (s *LocalHubService) loadConfigLocked() {
 	s.cfg = cfg
 }
 
-func (s *LocalHubService) saveConfigLocked() {
+func (s *LocalHubService) saveConfigLocked() error {
 	if s.store == nil {
-		return
+		return nil
 	}
-	_ = s.store.SetString("", keyHost, s.cfg.Host)
-	_ = s.store.SetInt("", keyPort, s.cfg.Port)
+	if err := s.store.SetString("", keyHost, s.cfg.Host); err != nil {
+		return err
+	}
+	if err := s.store.SetInt("", keyPort, s.cfg.Port); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *LocalHubService) refreshInstallLocked() {
@@ -491,12 +501,17 @@ func (s *LocalHubService) refreshInstallLocked() {
 	}
 }
 
-func (s *LocalHubService) saveInstalledLocked(at time.Time, tag string) {
+func (s *LocalHubService) saveInstalledLocked(at time.Time, tag string) error {
 	if s.store == nil {
-		return
+		return nil
 	}
-	_ = s.store.SetString("", keyInstalledTag, strings.TrimSpace(tag))
-	_ = s.store.SetString("", keyInstalledAt, at.UTC().Format(time.RFC3339))
+	if err := s.store.SetString("", keyInstalledTag, strings.TrimSpace(tag)); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyInstalledAt, at.UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *LocalHubService) setDownloadError(stage string, err error) {
