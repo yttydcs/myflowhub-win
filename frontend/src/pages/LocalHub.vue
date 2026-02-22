@@ -150,7 +150,6 @@ const saveConfig = async () => {
     const payload = { host: form.host.trim(), port: normalizedPort.value }
     await callLocalHub("SaveConfig", payload)
     await loadSnapshot()
-    message.value = "Saved Local Hub settings."
   } catch (err) {
     console.warn(err)
     message.value = (err as Error)?.message || "Failed to save config."
@@ -187,7 +186,6 @@ const installLatest = async () => {
     }, 500)
     await promise
     await loadSnapshot()
-    message.value = "Installed latest hub_server."
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
@@ -439,4 +437,3 @@ onMounted(async () => {
     <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>
-
