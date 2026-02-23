@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -14,6 +15,20 @@ const callLocalHub = async <T>(method: string, ...args: any[]): Promise<T> => {
   return fn(...args)
 }
 
+type HubConfig = {
+  host: string
+  port: number
+  nodeId: number
+  parent: string
+  parentEnable: boolean
+  parentReconnectSec: number
+  authDefaultRole: string
+  authDefaultPerms: string
+  authNodeRoles: string
+  authRolePerms: string
+  extraArgs: string
+}
+
 type Snapshot = {
   supported: boolean
   platform: string
@@ -21,7 +36,7 @@ type Snapshot = {
   rootDir: string
   binDir: string
   logsDir: string
-  config: { host: string; port: number }
+  config: HubConfig
   latestLoaded: boolean
   latestError: string
   latest: { tag: string; name: string; publishedAt: string; assets: any[] }
@@ -49,6 +64,8 @@ type Snapshot = {
   }
 }
 
+const toast = useToastStore()
+
 const snap = reactive<Snapshot>({
   supported: false,
   platform: "",
@@ -56,7 +73,19 @@ const snap = reactive<Snapshot>({
   rootDir: "",
   binDir: "",
   logsDir: "",
-  config: { host: "127.0.0.1", port: 9000 },
+  config: {
+    host: "127.0.0.1",
+    port: 9000,
+    nodeId: 1,
+    parent: "",
+    parentEnable: false,
+    parentReconnectSec: 3,
+    authDefaultRole: "",
+    authDefaultPerms: "",
+    authNodeRoles: "",
+    authRolePerms: "",
+    extraArgs: ""
+  },
   latestLoaded: false,
   latestError: "",
   latest: { tag: "", name: "", publishedAt: "", assets: [] },
@@ -86,10 +115,18 @@ const snap = reactive<Snapshot>({
 
 const form = reactive({
   host: "127.0.0.1",
-  port: "9000"
+  port: "9000",
+  nodeId: "1",
+  parent: "",
+  parentEnable: false,
+  parentReconnectSec: "3",
+  authDefaultRole: "",
+  authDefaultPerms: "",
+  authNodeRoles: "",
+  authRolePerms: "",
+  extraArgs: ""
 })
 
-const message = ref("")
 const busy = reactive({
   loading: false,
   refreshing: false,
@@ -106,6 +143,26 @@ const normalizedPort = computed(() => {
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed)) return 0
   return parsed
+})
+
+const normalizedNodeId = computed(() => {
+  const raw = form.nodeId.trim()
+  if (!raw) return 0
+  const parsed = Number.parseInt(raw, 10)
+  if (Number.isNaN(parsed) || parsed <= 0) return 0
+  return parsed
+})
+
+const normalizedParentReconnectSec = computed(() => {
+  const raw = form.parentReconnectSec.trim()
+  if (!raw) return 0
+  const parsed = Number.parseInt(raw, 10)
+  if (Number.isNaN(parsed) || parsed < 0) return -1
+  return parsed
+})
+
+const missingParentWarning = computed(() => {
+  return Boolean(form.parentEnable && !form.parent.trim())
 })
 
 const nonLoopbackWarning = computed(() => {
@@ -128,31 +185,74 @@ const downloadProgress = computed(() => {
 
 const loadSnapshot = async () => {
   busy.loading = true
-  message.value = ""
   try {
     const data = await callLocalHub<Snapshot>("Snapshot")
     Object.assign(snap, data)
     form.host = snap.config.host || "127.0.0.1"
     form.port = String(snap.config.port ?? 9000)
+    form.nodeId = String(snap.config.nodeId ?? 1)
+    form.parent = String(snap.config.parent ?? "")
+    form.parentEnable = Boolean(snap.config.parentEnable)
+    form.parentReconnectSec = String(snap.config.parentReconnectSec ?? 3)
+    form.authDefaultRole = String(snap.config.authDefaultRole ?? "")
+    form.authDefaultPerms = String(snap.config.authDefaultPerms ?? "")
+    form.authNodeRoles = String(snap.config.authNodeRoles ?? "")
+    form.authRolePerms = String(snap.config.authRolePerms ?? "")
+    form.extraArgs = String(snap.config.extraArgs ?? "")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load Local Hub snapshot."
+    toast.errorOf(err, "Failed to load Local Hub snapshot.")
   } finally {
     busy.loading = false
   }
 }
 
-const saveConfig = async () => {
+const saveConfig = async (silent = false) => {
   if (busy.saving) return
+
+  const rawPort = form.port.trim()
+  if (rawPort && Number.isNaN(Number.parseInt(rawPort, 10))) {
+    toast.warn("Port must be a number.")
+    return
+  }
+  const nodeId = normalizedNodeId.value
+  if (!nodeId) {
+    toast.warn("Node ID must be a positive number.")
+    return
+  }
+  const parentReconnectSec = normalizedParentReconnectSec.value
+  if (parentReconnectSec < 0) {
+    toast.warn("Parent reconnect seconds must be 0 or a positive number.")
+    return
+  }
+  if (form.parentEnable && !form.parent.trim()) {
+    toast.warn("Parent address is required when parent link is enabled.")
+    return
+  }
+
   busy.saving = true
-  message.value = ""
   try {
-    const payload = { host: form.host.trim(), port: normalizedPort.value }
+    const payload = {
+      host: form.host.trim(),
+      port: normalizedPort.value,
+      nodeId,
+      parent: form.parent.trim(),
+      parentEnable: Boolean(form.parentEnable),
+      parentReconnectSec,
+      authDefaultRole: form.authDefaultRole.trim(),
+      authDefaultPerms: form.authDefaultPerms.trim(),
+      authNodeRoles: form.authNodeRoles.trim(),
+      authRolePerms: form.authRolePerms.trim(),
+      extraArgs: form.extraArgs
+    }
     await callLocalHub("SaveConfig", payload)
     await loadSnapshot()
+    if (!silent) {
+      toast.success("Config saved.")
+    }
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to save config."
+    toast.errorOf(err, "Failed to save config.")
   } finally {
     busy.saving = false
   }
@@ -161,14 +261,14 @@ const saveConfig = async () => {
 const refreshLatest = async () => {
   if (busy.refreshing) return
   busy.refreshing = true
-  message.value = ""
   try {
     await callLocalHub("RefreshLatest")
     await loadSnapshot()
+    toast.success("Latest release refreshed.")
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    message.value = (err as Error)?.message || "Failed to refresh latest release."
+    toast.errorOf(err, "Failed to refresh latest release.")
   } finally {
     busy.refreshing = false
   }
@@ -177,7 +277,6 @@ const refreshLatest = async () => {
 const installLatest = async () => {
   if (busy.installing) return
   busy.installing = true
-  message.value = ""
   let timer: number | undefined
   try {
     const promise = callLocalHub("InstallLatest")
@@ -186,10 +285,11 @@ const installLatest = async () => {
     }, 500)
     await promise
     await loadSnapshot()
+    toast.success("Installed.")
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    message.value = (err as Error)?.message || "Install failed."
+    toast.errorOf(err, "Install failed.")
   } finally {
     if (timer) window.clearInterval(timer)
     busy.installing = false
@@ -199,15 +299,15 @@ const installLatest = async () => {
 const startHub = async () => {
   if (busy.starting) return
   busy.starting = true
-  message.value = ""
   try {
-    await saveConfig()
+    await saveConfig(true)
     await callLocalHub("Start")
     await loadSnapshot()
+    toast.success("Local Hub started.", snap.run.addr || undefined)
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    message.value = (err as Error)?.message || "Failed to start hub."
+    toast.errorOf(err, "Failed to start hub.")
   } finally {
     busy.starting = false
   }
@@ -216,14 +316,14 @@ const startHub = async () => {
 const stopHub = async () => {
   if (busy.stopping) return
   busy.stopping = true
-  message.value = ""
   try {
     await callLocalHub("Stop")
     await loadSnapshot()
+    toast.info("Local Hub stopped.")
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    message.value = (err as Error)?.message || "Failed to stop hub."
+    toast.errorOf(err, "Failed to stop hub.")
   } finally {
     busy.stopping = false
   }
@@ -232,15 +332,15 @@ const stopHub = async () => {
 const restartHub = async () => {
   if (busy.restarting) return
   busy.restarting = true
-  message.value = ""
   try {
-    await saveConfig()
+    await saveConfig(true)
     await callLocalHub("Restart")
     await loadSnapshot()
+    toast.success("Local Hub restarted.", snap.run.addr || undefined)
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    message.value = (err as Error)?.message || "Failed to restart hub."
+    toast.errorOf(err, "Failed to restart hub.")
   } finally {
     busy.restarting = false
   }
@@ -389,7 +489,7 @@ onMounted(async () => {
               />
             </div>
             <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
-              Save
+              Save Config
             </Button>
           </div>
 
@@ -436,8 +536,127 @@ onMounted(async () => {
           </div>
         </div>
       </div>
+
+      <div class="mt-4 rounded-xl border bg-background/70 p-3 text-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Hub Params</p>
+          <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
+            Save Config
+          </Button>
+        </div>
+
+        <div class="mt-3 grid gap-3 lg:grid-cols-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+              <span class="font-semibold uppercase tracking-[0.2em]">Node ID</span>
+              <input
+                v-model="form.nodeId"
+                class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="1"
+              />
+            </div>
+
+            <label
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <input
+                v-model="form.parentEnable"
+                type="checkbox"
+                class="h-4 w-4 rounded border border-input accent-primary"
+              />
+              Parent link
+            </label>
+
+            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+              <span class="font-semibold uppercase tracking-[0.2em]">Reconnect</span>
+              <input
+                v-model="form.parentReconnectSec"
+                class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
+                placeholder="3"
+                :disabled="!form.parentEnable"
+              />
+              <span class="text-[11px] text-muted-foreground">sec</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Parent</span>
+            <input
+              v-model="form.parent"
+              class="h-7 w-64 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
+              placeholder="127.0.0.1:9000"
+              :disabled="!form.parentEnable"
+            />
+          </div>
+        </div>
+
+        <p v-if="missingParentWarning" class="mt-2 text-xs text-amber-700">
+          Parent address is required when parent link is enabled.
+        </p>
+
+        <div class="mt-4 grid gap-3 lg:grid-cols-2">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Auth Default Role
+            </label>
+            <input
+              v-model="form.authDefaultRole"
+              class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="node"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Auth Default Perms
+            </label>
+            <input
+              v-model="form.authDefaultPerms"
+              class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="file.read,file.write"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Auth Node Roles
+            </label>
+            <input
+              v-model="form.authNodeRoles"
+              class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="1:admin;2:node"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Auth Role Perms
+            </label>
+            <input
+              v-model="form.authRolePerms"
+              class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="admin:p1,p2;node:p3"
+            />
+          </div>
+        </div>
+
+        <details class="mt-4 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+          <summary
+            class="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
+            Advanced Args
+          </summary>
+          <div class="mt-3">
+            <textarea
+              v-model="form.extraArgs"
+              rows="5"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              placeholder="-send-workers=4\n-proc-workers=8"
+            />
+            <p class="mt-2 text-xs text-muted-foreground">
+              One full argument per line. Lines starting with <span class="font-mono">#</span> are ignored.
+            </p>
+          </div>
+        </details>
+      </div>
     </section>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

@@ -22,9 +22,24 @@ import (
 const (
 	defaultHost = "127.0.0.1"
 	defaultPort = 9000
+	defaultNodeID = 1
+
+	defaultParentReconnectSec = 3
 
 	keyHost         = "localhub.host"
 	keyPort         = "localhub.port"
+	keyNodeID       = "localhub.node_id"
+	keyParent       = "localhub.parent"
+	keyParentEnable = "localhub.parent_enable"
+	keyParentRetry  = "localhub.parent_reconnect"
+
+	keyAuthDefaultRole  = "localhub.auth.default_role"
+	keyAuthDefaultPerms = "localhub.auth.default_perms"
+	keyAuthNodeRoles    = "localhub.auth.node_roles"
+	keyAuthRolePerms    = "localhub.auth.role_perms"
+
+	keyExtraArgs = "localhub.extra_args"
+
 	keyInstalledTag = "localhub.installed.tag"
 	keyInstalledAt  = "localhub.installed.at"
 )
@@ -88,6 +103,27 @@ func (s *LocalHubService) SaveConfig(cfg Config) (Config, error) {
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		return Config{}, errors.New("port must be 0..65535")
 	}
+
+	if cfg.NodeID <= 0 {
+		return Config{}, errors.New("node ID must be a positive number")
+	}
+
+	cfg.Parent = strings.TrimSpace(cfg.Parent)
+	if cfg.ParentEnable && cfg.Parent == "" {
+		return Config{}, errors.New("parent address is required when parent link is enabled")
+	}
+	if cfg.ParentReconnectSec < 0 {
+		return Config{}, errors.New("parent reconnect seconds must be 0 or a positive number")
+	}
+
+	cfg.AuthDefaultRole = strings.TrimSpace(cfg.AuthDefaultRole)
+	cfg.AuthDefaultPerms = strings.TrimSpace(cfg.AuthDefaultPerms)
+	cfg.AuthNodeRoles = strings.TrimSpace(cfg.AuthNodeRoles)
+	cfg.AuthRolePerms = strings.TrimSpace(cfg.AuthRolePerms)
+
+	cfg.ExtraArgs = strings.ReplaceAll(cfg.ExtraArgs, "\r\n", "\n")
+	cfg.ExtraArgs = strings.ReplaceAll(cfg.ExtraArgs, "\r", "\n")
+	cfg.ExtraArgs = strings.TrimSpace(cfg.ExtraArgs)
 
 	s.mu.Lock()
 	s.cfg = cfg
@@ -320,7 +356,38 @@ func (s *LocalHubService) Start() (RunState, error) {
 		return RunState{}, err
 	}
 
-	cmd := exec.Command(bin, "-addr", addr)
+	args := []string{"-addr", addr, "-node-id", strconv.Itoa(cfg.NodeID)}
+	if cfg.ParentEnable {
+		parent := strings.TrimSpace(cfg.Parent)
+		if parent == "" {
+			_ = logFile.Close()
+			return RunState{}, errors.New("parent address is required when parent link is enabled")
+		}
+		args = append(args, "-parent", parent, "-parent-enable=true")
+		if cfg.ParentReconnectSec < 0 {
+			_ = logFile.Close()
+			return RunState{}, errors.New("parent reconnect seconds must be 0 or a positive number")
+		}
+		if cfg.ParentReconnectSec != 0 {
+			args = append(args, "-parent-reconnect", strconv.Itoa(cfg.ParentReconnectSec))
+		}
+	}
+
+	if v := strings.TrimSpace(cfg.AuthDefaultRole); v != "" {
+		args = append(args, "-auth-default-role", v)
+	}
+	if v := strings.TrimSpace(cfg.AuthDefaultPerms); v != "" {
+		args = append(args, "-auth-default-perms", v)
+	}
+	if v := strings.TrimSpace(cfg.AuthNodeRoles); v != "" {
+		args = append(args, "-auth-node-roles", v)
+	}
+	if v := strings.TrimSpace(cfg.AuthRolePerms); v != "" {
+		args = append(args, "-auth-role-perms", v)
+	}
+	args = append(args, splitExtraArgs(cfg.ExtraArgs)...)
+
+	cmd := exec.Command(bin, args...)
 	cmd.Dir = filepath.Dir(bin)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -452,13 +519,33 @@ func (s *LocalHubService) logsDirLocked() string {
 }
 
 func (s *LocalHubService) loadConfigLocked() {
-	cfg := Config{Host: defaultHost, Port: defaultPort}
-	if s.store != nil {
-		host := s.store.GetString("", keyHost, cfg.Host)
-		port := s.store.GetInt("", keyPort, cfg.Port)
-		cfg.Host = strings.TrimSpace(host)
-		cfg.Port = port
+	cfg := Config{
+		Host:               defaultHost,
+		Port:               defaultPort,
+		NodeID:             defaultNodeID,
+		Parent:             "",
+		ParentEnable:       false,
+		ParentReconnectSec: defaultParentReconnectSec,
+		AuthDefaultRole:    "",
+		AuthDefaultPerms:   "",
+		AuthNodeRoles:      "",
+		AuthRolePerms:      "",
+		ExtraArgs:          "",
 	}
+	if s.store != nil {
+		cfg.Host = s.store.GetString("", keyHost, cfg.Host)
+		cfg.Port = s.store.GetInt("", keyPort, cfg.Port)
+		cfg.NodeID = s.store.GetInt("", keyNodeID, cfg.NodeID)
+		cfg.Parent = s.store.GetString("", keyParent, cfg.Parent)
+		cfg.ParentEnable = s.store.GetBool("", keyParentEnable, cfg.ParentEnable)
+		cfg.ParentReconnectSec = s.store.GetInt("", keyParentRetry, cfg.ParentReconnectSec)
+		cfg.AuthDefaultRole = s.store.GetString("", keyAuthDefaultRole, cfg.AuthDefaultRole)
+		cfg.AuthDefaultPerms = s.store.GetString("", keyAuthDefaultPerms, cfg.AuthDefaultPerms)
+		cfg.AuthNodeRoles = s.store.GetString("", keyAuthNodeRoles, cfg.AuthNodeRoles)
+		cfg.AuthRolePerms = s.store.GetString("", keyAuthRolePerms, cfg.AuthRolePerms)
+		cfg.ExtraArgs = s.store.GetString("", keyExtraArgs, cfg.ExtraArgs)
+	}
+
 	cfg.Host = strings.TrimSpace(cfg.Host)
 	if cfg.Host == "" {
 		cfg.Host = defaultHost
@@ -466,6 +553,27 @@ func (s *LocalHubService) loadConfigLocked() {
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		cfg.Port = defaultPort
 	}
+	if cfg.NodeID <= 0 {
+		cfg.NodeID = defaultNodeID
+	}
+
+	cfg.Parent = strings.TrimSpace(cfg.Parent)
+	if cfg.ParentReconnectSec < 0 {
+		cfg.ParentReconnectSec = defaultParentReconnectSec
+	}
+	if cfg.ParentEnable && cfg.Parent == "" {
+		cfg.ParentEnable = false
+	}
+
+	cfg.AuthDefaultRole = strings.TrimSpace(cfg.AuthDefaultRole)
+	cfg.AuthDefaultPerms = strings.TrimSpace(cfg.AuthDefaultPerms)
+	cfg.AuthNodeRoles = strings.TrimSpace(cfg.AuthNodeRoles)
+	cfg.AuthRolePerms = strings.TrimSpace(cfg.AuthRolePerms)
+
+	cfg.ExtraArgs = strings.ReplaceAll(cfg.ExtraArgs, "\r\n", "\n")
+	cfg.ExtraArgs = strings.ReplaceAll(cfg.ExtraArgs, "\r", "\n")
+	cfg.ExtraArgs = strings.TrimSpace(cfg.ExtraArgs)
+
 	s.cfg = cfg
 }
 
@@ -477,6 +585,33 @@ func (s *LocalHubService) saveConfigLocked() error {
 		return err
 	}
 	if err := s.store.SetInt("", keyPort, s.cfg.Port); err != nil {
+		return err
+	}
+	if err := s.store.SetInt("", keyNodeID, s.cfg.NodeID); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyParent, s.cfg.Parent); err != nil {
+		return err
+	}
+	if err := s.store.SetBool("", keyParentEnable, s.cfg.ParentEnable); err != nil {
+		return err
+	}
+	if err := s.store.SetInt("", keyParentRetry, s.cfg.ParentReconnectSec); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyAuthDefaultRole, s.cfg.AuthDefaultRole); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyAuthDefaultPerms, s.cfg.AuthDefaultPerms); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyAuthNodeRoles, s.cfg.AuthNodeRoles); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyAuthRolePerms, s.cfg.AuthRolePerms); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keyExtraArgs, s.cfg.ExtraArgs); err != nil {
 		return err
 	}
 	return nil
@@ -558,6 +693,28 @@ func isSupported() bool {
 		return false
 	}
 	return runtime.GOOS == "windows" || runtime.GOOS == "linux"
+}
+
+func splitExtraArgs(raw string) []string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	lines := strings.Split(raw, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func netJoin(host string, port int) string {

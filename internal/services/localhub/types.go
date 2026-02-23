@@ -5,6 +5,18 @@ import "time"
 type Config struct {
 	Host string `json:"host"`
 	Port int    `json:"port"` // 0 means auto-pick.
+
+	NodeID             int    `json:"nodeId"`
+	Parent             string `json:"parent,omitempty"`
+	ParentEnable       bool   `json:"parentEnable,omitempty"`
+	ParentReconnectSec int    `json:"parentReconnectSec,omitempty"` // 0 means default.
+
+	AuthDefaultRole  string `json:"authDefaultRole,omitempty"`
+	AuthDefaultPerms string `json:"authDefaultPerms,omitempty"`
+	AuthNodeRoles    string `json:"authNodeRoles,omitempty"`
+	AuthRolePerms    string `json:"authRolePerms,omitempty"`
+
+	ExtraArgs string `json:"extraArgs,omitempty"` // One full arg per line.
 }
 
 type ReleaseAsset struct {

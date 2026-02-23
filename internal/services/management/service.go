@@ -48,6 +48,9 @@ func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message st
 }
 
 func (s *ManagementService) ListNodes(ctx context.Context, sourceID, targetID uint32) (management.ListNodesResp, error) {
+	if sourceID != 0 && sourceID == targetID {
+		return management.ListNodesResp{Code: 1, Nodes: []management.NodeInfo{}}, nil
+	}
 	payload, err := transport.EncodeMessage(management.ActionListNodes, management.ListNodesReq{})
 	if err != nil {
 		return management.ListNodesResp{}, err
@@ -66,6 +69,9 @@ func (s *ManagementService) ListNodesSimple(sourceID, targetID uint32) (manageme
 }
 
 func (s *ManagementService) ListSubtree(ctx context.Context, sourceID, targetID uint32) (management.ListSubtreeResp, error) {
+	if sourceID != 0 && sourceID == targetID {
+		return management.ListSubtreeResp{Code: 1, Nodes: []management.NodeInfo{}}, nil
+	}
 	payload, err := transport.EncodeMessage(management.ActionListSubtree, management.ListSubtreeReq{})
 	if err != nil {
 		return management.ListSubtreeResp{}, err
