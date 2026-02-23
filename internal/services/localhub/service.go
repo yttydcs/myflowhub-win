@@ -129,6 +129,10 @@ func (s *LocalHubService) InstallLatest() (InstallState, error) {
 	}
 
 	s.mu.Lock()
+	if s.cmd != nil || s.run.Running {
+		s.mu.Unlock()
+		return InstallState{}, errors.New("hub_server is running (stop it before installing)")
+	}
 	if s.dl.Active {
 		s.mu.Unlock()
 		return InstallState{}, errors.New("download already in progress")

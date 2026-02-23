@@ -102,6 +102,9 @@ func downloadFile(ctx context.Context, url string, destPath string, onProgress d
 	if err := f.Close(); err != nil {
 		return "", done, err
 	}
+	if err := os.Remove(destPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", done, err
+	}
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		return "", done, err
 	}
@@ -214,6 +217,10 @@ func extractBinaryFromZip(zipPath string, wantFileName string, destPath string) 
 
 	if runtime.GOOS != "windows" {
 		_ = os.Chmod(tmpPath, 0o755)
+	}
+	if err := os.Remove(destPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(tmpPath)
+		return err
 	}
 	return os.Rename(tmpPath, destPath)
 }

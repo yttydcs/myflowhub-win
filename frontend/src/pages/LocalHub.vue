@@ -310,7 +310,7 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            :disabled="busy.installing || snap.download.active || !snap.supported"
+            :disabled="busy.installing || snap.download.active || snap.run.running || !snap.supported"
             @click="installLatest"
           >
             {{ snap.install.installed ? "Reinstall Latest" : "Install Latest" }}
@@ -344,6 +344,10 @@ onMounted(async () => {
           <p v-if="snap.download.error" class="mt-2 text-xs text-rose-600">{{ snap.download.error }}</p>
         </div>
       </div>
+
+      <p v-if="snap.run.running" class="mt-3 text-xs text-muted-foreground">
+        Stop Local Hub before reinstalling/upgrading.
+      </p>
 
       <div class="mt-3 text-xs text-muted-foreground">
         Root: <span class="font-mono text-[11px]">{{ snap.rootDir || "-" }}</span>
