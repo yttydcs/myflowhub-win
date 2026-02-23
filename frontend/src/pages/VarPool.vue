@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useVarPoolStore, type VarPoolKey } from "@/stores/varpool"
+import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const varpool = useVarPoolStore()
+const toast = useToastStore()
 
-const message = ref("")
 const busy = ref(false)
 
 const editDialog = reactive({
@@ -112,7 +113,6 @@ const loadHomeDefaults = async () => {
 }
 
 const refreshAll = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -124,24 +124,25 @@ const refreshAll = async () => {
       }
       await varpool.getVar(key)
     }
+    toast.success("VarPool refreshed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to refresh VarPool data.")
+    toast.errorOf(err, "Failed to refresh VarPool data.")
   } finally {
     busy.value = false
   }
 }
 
 const refreshKey = async (key: VarPoolKey) => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     ensureReady()
     await varpool.getVar(key)
+    toast.success("Variable refreshed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to refresh variable.")
+    toast.errorOf(err, "Failed to refresh variable.")
   } finally {
     busy.value = false
   }
@@ -160,7 +161,6 @@ const closeAddMineDialog = () => {
 }
 
 const submitAddMine = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -182,9 +182,10 @@ const submitAddMine = async () => {
     await varpool.setVar({ name, owner }, value, visibility, kind)
     await varpool.getVar({ name, owner })
     closeAddMineDialog()
+    toast.success("Variable added.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to add variable.")
+    toast.errorOf(err, "Failed to add variable.")
   } finally {
     busy.value = false
   }
@@ -201,7 +202,6 @@ const closeAddWatchDialog = () => {
 }
 
 const submitAddWatch = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -211,9 +211,10 @@ const submitAddWatch = async () => {
     await varpool.addWatchKey({ name, owner })
     await varpool.getVar({ name, owner })
     closeAddWatchDialog()
+    toast.success("Watch added.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to add watch.")
+    toast.errorOf(err, "Failed to add watch.")
   } finally {
     busy.value = false
   }
@@ -234,7 +235,6 @@ const closeEditDialog = () => {
 }
 
 const submitEdit = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -256,59 +256,58 @@ const submitEdit = async () => {
     await varpool.setVar({ name, owner }, value, visibility, kind)
     await varpool.getVar({ name, owner })
     closeEditDialog()
+    toast.success("Variable updated.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to update variable.")
+    toast.errorOf(err, "Failed to update variable.")
   } finally {
     busy.value = false
   }
 }
 
 const reloadWatchList = async (force = false) => {
-  message.value = ""
   if (busy.value && !force) return
   busy.value = true
   try {
     await varpool.loadWatchList()
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to load watch list.")
+    toast.errorOf(err, "Failed to load watch list.")
   } finally {
     busy.value = false
   }
 }
 
 const persistWatchList = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     await varpool.saveWatchList()
+    toast.success("Watch list saved.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to save watch list.")
+    toast.errorOf(err, "Failed to save watch list.")
   } finally {
     busy.value = false
   }
 }
 
 const revokeKey = async (key: VarPoolKey) => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     ensureReady()
     await varpool.revokeVar(key)
+    toast.success("Variable revoked.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to revoke variable.")
+    toast.errorOf(err, "Failed to revoke variable.")
   } finally {
     busy.value = false
   }
 }
 
 const removeKey = async (key: VarPoolKey) => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -317,16 +316,16 @@ const removeKey = async (key: VarPoolKey) => {
       await varpool.unsubscribeVar(key)
     }
     await varpool.removeWatchKey(key)
+    toast.success("Removed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to remove variable.")
+    toast.errorOf(err, "Failed to remove variable.")
   } finally {
     busy.value = false
   }
 }
 
 const toggleSubscribe = async (key: VarPoolKey) => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -334,12 +333,14 @@ const toggleSubscribe = async (key: VarPoolKey) => {
     const value = varpool.valueForKey(key)
     if (value.subKnown && value.subscribed) {
       await varpool.unsubscribeVar(key)
+      toast.success("Unsubscribed.")
     } else {
       await varpool.subscribeVar(key)
+      toast.success("Subscribed.")
     }
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to update subscription.")
+    toast.errorOf(err, "Failed to update subscription.")
   } finally {
     busy.value = false
   }
@@ -590,8 +591,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
 
     <div
       v-if="addMineDialog.open"

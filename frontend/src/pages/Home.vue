@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 import {
   Close as CloseSession,
   Connect as ConnectSession,
@@ -32,6 +33,7 @@ type HomeState = {
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
+const toast = useToastStore()
 
 const defaultAddr = "127.0.0.1:9000"
 const addr = ref(defaultAddr)
@@ -47,7 +49,6 @@ const home = reactive<HomeState>({
 const loading = ref(false)
 const connecting = ref(false)
 const authBusy = ref(false)
-const message = ref("")
 
 const statusLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
 const statusTone = computed(() =>
@@ -83,7 +84,7 @@ const loadHomeState = async () => {
     applyHomeState(state)
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to load saved Home settings."
+    toast.errorOf(err, "Failed to load saved Home settings.")
   } finally {
     loading.value = false
   }
@@ -104,7 +105,7 @@ const persistHomeState = async (patch?: Partial<HomeState>) => {
     applyHomeState(saved)
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to save Home settings."
+    toast.errorOf(err, "Failed to save Home settings.")
   }
 }
 
@@ -125,18 +126,18 @@ const refreshConnectionSnapshot = async () => {
 }
 
 const connect = async () => {
-  message.value = ""
   const target = addr.value.trim() || defaultAddr
   if (connecting.value) return
   connecting.value = true
   try {
     await ConnectSession(target)
     sessionStore.addr = target
+    toast.success("Connected.", target)
   } catch (err) {
     const text = String(err ?? "")
     if (!text.includes("已经连接") && !text.toLowerCase().includes("already connected")) {
-      message.value = "Failed to connect to target."
       console.warn(err)
+      toast.errorOf(err, "Failed to connect to target.")
     }
   } finally {
     connecting.value = false
@@ -144,29 +145,28 @@ const connect = async () => {
 }
 
 const disconnect = async () => {
-  message.value = ""
   if (connecting.value) return
   connecting.value = true
   try {
     await CloseSession()
+    toast.info("Disconnected.")
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to disconnect."
+    toast.errorOf(err, "Failed to disconnect.")
   } finally {
     connecting.value = false
   }
 }
 
 const loginOrRegister = async () => {
-  message.value = ""
   if (authBusy.value) return
   const deviceId = home.deviceId.trim()
   if (!deviceId) {
-    message.value = "Device ID is required."
+    toast.warn("Device ID is required.")
     return
   }
   if (!sessionStore.connected) {
-    message.value = "Connect before logging in."
+    toast.warn("Connect before logging in.")
     return
   }
   authBusy.value = true
@@ -197,10 +197,16 @@ const loginOrRegister = async () => {
       hubId: hubId || home.hubId,
       role: role || home.role
     })
+
+    if (isLogin) {
+      toast.success("Logged in.", `node=${nodeId || home.nodeId} hub=${hubId || home.hubId}`)
+    } else {
+      toast.success("Registered.", `node=${nodeId || home.nodeId} hub=${hubId || home.hubId}`)
+    }
   } catch (err) {
     console.warn(err)
     const errMsg = (err as Error)?.message || String(err ?? "") || "Login/register failed."
-    message.value = errMsg
+    toast.error(errMsg)
     sessionStore.auth.lastAuthAction = home.nodeId ? "login_resp" : "register_resp"
     sessionStore.auth.lastAuthMessage = errMsg
     sessionStore.auth.lastAuthAt = nowIso()
@@ -211,14 +217,14 @@ const loginOrRegister = async () => {
 }
 
 const clearAuth = async () => {
-  message.value = ""
   try {
     const state = await ClearHomeAuth()
     applyHomeState(state)
     sessionStore.auth.loggedIn = false
+    toast.success("Cleared saved auth.")
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to clear local auth state."
+    toast.errorOf(err, "Failed to clear local auth state.")
   }
 }
 
@@ -438,6 +444,5 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

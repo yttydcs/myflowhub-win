@@ -3,11 +3,12 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import { useManagementStore } from "@/stores/management"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 const mgmtStore = useManagementStore()
 const sessionStore = useSessionStore()
+const toast = useToastStore()
 
-const message = ref("")
 const editOpen = ref(false)
 const configDraft = reactive({ key: "", value: "" })
 
@@ -16,36 +17,35 @@ const listModeLabel = computed(() =>
 )
 
 const refreshNodes = async (mode: "direct" | "subtree") => {
-  message.value = ""
   try {
     if (mode === "subtree") {
       await mgmtStore.listSubtree()
     } else {
       await mgmtStore.listNodes()
     }
+    toast.success(mode === "subtree" ? "Subtree loaded." : "Direct nodes loaded.")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load node list."
+    toast.errorOf(err, "Failed to load node list.")
   }
 }
 
 const selectNode = async (nodeId: number) => {
-  message.value = ""
   try {
     await mgmtStore.selectNode(nodeId)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load config."
+    toast.errorOf(err, "Failed to load config.")
   }
 }
 
 const refreshConfig = async () => {
-  message.value = ""
   try {
     await mgmtStore.refreshConfig()
+    toast.success("Config refreshed.")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to refresh config."
+    toast.errorOf(err, "Failed to refresh config.")
   }
 }
 
@@ -56,13 +56,13 @@ const openEdit = (key: string, value: string) => {
 }
 
 const saveConfig = async () => {
-  message.value = ""
   try {
     await mgmtStore.setConfig(configDraft.key, configDraft.value)
     editOpen.value = false
+    toast.success("Config updated.")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to update config."
+    toast.errorOf(err, "Failed to update config.")
   }
 }
 
@@ -172,11 +172,6 @@ onMounted(async () => {
         </div>
       </section>
     </div>
-
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
-    <p v-else-if="mgmtStore.state.message" class="text-sm text-muted-foreground">
-      {{ mgmtStore.state.message }}
-    </p>
 
     <div v-if="editOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">

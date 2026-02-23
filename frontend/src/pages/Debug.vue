@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue"
 import { Button } from "@/components/ui/button"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -24,6 +25,7 @@ const callDebug = async <T>(method: string, ...args: any[]): Promise<T> => {
 }
 
 const sessionStore = useSessionStore()
+const toast = useToastStore()
 
 const form = reactive({
   addr: "127.0.0.1:9000",
@@ -39,7 +41,6 @@ const form = reactive({
   payloadHex: false
 })
 
-const message = ref("")
 const busy = ref(false)
 
 const connectionLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
@@ -55,32 +56,31 @@ const parseUint = (raw: string, field: string) => {
 }
 
 const connect = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     await callSession("Connect", form.addr)
     await callSession("LoginLegacy", form.nodeName)
+    toast.success("Connected (debug).")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to connect."
+    toast.errorOf(err, "Failed to connect.")
   } finally {
     busy.value = false
   }
 }
 
 const disconnect = async () => {
-  message.value = ""
   try {
     await callSession("Close")
+    toast.info("Disconnected.")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to disconnect."
+    toast.errorOf(err, "Failed to disconnect.")
   }
 }
 
 const sendFrame = async () => {
-  message.value = ""
   try {
     const frame = {
       major: parseUint(form.major, "Major"),
@@ -92,10 +92,10 @@ const sendFrame = async () => {
       timestamp: parseUint(form.timestamp, "Timestamp")
     }
     await callDebug("Send", frame, form.payload, form.payloadHex)
-    message.value = "Frame sent."
+    toast.success("Frame sent.")
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to send frame."
+    toast.errorOf(err, "Failed to send frame.")
   }
 }
 </script>
@@ -236,6 +236,5 @@ const sendFrame = async () => {
       </section>
     </div>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

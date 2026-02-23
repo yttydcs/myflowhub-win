@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button"
 import type { DeviceTreeNode, DevicesMode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 const devicesStore = useDevicesStore()
 const sessionStore = useSessionStore()
+const toast = useToastStore()
 
-const message = ref("")
 const autoLoaded = ref(false)
 
 const identityLabel = computed(() => {
@@ -47,12 +48,11 @@ const flattenVisible = (root: DeviceTreeNode | null) => {
 const visibleNodes = computed(() => flattenVisible(devicesStore.state.root))
 
 const loadRoot = async () => {
-  message.value = ""
   try {
     await devicesStore.loadRoot()
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load root."
+    toast.errorOf(err, "Failed to load root.")
   }
 }
 
@@ -66,22 +66,20 @@ const onRootEnter = async () => {
 }
 
 const toggleNode = async (node: DeviceTreeNode) => {
-  message.value = ""
   try {
     await devicesStore.toggle(node.key)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to expand node."
+    toast.errorOf(err, "Failed to expand node.")
   }
 }
 
 const retryNode = async (node: DeviceTreeNode) => {
-  message.value = ""
   try {
     await devicesStore.retry(node.key)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to retry node."
+    toast.errorOf(err, "Failed to retry node.")
   }
 }
 
@@ -225,10 +223,6 @@ onMounted(async () => {
       </div>
     </section>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
-    <p v-else-if="devicesStore.state.message" class="text-sm text-muted-foreground">
-      {{ devicesStore.state.message }}
-    </p>
   </section>
 </template>
 

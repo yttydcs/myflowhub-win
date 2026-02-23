@@ -1,5 +1,6 @@
 import { reactive } from "vue"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -47,19 +48,19 @@ type DevicesState = {
   mode: DevicesMode
   rootTargetId: string
   root: DeviceTreeNode | null
-  message: string
 }
 
 const state = reactive<DevicesState>({
   mode: "direct",
   rootTargetId: "",
-  root: null,
-  message: ""
+  root: null
 })
 
 let epoch = 0
 let seenNodeIDs = new Set<number>()
 const nodeIndex = new Map<string, DeviceTreeNode>()
+
+const toast = useToastStore()
 
 const toErrorMessage = (err: unknown) => {
   if (!err) return "Unknown error."
@@ -115,7 +116,6 @@ const normalizeNodes = (resp: ListNodesWire): NodeInfo[] => {
 
 const clearRuntimeTree = () => {
   state.root = null
-  state.message = ""
   nodeIndex.clear()
   seenNodeIDs = new Set<number>()
 }
@@ -177,6 +177,7 @@ const loadChildren = async (node: DeviceTreeNode, sourceID: number, myEpoch: num
     node.loading = false
     node.error = toErrorMessage(err)
     node.children = null
+    toast.errorOf(err, `Node ${node.nodeId} load failed.`)
   }
 }
 
@@ -194,7 +195,6 @@ const loadRoot = async () => {
     rootID = resolveTargetNode(hubID)
   } catch (err) {
     if (epoch !== myEpoch) return
-    state.message = toErrorMessage(err)
     throw err
   }
 
@@ -222,15 +222,10 @@ const loadRoot = async () => {
     root.children = buildChildNodes(root.key, children, rootID)
     root.hasChildrenHint = root.children.length > 0
     root.loading = false
-    state.message =
-      state.mode === "subtree"
-        ? "Root loaded (subtree is direct + self; not recursive)."
-        : "Root loaded."
   } catch (err) {
     if (epoch !== myEpoch) return
     root.loading = false
     root.error = toErrorMessage(err)
-    state.message = root.error
     throw err
   }
 }
@@ -254,7 +249,7 @@ const toggle = async (key: string) => {
   } catch (err) {
     node.expanded = false
     node.error = toErrorMessage(err)
-    state.message = node.error
+    toast.error(node.error || "Unable to query devices.")
     return
   }
   await loadChildren(node, sourceID, epoch, false)
@@ -271,7 +266,7 @@ const retry = async (key: string) => {
     sourceID = identity.sourceID
   } catch (err) {
     node.error = toErrorMessage(err)
-    state.message = node.error
+    toast.error(node.error || "Unable to query devices.")
     return
   }
   await loadChildren(node, sourceID, epoch, true)

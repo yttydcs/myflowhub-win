@@ -3,9 +3,10 @@ import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"
 import { useLogsStore } from "@/stores/logs"
+import { useToastStore } from "@/stores/toast"
 
 const logsStore = useLogsStore()
-const message = ref("")
+const toast = useToastStore()
 const logRef = ref<HTMLElement | null>(null)
 
 const lineCount = computed(() => logsStore.state.lines.length)
@@ -25,7 +26,7 @@ const onPauseChange = async (event: Event) => {
     await logsStore.setPaused(target.checked)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to update log pause state."
+    toast.errorOf(err, "Failed to update log pause state.")
     await logsStore.refreshPaused()
   }
 }
@@ -53,7 +54,7 @@ onMounted(async () => {
     await scrollToBottom()
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load logs."
+    toast.errorOf(err, "Failed to load logs.")
   }
 })
 </script>
@@ -105,6 +106,5 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

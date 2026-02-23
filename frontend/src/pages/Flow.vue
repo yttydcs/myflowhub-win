@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useFlowStore } from "@/stores/flow"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 const flowStore = useFlowStore()
 const sessionStore = useSessionStore()
-
-const message = ref("")
+const toast = useToastStore()
 
 const addNodeOpen = ref(false)
 
@@ -31,77 +31,68 @@ const canRedo = computed(
 )
 
 const refreshList = async () => {
-  message.value = ""
   try {
     await flowStore.listFlows()
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to refresh flows."
+    toast.errorOf(err, "Failed to refresh flows.")
   }
 }
 
 const startNew = () => {
-  message.value = ""
   flowStore.newDraft()
 }
 
 const saveFlow = async () => {
-  message.value = ""
   try {
     await flowStore.saveFlow()
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to save flow."
+    toast.errorOf(err, "Failed to save flow.")
   }
 }
 
 const autoLayout = () => {
-  message.value = ""
   try {
     flowStore.autoLayoutTB()
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to auto layout."
+    toast.errorOf(err, "Failed to auto layout.")
   }
 }
 
 const undo = () => {
-  message.value = ""
   flowStore.undo()
 }
 
 const redo = () => {
-  message.value = ""
   flowStore.redo()
 }
 
 const runFlow = async () => {
-  message.value = ""
   try {
     await flowStore.runFlow()
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to run flow."
+    toast.errorOf(err, "Failed to run flow.")
   }
 }
 
 const statusFlow = async () => {
-  message.value = ""
   try {
     await flowStore.statusFlow(flowStore.state.statusRunId)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to fetch status."
+    toast.errorOf(err, "Failed to fetch status.")
   }
 }
 
 const selectFlow = async (flowId: string) => {
-  message.value = ""
   try {
     await flowStore.getFlow(flowId)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to load flow."
+    toast.errorOf(err, "Failed to load flow.")
   }
 }
 
@@ -112,13 +103,12 @@ const openAddNodeDialog = () => {
 }
 
 const saveNode = () => {
-  message.value = ""
   try {
     flowStore.addNode(nodeDraft.id, nodeDraft.kind)
     addNodeOpen.value = false
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to add node."
+    toast.errorOf(err, "Failed to add node.")
   }
 }
 
@@ -131,12 +121,11 @@ const removeEdge = () => {
 }
 
 const onCanvasConnect = (from: string, to: string) => {
-  message.value = ""
   try {
     flowStore.addEdge(from, to)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Failed to connect nodes."
+    toast.errorOf(err, "Failed to connect nodes.")
   }
 }
 
@@ -209,6 +198,35 @@ watch(
     flowStore.setIdentity(Number(nodeId), Number(hubId))
   },
   { immediate: true }
+)
+
+watch(
+  () => flowStore.state.message,
+  (msg) => {
+    const trimmed = msg.trim()
+    if (!trimmed) return
+    const lower = trimmed.toLowerCase()
+    const isError =
+      lower.includes("failed") ||
+      lower.includes("error") ||
+      lower.includes("timeout") ||
+      lower.includes("timed out") ||
+      lower.includes("unable")
+    if (isError) {
+      toast.error(trimmed)
+    } else if (
+      lower.includes("saved") ||
+      lower.includes("loaded") ||
+      lower.includes("updated") ||
+      lower.includes("started") ||
+      lower.includes("applied")
+    ) {
+      toast.success(trimmed)
+    } else {
+      toast.info(trimmed)
+    }
+    flowStore.state.message = ""
+  }
 )
 
 onMounted(() => {
@@ -495,12 +513,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
         </div>
       </section>
     </div>
-
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
-    <p v-else-if="flowStore.state.message" class="text-sm text-muted-foreground">
-      {{ flowStore.state.message }}
-    </p>
-
     <div v-if="addNodeOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Add Node</h2>

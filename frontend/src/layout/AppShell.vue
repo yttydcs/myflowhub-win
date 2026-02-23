@@ -3,6 +3,7 @@ import { computed, ref } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import ToastHost from "@/components/ToastHost.vue"
 import { useFileStore } from "@/stores/file"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -194,6 +195,7 @@ const selectProfile = async (name: string) => {
 
 <template>
   <div class="app-surface min-h-screen text-foreground">
+    <ToastHost />
     <div v-if="isWindowLayout" class="relative min-h-screen">
       <div class="relative min-h-screen overflow-hidden">
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
@@ -325,9 +327,9 @@ const selectProfile = async (name: string) => {
                         : 'border-transparent hover:border-border/60 hover:bg-muted/70'
                     ]"
                   >
-                    <div
-                      :class="[
-                        'flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-semibold uppercase',
+                      <div
+                        :class="[
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold uppercase leading-none',
                         isActive ? 'bg-primary text-primary-foreground' : item.tone
                       ]"
                     >
@@ -417,9 +419,6 @@ const selectProfile = async (name: string) => {
               </RouterLink>
             </div>
 
-            <p v-if="profileStore.state.message" class="mt-2 text-xs text-muted-foreground">
-              {{ profileStore.state.message }}
-            </p>
           </header>
 
           <main class="flex-1 space-y-6 overflow-y-auto px-6 py-8">

@@ -3,17 +3,18 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import { useFileStore } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 import FileTasks from "@/windows/FileTasks.vue"
 
 const fileStore = useFileStore()
 const sessionStore = useSessionStore()
+const toast = useToastStore()
 
 const settingsOpen = ref(false)
 const downloadOpen = ref(false)
 const offerOpen = ref(false)
 const addNodeOpen = ref(false)
 const tasksInlineOpen = ref(false)
-const message = ref("")
 
 const prefsDraft = reactive({ ...fileStore.state.prefs })
 const downloadForm = reactive({
@@ -46,13 +47,13 @@ const joinDir = (base: string, name: string) => {
 
 const refreshList = async () => {
   if (!currentNodeId.value) return
-  message.value = ""
   try {
     await fileStore.requestList(currentNodeId.value, currentDir.value)
   } catch (err) {
     console.warn(err)
     fileStore.state.listing = false
     fileStore.state.listMessage = "Failed to load directory."
+    toast.errorOf(err, "Failed to load directory.")
   }
 }
 
@@ -91,13 +92,13 @@ const openSettings = () => {
 }
 
 const saveSettings = async () => {
-  message.value = ""
   try {
     await fileStore.savePrefs({ ...prefsDraft })
     settingsOpen.value = false
+    toast.success("File settings saved.")
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to save file settings."
+    toast.errorOf(err, "Failed to save file settings.")
   }
 }
 
@@ -111,7 +112,6 @@ const openDownloadDialog = () => {
 
 const confirmDownload = async () => {
   if (!selected.value) return
-  message.value = ""
   try {
     await fileStore.startPull(
       currentNodeId.value,
@@ -122,9 +122,10 @@ const confirmDownload = async () => {
       downloadForm.wantHash
     )
     downloadOpen.value = false
+    toast.success("Download started.")
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to start download."
+    toast.errorOf(err, "Failed to start download.")
   }
 }
 
@@ -141,16 +142,16 @@ const confirmOffer = async () => {
   if (!selected.value) return
   const targetId = Number.parseInt(offerForm.targetId.trim(), 10)
   if (!targetId) {
-    message.value = "Target Node ID is required."
+    toast.warn("Target Node ID is required.")
     return
   }
-  message.value = ""
   try {
     await fileStore.startOffer(targetId, currentDir.value, selected.value.name, offerForm.wantHash)
     offerOpen.value = false
+    toast.success("Offer sent.")
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to send offer."
+    toast.errorOf(err, "Failed to send offer.")
   }
 }
 
@@ -169,11 +170,17 @@ const openAddNodeDialog = () => {
 const saveNode = async () => {
   const id = Number.parseInt(newNodeId.value.trim(), 10)
   if (!id) {
-    message.value = "Node ID must be a valid number."
+    toast.warn("Node ID must be a valid number.")
     return
   }
-  await fileStore.saveNodes([...fileStore.state.nodes, id])
-  addNodeOpen.value = false
+  try {
+    await fileStore.saveNodes([...fileStore.state.nodes, id])
+    addNodeOpen.value = false
+    toast.success("Node saved.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to save node.")
+  }
 }
 
 const removeNode = async (nodeId: number) => {
@@ -336,8 +343,6 @@ onMounted(async () => {
     <div v-if="tasksInlineOpen" class="rounded-2xl border bg-card/90 p-4 shadow-sm">
       <FileTasks />
     </div>
-
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
 
     <div v-if="settingsOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 shadow-xl">

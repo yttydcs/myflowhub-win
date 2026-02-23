@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import { usePresetsStore } from "@/stores/presets"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -62,8 +63,7 @@ const callFile = async <T>(method: string, ...args: any[]): Promise<T> => {
 
 const sessionStore = useSessionStore()
 const presetStore = usePresetsStore()
-
-const message = ref("")
+const toast = useToastStore()
 
 const senderForm = reactive({
   targetId: "",
@@ -235,15 +235,14 @@ const resolveOwnerId = (raw: string, fallback: number) => {
 }
 
 const runAction = async (label: string, action: () => Promise<void>) => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     await action()
-    message.value = label
+    toast.success(label)
   } catch (err) {
     console.warn(err)
-    message.value = (err as Error)?.message || "Action failed."
+    toast.errorOf(err, "Action failed.")
   } finally {
     busy.value = false
   }
@@ -1359,6 +1358,5 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

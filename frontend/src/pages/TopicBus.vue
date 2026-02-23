@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useTopicBusStore, type TopicBusEvent } from "@/stores/topicbus"
+import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const topicbus = useTopicBusStore()
+const toast = useToastStore()
 
-const message = ref("")
 const busy = ref(false)
 
 const subForm = reactive({
@@ -97,7 +98,7 @@ const loadPreferences = async () => {
     syncMaxEventsInput()
   } catch (err) {
     console.warn(err)
-    message.value = "Failed to load TopicBus preferences."
+    toast.errorOf(err, "Failed to load TopicBus preferences.")
   }
 }
 
@@ -106,7 +107,6 @@ const syncMaxEventsInput = () => {
 }
 
 const applyMaxEvents = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -117,16 +117,16 @@ const applyMaxEvents = async () => {
     }
     await topicbus.setMaxEvents(parsed)
     syncMaxEventsInput()
+    toast.success("Max events updated.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to update max events.")
+    toast.errorOf(err, "Failed to update max events.")
   } finally {
     busy.value = false
   }
 }
 
 const subscribeFromInput = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -136,20 +136,20 @@ const subscribeFromInput = async () => {
     }
     await topicbus.updateTopics(topics, "add")
     if (!sessionStore.connected || !selfNodeId.value) {
-      message.value = "Saved subscription list only; login to send subscribe."
+      toast.info("Saved subscription list only; login to send subscribe.")
       return
     }
     await topicbus.subscribe(topics)
+    toast.success("Subscribed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to subscribe.")
+    toast.errorOf(err, "Failed to subscribe.")
   } finally {
     busy.value = false
   }
 }
 
 const unsubscribeFromInput = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -159,20 +159,20 @@ const unsubscribeFromInput = async () => {
     }
     await topicbus.updateTopics(topics, "remove")
     if (!sessionStore.connected || !selfNodeId.value) {
-      message.value = "Updated list only; login to send unsubscribe."
+      toast.info("Updated list only; login to send unsubscribe.")
       return
     }
     await topicbus.unsubscribe(topics)
+    toast.success("Unsubscribed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to unsubscribe.")
+    toast.errorOf(err, "Failed to unsubscribe.")
   } finally {
     busy.value = false
   }
 }
 
 const unsubscribeSelected = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
@@ -184,32 +184,33 @@ const unsubscribeSelected = async () => {
     topicbus.setSelectedTopic("")
     selectedEventIndex.value = -1
     if (!sessionStore.connected || !selfNodeId.value) {
-      message.value = "Updated list only; login to send unsubscribe."
+      toast.info("Updated list only; login to send unsubscribe.")
       return
     }
     await topicbus.unsubscribe([topic])
+    toast.success("Unsubscribed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to unsubscribe.")
+    toast.errorOf(err, "Failed to unsubscribe.")
   } finally {
     busy.value = false
   }
 }
 
 const resubscribeAll = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     ensureReady()
     if (!topicbus.state.topics.length) {
-      message.value = "No topics to resubscribe."
+      toast.info("No topics to resubscribe.")
       return
     }
     await topicbus.resubscribe()
+    toast.success("Resubscribed.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to resubscribe.")
+    toast.errorOf(err, "Failed to resubscribe.")
   } finally {
     busy.value = false
   }
@@ -221,9 +222,8 @@ const clearEvents = () => {
 }
 
 const fillSelectedTopic = () => {
-  message.value = ""
   if (!topicbus.state.selectedTopic) {
-    message.value = "Select a topic to populate the publish form."
+    toast.warn("Select a topic to populate the publish form.")
     return
   }
   publishForm.topic = topicbus.state.selectedTopic
@@ -236,15 +236,15 @@ const clearPublishInputs = () => {
 }
 
 const publishEvent = async () => {
-  message.value = ""
   if (busy.value) return
   busy.value = true
   try {
     ensureReady()
     await topicbus.publish(publishForm.topic, publishForm.name, publishForm.payload)
+    toast.success("Event published.")
   } catch (err) {
     console.warn(err)
-    message.value = String(err ?? "Failed to publish event.")
+    toast.errorOf(err, "Failed to publish event.")
   } finally {
     busy.value = false
   }
@@ -531,6 +531,5 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p v-if="message" class="text-sm text-rose-600">{{ message }}</p>
   </section>
 </template>

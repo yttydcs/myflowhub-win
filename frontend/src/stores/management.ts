@@ -53,7 +53,6 @@ type MgmtState = {
   nodes: MgmtNode[]
   selectedNodeId: number
   configEntries: MgmtConfigEntry[]
-  message: string
 }
 
 const state = reactive<MgmtState>({
@@ -63,8 +62,7 @@ const state = reactive<MgmtState>({
   listMode: "direct",
   nodes: [],
   selectedNodeId: 0,
-  configEntries: [],
-  message: ""
+  configEntries: []
 })
 
 const resolveTargetNode = () => {
@@ -110,7 +108,6 @@ const applyListResp = (resp: MgmtListNodesResp, mode: "direct" | "subtree") => {
     state.nodes = list
   }
   state.listMode = mode
-  state.message = mode === "direct" ? "Direct nodes loaded." : "Subtree loaded."
 }
 
 const applyConfigResp = (resp: MgmtConfigResp, fallbackKey: string) => {
@@ -196,7 +193,6 @@ const setConfig = async (key: string, value: string) => {
   const resp = await callMgmt<MgmtConfigResp>("ConfigSetSimple", sourceID, nodeId, trimmed, value)
   if (state.selectedNodeId !== nodeId) return
   applyConfigResp(resp, trimmed)
-  state.message = "Config updated."
 }
 
 export const useManagementStore = () => {
