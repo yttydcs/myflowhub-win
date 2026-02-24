@@ -1,48 +1,53 @@
-# Plan - Win 前端：Devices 列表交互增强 + 页面顶部文案移除 + 导航图标化
+# Plan - Win 前端：Devices 集成 Config 编辑 + 移除 Management + 导航重排
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`refactor/win-ui-polish`
-- Worktree：`d:\project\MyFlowHub3\worktrees\win-ui-polish\MyFlowHub-Win`
-- Base：`main`（当前 HEAD：`d8351af`）
+- 分支：`refactor/win-devices-config`
+- Worktree：`d:\project\MyFlowHub3\worktrees\win-devices-config\MyFlowHub-Win`
+- Base：`main`（当前 worktree HEAD：`409f078`）
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
+- 运行与验收（建议）：
+  1) `frontend` 构建：`cd frontend && npm run build`
+  2) Win 构建（含 bindings）：`$env:GOWORK='off'; wails build -nopackage`
 
-## 背景（问题清单与用户需求）
-你提出 4 个 UI 问题需要统一修复：
-1) `Devices` 的节点列表缺少明显 hover 反馈（行看起来“不像可点/可操作”）。
-2) `Devices` 树中“似乎所有节点都被标记为了 root”（root 标记错误）。
-3) 各页面顶部存在类似：
-   - `Session` / `Devices` / “Query the management plane ...”
-   这类说明性 header 区块，你要求 **整块移除**（无实际意义）。
-4) 左侧导航（tab 选项）当前使用 2 个首字母（`HM/DV/...`），你要求改为 **图标**（并确认使用图标库方案）。
+## 背景（问题与用户需求）
+你反馈：`Devices` 与 `Management` 的能力有一定重复，希望收敛为一个入口。
+
+具体需求：
+1) 在 `Devices` 的节点列表每一行右侧新增“编辑”按钮；
+2) 点击后弹出内容类似 `Management` 的 `Config` 面板（key 列表、value 展示、单条编辑保存）；
+3) 移除 `Management`（你确认：**路由也删除**，不做 redirect）；
+4) 将 `Devices` 从左侧导航的原分组移动到 `Operations` 分组，并放在 `File Console` 上面。
 
 ## 目标
-1) `Devices`：节点行 hover 更明显，且不影响展开按钮与点击行为。
-2) `Devices`：仅真实 root 节点显示 `(root)`，其余节点不显示。
-3) 全局：移除页面顶部“模块说明 header 区块”，并迁移原 header 上的控制按钮/输入框到页面内合适位置，保证功能不丢失。
-4) 左侧导航：2 字母缩写替换为图标，保留现有激活态/非激活态色彩策略与可读性。
+1) `Devices` 内即可完成目标节点的 Config 查看与编辑（覆盖现有 `Management` 右侧 Config 面板能力）。
+2) 删除 `Management` 页面入口与路由，避免模块重复与维护成本。
+3) 导航结构更符合使用路径：`Devices` 与 `File Console` 相邻，且 `Devices` 在上。
 
 ## 范围与约束
 - 必须：
-  - 覆盖所有存在“顶部说明 header 区块”的页面；不存在则跳过（按你的确认）。
-  - 不改协议/后端/业务行为，仅做 UI/交互与信息结构收敛。
-  - 图标使用图标库（你已确认）。
+  - 复用现有 `ManagementService` bindings（不改后端/协议）。
+  - “编辑按钮”位置：节点行右侧（已确认）。
+  - `Management` route 删除（已确认）。
+  - `Devices` 导航移动分组到 `Operations`，并调整排序（已确认）。
 - 不做：
-  - 不重做整体布局风格（不做大规模 UI redesign）。
-  - 不要求把移动端顶部“圆点导航”也改成图标（你未提出；如后续需要再开新任务）。
+  - 不为 `#/management` 做兼容 redirect（按你确认的决策）。
+  - 不引入新的后端能力；不重写 Devices 树查询。
 
-## 关键决策（已确认）
-- D1：顶部 header 区块移除策略 = **C（整块移除）**
-- D2：覆盖范围 = **B（全局；没有则跳过）**
-- D3：tab 选项指代 = **左侧导航两字母块**
-- D4：图标方案 = **B（引入图标库）**
+## 决策（已确认）
+- D1：编辑按钮位置 = `Devices` 节点行右侧（A）
+- D2：移除 `Management` 路由 = 彻底删除（A）
+- D3：`Devices` 导航调整 = 移动到 `Operations`，位于 `File Console` 之前（A）
 
-## 根因分析（可审计）
-### `Devices` “全部节点都像 root”
-- 现状：UI 使用 `node.key.startsWith('root:')` 判断 root。
-- 但子节点 key 由父 key 拼接（`${parentKey}/${nodeId}`），会导致所有后代 key 都以 `root:` 开头，从而误判为 root。
-- 修复策略：root 标记基于 **深度**（`depth === 0`）或基于 `devicesStore.state.root?.key` 精确判断。
+## 设计要点（实现约束）
+- Config 能力复用策略（最小化变更）：
+  - 复用现有 `frontend/src/stores/management.ts` 的 Config 逻辑（`selectNode/refreshConfig/setConfig`），避免再写一套重复请求与状态管理。
+  - `Management` 页面移除后，该 store 仍作为“管理面（management plane）能力封装”被 `Devices` 使用。
+- UI 结构：
+  - 在 `Devices` 内新增一个 Config Overlay（全屏遮罩 + 中央面板），展示 Config 列表与 Refresh/Close。
+  - 单条配置编辑仍使用二级 Overlay（与原 `Management` 的 Edit Config 弹窗一致）。
+  - 交互安全：按钮需 `@click.stop`，避免触发节点行点击打开 NodeInfo。
 
 ---
 
@@ -51,75 +56,62 @@
 ### T1. Workspace 准备（已完成）
 - 目标：创建独占 worktree 与专业分支，确保不在 `repo/` 里做实现改动。
 - 验收：
-  - `git status -sb` 显示在 `refactor/win-ui-polish` 且工作区干净。
+  - `git status -sb` 显示 `refactor/win-devices-config` 且工作区干净（或仅包含本 workflow 的变更）。
 - 回滚点：`git worktree remove` + `git worktree prune` + 删除分支（若未推送）。
 
-### T2. Devices：root 标记修复 + hover 反馈增强 + 顶部 header 移除与控件迁移（已完成）
+### T2. Devices：新增 Config 编辑入口（行右侧按钮 + Config Overlay）
 - 目标：
-  - root 标记仅出现在真实 root 行。
-  - 节点行 hover 更明显（背景/边框/阴影更清晰），且不影响按钮点击。
-  - 移除顶部 header 区块；将原 header 的 `Identity/Mode/Root/Reload` 控件迁移到 “Nodes” 卡片 header 区。
-- 涉及文件：
+  - 每个节点行右侧新增 “Edit/编辑” 按钮；
+  - 点击后打开 Config Overlay，展示该节点配置列表（keys + values），并支持单条 Edit/Save。
+- 涉及文件（预期）：
   - `frontend/src/pages/Devices.vue`
+  - （复用）`frontend/src/stores/management.ts`（尽量不改；如需补充 loading/并发控制再评估）
 - 验收：
-  - 仅 `depth === 0` 的行显示 `(root)`。
-  - hover 可见（肉眼明显）且不导致点击误触/按钮不可用。
-  - 顶部 `Session/Devices/说明` 整块消失，但 `Mode/Root/Reload` 等功能仍可用。
+  - 点击节点行仍打开 NodeInfo；点击 Edit 仅打开 Config Overlay（不触发 NodeInfo）。
+  - Config Overlay 能显示 key 列表，并逐步填充 value（与原 Management 行为一致）。
+  - Edit Config：保存成功后列表 value 更新，并 toast 提示成功；失败 toast 错误。
 - 测试点：
-  - Root 输入 Enter 仍能触发 reload；Mode 切换仍能 reload。
-  - duplicate 节点按钮仍禁用，hover 不误导为可展开。
-- 回滚点：revert `Devices.vue`。
+  - 快速切换不同节点打开 Config，旧请求不会污染新节点（依赖 store 内 `selectedNodeId` guard）。
+  - Esc 行为符合 Overlay 栈：仅关闭最上层（已有全局 Overlay 机制）。
+- 回滚点：revert `Devices.vue` 中新增 Overlay 相关改动。
 
-### T3. 全局：移除页面顶部说明 header 区块（有则移除；无则跳过）（已完成）
-- 目标：删除各页面顶部的说明性 header 区块，并将该区块中的操作控件迁移到页面内第一块相关卡片/列表的 header 区，避免功能丢失。
-- 预期涉及文件（以扫描结果为准）：
-  - `frontend/src/pages/File.vue`（迁移：Tasks/Settings/Refresh）
-  - `frontend/src/pages/Flow.vue`（迁移：Executor + Refresh/New/Undo/Redo/AutoLayout/Save/Run/Status）
-  - `frontend/src/pages/LocalHub.vue`（迁移：Supported badge + Reload snapshot）
-  - `frontend/src/pages/Logs.vue`（迁移：Lines + Open Window）
-  - `frontend/src/pages/Management.vue`（迁移：Target + List Direct/Subtree）
-  - `frontend/src/pages/Debug.vue`（迁移：Session pill）
+### T3. 移除 Management 模块（路由 + 导航 + 页面文件）
+- 目标：删除 `Management` 页面入口，避免与 `Devices` 能力重复。
+- 涉及文件（预期）：
+  - `frontend/src/router/index.ts`（移除 `/management` route 与 import）
+  - `frontend/src/layout/AppShell.vue`（移除导航项）
+  - `frontend/src/pages/Management.vue`（删除文件）
 - 验收：
-  - 每个页面顶部 header 区块完全移除。
-  - 原 header 上的控件在页面内仍可访问、可操作，且布局不突兀。
-- 测试点：
-  - `File`：Tasks/Settings/Refresh 可用；且不依赖顶部 header 存在。
-  - `Flow`：常用按钮仍可操作，布局不拥挤到不可用。
-- 回滚点：逐文件 revert。
+  - 左侧导航不再显示 Management；
+  - 路由表中不再存在 `/management`；
+  - `frontend` build / `wails build` 通过。
+- 回滚点：revert router/nav，并恢复页面文件。
 
-### T4. 左侧导航：两字母缩写替换为图标（图标库方案）（已完成）
-- 目标：将 `AppShell.vue` 侧边栏导航项从 `HM/DV/...` 替换为对应模块图标；保持激活态/非激活态色彩与对比度。
-- 方案：
-  1) 引入依赖：`lucide-vue-next`
-  2) `NavItem` 增加 `icon` 字段，移除/废弃 `short`
-  3) 模板中渲染 `<component :is="item.icon" class="h-5 w-5" />`
+### T4. 导航重排：Devices 移到 Operations 并位于 File Console 上方
+- 目标：左侧导航结构调整符合你的信息架构需求。
 - 涉及文件：
-  - `frontend/package.json` / `frontend/package-lock.json`
   - `frontend/src/layout/AppShell.vue`
 - 验收：
-  - 左侧导航不再显示两字母缩写，改为图标。
-  - 激活态图标颜色/背景符合现有高亮策略；非激活态保留 `tone` 色彩。
-- 回滚点：revert 依赖与 `AppShell.vue`。
+  - `Devices` 出现在 `Operations` 分组，且排序在 `File Console` 之前；
+  - 移动端顶部导航（`flatNav`）顺序同步变化。
+- 回滚点：revert `AppShell.vue` 的 navGroups 变更。
 
-### T5. 验收与构建（本地可执行）（已完成）
-- 目标：保证构建通过，且关键页面无明显回归。
+### T5. 验收与回归（构建 + 冒烟）
+- 目标：保证改动无编译/运行时回归。
 - 验收命令：
   - `cd frontend && npm run build`
-  -（建议）`GOWORK=off wails build -nopackage`
-- 执行记录（本次）：
-  - `GOWORK=off wails build -nopackage` ✅
-  - `cd frontend && npm run build` ✅
-- 人工冒烟：
-  - `Devices`：hover、root 标记、控件迁移、节点详情弹窗
-  - `File/Flow/LocalHub/Logs/Management/Debug`：顶部 header 已移除且控件可用
-  - 左侧导航：图标显示正常
+  - `$env:GOWORK='off'; wails build -nopackage`
+- 冒烟：
+  - `Devices`：树加载/展开正常；NodeInfo 仍可用；Config Overlay 可打开并编辑保存；
+  - 导航：Management 消失；Devices 位置在 File Console 上方。
+- 回滚点：逐 commit revert（建议按 T2/T3/T4 拆分 commit）。
 
 ---
 
 ## 依赖关系
-- T4（图标库）依赖 `frontend` 依赖安装与 lock 更新。
-- T2/T3 为纯页面调整，可并行，但建议按 “先 Devices 再全局页面” 执行便于回归对照。
+- 建议顺序：T2（先把能力迁入 Devices）→ T3（移除 Management）→ T4（导航重排）→ T5（验收）。
 
 ## 风险与注意事项
-- 顶部 header 移除后，部分页面的操作栏可能变拥挤：需要逐页微调布局（`flex-wrap`、分组、按钮 size）。
-- 新增依赖需确保 tree-shake：仅按需 import 图标组件，避免无意引入整包。
+- Config keys 数量较多时，逐 key 并发 `ConfigGet` 可能造成瞬时请求峰值：本次先沿用现有实现；如出现压力/卡顿再加并发上限与搜索过滤（需要回到 3.1 补充任务）。
+- 删除 `/management` 不做 redirect：历史书签会失效（你已确认接受）。
+
