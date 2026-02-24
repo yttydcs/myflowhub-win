@@ -7,6 +7,7 @@
 
 ## 具体变更内容（新增 / 修改 / 删除）
 - 修改：
+  - `go.mod`、`go.sum`：依赖升级到 `github.com/yttydcs/myflowhub-proto v0.1.1`
   - `internal/services/management/service.go`
     - 新增 `NodeInfo/NodeInfoSimple`
     - `sourceID==targetID` 时短路返回本机信息 KV（不走网络）
@@ -38,4 +39,3 @@
 ## 潜在影响与回滚方案
 - 影响：新增管理动作查询入口；若远端节点不支持 `node_info`，仍可能超时（UI 会提示失败）。
 - 回滚：revert 本提交；UI 变更集中在 `Devices.vue`，易于回滚。
-
