@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import { useFileStore } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -344,7 +345,7 @@ onMounted(async () => {
       <FileTasks />
     </div>
 
-    <div v-if="settingsOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="settingsOpen" @close="settingsOpen = false">
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">File Settings</h2>
         <div class="mt-4 grid gap-4">
@@ -417,9 +418,9 @@ onMounted(async () => {
           <Button @click="saveSettings">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div v-if="downloadOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="downloadOpen" @close="downloadOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Download File</h2>
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
@@ -454,9 +455,9 @@ onMounted(async () => {
           <Button @click="confirmDownload">Start</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div v-if="offerOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="offerOpen" @close="offerOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Send Offer</h2>
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
@@ -482,9 +483,9 @@ onMounted(async () => {
           <Button @click="confirmOffer">Send</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div v-if="addNodeOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Add Remote Node</h2>
         <div class="mt-4">
@@ -501,12 +502,9 @@ onMounted(async () => {
           <Button @click="saveNode">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div
-      v-if="fileStore.state.previewOpen"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6"
-    >
+    <Overlay :open="fileStore.state.previewOpen" @close="fileStore.closePreview">
       <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">
@@ -519,6 +517,6 @@ onMounted(async () => {
           class="mt-4 max-h-[60vh] overflow-y-auto rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
         >{{ fileStore.state.previewLoading ? "Loading..." : fileStore.state.previewText }}</pre>
       </div>
-    </div>
+    </Overlay>
   </section>
 </template>

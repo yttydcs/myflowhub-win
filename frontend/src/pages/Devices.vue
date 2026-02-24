@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import type { DeviceTreeNode, DevicesMode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
 import { useSessionStore } from "@/stores/session"
@@ -307,11 +308,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <div
-      v-if="nodeInfoOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      @click.self="closeNodeInfo"
-    >
+    <Overlay :open="nodeInfoOpen" closeOnBackdrop @close="closeNodeInfo">
       <div class="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -348,7 +345,7 @@ onMounted(async () => {
           </div>
         </div>
       </div>
-    </div>
+    </Overlay>
 
   </section>
 </template>

@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useVarPoolStore, type VarPoolKey } from "@/stores/varpool"
@@ -592,10 +593,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div
-      v-if="addMineDialog.open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      @click.self="closeAddMineDialog"
+    <Overlay
+      :open="addMineDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      @close="closeAddMineDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
@@ -650,12 +652,13 @@ onMounted(async () => {
           <Button :disabled="busy" @click="submitAddMine">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div
-      v-if="addWatchDialog.open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      @click.self="closeAddWatchDialog"
+    <Overlay
+      :open="addWatchDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      @close="closeAddWatchDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
@@ -691,12 +694,13 @@ onMounted(async () => {
           <Button :disabled="busy" @click="submitAddWatch">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
 
-    <div
-      v-if="editDialog.open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      @click.self="closeEditDialog"
+    <Overlay
+      :open="editDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      @close="closeEditDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
@@ -749,6 +753,6 @@ onMounted(async () => {
           <Button :disabled="busy" @click="submitEdit">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   </section>
 </template>

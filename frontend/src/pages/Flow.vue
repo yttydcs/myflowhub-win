@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useFlowStore } from "@/stores/flow"
 import { useSessionStore } from "@/stores/session"
@@ -513,7 +514,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
         </div>
       </section>
     </div>
-    <div v-if="addNodeOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Add Node</h2>
         <div class="mt-4 space-y-3">
@@ -544,6 +545,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
           <Button @click="saveNode">Add</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   </section>
 </template>

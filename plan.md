@@ -1,125 +1,122 @@
-# Plan - Devices：节点信息弹窗（management/node_info）
+# Plan - Win 前端：统一修复 Modal 遮罩未覆盖 Header
 
 ## Workflow 信息
-- 范围：跨仓库（Proto + SubProto + Server + Win）
-- 分支（各仓一致）：`feat/node-info`
-- Worktrees：
-  - Proto：`d:\project\MyFlowHub3\worktrees\node-info\MyFlowHub-Proto`
-  - SubProto：`d:\project\MyFlowHub3\worktrees\node-info\MyFlowHub-SubProto`
-  - Server：`d:\project\MyFlowHub3\worktrees\node-info\MyFlowHub-Server`
-  - Win：`d:\project\MyFlowHub3\worktrees\node-info\MyFlowHub-Win`
-- Base：`main`
-- Workspace（本地联调用）：`d:\project\MyFlowHub3\worktrees\node-info\go.work`
+- 范围：单仓库（`MyFlowHub-Win`）
+- 分支：`fix/win-overlay-mask`
+- Worktree：`d:\project\MyFlowHub3\worktrees\win-overlay-mask\MyFlowHub-Win`
+- Base：`origin/main`
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
+- 运行与验收（建议）
+  1) 启动 server（默认 `:9000`）：
+     - `cd ..\MyFlowHub-Server`
+     - `go run ./cmd/hub_server`
+  2) 启动 Win：
+     - `cd ..\MyFlowHub-Win`
+     - `wails dev`
 
-## 约束（边界）
-- UI：使用页面内 Modal（不做多 OS 窗口）。
-- 数据来源：
-  - 远端节点：必须由 **目标节点本地采集并回包**（不允许 Hub/Win 侧推断/缓存伪造）。
-  - Win 自身节点（sourceID==targetID）：由 Win 本地采集并返回（不走网络，避免 timeout）。
-- 协议：仅新增 management action（wire **新增**，不改既有 action/schema/header 语义）。
-- 展示：不强约束字段集合；以 `items[key]=value` 的 KV 形式返回并展示。
-- 版本：优先展示 semver（若可得），否则 fallback 展示 commit/(devel) 等可定位信息（你已确认允许 fallback）。
-- 发布：按顺序发布依赖与 tag（你已确认）：
-  1) `myflowhub-proto` -> `v0.1.1`
-  2) `myflowhub-subproto/management` -> `management/v0.1.1`
-  3) `myflowhub-server` -> `v0.0.2`（触发 Release 出包）
-  4) `myflowhub-win` 更新依赖并合并
+## 背景（问题与根因）
+- 现象：在 `Devices` 页点击节点后弹出的详情 Modal，遮罩未覆盖顶部 Header（Connected / Active Profile），导致顶部仍可见且可点。
+- 根因（工程层面）：页面组件使用了带 `transform` 的 enter 动画（`tailwindcss-animate`），导致其后代 `position: fixed` 的参照系不再是 viewport，从而遮罩只覆盖页面内容区域而非全窗口。
+- 影响面：同样写法（页面内 `fixed inset-0 ... bg-black/40`）的弹窗遮罩在其他页面也存在潜在同类问题，需要统一收敛。
+
+## 目标
+1) 任何页面打开 Modal 时，遮罩必须覆盖整个窗口（包含顶部 Header），并阻止背景交互。
+2) 统一收敛遮罩实现，避免每个页面复制粘贴同类 DOM/样式。
+3) 不修改路由切换动画与页面布局，仅修复遮罩覆盖与交互。
+
+## 范围与约束
+- 必须：
+  - 统一修复前端所有 “Modal + 背景遮罩” 的实现，使其覆盖 Header。
+  - 保持现有各页面的打开/关闭行为（点击遮罩空白处关闭、按钮关闭等）不变。
+  - Profile 菜单的“全屏透明 click-catcher”也统一迁移到同一套 Overlay 机制（不加黑色背景，仅用于拦截点击并关闭菜单）。
+- 不做：
+  - 不引入新的 UI 框架/依赖（仅使用现有 Vue + Tailwind）。
+  - 不重构路由动画（保留现有 `animate-in ...`）。
+
+## 决策（已确认）
+
+### D1. Esc 关闭默认开启
+- 结论：**默认开启**（`closeOnEsc=true`）。
+- 要求：同一时刻多个 Overlay 并存时，Esc **只关闭最上层 Overlay**（避免一次关闭多个）。
+
+### D2. Esc 关闭范围：Modal + Profile 菜单
+- 结论：Modal 与 Profile 菜单都支持 Esc 关闭（Profile 菜单等价 popover 行为）。
 
 ## 当前状态（事实，可审计）
-- `myflowhub-proto/protocol/management` 仅有 `node_echo/list_nodes/list_subtree/config_*`，缺少“节点基础信息”查询。
-- Win `Devices` 目前只展示 nodeId/children，不支持点击查看详情。
-- Win `ManagementService` 对 `ListNodes/ListSubtree` 已做 source==target 的短路；但无 `node_info`。
-- `hub_server` release workflow 已存在（tag `v*` 触发打包），但节点信息能力尚未实现。
+- 存在页面内遮罩的点位（`fixed inset-0`）：
+  - `frontend/src/pages/Devices.vue`（node info）
+  - `frontend/src/pages/File.vue`（settings/download/offer/add-node 等多个 modal）
+  - `frontend/src/pages/Flow.vue`（add-node）
+  - `frontend/src/pages/Management.vue`（edit）
+  - `frontend/src/pages/VarPool.vue`（多个 modal）
+  - `frontend/src/layout/AppShell.vue`（incoming transfer modal；以及 profile menu click-catcher：透明全屏层，用于外部点击关闭）
 
 ---
 
 ## 3.1) 计划拆分（Checklist）
 
 ### T1. Workspace 准备（已完成）
-- 目标：创建跨仓 worktrees，并提供本地联调 go.work。
+- 目标：创建独占 worktree 与专业分支，确保不在 `repo/` 里做实现改动。
 - 涉及：
-  - `d:\project\MyFlowHub3\worktrees\node-info\*`
+  - `d:\project\MyFlowHub3\worktrees\win-overlay-mask\MyFlowHub-Win`
 - 验收：
-  - 4 个 worktree 均存在且分支为 `feat/node-info`
-  - `worktrees/node-info/go.work` 可被 go 命令识别（在 worktree 下运行 `go env GOWORK` 可看到该文件路径）
-- 回滚点：删除 `worktrees/node-info/` 与各 repo 的 worktree 绑定（`git worktree remove` + `prune`）。
+  - `git status -sb` 显示在 `fix/win-overlay-mask` 且工作区干净（或仅包含本 workflow 的变更）
+- 回滚点：`git worktree remove` + `git worktree prune` + 删除分支（若未推送）。
 
-### T2. Proto：新增 management `node_info`（并发布 `v0.1.1`）
-- 目标：提供 wire source-of-truth（action 常量 + Req/Resp struct）。
+### T2. 新增通用 Overlay/Modal 容器组件（Teleport 到 body）
+- 目标：提供可复用的遮罩容器，确保永远以 viewport 为参照覆盖全屏（含 Header）。
 - 涉及文件（预期）：
-  - `MyFlowHub-Proto/protocol/management/types.go`
+  - `frontend/src/components/ui/overlay/Overlay.vue`（新增）
+  - `frontend/src/components/ui/overlay/index.ts`（新增导出）
 - 设计要点：
-  - 新增：`ActionNodeInfo`、`ActionNodeInfoResp`
-  - 新增：`NodeInfoReq{}`、`NodeInfoResp{Code, Msg, Items map[string]string}`
+  - 使用 `<Teleport to=\"body\">` 渲染遮罩节点，规避祖先 `transform` 影响。
+  - 支持：点击遮罩空白处触发 `close`（等价于现有 `@click.self`）。
+  - 支持：`Esc` 关闭（可配置；默认值由 D1/D2 决策决定）。
+  - 多 Overlay 并存时：Esc 仅关闭“最上层 Overlay”（需要一个轻量的 stack/owner 机制，避免重复监听导致一次关闭多个）。
+  - 提供 class 可配置（overlay 背景/间距/z-index），默认保持现有视觉（`bg-black/40 p-6`）。
 - 验收：
-  - `go test ./...`（Proto 仓）通过（至少可编译）
-  - tag `v0.1.1` 推送到 GitHub
+  - 在任一页面打开 overlay 时，遮罩覆盖到窗口最顶端（包含 Header）。
+  - 不引入常驻的全局事件监听：仅在 `open=true` 时绑定键盘监听，关闭即解绑。
 - 测试点：
-  - KV 字段可为空，但 `Code/Msg` 行为与现有 resp 一致（`Code==1` 代表 ok）
-- 回滚点：
-  - 未推 tag：`git revert` / reset
-  - 已推 tag：不强制删除远端 tag（避免破坏下游）；改发补丁 tag（如 `v0.1.2`）并同步下游依赖。
+  - 快速打开/关闭多次，事件监听不会累积（无重复触发）。
+- 回滚点：删除该组件与引用点，恢复页面内原写法。
 
-### T3. SubProto(management)：实现 `node_info` handler（并发布 `management/v0.1.1`）
-- 目标：目标节点本地采集并回包（平台/版本等）。
+### T3. 逐页迁移到 Overlay 组件（统一修复）
+- 目标：将现有页面内 `fixed inset-0 ...` 遮罩统一替换为 `<Overlay>`，实现一致覆盖与行为。
 - 涉及文件（预期）：
-  - `MyFlowHub-SubProto/management/actions.go`（注册）
-  - `MyFlowHub-SubProto/management/management.go`（forward error 支持）
-  - `MyFlowHub-SubProto/management/types.go`（常量/别名）
-  - `MyFlowHub-SubProto/management/action_node_info.go`（新建：采集与响应）
-- 采集建议（KV，不强制）：
-  - `node_id`（来自 `srv.NodeID()`）
-  - `platform`（`runtime.GOOS/GOARCH`）
-  - `go_version`（`runtime.Version()`）
-  - `module` / `version`（`debug.ReadBuildInfo()`）
-  - `commit` / `vcs_time` / `vcs_modified`（BuildInfo settings）
-- 验收：
-  - handler 对本地请求返回 `Code==1` 且包含至少 `platform/node_id`（或可替代关键字段）
-  - tag `management/v0.1.1` 推送到 GitHub
+  - `frontend/src/pages/Devices.vue`
+  - `frontend/src/pages/File.vue`
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/pages/Management.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/layout/AppShell.vue`（incoming transfer modal + profile menu click-catcher）
+- 验收（逐页冒烟）：
+  - 打开任一 modal 时：Header 被遮罩变暗，且背景不可点击。
+  - 点击遮罩空白处：能关闭（与原行为一致）。
+  - modal 内容区域点击：不触发关闭（与原行为一致）。
+  - Profile 菜单打开时：背景不可点击；点击菜单外任意位置关闭；不出现“黑色遮罩”（保持透明拦截层）。
 - 测试点：
-  - action 未识别/转发失败时：能返回 `node_info_resp(code!=1,msg=...)`（避免纯 timeout）
-- 回滚点同 T2（tag 已推则走补丁 tag）。
+  - `File` 页多 modal 并存时：分别打开/关闭互不干扰，z-index 不错乱。
+- 回滚点：逐文件 revert（优先按页面拆分 commit，便于回滚）。
 
-### T4. Server：接入新能力 + 集成测试 + 发布 `v0.0.2`
-- 目标：Server 依赖升级并可对外发布可用二进制。
-- 涉及文件（预期）：
-  - `MyFlowHub-Server/go.mod`（升级 `myflowhub-proto v0.1.1`、`myflowhub-subproto/management v0.1.1`）
-  - `MyFlowHub-Server/tests/integration_management_node_info_test.go`（新建或扩展现有集成测试）
-- 验收：
-  - `go test ./...`（Server 仓）通过
-  - 打 tag `v0.0.2` 后 GitHub Release 成功产出 zip（windows/linux amd64）
-- 回滚点：
-  - tag 未推：revert + 删除本地 tag
-  - tag 已推：发 `v0.0.3` 修复（不建议回收远端 release）。
-
-### T5. Win：Devices 点击节点弹出 Modal + 查询 node_info（自节点短路）
-- 目标：在 Devices 树里点击节点显示基本信息（KV）。
-- 涉及文件（预期）：
-  - `MyFlowHub-Win/internal/services/management/service.go`（新增 `NodeInfo/NodeInfoSimple` + source==target 本地采集）
-  - `MyFlowHub-Win/frontend/src/pages/Devices.vue`（节点行点击 -> Modal + 展示 KV）
-  - `MyFlowHub-Win/frontend/src/stores/devices.ts`（可选：封装 node_info 调用；若不封装则在页面内调用 Wails binding）
-  - `MyFlowHub-Win/go.mod`（升级 `myflowhub-proto v0.1.1`）
-- 验收（冒烟）：
-  - 打开 `Devices`，点击任意节点可弹窗；加载中/成功/失败态清晰
-  - 点击 `+/-` 仅展开收起，不会误触打开弹窗（事件冒泡控制）
-  - 点击 Win 自身节点不再出现 timeout（应返回本地信息或空但 `Code==1`）
-- 回滚点：单 PR 可 revert；UI 变更点集中在 Devices 页面。
-
-### T6. 合并与发布顺序（跨仓）
-- 目标：保证下游依赖可用（避免 Win/Server 指向不存在的 tag）。
-- 顺序（强制）：
-  1) 合并 Proto -> push branch -> 打 tag `v0.1.1` -> push tag
-  2) 合并 SubProto(management) -> push -> 打 tag `management/v0.1.1` -> push tag
-  3) 合并 Server -> push -> 打 tag `v0.0.2` -> push tag（触发 Release）
-  4) 合并 Win -> push
-- 验收：各仓 `origin/main` 与 tag 均存在且 CI/Release 成功（Server 以 GitHub Release 为准）。
-- 回滚点：若发布后发现问题，以补丁版本推进（避免删除已被依赖的 tag/release）。
+### T4. 验收与回归检查（含 DevTools）
+- 目标：确保修复覆盖所有 modal 且无明显视觉/交互回归。
+- 验收步骤：
+  1) `Devices`：点击 Node 打开详情 → 确认 Header 被遮罩 → 点击遮罩关闭。
+  2) `File`：依次打开 settings/download/offer/add-node → 检查覆盖与关闭。
+  3) `Flow`：打开 add-node → 检查覆盖与关闭。
+  4) `Management`：打开 edit → 检查覆盖与关闭。
+  5) `VarPool`：打开各 modal → 检查覆盖与关闭。
+- DevTools 检查点（可选）：
+  - 遮罩 DOM 是否出现在 `document.body` 下（Teleport 生效）。
+  - 遮罩的 `position: fixed; inset: 0` 的 containing block 是否为 viewport。
+- 回滚点：若出现全局层级问题，优先回退到方案 B（仅取消页面动画 transform）作为兜底，但需重新走阶段 2/3.1 确认。
 
 ---
 
 ## 风险与注意事项
-- 旧节点未实现 `node_info`：可能仍表现为 timeout；Win 需用 Toast 清晰提示，不应卡死 UI。
-- `debug.ReadBuildInfo()` 的 `Main.Version` 在某些构建方式下可能为 `(devel)`：因此必须同时返回 `commit/vcs_time` 等 fallback 字段。
+- z-index 冲突：现有 `z-40/z-50` 分散，Teleport 后应统一一个足够高的 z-index，避免被 Header/侧栏盖住。
+- 行为一致性：部分页面可能依赖 `@click.self` 的细节（例如内部 stopPropagation）；迁移时需逐页验证。
+
 

@@ -3,6 +3,7 @@ import { computed, ref } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import ToastHost from "@/components/ToastHost.vue"
 import { useFileStore } from "@/stores/file"
 import { useProfileStore } from "@/stores/profile"
@@ -228,11 +229,11 @@ const selectProfile = async (name: string) => {
         />
       </div>
 
-      <div
-        v-if="fileStore.state.offer"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      >
-        <div class="w-full max-w-lg rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
+      <Overlay :open="Boolean(fileStore.state.offer)" @close="fileStore.rejectOffer">
+        <div
+          v-if="fileStore.state.offer"
+          class="w-full max-w-lg rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl"
+        >
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
@@ -278,7 +279,7 @@ const selectProfile = async (name: string) => {
             <Button @click="fileStore.acceptOffer">Accept</Button>
           </div>
         </div>
-      </div>
+      </Overlay>
 
       <div class="relative grid h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside
@@ -369,10 +370,13 @@ const selectProfile = async (name: string) => {
                   <Button variant="outline" size="sm" @click="toggleProfileMenu">
                     {{ selectedProfile }}
                   </Button>
-                  <div
-                    v-if="profileMenuOpen"
-                    class="fixed inset-0 z-20"
-                    @click="closeProfileMenu"
+                  <Overlay
+                    :open="profileMenuOpen"
+                    :teleport="false"
+                    overlayClass="bg-transparent p-0"
+                    zIndexClass="z-20"
+                    closeOnBackdrop
+                    @close="closeProfileMenu"
                   />
                   <div
                     v-if="profileMenuOpen"

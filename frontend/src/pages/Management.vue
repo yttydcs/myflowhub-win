@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import { useManagementStore } from "@/stores/management"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -173,7 +174,7 @@ onMounted(async () => {
       </section>
     </div>
 
-    <div v-if="editOpen" class="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-6">
+    <Overlay :open="editOpen" @close="editOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Edit Config</h2>
         <div class="mt-4 space-y-3">
@@ -203,6 +204,6 @@ onMounted(async () => {
           <Button @click="saveConfig">Save</Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   </section>
 </template>
