@@ -221,23 +221,6 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          File Console
-        </p>
-        <h1 class="text-2xl font-semibold">File Browser</h1>
-        <p class="text-sm text-muted-foreground">
-          Browse nodes and manage transfers with resume + optional hashing.
-        </p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <Button variant="outline" @click="openTasks">Tasks</Button>
-        <Button variant="outline" @click="openSettings">Settings</Button>
-        <Button variant="outline" @click="refreshList">Refresh</Button>
-      </div>
-    </div>
-
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex items-center justify-between">
@@ -287,7 +270,11 @@ onMounted(async () => {
               Dir: {{ currentDir || "/" }}
             </p>
           </div>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" @click="openTasks">Tasks</Button>
+            <Button size="sm" variant="outline" @click="openSettings">Settings</Button>
+            <Button size="sm" variant="outline" @click="refreshList">Refresh</Button>
+            <span class="mx-1 hidden h-6 w-px bg-border/60 sm:block" />
             <Button size="sm" variant="outline" :disabled="!currentDir" @click="goUp">Up</Button>
             <Button size="sm" variant="outline" :disabled="!canDownload" @click="openDownloadDialog">
               Download

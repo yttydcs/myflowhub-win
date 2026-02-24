@@ -240,36 +240,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Flow Console
-        </p>
-        <h1 class="text-2xl font-semibold">Flow Builder</h1>
-        <p class="text-sm text-muted-foreground">
-          Design DAGs, deploy to target nodes, and monitor execution status.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-          <span class="font-semibold uppercase tracking-[0.2em]">Executor</span>
-          <input
-            v-model="flowStore.state.targetId"
-            class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-            placeholder="Node ID"
-          />
-        </div>
-        <Button variant="outline" size="sm" @click="refreshList">Refresh</Button>
-        <Button variant="outline" size="sm" @click="startNew">New</Button>
-        <Button variant="outline" size="sm" :disabled="!canUndo" @click="undo">Undo</Button>
-        <Button variant="outline" size="sm" :disabled="!canRedo" @click="redo">Redo</Button>
-        <Button variant="outline" size="sm" @click="autoLayout">Auto Layout</Button>
-        <Button size="sm" @click="saveFlow">Save</Button>
-        <Button variant="outline" size="sm" @click="runFlow">Run</Button>
-        <Button variant="outline" size="sm" @click="statusFlow">Status</Button>
-      </div>
-    </div>
-
     <div class="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_minmax(0,360px)]">
       <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex items-center justify-between">
@@ -297,7 +267,29 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <h2 class="text-sm font-semibold">Flow Editor</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-sm font-semibold">Flow Editor</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <div
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span class="font-semibold uppercase tracking-[0.2em]">Executor</span>
+              <input
+                v-model="flowStore.state.targetId"
+                class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="Node ID"
+              />
+            </div>
+            <Button variant="outline" size="sm" @click="refreshList">Refresh</Button>
+            <Button variant="outline" size="sm" @click="startNew">New</Button>
+            <Button variant="outline" size="sm" :disabled="!canUndo" @click="undo">Undo</Button>
+            <Button variant="outline" size="sm" :disabled="!canRedo" @click="redo">Redo</Button>
+            <Button variant="outline" size="sm" @click="autoLayout">Auto Layout</Button>
+            <Button size="sm" @click="saveFlow">Save</Button>
+            <Button variant="outline" size="sm" @click="runFlow">Run</Button>
+            <Button variant="outline" size="sm" @click="statusFlow">Status</Button>
+          </div>
+        </div>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">

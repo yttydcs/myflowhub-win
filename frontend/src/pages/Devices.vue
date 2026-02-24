@@ -190,50 +190,40 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Session</p>
-        <h1 class="text-2xl font-semibold">Devices</h1>
-        <p class="text-sm text-muted-foreground">
-          Query the management plane and visualize nodes as a lazy-loaded tree. Subtree is not recursive.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-          <span class="font-semibold uppercase tracking-[0.2em]">Identity</span>
-          <span class="font-mono text-[11px] text-foreground">{{ identityLabel }}</span>
-        </div>
-        <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-          <span class="font-semibold uppercase tracking-[0.2em]">Mode</span>
-          <select
-            v-model="devicesStore.state.mode"
-            class="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-            @change="onModeChanged(devicesStore.state.mode)"
-          >
-            <option value="direct">Direct</option>
-            <option value="subtree">Subtree (direct + self)</option>
-          </select>
-        </div>
-        <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-          <span class="font-semibold uppercase tracking-[0.2em]">Root</span>
-          <input
-            v-model="devicesStore.state.rootTargetId"
-            class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-            placeholder="Node ID"
-            @keydown.enter.prevent="onRootEnter"
-          />
-        </div>
-        <Button variant="outline" size="sm" @click="loadRoot">Reload</Button>
-      </div>
-    </div>
-
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-sm font-semibold">Nodes</h2>
           <p class="text-xs text-muted-foreground">
             Mode: <span class="font-semibold text-foreground">{{ modeLabel }}</span>
           </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Identity</span>
+            <span class="font-mono text-[11px] text-foreground">{{ identityLabel }}</span>
+          </div>
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Mode</span>
+            <select
+              v-model="devicesStore.state.mode"
+              class="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              @change="onModeChanged(devicesStore.state.mode)"
+            >
+              <option value="direct">Direct</option>
+              <option value="subtree">Subtree (direct + self)</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Root</span>
+            <input
+              v-model="devicesStore.state.rootTargetId"
+              class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              placeholder="Node ID"
+              @keydown.enter.prevent="onRootEnter"
+            />
+          </div>
+          <Button variant="outline" size="sm" @click="loadRoot">Reload</Button>
         </div>
       </div>
 
@@ -241,14 +231,14 @@ onMounted(async () => {
         <div
           v-for="{ node, depth } in visibleNodes"
           :key="node.key"
-          class="cursor-pointer rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm transition-colors hover:bg-background/80"
+          class="cursor-pointer rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm transition hover:border-border/80 hover:bg-muted/60 hover:shadow-sm"
           @click="openNodeInfo(node)"
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-2">
               <button
                 type="button"
-                class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs text-foreground disabled:opacity-50"
+                class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs text-foreground transition-colors hover:bg-muted/60 disabled:opacity-50"
                 :style="{ marginLeft: `${depth * 16}px` }"
                 :disabled="node.duplicate || node.loading"
                 @click.stop="toggleNode(node)"
@@ -260,7 +250,7 @@ onMounted(async () => {
               <div class="min-w-0">
                 <p class="truncate font-semibold">
                   Node {{ node.nodeId }}
-                  <span v-if="node.key.startsWith('root:')" class="text-xs font-normal text-muted-foreground">
+                  <span v-if="depth === 0" class="text-xs font-normal text-muted-foreground">
                     (root)
                   </span>
                 </p>

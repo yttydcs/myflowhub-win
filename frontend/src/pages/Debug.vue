@@ -102,25 +102,15 @@ const sendFrame = async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Debug Console
-        </p>
-        <h1 class="text-2xl font-semibold">Raw Frame Sender</h1>
-        <p class="text-sm text-muted-foreground">
-          Connect, login, and send custom headers and payloads.
-        </p>
-      </div>
-      <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-        <span class="font-semibold uppercase tracking-[0.2em]">Session</span>
-        <span class="text-foreground">{{ connectionLabel }}</span>
-      </div>
-    </div>
-
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-        <h2 class="text-sm font-semibold">Connection</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-sm font-semibold">Connection</h2>
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Session</span>
+            <span class="text-foreground">{{ connectionLabel }}</span>
+          </div>
+        </div>
         <div class="mt-4 space-y-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">

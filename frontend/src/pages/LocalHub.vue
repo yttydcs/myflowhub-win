@@ -356,35 +356,25 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Session</p>
-        <h1 class="text-2xl font-semibold">Local Hub</h1>
-        <p class="text-sm text-muted-foreground">
-          Download and run <span class="font-mono text-[12px] text-foreground">hub_server</span> as a sidecar process.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Badge v-if="snap.supported" variant="secondary">Supported: {{ snap.platform }}/{{ snap.arch }}</Badge>
-        <Badge v-else variant="secondary">Unsupported: {{ snap.platform }}/{{ snap.arch }}</Badge>
-        <Button variant="outline" size="sm" :disabled="busy.loading" @click="loadSnapshot">Reload</Button>
-      </div>
-    </div>
-
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 class="text-sm font-semibold">Latest Release</h2>
           <p class="text-xs text-muted-foreground">Source: GitHub Releases (myflowhub-server)</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          :disabled="busy.refreshing || !snap.supported"
-          @click="refreshLatest"
-        >
-          Refresh
-        </Button>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge v-if="snap.supported" variant="secondary">Supported: {{ snap.platform }}/{{ snap.arch }}</Badge>
+          <Badge v-else variant="secondary">Unsupported: {{ snap.platform }}/{{ snap.arch }}</Badge>
+          <Button variant="outline" size="sm" :disabled="busy.loading" @click="loadSnapshot">Reload</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="busy.refreshing || !snap.supported"
+            @click="refreshLatest"
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div class="mt-4 grid gap-3 text-sm md:grid-cols-2">

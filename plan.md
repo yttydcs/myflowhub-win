@@ -1,56 +1,48 @@
-# Plan - Win 前端：统一修复 Modal 遮罩未覆盖 Header
+# Plan - Win 前端：Devices 列表交互增强 + 页面顶部文案移除 + 导航图标化
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`fix/win-overlay-mask`
-- Worktree：`d:\project\MyFlowHub3\worktrees\win-overlay-mask\MyFlowHub-Win`
-- Base：`origin/main`
+- 分支：`refactor/win-ui-polish`
+- Worktree：`d:\project\MyFlowHub3\worktrees\win-ui-polish\MyFlowHub-Win`
+- Base：`main`（当前 HEAD：`d8351af`）
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
-- 运行与验收（建议）
-  1) 启动 server（默认 `:9000`）：
-     - `cd ..\MyFlowHub-Server`
-     - `go run ./cmd/hub_server`
-  2) 启动 Win：
-     - `cd ..\MyFlowHub-Win`
-     - `wails dev`
 
-## 背景（问题与根因）
-- 现象：在 `Devices` 页点击节点后弹出的详情 Modal，遮罩未覆盖顶部 Header（Connected / Active Profile），导致顶部仍可见且可点。
-- 根因（工程层面）：页面组件使用了带 `transform` 的 enter 动画（`tailwindcss-animate`），导致其后代 `position: fixed` 的参照系不再是 viewport，从而遮罩只覆盖页面内容区域而非全窗口。
-- 影响面：同样写法（页面内 `fixed inset-0 ... bg-black/40`）的弹窗遮罩在其他页面也存在潜在同类问题，需要统一收敛。
+## 背景（问题清单与用户需求）
+你提出 4 个 UI 问题需要统一修复：
+1) `Devices` 的节点列表缺少明显 hover 反馈（行看起来“不像可点/可操作”）。
+2) `Devices` 树中“似乎所有节点都被标记为了 root”（root 标记错误）。
+3) 各页面顶部存在类似：
+   - `Session` / `Devices` / “Query the management plane ...”
+   这类说明性 header 区块，你要求 **整块移除**（无实际意义）。
+4) 左侧导航（tab 选项）当前使用 2 个首字母（`HM/DV/...`），你要求改为 **图标**（并确认使用图标库方案）。
 
 ## 目标
-1) 任何页面打开 Modal 时，遮罩必须覆盖整个窗口（包含顶部 Header），并阻止背景交互。
-2) 统一收敛遮罩实现，避免每个页面复制粘贴同类 DOM/样式。
-3) 不修改路由切换动画与页面布局，仅修复遮罩覆盖与交互。
+1) `Devices`：节点行 hover 更明显，且不影响展开按钮与点击行为。
+2) `Devices`：仅真实 root 节点显示 `(root)`，其余节点不显示。
+3) 全局：移除页面顶部“模块说明 header 区块”，并迁移原 header 上的控制按钮/输入框到页面内合适位置，保证功能不丢失。
+4) 左侧导航：2 字母缩写替换为图标，保留现有激活态/非激活态色彩策略与可读性。
 
 ## 范围与约束
 - 必须：
-  - 统一修复前端所有 “Modal + 背景遮罩” 的实现，使其覆盖 Header。
-  - 保持现有各页面的打开/关闭行为（点击遮罩空白处关闭、按钮关闭等）不变。
-  - Profile 菜单的“全屏透明 click-catcher”也统一迁移到同一套 Overlay 机制（不加黑色背景，仅用于拦截点击并关闭菜单）。
+  - 覆盖所有存在“顶部说明 header 区块”的页面；不存在则跳过（按你的确认）。
+  - 不改协议/后端/业务行为，仅做 UI/交互与信息结构收敛。
+  - 图标使用图标库（你已确认）。
 - 不做：
-  - 不引入新的 UI 框架/依赖（仅使用现有 Vue + Tailwind）。
-  - 不重构路由动画（保留现有 `animate-in ...`）。
+  - 不重做整体布局风格（不做大规模 UI redesign）。
+  - 不要求把移动端顶部“圆点导航”也改成图标（你未提出；如后续需要再开新任务）。
 
-## 决策（已确认）
+## 关键决策（已确认）
+- D1：顶部 header 区块移除策略 = **C（整块移除）**
+- D2：覆盖范围 = **B（全局；没有则跳过）**
+- D3：tab 选项指代 = **左侧导航两字母块**
+- D4：图标方案 = **B（引入图标库）**
 
-### D1. Esc 关闭默认开启
-- 结论：**默认开启**（`closeOnEsc=true`）。
-- 要求：同一时刻多个 Overlay 并存时，Esc **只关闭最上层 Overlay**（避免一次关闭多个）。
-
-### D2. Esc 关闭范围：Modal + Profile 菜单
-- 结论：Modal 与 Profile 菜单都支持 Esc 关闭（Profile 菜单等价 popover 行为）。
-
-## 当前状态（事实，可审计）
-- 存在页面内遮罩的点位（`fixed inset-0`）：
-  - `frontend/src/pages/Devices.vue`（node info）
-  - `frontend/src/pages/File.vue`（settings/download/offer/add-node 等多个 modal）
-  - `frontend/src/pages/Flow.vue`（add-node）
-  - `frontend/src/pages/Management.vue`（edit）
-  - `frontend/src/pages/VarPool.vue`（多个 modal）
-  - `frontend/src/layout/AppShell.vue`（incoming transfer modal；以及 profile menu click-catcher：透明全屏层，用于外部点击关闭）
+## 根因分析（可审计）
+### `Devices` “全部节点都像 root”
+- 现状：UI 使用 `node.key.startsWith('root:')` 判断 root。
+- 但子节点 key 由父 key 拼接（`${parentKey}/${nodeId}`），会导致所有后代 key 都以 `root:` 开头，从而误判为 root。
+- 修复策略：root 标记基于 **深度**（`depth === 0`）或基于 `devicesStore.state.root?.key` 精确判断。
 
 ---
 
@@ -58,65 +50,76 @@
 
 ### T1. Workspace 准备（已完成）
 - 目标：创建独占 worktree 与专业分支，确保不在 `repo/` 里做实现改动。
-- 涉及：
-  - `d:\project\MyFlowHub3\worktrees\win-overlay-mask\MyFlowHub-Win`
 - 验收：
-  - `git status -sb` 显示在 `fix/win-overlay-mask` 且工作区干净（或仅包含本 workflow 的变更）
+  - `git status -sb` 显示在 `refactor/win-ui-polish` 且工作区干净。
 - 回滚点：`git worktree remove` + `git worktree prune` + 删除分支（若未推送）。
 
-### T2. 新增通用 Overlay/Modal 容器组件（Teleport 到 body）
-- 目标：提供可复用的遮罩容器，确保永远以 viewport 为参照覆盖全屏（含 Header）。
-- 涉及文件（预期）：
-  - `frontend/src/components/ui/overlay/Overlay.vue`（新增）
-  - `frontend/src/components/ui/overlay/index.ts`（新增导出）
-- 设计要点：
-  - 使用 `<Teleport to=\"body\">` 渲染遮罩节点，规避祖先 `transform` 影响。
-  - 支持：点击遮罩空白处触发 `close`（等价于现有 `@click.self`）。
-  - 支持：`Esc` 关闭（可配置；默认值由 D1/D2 决策决定）。
-  - 多 Overlay 并存时：Esc 仅关闭“最上层 Overlay”（需要一个轻量的 stack/owner 机制，避免重复监听导致一次关闭多个）。
-  - 提供 class 可配置（overlay 背景/间距/z-index），默认保持现有视觉（`bg-black/40 p-6`）。
-- 验收：
-  - 在任一页面打开 overlay 时，遮罩覆盖到窗口最顶端（包含 Header）。
-  - 不引入常驻的全局事件监听：仅在 `open=true` 时绑定键盘监听，关闭即解绑。
-- 测试点：
-  - 快速打开/关闭多次，事件监听不会累积（无重复触发）。
-- 回滚点：删除该组件与引用点，恢复页面内原写法。
-
-### T3. 逐页迁移到 Overlay 组件（统一修复）
-- 目标：将现有页面内 `fixed inset-0 ...` 遮罩统一替换为 `<Overlay>`，实现一致覆盖与行为。
-- 涉及文件（预期）：
+### T2. Devices：root 标记修复 + hover 反馈增强 + 顶部 header 移除与控件迁移（已完成）
+- 目标：
+  - root 标记仅出现在真实 root 行。
+  - 节点行 hover 更明显（背景/边框/阴影更清晰），且不影响按钮点击。
+  - 移除顶部 header 区块；将原 header 的 `Identity/Mode/Root/Reload` 控件迁移到 “Nodes” 卡片 header 区。
+- 涉及文件：
   - `frontend/src/pages/Devices.vue`
-  - `frontend/src/pages/File.vue`
-  - `frontend/src/pages/Flow.vue`
-  - `frontend/src/pages/Management.vue`
-  - `frontend/src/pages/VarPool.vue`
-  - `frontend/src/layout/AppShell.vue`（incoming transfer modal + profile menu click-catcher）
-- 验收（逐页冒烟）：
-  - 打开任一 modal 时：Header 被遮罩变暗，且背景不可点击。
-  - 点击遮罩空白处：能关闭（与原行为一致）。
-  - modal 内容区域点击：不触发关闭（与原行为一致）。
-  - Profile 菜单打开时：背景不可点击；点击菜单外任意位置关闭；不出现“黑色遮罩”（保持透明拦截层）。
+- 验收：
+  - 仅 `depth === 0` 的行显示 `(root)`。
+  - hover 可见（肉眼明显）且不导致点击误触/按钮不可用。
+  - 顶部 `Session/Devices/说明` 整块消失，但 `Mode/Root/Reload` 等功能仍可用。
 - 测试点：
-  - `File` 页多 modal 并存时：分别打开/关闭互不干扰，z-index 不错乱。
-- 回滚点：逐文件 revert（优先按页面拆分 commit，便于回滚）。
+  - Root 输入 Enter 仍能触发 reload；Mode 切换仍能 reload。
+  - duplicate 节点按钮仍禁用，hover 不误导为可展开。
+- 回滚点：revert `Devices.vue`。
 
-### T4. 验收与回归检查（含 DevTools）
-- 目标：确保修复覆盖所有 modal 且无明显视觉/交互回归。
-- 验收步骤：
-  1) `Devices`：点击 Node 打开详情 → 确认 Header 被遮罩 → 点击遮罩关闭。
-  2) `File`：依次打开 settings/download/offer/add-node → 检查覆盖与关闭。
-  3) `Flow`：打开 add-node → 检查覆盖与关闭。
-  4) `Management`：打开 edit → 检查覆盖与关闭。
-  5) `VarPool`：打开各 modal → 检查覆盖与关闭。
-- DevTools 检查点（可选）：
-  - 遮罩 DOM 是否出现在 `document.body` 下（Teleport 生效）。
-  - 遮罩的 `position: fixed; inset: 0` 的 containing block 是否为 viewport。
-- 回滚点：若出现全局层级问题，优先回退到方案 B（仅取消页面动画 transform）作为兜底，但需重新走阶段 2/3.1 确认。
+### T3. 全局：移除页面顶部说明 header 区块（有则移除；无则跳过）（已完成）
+- 目标：删除各页面顶部的说明性 header 区块，并将该区块中的操作控件迁移到页面内第一块相关卡片/列表的 header 区，避免功能丢失。
+- 预期涉及文件（以扫描结果为准）：
+  - `frontend/src/pages/File.vue`（迁移：Tasks/Settings/Refresh）
+  - `frontend/src/pages/Flow.vue`（迁移：Executor + Refresh/New/Undo/Redo/AutoLayout/Save/Run/Status）
+  - `frontend/src/pages/LocalHub.vue`（迁移：Supported badge + Reload snapshot）
+  - `frontend/src/pages/Logs.vue`（迁移：Lines + Open Window）
+  - `frontend/src/pages/Management.vue`（迁移：Target + List Direct/Subtree）
+  - `frontend/src/pages/Debug.vue`（迁移：Session pill）
+- 验收：
+  - 每个页面顶部 header 区块完全移除。
+  - 原 header 上的控件在页面内仍可访问、可操作，且布局不突兀。
+- 测试点：
+  - `File`：Tasks/Settings/Refresh 可用；且不依赖顶部 header 存在。
+  - `Flow`：常用按钮仍可操作，布局不拥挤到不可用。
+- 回滚点：逐文件 revert。
+
+### T4. 左侧导航：两字母缩写替换为图标（图标库方案）（已完成）
+- 目标：将 `AppShell.vue` 侧边栏导航项从 `HM/DV/...` 替换为对应模块图标；保持激活态/非激活态色彩与对比度。
+- 方案：
+  1) 引入依赖：`lucide-vue-next`
+  2) `NavItem` 增加 `icon` 字段，移除/废弃 `short`
+  3) 模板中渲染 `<component :is="item.icon" class="h-5 w-5" />`
+- 涉及文件：
+  - `frontend/package.json` / `frontend/package-lock.json`
+  - `frontend/src/layout/AppShell.vue`
+- 验收：
+  - 左侧导航不再显示两字母缩写，改为图标。
+  - 激活态图标颜色/背景符合现有高亮策略；非激活态保留 `tone` 色彩。
+- 回滚点：revert 依赖与 `AppShell.vue`。
+
+### T5. 验收与构建（本地可执行）（已完成）
+- 目标：保证构建通过，且关键页面无明显回归。
+- 验收命令：
+  - `cd frontend && npm run build`
+  -（建议）`GOWORK=off wails build -nopackage`
+- 执行记录（本次）：
+  - `GOWORK=off wails build -nopackage` ✅
+  - `cd frontend && npm run build` ✅
+- 人工冒烟：
+  - `Devices`：hover、root 标记、控件迁移、节点详情弹窗
+  - `File/Flow/LocalHub/Logs/Management/Debug`：顶部 header 已移除且控件可用
+  - 左侧导航：图标显示正常
 
 ---
 
+## 依赖关系
+- T4（图标库）依赖 `frontend` 依赖安装与 lock 更新。
+- T2/T3 为纯页面调整，可并行，但建议按 “先 Devices 再全局页面” 执行便于回归对照。
+
 ## 风险与注意事项
-- z-index 冲突：现有 `z-40/z-50` 分散，Teleport 后应统一一个足够高的 z-index，避免被 Header/侧栏盖住。
-- 行为一致性：部分页面可能依赖 `@click.self` 的细节（例如内部 stopPropagation）；迁移时需逐页验证。
-
-
+- 顶部 header 移除后，部分页面的操作栏可能变拥挤：需要逐页微调布局（`flex-wrap`、分组、按钮 size）。
+- 新增依赖需确保 tree-shake：仅按需 import 图标组件，避免无意引入整包。

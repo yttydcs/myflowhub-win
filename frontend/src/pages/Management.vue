@@ -86,35 +86,25 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Management
-        </p>
-        <h1 class="text-2xl font-semibold">Node Inspector</h1>
-        <p class="text-sm text-muted-foreground">
-          List nodes and inspect configuration values from the management plane.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-          <span class="font-semibold uppercase tracking-[0.2em]">Target</span>
-          <input
-            v-model="mgmtStore.state.targetId"
-            class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-            placeholder="Node ID"
-          />
-        </div>
-        <Button variant="outline" size="sm" @click="refreshNodes('direct')">List Direct</Button>
-        <Button variant="outline" size="sm" @click="refreshNodes('subtree')">List Subtree</Button>
-      </div>
-    </div>
-
     <div class="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
       <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold">Nodes</h2>
-          <span class="text-xs text-muted-foreground">{{ listModeLabel }}</span>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold">Nodes</h2>
+            <p class="text-xs text-muted-foreground">{{ listModeLabel }}</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+              <span class="font-semibold uppercase tracking-[0.2em]">Target</span>
+              <input
+                v-model="mgmtStore.state.targetId"
+                class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                placeholder="Node ID"
+              />
+            </div>
+            <Button variant="outline" size="sm" @click="refreshNodes('direct')">List Direct</Button>
+            <Button variant="outline" size="sm" @click="refreshNodes('subtree')">List Subtree</Button>
+          </div>
         </div>
         <div class="mt-3 space-y-2">
           <button

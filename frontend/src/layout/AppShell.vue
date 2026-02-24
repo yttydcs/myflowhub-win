@@ -1,6 +1,19 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, ref, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
+import {
+  Bug,
+  Database,
+  FileText,
+  Folder,
+  Home as HomeIcon,
+  ListChecks,
+  Network,
+  Rss,
+  Server,
+  Settings,
+  Share2
+} from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -13,7 +26,7 @@ type NavItem = {
   label: string
   description: string
   to: string
-  short: string
+  icon: Component
   tone: string
 }
 
@@ -63,21 +76,21 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         label: "Home",
         description: "Session, auth, and status",
         to: "/home",
-        short: "HM",
+        icon: HomeIcon,
         tone: "bg-sky-500/15 text-sky-700"
       },
       {
         label: "Devices",
         description: "Query nodes/devices",
         to: "/devices",
-        short: "DV",
+        icon: Network,
         tone: "bg-violet-500/15 text-violet-700"
       },
       {
         label: "Local Hub",
         description: "Download and run hub_server",
         to: "/local-hub",
-        short: "LH",
+        icon: Server,
         tone: "bg-emerald-500/15 text-emerald-700"
       }
     ]
@@ -89,14 +102,14 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         label: "VarPool",
         description: "Values and subscriptions",
         to: "/varpool",
-        short: "VP",
+        icon: Database,
         tone: "bg-emerald-500/15 text-emerald-700"
       },
       {
         label: "TopicBus",
         description: "Publish and replay",
         to: "/topicbus",
-        short: "TB",
+        icon: Rss,
         tone: "bg-cyan-500/15 text-cyan-700"
       }
     ]
@@ -108,21 +121,21 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         label: "File Console",
         description: "Browse and transfer",
         to: "/file",
-        short: "FL",
+        icon: Folder,
         tone: "bg-amber-500/15 text-amber-700"
       },
       {
         label: "Flow",
         description: "Design and deploy",
         to: "/flow",
-        short: "FW",
+        icon: Share2,
         tone: "bg-indigo-500/15 text-indigo-700"
       },
       {
         label: "Management",
         description: "Nodes and config",
         to: "/management",
-        short: "MG",
+        icon: Settings,
         tone: "bg-slate-500/15 text-slate-700"
       }
     ]
@@ -134,21 +147,21 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         label: "Debug",
         description: "Custom frames",
         to: "/debug",
-        short: "DB",
+        icon: Bug,
         tone: "bg-rose-500/15 text-rose-700"
       },
       {
         label: "Presets",
         description: "Stress patterns",
         to: "/presets",
-        short: "PR",
+        icon: ListChecks,
         tone: "bg-orange-500/15 text-orange-700"
       },
       {
         label: "Logs",
         description: "Live stream",
         to: "/logs",
-        short: "LG",
+        icon: FileText,
         tone: "bg-stone-500/15 text-stone-700"
       }
     ]
@@ -328,13 +341,13 @@ const selectProfile = async (name: string) => {
                         : 'border-transparent hover:border-border/60 hover:bg-muted/70'
                     ]"
                   >
-                      <div
-                        :class="[
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold uppercase leading-none',
+                    <div
+                      :class="[
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
                         isActive ? 'bg-primary text-primary-foreground' : item.tone
                       ]"
                     >
-                      {{ item.short }}
+                      <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
                     </div>
                     <div>
                       <p class="text-sm font-medium">{{ item.label }}</p>
