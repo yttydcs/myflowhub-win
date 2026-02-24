@@ -16,6 +16,7 @@ import (
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
+	storagesvc "github.com/yttydcs/myflowhub-win/internal/storage"
 )
 
 const defaultManagementTimeout = 8 * time.Second
@@ -23,10 +24,11 @@ const defaultManagementTimeout = 8 * time.Second
 type ManagementService struct {
 	session *sessionsvc.SessionService
 	logs    *logs.LogService
+	store   *storagesvc.Store
 }
 
-func New(session *sessionsvc.SessionService, logsSvc *logs.LogService) *ManagementService {
-	return &ManagementService{session: session, logs: logsSvc}
+func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, store *storagesvc.Store) *ManagementService {
+	return &ManagementService{session: session, logs: logsSvc, store: store}
 }
 
 func (s *ManagementService) NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) (management.NodeEchoResp, error) {
@@ -119,6 +121,16 @@ func (s *ManagementService) ConfigGet(ctx context.Context, sourceID, targetID ui
 	if key == "" {
 		return management.ConfigResp{}, errors.New("key is required")
 	}
+	if sourceID != 0 && sourceID == targetID {
+		if s.store == nil {
+			return management.ConfigResp{}, errors.New("config unavailable (code=500)")
+		}
+		raw, ok := s.store.GetRaw(key)
+		if !ok {
+			return management.ConfigResp{}, errors.New("not found (code=404)")
+		}
+		return management.ConfigResp{Code: 1, Msg: "ok", Key: key, Value: formatConfigValue(raw)}, nil
+	}
 	payload, err := transport.EncodeMessage(management.ActionConfigGet, management.ConfigGetReq{Key: key})
 	if err != nil {
 		return management.ConfigResp{}, err
@@ -141,6 +153,15 @@ func (s *ManagementService) ConfigSet(ctx context.Context, sourceID, targetID ui
 	if key == "" {
 		return management.ConfigResp{}, errors.New("key is required")
 	}
+	if sourceID != 0 && sourceID == targetID {
+		if s.store == nil {
+			return management.ConfigResp{}, errors.New("config unavailable (code=500)")
+		}
+		if err := s.store.SetRaw(key, value); err != nil {
+			return management.ConfigResp{}, err
+		}
+		return management.ConfigResp{Code: 1, Msg: "ok", Key: key, Value: value}, nil
+	}
 	payload, err := transport.EncodeMessage(management.ActionConfigSet, management.ConfigSetReq{Key: key, Value: value})
 	if err != nil {
 		return management.ConfigResp{}, err
@@ -159,6 +180,12 @@ func (s *ManagementService) ConfigSetSimple(sourceID, targetID uint32, key, valu
 }
 
 func (s *ManagementService) ConfigList(ctx context.Context, sourceID, targetID uint32) (management.ConfigListResp, error) {
+	if sourceID != 0 && sourceID == targetID {
+		if s.store == nil {
+			return management.ConfigListResp{}, errors.New("config unavailable (code=500)")
+		}
+		return management.ConfigListResp{Code: 1, Msg: "ok", Keys: s.store.Keys()}, nil
+	}
 	payload, err := transport.EncodeMessage(management.ActionConfigList, management.ConfigListReq{})
 	if err != nil {
 		return management.ConfigListResp{}, err
@@ -292,6 +319,27 @@ func extractCodeMsg(v any) (int, string) {
 		return t.Code, t.Msg
 	default:
 		return 0, ""
+	}
+}
+
+func formatConfigValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return fmt.Sprintf("%v", v)
+	case []byte:
+		return string(v)
+	default:
+		encoded, err := json.Marshal(v)
+		if err == nil {
+			return string(encoded)
+		}
+		return fmt.Sprintf("%v", v)
 	}
 }
 

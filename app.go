@@ -69,7 +69,7 @@ func NewApp() *App {
 		topicbus:   topicbussvc.New(session, logs, bus),
 		file:       filesvc.New(session, logs, store, bus),
 		flow:       flowsvc.New(session, logs),
-		management: mgmtsvc.New(session, logs),
+		management: mgmtsvc.New(session, logs, store),
 		debug:      debugsvc.New(session, logs),
 		presets:    presetssvc.New(session, bus),
 		store:      store,

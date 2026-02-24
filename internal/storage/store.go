@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,6 +127,54 @@ func (s *Store) ProfileKey(profile, key string) string {
 		return key
 	}
 	return profile + "." + key
+}
+
+// Keys returns all raw keys currently stored in settings.json.
+// The returned slice is sorted for stable UI rendering.
+func (s *Store) Keys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(s.values))
+	for key := range s.values {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// GetRaw returns the raw stored value for a key.
+// Callers should treat the returned value as immutable.
+func (s *Store) GetRaw(key string) (any, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	val, ok := s.values[key]
+	return val, ok
+}
+
+// SetRaw writes a raw key/value pair directly into settings.json.
+// This bypasses the per-profile key prefixing used by SetString/SetInt/SetBool.
+func (s *Store) SetRaw(key string, value any) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("key is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.values == nil {
+		s.values = map[string]any{}
+	}
+	s.values[key] = value
+	return s.saveLocked()
 }
 
 func (s *Store) GetString(profile, key, fallback string) string {
