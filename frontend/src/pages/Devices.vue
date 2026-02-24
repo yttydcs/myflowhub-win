@@ -11,6 +11,15 @@ const devicesStore = useDevicesStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 
+type NodeInfoWire = {
+  code?: number
+  Code?: number
+  msg?: string
+  Msg?: string
+  items?: Record<string, any>
+  Items?: Record<string, any>
+}
+
 const autoLoaded = ref(false)
 
 const identityLabel = computed(() => {
@@ -46,6 +55,78 @@ const flattenVisible = (root: DeviceTreeNode | null) => {
 }
 
 const visibleNodes = computed(() => flattenVisible(devicesStore.state.root))
+
+const nodeInfoOpen = ref(false)
+const nodeInfoNodeId = ref(0)
+const nodeInfoLoading = ref(false)
+const nodeInfoError = ref("")
+const nodeInfoItems = ref<Record<string, string>>({})
+let nodeInfoEpoch = 0
+
+const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
+  const api = (window as any)?.go?.management?.ManagementService
+  const fn = api?.[method]
+  if (!fn) {
+    throw new Error(`Management binding '${method}' unavailable`)
+  }
+  return fn(...args)
+}
+
+const loadNodeInfo = async (targetID: number) => {
+  if (!sessionStore.connected) {
+    throw new Error("Connect before querying node info.")
+  }
+  const sourceID = Number(sessionStore.auth.nodeId || 0)
+  if (!sourceID) {
+    throw new Error("Login required to query node info.")
+  }
+  const resp = await callMgmt<NodeInfoWire>("NodeInfoSimple", sourceID, targetID)
+  const itemsRaw = resp?.items ?? resp?.Items ?? {}
+  const items: Record<string, string> = {}
+  for (const [key, value] of Object.entries(itemsRaw || {})) {
+    items[String(key)] = value == null ? "" : String(value)
+  }
+  return items
+}
+
+const refreshNodeInfo = async () => {
+  if (!nodeInfoNodeId.value) return
+  const myEpoch = ++nodeInfoEpoch
+  nodeInfoLoading.value = true
+  try {
+    const items = await loadNodeInfo(nodeInfoNodeId.value)
+    if (nodeInfoEpoch !== myEpoch) return
+    nodeInfoItems.value = items
+  } catch (err) {
+    if (nodeInfoEpoch !== myEpoch) return
+    const message = err instanceof Error ? err.message : String(err)
+    nodeInfoError.value = message || "Unknown error."
+    toast.errorOf(err, "Failed to load node info.")
+  } finally {
+    if (nodeInfoEpoch !== myEpoch) return
+    nodeInfoLoading.value = false
+  }
+}
+
+const openNodeInfo = async (node: DeviceTreeNode) => {
+  nodeInfoOpen.value = true
+  nodeInfoNodeId.value = node.nodeId
+  nodeInfoItems.value = {}
+  nodeInfoError.value = ""
+  await refreshNodeInfo()
+}
+
+const closeNodeInfo = () => {
+  nodeInfoOpen.value = false
+  nodeInfoNodeId.value = 0
+  nodeInfoItems.value = {}
+  nodeInfoError.value = ""
+  nodeInfoLoading.value = false
+}
+
+const sortedNodeInfoItems = computed(() => {
+  return Object.entries(nodeInfoItems.value).sort((a, b) => a[0].localeCompare(b[0]))
+})
 
 const loadRoot = async () => {
   try {
@@ -157,7 +238,8 @@ onMounted(async () => {
         <div
           v-for="{ node, depth } in visibleNodes"
           :key="node.key"
-          class="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm"
+          class="cursor-pointer rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm transition-colors hover:bg-background/80"
+          @click="openNodeInfo(node)"
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-2">
@@ -166,7 +248,7 @@ onMounted(async () => {
                 class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs text-foreground disabled:opacity-50"
                 :style="{ marginLeft: `${depth * 16}px` }"
                 :disabled="node.duplicate || node.loading"
-                @click="toggleNode(node)"
+                @click.stop="toggleNode(node)"
               >
                 <span v-if="node.loading">…</span>
                 <span v-else>{{ node.expanded ? "-" : "+" }}</span>
@@ -209,7 +291,7 @@ onMounted(async () => {
                 size="sm"
                 variant="outline"
                 :disabled="node.loading"
-                @click="retryNode(node)"
+                @click.stop="retryNode(node)"
               >
                 Retry
               </Button>
@@ -222,6 +304,49 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <div
+      v-if="nodeInfoOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      @click.self="closeNodeInfo"
+    >
+      <div class="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+              Device
+            </p>
+            <h2 class="mt-1 text-lg font-semibold">Node {{ nodeInfoNodeId }}</h2>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" :disabled="nodeInfoLoading" @click="refreshNodeInfo">
+              Reload
+            </Button>
+            <Button size="sm" variant="outline" @click="closeNodeInfo">Close</Button>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">Loading…</div>
+          <div v-else-if="nodeInfoError" class="text-sm text-rose-600">Error: {{ nodeInfoError }}</div>
+          <div v-else class="space-y-3">
+            <div v-if="!sortedNodeInfoItems.length" class="text-sm text-muted-foreground">
+              No details returned.
+            </div>
+            <div v-else class="overflow-hidden rounded-xl border border-border/60">
+              <div
+                v-for="[key, value] in sortedNodeInfoItems"
+                :key="key"
+                class="grid grid-cols-1 gap-1 border-b border-border/50 bg-background/70 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[220px_minmax(0,1fr)]"
+              >
+                <div class="font-mono text-[12px] text-muted-foreground">{{ key }}</div>
+                <div class="break-words font-mono text-[12px] text-foreground">{{ value }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
   </section>
 </template>

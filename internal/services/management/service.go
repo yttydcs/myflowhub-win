@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -45,6 +49,27 @@ func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message st
 	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
 	defer cancel()
 	return s.NodeEcho(ctx, sourceID, targetID, message)
+}
+
+func (s *ManagementService) NodeInfo(ctx context.Context, sourceID, targetID uint32) (management.NodeInfoResp, error) {
+	if sourceID != 0 && sourceID == targetID {
+		return management.NodeInfoResp{Code: 1, Msg: "ok", Items: collectNodeInfoItems(sourceID)}, nil
+	}
+	payload, err := transport.EncodeMessage(management.ActionNodeInfo, management.NodeInfoReq{})
+	if err != nil {
+		return management.NodeInfoResp{}, err
+	}
+	var resp management.NodeInfoResp
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, management.ActionNodeInfo, management.ActionNodeInfoResp, &resp); err != nil {
+		return management.NodeInfoResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *ManagementService) NodeInfoSimple(sourceID, targetID uint32) (management.NodeInfoResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultManagementTimeout)
+	defer cancel()
+	return s.NodeInfo(ctx, sourceID, targetID)
 }
 
 func (s *ManagementService) ListNodes(ctx context.Context, sourceID, targetID uint32) (management.ListNodesResp, error) {
@@ -240,6 +265,11 @@ func extractCodeMsg(v any) (int, string) {
 			return 0, ""
 		}
 		return t.Code, t.Msg
+	case *management.NodeInfoResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
 	case *management.ListNodesResp:
 		if t == nil {
 			return 0, ""
@@ -263,4 +293,30 @@ func extractCodeMsg(v any) (int, string) {
 	default:
 		return 0, ""
 	}
+}
+
+func collectNodeInfoItems(nodeID uint32) map[string]string {
+	items := map[string]string{
+		"node_id":    fmt.Sprintf("%d", nodeID),
+		"app":        filepath.Base(os.Args[0]),
+		"platform":   fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+		"go_version": runtime.Version(),
+	}
+
+	if bi, ok := debug.ReadBuildInfo(); ok && bi != nil {
+		items["module"] = strings.TrimSpace(bi.Main.Path)
+		items["version"] = strings.TrimSpace(bi.Main.Version)
+		for _, s := range bi.Settings {
+			switch strings.TrimSpace(s.Key) {
+			case "vcs.revision":
+				items["commit"] = strings.TrimSpace(s.Value)
+			case "vcs.time":
+				items["vcs_time"] = strings.TrimSpace(s.Value)
+			case "vcs.modified":
+				items["vcs_modified"] = strings.TrimSpace(s.Value)
+			}
+		}
+	}
+
+	return items
 }
