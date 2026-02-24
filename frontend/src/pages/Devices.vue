@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import type { DeviceTreeNode, DevicesMode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
+import { useManagementStore } from "@/stores/management"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 
 const devicesStore = useDevicesStore()
+const mgmtStore = useManagementStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 
@@ -131,6 +133,59 @@ const sortedNodeInfoItems = computed(() => {
   return Object.entries(nodeInfoItems.value).sort((a, b) => a[0].localeCompare(b[0]))
 })
 
+const configOpen = ref(false)
+const editOpen = ref(false)
+const configDraft = reactive({ key: "", value: "" })
+
+const openConfig = async (node: DeviceTreeNode) => {
+  configOpen.value = true
+  editOpen.value = false
+  configDraft.key = ""
+  configDraft.value = ""
+
+  try {
+    await mgmtStore.selectNode(node.nodeId)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load config.")
+  }
+}
+
+const closeConfig = () => {
+  configOpen.value = false
+  editOpen.value = false
+  configDraft.key = ""
+  configDraft.value = ""
+  void mgmtStore.selectNode(0)
+}
+
+const refreshConfig = async () => {
+  try {
+    await mgmtStore.refreshConfig()
+    toast.success("Config refreshed.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to refresh config.")
+  }
+}
+
+const openEdit = (key: string, value: string) => {
+  configDraft.key = key
+  configDraft.value = value
+  editOpen.value = true
+}
+
+const saveConfig = async () => {
+  try {
+    await mgmtStore.setConfig(configDraft.key, configDraft.value)
+    editOpen.value = false
+    toast.success("Config updated.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to update config.")
+  }
+}
+
 const loadRoot = async () => {
   try {
     await devicesStore.loadRoot()
@@ -177,6 +232,14 @@ watch(
     if (autoLoaded.value) return
     autoLoaded.value = true
     void loadRoot()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
+  ([nodeId, hubId]) => {
+    mgmtStore.setIdentity(Number(nodeId), Number(hubId))
   },
   { immediate: true }
 )
@@ -279,6 +342,10 @@ onMounted(async () => {
               </Badge>
               <Badge v-else variant="secondary">Unknown</Badge>
 
+              <Button size="sm" variant="outline" :disabled="!ready" @click.stop="openConfig(node)">
+                Edit
+              </Button>
+
               <Button
                 v-if="node.error && !node.duplicate"
                 size="sm"
@@ -333,6 +400,77 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="configOpen" closeOnBackdrop @close="closeConfig">
+      <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Config</p>
+            <h2 class="mt-1 text-lg font-semibold">Node {{ mgmtStore.state.selectedNodeId || "-" }}</h2>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!mgmtStore.state.selectedNodeId"
+              @click="refreshConfig"
+            >
+              Refresh
+            </Button>
+            <Button size="sm" variant="outline" @click="closeConfig">Close</Button>
+          </div>
+        </div>
+
+        <div class="mt-4 max-h-[65vh] space-y-2 overflow-y-auto">
+          <div
+            v-for="entry in mgmtStore.state.configEntries"
+            :key="entry.key"
+            class="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-xs"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold">{{ entry.key }}</p>
+              <p class="truncate text-muted-foreground">{{ entry.value }}</p>
+            </div>
+            <Button size="sm" variant="outline" @click="openEdit(entry.key, entry.value)">Edit</Button>
+          </div>
+          <div v-if="!mgmtStore.state.configEntries.length" class="text-xs text-muted-foreground">
+            {{ mgmtStore.state.selectedNodeId ? "Loading config entries…" : "Select a node to load config entries." }}
+          </div>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="editOpen" @close="editOpen = false">
+      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">Edit Config</h2>
+        <div class="mt-4 space-y-3">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Key
+            </label>
+            <input
+              v-model="configDraft.key"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              disabled
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Value
+            </label>
+            <textarea
+              v-model="configDraft.value"
+              rows="4"
+              class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="editOpen = false">Cancel</Button>
+          <Button @click="saveConfig">Save</Button>
         </div>
       </div>
     </Overlay>
