@@ -11,7 +11,6 @@ import {
   Network,
   Rss,
   Server,
-  Settings,
   Share2
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
@@ -80,13 +79,6 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         tone: "bg-sky-500/15 text-sky-700"
       },
       {
-        label: "Devices",
-        description: "Query nodes/devices",
-        to: "/devices",
-        icon: Network,
-        tone: "bg-violet-500/15 text-violet-700"
-      },
-      {
         label: "Local Hub",
         description: "Download and run hub_server",
         to: "/local-hub",
@@ -118,6 +110,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
     title: "Operations",
     items: [
       {
+        label: "Devices",
+        description: "Query nodes/devices",
+        to: "/devices",
+        icon: Network,
+        tone: "bg-violet-500/15 text-violet-700"
+      },
+      {
         label: "File Console",
         description: "Browse and transfer",
         to: "/file",
@@ -130,13 +129,6 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/flow",
         icon: Share2,
         tone: "bg-indigo-500/15 text-indigo-700"
-      },
-      {
-        label: "Management",
-        description: "Nodes and config",
-        to: "/management",
-        icon: Settings,
-        tone: "bg-slate-500/15 text-slate-700"
       }
     ]
   },

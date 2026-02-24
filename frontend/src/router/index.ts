@@ -4,7 +4,6 @@ import Devices from "@/pages/Devices.vue"
 import LocalHub from "@/pages/LocalHub.vue"
 import File from "@/pages/File.vue"
 import Flow from "@/pages/Flow.vue"
-import Management from "@/pages/Management.vue"
 import Debug from "@/pages/Debug.vue"
 import Logs from "@/pages/Logs.vue"
 import Presets from "@/pages/Presets.vue"
@@ -85,15 +84,6 @@ const routes = [
     meta: {
       title: "Flow",
       subtitle: "Build, deploy, and run flow graphs."
-    }
-  },
-  {
-    path: "/management",
-    name: "management",
-    component: Management,
-    meta: {
-      title: "Management",
-      subtitle: "Inspect node trees and edit configuration entries."
     }
   },
   {
