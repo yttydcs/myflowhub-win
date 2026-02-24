@@ -91,12 +91,14 @@ const loadNodeInfo = async (targetID: number) => {
 
 const refreshNodeInfo = async () => {
   if (!nodeInfoNodeId.value) return
+  nodeInfoError.value = ""
   const myEpoch = ++nodeInfoEpoch
   nodeInfoLoading.value = true
   try {
     const items = await loadNodeInfo(nodeInfoNodeId.value)
     if (nodeInfoEpoch !== myEpoch) return
     nodeInfoItems.value = items
+    nodeInfoError.value = ""
   } catch (err) {
     if (nodeInfoEpoch !== myEpoch) return
     const message = err instanceof Error ? err.message : String(err)
