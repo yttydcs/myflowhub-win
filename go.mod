@@ -7,7 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/yttydcs/myflowhub-core v0.2.0
-	github.com/yttydcs/myflowhub-proto v0.1.0
+	github.com/yttydcs/myflowhub-proto v0.1.1
 	github.com/yttydcs/myflowhub-sdk v0.1.0
 )
 
