@@ -1,0 +1,115 @@
+name: Release (Windows amd64)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag format
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\\d+\\.\\d+\\.\\d+$') {
+            Write-Host "Invalid tag format: $tag"
+            Write-Host "Expected: v1.2.3"
+            exit 1
+          }
+
+      - name: Ensure tag commit is on main
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          git fetch origin main --prune
+          $tagSha = git rev-parse "$tag^{commit}"
+          git merge-base --is-ancestor $tagSha origin/main
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Tag $tag commit ($tagSha) is not contained in origin/main."
+            exit 1
+          }
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.5"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+          $goPath = (go env GOPATH)
+          Add-Content -Path $env:GITHUB_PATH -Value "$goPath\\bin"
+          wails version
+
+      - name: Build (Windows amd64)
+        shell: pwsh
+        run: |
+          wails build -platform windows/amd64
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          $exe = "build/bin/myflowhub-win.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Host "Expected output not found: $exe"
+            if (Test-Path "build/bin") {
+              Get-ChildItem -Recurse "build/bin" | Format-Table -AutoSize
+            } else {
+              Write-Host "build/bin does not exist"
+            }
+            exit 1
+          }
+
+      - name: Generate sha256
+        shell: pwsh
+        run: |
+          $exe = "build/bin/myflowhub-win.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash.ToLowerInvariant()
+          $shaFile = "build/bin/myflowhub-win.exe.sha256"
+          Set-Content -Path $shaFile -Value "$hash  myflowhub-win.exe" -NoNewline
+          Write-Host "SHA256: $hash"
+
+      - name: Upload artifact (30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: myflowhub-win_${{ github.ref_name }}_windows_amd64
+          path: |
+            build/bin/myflowhub-win.exe
+            build/bin/myflowhub-win.exe.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/bin/myflowhub-win.exe
+            build/bin/myflowhub-win.exe.sha256
