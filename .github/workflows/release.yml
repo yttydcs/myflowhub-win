@@ -26,7 +26,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v\\d+\\.\\d+\\.\\d+$') {
+          # PowerShell regex uses single backslashes. Do not double-escape (\d, \.).
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             Write-Host "Invalid tag format: $tag"
             Write-Host "Expected: v1.2.3"
             exit 1
