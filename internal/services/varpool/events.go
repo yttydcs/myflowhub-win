@@ -42,7 +42,9 @@ func (s *VarPoolService) bindBus() {
 		if !ok {
 			return
 		}
-		if frame.Major != header.MajorMsg {
+		// VarStore subscription notifications (e.g. var_changed/var_deleted/notify_set) are delivered as MajorCmd
+		// in the current subproto implementation, while older/other implementations may use MajorMsg.
+		if frame.Major != header.MajorCmd && frame.Major != header.MajorMsg {
 			return
 		}
 		if frame.SubProto != varstore.SubProtoVarStore {

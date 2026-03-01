@@ -1,87 +1,104 @@
-# Plan - MyFlowHub-Win：修复 Release 的 tag 格式校验（vX.Y.Z）
+# Plan - MyFlowHub-Win：VarPool 订阅后实时更新（接收 MajorCmd 通知帧）
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`fix/win-release-tag-fix`
-- Worktree：`d:\project\MyFlowHub3\worktrees\win-release-tag-fix\MyFlowHub-Win`
-- Base：`main`（当前 worktree 基于：`0bfff4e`）
+- 分支：`fix/win-varpool-liveupdate`
+- Worktree：`d:\project\MyFlowHub3\worktrees\win-varpool-liveupdate\MyFlowHub-Win`
+- Base：`main`
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
 
-## 背景（问题清单与用户需求）
+---
 
-### 问题（已复现，可审计）
-Release workflow（`.github/workflows/release.yml`）在 `Validate tag format` 步骤失败，导致 tag 发布无法继续执行构建与创建 GitHub Release。
+## 1) 需求分析（已确认）
 
-触发实例：
-- tag：`v0.0.1`
-- 失败步骤：`Validate tag format`
+### 目标
+在 `MyFlowHub-Win` 的 VarPool 页面中：
+- 用户点击 **Subscribe** 后，当变量值在 Hub 侧发生变化时，页面值应 **自动刷新**（无需手动点 Refresh）。
 
-根因（已定位）：
-- `release.yml` 中 PowerShell 正则写成了 `^v\\d+\\.\\d+\\.\\d+$`。
-- 在 PowerShell 单引号字符串里，反斜杠不会被转义，导致正则实际匹配的是字面量 `\\d` / `\\.`，从而 **无法匹配** `v0.0.1` 这类正常 tag。
+### 现状与根因（已定位）
+- Hub（VarStore 子协议）向订阅者推送变更时，使用的是 `HeaderTcp.Major=MajorCmd` 的通知帧（例如 `action=var_changed` / `notify_set`）。
+- `MyFlowHub-Win/internal/services/varpool/events.go` 当前只处理 `MajorMsg`，导致这些通知帧被过滤掉；前端自然只能靠手动 Refresh（主动 Get）才能看到新值。
 
-### 需求（已确认）
-1) Release 仅允许严格 SemVer tag：`v1.2.3`（不允许 `-rc` 等后缀）。
-2) 当 tag 不合法时：workflow **直接失败**（避免误以为发布成功）。
-3) main / PR 的 CI build 保持不变。
-
-## 目标
-1) `v0.0.1` 这类合法 tag 能通过校验并继续执行 Release workflow。
-2) 非法 tag（如 `v0.0.1-rc1` / `v0.0` / `0.0.1`）依旧会被拒绝并失败。
-
-## 范围与约束
+### 范围
 - 必须：
-  - 仅修复 `.github/workflows/release.yml` 的 tag 校验逻辑（最小变更）。
-  - 不改 Wails 构建命令、不改产物路径与 Release 上传逻辑。
+  - 修复 VarPool 的订阅通知链路：支持处理 `MajorCmd`（并保持兼容 `MajorMsg`）。
+- 可选：
+  - 暂无（本 workflow 只聚焦 VarPool）。
 - 不做：
-  - 不新增预发布策略（`-rc`）支持。
-  - 不调整 CI build（`ci-build.yml`）行为。
+  - 不修改 Hub/Server 的推送行为（不改协议 wire、不改 Major 语义）。
+  - 不引入额外轮询刷新策略。
 
-## 总体方案（简述）
-- 将正则从 `^v\\d+\\.\\d+\\.\\d+$` 修正为 `^v\d+\.\d+\.\d+$`（PowerShell 正则应使用单反斜杠）。
-- 为避免再次误用，采用明确的注释说明：PowerShell regex 不需要双反斜杠。
+### 验收标准
+1) 启动 Hub + MetricsNode（或任何持续 set 变量的节点）。
+2) 在 `MyFlowHub-Win` 的 VarPool 页面 Watch 某变量并点击 Subscribe。
+3) 外部改变该变量（例如 MetricsNode 音量变化触发 `sys_volume_percent` 更新）。
+4) `MyFlowHub-Win` 页面中该变量的值在 1-2 秒内自动变化（无需点 Refresh）。
+
+### 风险
+- 放宽 Major 过滤会让 VarPool 看到更多帧：通过 **SubProto + Action 白名单** 继续严格过滤，避免误处理非通知消息。
+
+---
+
+## 2) 架构设计（分析）
+
+### 总体方案（选型）
+在 Win 侧修复（最小变更、低风险）：
+- VarPoolService 的事件监听不再只认 `MajorMsg`，而是接受 `MajorCmd`/`MajorMsg`，再通过 action 白名单挑出通知类 action：
+  - `notify_set` / `up_set` / `var_changed`
+  - `notify_revoke` / `up_revoke` / `var_deleted`
+
+### 备选方案（不选）
+- 改 Server：把通知帧改为 `MajorMsg` 再下发（影响面更大，属于协议行为调整，本 workflow 不做）。
+
+### 关键数据流（修复后）
+`session.frame`（MajorCmd, SubProto=VarStore, action=var_changed） →
+`internal/services/varpool/events.go` 解析 payload →
+发布 `varpool.changed`（Wails EventsEmit） →
+`frontend/src/stores/varpool.ts` 更新 `state.data` →
+`frontend/src/pages/VarPool.vue` 自动展示新值。
+
+---
 
 ## 3.1) 计划拆分（Checklist）
 
-### R1 - Workspace 准备
-- 目标：独占 worktree + 分支，避免在 `repo/` 直接改动。
-- 当前状态：已完成（本计划文件即该 worktree 内）。
+### V1 - 修复 VarPool 事件过滤
+- 目标：订阅后能接收到 `MajorCmd` 的变更通知并刷新 UI。
+- 涉及文件（预期）：
+  - `internal/services/varpool/events.go`
 - 验收：
-  - `git status -sb`：在 `fix/win-release-tag-fix`，工作区干净。
-- 回滚点：
-  - `git worktree remove` + `git worktree prune`，删除分支（若未推送）。
+  - 订阅变量后，变更能触发前端值更新（见“验收标准”）。
+- 回滚：
+  - 回滚本 workflow 提交即可恢复旧行为。
 
-### R2 - 修复 release.yml 的 tag 校验正则
-- 目标：`Validate tag format` 能正确识别 `v0.0.1` 为合法。
-- 涉及文件：
-  - `.github/workflows/release.yml`
+### V2 - 单元测试（关键链路）
+- 目标：覆盖“MajorCmd 的 var_changed/var_deleted 能触发 varpool.changed/varpool.deleted”。
+- 涉及文件（预期）：
+  - `internal/services/varpool/events_test.go`
 - 验收：
-  - 本地 PowerShell 断言通过：
-    - `('v0.0.1' -match '^v\d+\.\d+\.\d+$') -eq $true`
-    - `('v0.0.1-rc1' -match '^v\d+\.\d+\.\d+$') -eq $false`
-- 回滚点：
-  - revert `release.yml` 改动。
+  - `go test ./...` 通过。
 
-### R3 - GitHub 上验证（重新触发 Release）
-- 目标：让 `v0.0.1` 重新触发 Release workflow 并成功发布。
-- 说明：tag 已存在时无法“再次 push 触发”。
-- 方案（需用户确认其一）：
-  - A) 删除远端 tag `v0.0.1` 后重新 push（推荐，语义最清晰）
-  - B) force 更新 tag 并 push（会改写 tag 对象）
-  - C) 发布新版本 tag（如 `v0.0.2`）
+### V3 - 构建与冒烟
+- 目标：确保修复不破坏编译链路，并完成端到端手工验证。
 - 验收：
-  - `Release (Windows amd64)` workflow 成功；
-  - GitHub Release 出现并包含：
-    - `myflowhub-win.exe`
-    - `myflowhub-win.exe.sha256`
-- 回滚点：
-  - 删除 tag / 删除 Release 资产（按需手工）。
+  - `GOWORK=off go test ./... -count=1 -p 1`
+  - `GOWORK=off wails build -nopackage`
+  - 手工冒烟通过（见“验收标准”）
 
-### R4 - Code Review（阶段 3.3）
-- 按 AGENTS 3.3 清单逐项审查（需求覆盖/架构/性能/一致性/安全/测试）。
+---
 
-### R5 - 归档变更（阶段 4）
-- 新增文档：`docs/change/2026-03-01_win-release-tag-validate.md`
-- 必须包含：
-  - 背景/目标、变更清单、与 R1~R3 任务映射、关键决策与权衡、验证方式/结果、回滚方案。
+## 3.3) Code Review（完成编码后执行）
+- 需求覆盖：订阅后无需 Refresh 自动更新
+- 架构合理性：只改 Win 客户端过滤逻辑，不动协议 wire
+- 性能风险：过滤放宽但仍以 action 白名单处理，避免无意义解析
+- 可读性与一致性：条件判断清晰，测试用例覆盖关键路径
+- 稳定性与安全：异常 payload 安全忽略；无额外权限变化
+- 测试覆盖：新增单测 + 手工冒烟
+
+---
+
+## 4) 归档变更（完成 Review 后执行）
+- 在仓库内新增：
+  - `docs/change/2026-03-01_win-varpool-liveupdate.md`
+- 内容需包含：背景/目标、变更内容、任务映射、关键决策、测试结果、回滚方案。
+
