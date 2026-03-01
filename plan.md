@@ -1,104 +1,104 @@
-# Plan - MyFlowHub-Win：GitHub Actions 自动构建（CI）+ Tag Release（Windows amd64）
+# Plan - MyFlowHub-Win：VarPool 订阅后实时更新（接收 MajorCmd 通知帧）
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`chore/win-actions-release`
-- Worktree：`d:\project\MyFlowHub3\worktrees\win-actions-release\MyFlowHub-Win`
-- Base：`main`（当前 worktree 基于：`ba1aae0`）
+- 分支：`fix/win-varpool-liveupdate`
+- Worktree：`d:\project\MyFlowHub3\worktrees\win-varpool-liveupdate\MyFlowHub-Win`
+- Base：`main`
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
 
-## 背景与需求（已确认）
+---
+
+## 1) 需求分析（已确认）
 
 ### 目标
-为仓库增加 GitHub Actions，实现：
-1) `pull_request -> main`：自动构建 Windows `amd64`（不发布）。
-2) `push -> main`：自动构建 Windows `amd64`（不发布）。
-3) `push tag (vX.Y.Z)`：自动构建并创建 GitHub Release，上传构建产物（发布）。
+在 `MyFlowHub-Win` 的 VarPool 页面中：
+- 用户点击 **Subscribe** 后，当变量值在 Hub 侧发生变化时，页面值应 **自动刷新**（无需手动点 Refresh）。
 
-### 约束
-- Release 仅允许 tag 格式：`v1.2.3`（严格 SemVer，不允许 `-rc` 等后缀）。
-- “只在 main 上跑 release”的判定：tag 指向的提交必须在 `origin/main` 历史中（祖先即可，不要求是 main 当前 HEAD）。
-- 若 tag 不满足格式或不在 main 历史：workflow **直接失败**。
+### 现状与根因（已定位）
+- Hub（VarStore 子协议）向订阅者推送变更时，使用的是 `HeaderTcp.Major=MajorCmd` 的通知帧（例如 `action=var_changed` / `notify_set`）。
+- `MyFlowHub-Win/internal/services/varpool/events.go` 当前只处理 `MajorMsg`，导致这些通知帧被过滤掉；前端自然只能靠手动 Refresh（主动 Get）才能看到新值。
 
-### 构建命令（当前仓库 README）
-- Windows build：`wails build -platform windows/amd64`
-- 产物预期：`build/bin/myflowhub-win.exe`
+### 范围
+- 必须：
+  - 修复 VarPool 的订阅通知链路：支持处理 `MajorCmd`（并保持兼容 `MajorMsg`）。
+- 可选：
+  - 暂无（本 workflow 只聚焦 VarPool）。
+- 不做：
+  - 不修改 Hub/Server 的推送行为（不改协议 wire、不改 Major 语义）。
+  - 不引入额外轮询刷新策略。
 
-### 运行环境选型（CI）
-- OS：GitHub `windows-latest`
-- Node：`22`（LTS，兼容 Vite 5 / Vue 3）
-- Go：遵循 `go.mod` 的 `toolchain go1.24.5`（CI 固定 `1.24.5`）
-- Wails CLI：与 `go.mod` 中依赖对齐，固定 `v2.11.0`
+### 验收标准
+1) 启动 Hub + MetricsNode（或任何持续 set 变量的节点）。
+2) 在 `MyFlowHub-Win` 的 VarPool 页面 Watch 某变量并点击 Subscribe。
+3) 外部改变该变量（例如 MetricsNode 音量变化触发 `sys_volume_percent` 更新）。
+4) `MyFlowHub-Win` 页面中该变量的值在 1-2 秒内自动变化（无需点 Refresh）。
 
-### Artifact（已确认）
-- CI 构建产物上传为 Actions artifact，保留 `30` 天（用于下载验证）。
+### 风险
+- 放宽 Major 过滤会让 VarPool 看到更多帧：通过 **SubProto + Action 白名单** 继续严格过滤，避免误处理非通知消息。
 
-## 总体方案（简述）
-采用 **两条 workflow**（权限更小、更清晰）：
-1) `ci-build.yml`：PR / main push 触发，执行 build 并上传 artifact（30 天）。
-2) `release.yml`：tag push 触发；校验 tag 格式与 main 历史关系；build；用 `GITHUB_TOKEN` 创建 Release 并上传资产（exe + sha256）。
+---
+
+## 2) 架构设计（分析）
+
+### 总体方案（选型）
+在 Win 侧修复（最小变更、低风险）：
+- VarPoolService 的事件监听不再只认 `MajorMsg`，而是接受 `MajorCmd`/`MajorMsg`，再通过 action 白名单挑出通知类 action：
+  - `notify_set` / `up_set` / `var_changed`
+  - `notify_revoke` / `up_revoke` / `var_deleted`
+
+### 备选方案（不选）
+- 改 Server：把通知帧改为 `MajorMsg` 再下发（影响面更大，属于协议行为调整，本 workflow 不做）。
+
+### 关键数据流（修复后）
+`session.frame`（MajorCmd, SubProto=VarStore, action=var_changed） →
+`internal/services/varpool/events.go` 解析 payload →
+发布 `varpool.changed`（Wails EventsEmit） →
+`frontend/src/stores/varpool.ts` 更新 `state.data` →
+`frontend/src/pages/VarPool.vue` 自动展示新值。
+
+---
 
 ## 3.1) 计划拆分（Checklist）
 
-### CI-1：Workspace 准备
-- 目标：确保独占 worktree + 专业分支，避免在 `repo/` 直接改动。
-- 当前状态：已创建 worktree 与分支（本计划文件即该 worktree 内）。
-- 验收：
-  - `git status -sb`：在 `chore/win-actions-release`，工作区干净。
-- 回滚点：
-  - `git worktree remove` + `git worktree prune`，删除分支（若未推送）。
-
-### CI-2：新增 CI 构建 workflow（PR + push main）
-- 目标：
-  - `pull_request -> main` / `push -> main` 时：构建 Windows `amd64`，并上传 artifact（保留 30 天）。
+### V1 - 修复 VarPool 事件过滤
+- 目标：订阅后能接收到 `MajorCmd` 的变更通知并刷新 UI。
 - 涉及文件（预期）：
-  - `.github/workflows/ci-build.yml`
+  - `internal/services/varpool/events.go`
 - 验收：
-  - 在 GitHub 上 PR / push main 能看到 workflow 运行；
-  - 构建成功后可下载 artifact，包含 `myflowhub-win.exe`（或明确的产物路径）。
-- 测试点：
-  - 依赖安装可复现（Node/Go/Wails 版本固定）；
-  - 缓存启用后，重复运行时间下降（非强制）。
-- 回滚点：
-  - revert `.github/workflows/ci-build.yml`。
+  - 订阅变量后，变更能触发前端值更新（见“验收标准”）。
+- 回滚：
+  - 回滚本 workflow 提交即可恢复旧行为。
 
-### CI-3：新增 Release workflow（tag vX.Y.Z）
-- 目标：
-  - `push tag v1.2.3` 时：校验 tag 格式与 main 历史关系；构建 Windows `amd64`；创建 GitHub Release 并上传资产。
+### V2 - 单元测试（关键链路）
+- 目标：覆盖“MajorCmd 的 var_changed/var_deleted 能触发 varpool.changed/varpool.deleted”。
 - 涉及文件（预期）：
-  - `.github/workflows/release.yml`
+  - `internal/services/varpool/events_test.go`
 - 验收：
-  - tag `v1.2.3` push 后 workflow 成功；
-  - Release 自动生成，资产包含：
-    - `myflowhub-win.exe`
-    - `sha256` 校验文件（文件名可审计、可追溯）。
-- 测试点：
-  - tag 非 `v\\d+\\.\\d+\\.\\d+`：workflow 失败；
-  - tag commit 不在 main 历史：workflow 失败；
-  - Release 权限最小化（仅发布 job 需要 `contents: write`）。
-- 回滚点：
-  - revert `.github/workflows/release.yml`；
-  - 如误发 tag：删除 tag / 删除 Release（按需手工操作）。
+  - `go test ./...` 通过。
 
-### CI-4：本地静态校验（不依赖 GitHub）
-- 目标：在提交前尽量发现低级错误（路径、命令、YAML 拼写）。
+### V3 - 构建与冒烟
+- 目标：确保修复不破坏编译链路，并完成端到端手工验证。
 - 验收：
-  - `.github/workflows/*.yml` 存在且路径正确；
-  - workflow 中引用的产物路径与 README 一致（`build/bin/myflowhub-win.exe`）。
-- 回滚点：revert 对 workflow 的修改。
+  - `GOWORK=off go test ./... -count=1 -p 1`
+  - `GOWORK=off wails build -nopackage`
+  - 手工冒烟通过（见“验收标准”）
 
-### CI-5：Code Review（阶段 3.3）
-- 按 AGENTS 3.3 清单逐项审查（需求覆盖/架构/性能/一致性/安全/测试）。
+---
 
-### CI-6：归档变更（阶段 4）
-- 新增文档：`docs/change/2026-02-28_win-actions-release.md`
-- 必须包含：
-  - 背景/目标、变更清单、与 CI-1~CI-4 任务映射、关键设计决策与权衡（tag 校验 / main 限制 / 权限与缓存策略）、验证方式/结果、回滚方案。
+## 3.3) Code Review（完成编码后执行）
+- 需求覆盖：订阅后无需 Refresh 自动更新
+- 架构合理性：只改 Win 客户端过滤逻辑，不动协议 wire
+- 性能风险：过滤放宽但仍以 action 白名单处理，避免无意义解析
+- 可读性与一致性：条件判断清晰，测试用例覆盖关键路径
+- 稳定性与安全：异常 payload 安全忽略；无额外权限变化
+- 测试覆盖：新增单测 + 手工冒烟
 
-## 依赖、风险与注意事项
-- 依赖：
-  - GitHub Actions runner 可下载到 `Go 1.24.5`（如失败需调整为 `go-version-file: go.mod` 或显式版本）。
-- 风险：
-  - Wails CLI 安装或构建在 `windows-latest` 上偶发失败（通常可通过固定版本 + cache 缓解）。
-  - 产物路径若未来调整，需要同步更新 workflow 的上传路径。
+---
+
+## 4) 归档变更（完成 Review 后执行）
+- 在仓库内新增：
+  - `docs/change/2026-03-01_win-varpool-liveupdate.md`
+- 内容需包含：背景/目标、变更内容、任务映射、关键决策、测试结果、回滚方案。
+
