@@ -9,6 +9,7 @@ import Logs from "@/pages/Logs.vue"
 import Presets from "@/pages/Presets.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
+import Showcase from "@/pages/Showcase.vue"
 import FileTasks from "@/windows/FileTasks.vue"
 import LogWindow from "@/windows/LogWindow.vue"
 
@@ -57,6 +58,15 @@ const routes = [
     meta: {
       title: "TopicBus",
       subtitle: "Publish, subscribe, and replay topic events."
+    }
+  },
+  {
+    path: "/showcase",
+    name: "showcase",
+    component: Showcase,
+    meta: {
+      title: "Showcase",
+      subtitle: "Compose buttons and variable widgets into reusable screens."
     }
   },
   {

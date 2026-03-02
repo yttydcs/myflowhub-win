@@ -7,6 +7,7 @@ import {
   FileText,
   Folder,
   Home as HomeIcon,
+  LayoutDashboard,
   ListChecks,
   Network,
   Rss,
@@ -103,6 +104,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/topicbus",
         icon: Rss,
         tone: "bg-cyan-500/15 text-cyan-700"
+      },
+      {
+        label: "Showcase",
+        description: "Compose screens",
+        to: "/showcase",
+        icon: LayoutDashboard,
+        tone: "bg-fuchsia-500/15 text-fuchsia-700"
       }
     ]
   },
