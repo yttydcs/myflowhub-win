@@ -242,8 +242,20 @@ const saveWatchList = async () => {
 
 const loadWatchList = async () => {
   const keys = await callApp<VarPoolKey[]>("VarPoolWatchList")
-  state.keys = normalizeKeys(Array.isArray(keys) ? keys : [])
-  state.data = {}
+  const normalized = normalizeKeys(Array.isArray(keys) ? keys : [])
+  const keep = new Set<string>()
+  for (const key of normalized) {
+    const normalizedKey = normalizeKey(key)
+    if (!normalizedKey.name) continue
+    keep.add(keyId(normalizedKey))
+  }
+  for (const id of Object.keys(state.data)) {
+    if (!keep.has(id)) {
+      delete state.data[id]
+      desiredSubs.delete(id)
+    }
+  }
+  state.keys = normalized
   ensureSubPrefDefaults()
 }
 
@@ -551,7 +563,6 @@ const handleVarSubscribeResp = (resp: VarResp) => {
     return
   }
   updateValue(key, {
-    value: resp.value,
     owner: resp.owner,
     visibility: resp.visibility,
     kind: resp.type,
