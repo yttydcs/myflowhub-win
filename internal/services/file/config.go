@@ -2,7 +2,10 @@ package file
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -58,7 +61,7 @@ func (s *FileService) fileConfig() fileConfig {
 		prefs.BaseDir = defaultFilePrefs().BaseDir
 	}
 	return fileConfig{
-		BaseDir:       prefs.BaseDir,
+		BaseDir:       resolveRuntimeBaseDir(prefs.BaseDir),
 		MaxSizeBytes:  prefs.MaxSizeBytes,
 		MaxConcurrent: prefs.MaxConcurrent,
 		ChunkBytes:    prefs.ChunkBytes,
@@ -68,6 +71,41 @@ func (s *FileService) fileConfig() fileConfig {
 		AckEveryBytes: 512 * 1024,
 		AckEvery:      500 * time.Millisecond,
 	}
+}
+
+var (
+	exeDirOnce   sync.Once
+	exeDirCached string
+)
+
+func executableDir() string {
+	exeDirOnce.Do(func() {
+		exe, err := os.Executable()
+		if err != nil {
+			return
+		}
+		exe = strings.TrimSpace(exe)
+		if exe == "" || !filepath.IsAbs(exe) {
+			return
+		}
+		exeDirCached = filepath.Dir(exe)
+	})
+	return exeDirCached
+}
+
+func resolveRuntimeBaseDir(baseDir string) string {
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		baseDir = "."
+	}
+	baseDir = filepath.Clean(baseDir)
+	if filepath.IsAbs(baseDir) {
+		return baseDir
+	}
+	if exeDir := executableDir(); strings.TrimSpace(exeDir) != "" {
+		return filepath.Join(exeDir, baseDir)
+	}
+	return baseDir
 }
 
 func (s *FileService) Prefs() (FilePrefs, error) {
