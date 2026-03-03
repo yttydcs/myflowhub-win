@@ -406,6 +406,12 @@ const safeTitle = (widget: ShowcaseWidget) => {
   return "Widget"
 }
 
+const displayValueText = (widget: ShowcaseWidget) => {
+  const raw = showcase.getVarValueText(widget)
+  if (raw.trim()) return raw
+  return "No value yet."
+}
+
 const isVarOn = (widget: ShowcaseWidget) => {
   if (widget.kind !== "var" || !widget.var) return false
   return showcase.getVarValueText(widget) === widget.var.switch.onValue
@@ -710,64 +716,67 @@ onBeforeUnmount(() => {
             @dragover.prevent="onDragOver(widget.id)"
             @drop.prevent="onDrop(widget.id)"
           >
-          <div class="flex items-start gap-3">
-            <button
-              type="button"
-              class="mt-0.5 inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-              draggable="true"
-              title="Drag to reorder"
-              @dragstart="onDragStart(widget.id, $event)"
-              @dragend="onDragEnd"
-            >
-              <GripVertical class="h-4 w-4" />
-            </button>
+            <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+              <div class="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                  draggable="true"
+                  title="Drag to reorder"
+                  @dragstart="onDragStart(widget.id, $event)"
+                  @dragend="onDragEnd"
+                >
+                  <GripVertical class="h-4 w-4" />
+                </button>
 
-            <h5 class="mt-2 text-base font-semibold break-words">{{ safeTitle(widget) }}</h5>
-          </div>
-
-          <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="mt-4">
-            <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-              Send
-            </Button>
-          </div>
-
-          <div v-else-if="widget.kind === 'var' && widget.var" class="mt-4 grid gap-4">
-            <div v-if="showcase.resolveEffectiveMode(widget) === 'display'" class="rounded-xl border border-border/60 bg-background/70 p-4">
-              <pre class="whitespace-pre-wrap text-xs text-muted-foreground">
- {{ showcase.getVarValueText(widget) || "No value yet." }}
-              </pre>
-            </div>
-
-            <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex items-center justify-end rounded-xl border border-border/60 bg-background/70 px-4 py-3">
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 rounded"
-                  :checked="isVarOn(widget)"
-                  :disabled="busy || !sessionStore.connected || !selfNodeId"
-                  @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="font-semibold">{{ isVarOn(widget) ? "ON" : "OFF" }}</span>
-              </label>
-            </div>
-
-            <div v-else class="rounded-xl border border-border/60 bg-background/70 p-4">
-              <div class="flex items-center justify-end">
-                <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
+                <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
+                  {{ safeTitle(widget) }}
+                </h5>
               </div>
-              <input
-                class="mt-4 w-full"
-                type="range"
-                :min="widget.var.slider.min"
-                :max="widget.var.slider.max"
-                :step="widget.var.slider.step"
-                :value="showcase.sliderValue(widget)"
-                :disabled="busy || !sessionStore.connected || !selfNodeId"
-                @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                @change="showcase.sliderCommit(widget)"
-              />
+
+              <div class="min-w-0">
+                <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
+                  <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
+                    Send
+                  </Button>
+                </div>
+
+                <div v-else-if="widget.kind === 'var' && widget.var">
+                  <div
+                    v-if="showcase.resolveEffectiveMode(widget) === 'display'"
+                    class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
+                    :title="displayValueText(widget)"
+                  >
+                    {{ displayValueText(widget) }}
+                  </div>
+
+                  <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded"
+                      :checked="isVarOn(widget)"
+                      :disabled="busy || !sessionStore.connected || !selfNodeId"
+                      @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </div>
+
+                  <div v-else class="flex flex-wrap items-center justify-end gap-3">
+                    <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
+                    <input
+                      class="min-w-[min(180px,100%)] flex-1"
+                      type="range"
+                      :min="widget.var.slider.min"
+                      :max="widget.var.slider.max"
+                      :step="widget.var.slider.step"
+                      :value="showcase.sliderValue(widget)"
+                      :disabled="busy || !sessionStore.connected || !selfNodeId"
+                      @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
+                      @change="showcase.sliderCommit(widget)"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
           </div>
 
           <div

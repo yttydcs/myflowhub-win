@@ -1,9 +1,9 @@
-# Plan - MyFlowHub-Win：Showcase 面板简化（仅 title + value）+ 设计页右键菜单
+# Plan - MyFlowHub-Win：Showcase 严格 Key-Value 展示（尽量单行）
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`feat/showcase-panel-simplify`
-- Worktree：`d:\project\MyFlowHub3\worktrees\feat-showcase-panel-simplify\MyFlowHub-Win`
+- 分支：`feat/showcase-kv-layout`
+- Worktree：`d:\project\MyFlowHub3\worktrees\feat-showcase-kv-layout\MyFlowHub-Win`
 - Base：`main`
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
@@ -11,165 +11,144 @@
 
 ---
 
-## 0) 当前状态（复用能力）
-
-### Showcase 现有能力
-- Designer 页面：`frontend/src/pages/Showcase.vue`
-  - Widgets：支持 `topic_button` 与 `var`
-  - Var 控制：`display/slider/switch`（`auto` 可基于 var type 推断）
-  - 支持拖拽排序（DnD）与编辑弹窗（Overlay）
-  - 当前卡片仍展示较多“元信息”（Target/Span/VarKey/payload/minmax 文案等）
-- Viewer 窗口：`frontend/src/windows/ShowcaseWindow.vue`
-  - 支持独立访问 `#/showcase-window?screenId=...`
-  - 当前卡片同样展示较多“元信息”
-- Store：`frontend/src/stores/showcase.ts`
-  - TopicBus：`PublishSimple(sourceId, targetId, ...)`
-  - VarPool：`SubscribeSimple/GetSimple/SetSimple/SendSimple`
-  - 实时订阅：监听 `varpool.changed/deleted` 更新快照
-
-### 约束（本 workflow 接受）
-- 不改任何子协议/wire、不改数据结构 `ShowcaseConfig`，仅调整 UI 展示与交互入口（Edit/Remove 迁移至右键菜单）。
-- 不引入第三方 UI 组件库（ContextMenu 先在页面内实现，避免依赖膨胀）。
+## 0) 当前状态（项目现状）
+- 已有 Showcase：
+  - Designer 页面：`frontend/src/pages/Showcase.vue`
+  - Viewer 窗口：`frontend/src/windows/ShowcaseWindow.vue`
+- 当前（基于 `2026-03-03_showcase-panel-simplify`）widget 卡片已经做到 **title + value**，但布局仍以“上 title / 下 value”为主。
+- 新需求：希望展示为**严格 Key-Value 形式**（key=title，value=展示/控制组件），并且**尽量不换行**。
 
 ---
 
 ## 1) 需求分析（已确认）
 
 ### 目标
-1) 简化 Designer 与 Viewer 的 widget 卡片：只保留 **title + value（控制组件）**。
-2) Designer：保留拖拽手柄；`Edit/Remove` 等“设计操作按钮”从卡片右上角移除，改为 **右键菜单**。
+1) Designer 与 Viewer 的 widget 卡片改为 **Key-Value 单行**展示（尽量不换行）。
+2) `display` value 改为单行文本（不使用多行 `<pre>`），并提供 tooltip（`title` 属性）展示完整值。
+3) `switch` value 仅显示开关本体（不显示 ON/OFF 文本）。
+4) `slider` 在极窄情况下允许退化为两行（以保证可用性）；其他 widget 尽量保持单行。
 
-### 范围（必须 / 可选 / 不做）
+### 范围（必须 / 不做）
 - 必须：
-  - Designer（`Showcase.vue`）：
-    - 卡片仅保留 `title` 与 `value` 区域；
-    - 右键菜单：`Edit`、`Remove`（Remove 仍需确认弹窗）；
-    - 拖拽排序保持可用。
-  - Viewer（`ShowcaseWindow.vue`）：
-    - 卡片仅保留 `title` 与 `value`；
-    - `topic_button` 不再显示 payload 预览，仅保留 Send 按钮；
-    - `slider` 允许保留当前值的小 Badge。
+  - Designer：`frontend/src/pages/Showcase.vue`
+  - Viewer：`frontend/src/windows/ShowcaseWindow.vue`
+  - 不修改发送/订阅逻辑（TopicBus publish、VarPool set/subscribe 等全部保持不变）。
 - 不做：
-  - 不改协议服务（TopicBus/VarPool/Session），不改存储结构，不新增后端 API。
+  - 不改协议/wire，不改 `ShowcaseConfig` schema，不新增后端 API。
 
 ### 验收标准
-- 两处卡片不再出现：`Target/Span`、`Var(owner/name)`、payload 预览、slider 的 min/max/step/throttle 文案等。
-- Designer：右键任意 widget 卡片可打开菜单并执行 `Edit/Remove`；拖拽排序仍可用。
+- Designer + Viewer：widget 卡片展示为 key-value（title 与 value 尽量同一行，不自动换行）。
+- `display` value：单行 + 省略号截断 + tooltip（title 属性）可查看完整值。
+- `switch` value：仅开关本体。
+- `slider`：正常情况下单行；极窄时可两行（允许 badge 与 slider 分行）。
+- 既有交互不回归：Designer 拖拽手柄、右键菜单 Edit/Remove、Viewer 控制与实时刷新均正常。
+
+### 风险
+- 由于 Columns 布局下 card 宽度由列数决定，无法精确用 viewport breakpoint 判断“极窄”；需要通过 flex-wrap + min-width 策略自然退化，避免出现不可用的超窄 slider。
 
 ---
 
-## 2) 架构设计（分析结论）
+## 2) 架构设计（分析）
 
-### 方案 A（采用）：页面内轻量 ContextMenu（无外部依赖）
-- `Showcase.vue` 内维护 `contextMenu` 状态（open/x/y/widgetId）。
-- 卡片容器监听 `@contextmenu.prevent` 打开菜单；菜单用 `position: fixed` 渲染并做边界钳制。
-- 关闭策略：点击空白处、`Esc`、`scroll`、`resize` 自动关闭，避免菜单悬挂。
+### 总体方案（采用）
+- 保持现有数据流/协议调用不变，仅重排 widget 卡片内部 DOM 结构为 Key-Value Row：
+  - key：`safeTitle(widget)`（必要时 `truncate`）
+  - value：按 widget kind/mode 渲染（Send / 单行文本 / 开关 / slider）
+- `display` value 使用单行 `<span>` + `:title="fullValue"`，并用 `truncate` 保证不换行。
+- `slider` 的 value 区使用 `flex-wrap` 与 `min-width` 策略，使其在 card 极窄时自动换行（退化为两行），而不是把 slider 压缩到不可用宽度。
 
-### 关键权衡
-- 不引入通用组件库：V1 只用于 Showcase Designer，先最小实现；若后续多页面复用再抽 `components/ui/ContextMenu.vue`。
+### 备选方案（不采用）
+- 抽象通用 `KeyValueRow` 组件（复用更强，但 V1 仅两处页面，先以内联模板实现；若后续更多页面复用再抽组件）。
+
+### 模块职责
+- `Showcase.vue` / `ShowcaseWindow.vue`：仅负责展示与用户交互（布局与控件）。
+- `frontend/src/stores/showcase.ts`：负责 TopicBus/VarPool 调用、订阅与快照维护（本次不改）。
+
+### 数据/调用流（不变）
+- 事件：`publishTopicButton(widget)` → TopicBus `PublishSimple(...)`
+- 变量：
+  - 进入 screen：收集 refs → `SubscribeSimple + GetSimple`
+  - slider input：节流发送 `SendSimple(set, ...)`；松手 commit：`SetSimple(...)` await
+  - switch toggle：`SetSimple(...)` await
+  - 变更推送：`varpool.changed/deleted` → 更新快照 → UI 刷新
+
+### 错误与安全
+- 不新增外部输入面；保留现有 `busy/connected/selfNodeId` 的 disabled 策略。
+- tooltip 使用 `title` 属性，仅展示字符串，不执行 HTML。
+
+### 性能与测试策略
+- 性能：仅调整 DOM 与 class，不新增 watchers/subscriptions；复杂度 O(widgets) 不变。
+- 验证：
+  - 构建：`GOWORK=off wails build -debug -skipembedcreate -nopackage`
+  - 单测：`go test ./... -count=1`
+  - 手工：窄窗口/多列布局下观察 slider 是否能自然换行且可用；display value tooltip 是否可读。
+
+### 可扩展性设计点
+- 若后续需要更多“展示组件”，可抽 `KeyValueRow` + “value renderer” 做可插拔扩展；本次仅做布局骨架一致化。
 
 ---
 
-## 3) 任务清单（Checklist）
+## 3.1) 计划拆分（Checklist，需确认后进入编码）
 
-### SC1 - Designer：实现右键菜单（Edit/Remove）
+### KV1 - Designer：改为 Key-Value Row
 **目标**
-- 移除卡片右上角 `Edit/Remove` 按钮；
-- 右键菜单包含 `Edit` 与 `Remove`，并复用现有函数 `openEditWidget(widget)` / `removeWidget(widget)`。
+- `Showcase.vue` widget 卡片：title 与 value 同一行（尽量不换行）。
+- 保留拖拽手柄与右键菜单（Edit/Remove）。
 
 **涉及文件**
 - `frontend/src/pages/Showcase.vue`
 
 **验收**
-- 右键卡片弹出菜单；点击 `Edit` 打开编辑弹窗；点击 `Remove` 触发确认并删除 widget；
-- 点击空白处或按 `Esc` 关闭菜单；
-- 不出现系统默认右键菜单。
-
-**测试点**
-- 菜单打开位置不出屏；滚动/resize 后自动关闭；
-- 拖拽手柄仍可拖拽排序（右键不会干扰拖拽）。
+- `topic_button`：title + Send 同行
+- `display`：title + 单行 value（tooltip 可查看完整值）
+- `switch`：title + 开关本体同行
+- `slider`：title + badge + slider 尽量同行；极窄时可两行
 
 **回滚**
-- 恢复原卡片右上角按钮与移除菜单逻辑（仅影响 UI，易回滚）。
+- 回滚该文件到改动前版本（仅 UI）。
 
 ---
 
-### SC2 - Designer：卡片展示简化（仅 title + value）
+### KV2 - Viewer：改为 Key-Value Row
 **目标**
-- 删除卡片中的元信息与辅助块，仅保留 `safeTitle(widget)` 与控制组件：
-  - topic_button：Send
-  - var：display/switch/slider（slider 可保留数值 Badge）
-
-**涉及文件**
-- `frontend/src/pages/Showcase.vue`
-
-**验收**
-- 卡片内不再出现 Target/Span、VarKey、payload、slider 文案等；
-- 控制行为不变（Send/Slider/Switch 正常工作）。
-
-**测试点**
-- 变量值刷新后 UI 正常更新；
-- slider 拖动仍会触发发送（throttle 逻辑保持不变）。
-
-**回滚**
-- 回滚该文件到合并前版本即可。
-
----
-
-### SC3 - Viewer：卡片展示简化（仅 title + value）
-**目标**
-- Viewer 中移除卡片元信息与 payload/VarKey/minmax 文案，仅保留 `title + value`（与 Designer 保持一致）。
+- `ShowcaseWindow.vue` 与 Designer 保持一致布局策略。
 
 **涉及文件**
 - `frontend/src/windows/ShowcaseWindow.vue`
 
 **验收**
-- Viewer 卡片展示与 Designer 一致；`topic_button` 仅保留 Send；`slider` 保留数值 Badge + 滑条。
-
-**测试点**
-- `#/showcase-window?screenId=...` 在独立窗口可正常控制并实时更新。
+- 与 KV1 一致，且独立窗口控制/更新正常。
 
 **回滚**
-- 回滚该文件到合并前版本即可。
+- 回滚该文件到改动前版本（仅 UI）。
 
 ---
 
-### SC4 - 本地验证（构建/类型检查 + 手工冒烟）
-**目标**
-- 确保前端可构建、无 TS/ESLint 明显错误（以仓库现有命令为准）。
-
-**建议命令（推荐：Wails 生成 bindings + 构建）**
+### KV3 - 本地验证（构建 + 冒烟）
+**命令**
 ```powershell
-cd d:\project\MyFlowHub3\worktrees\feat-showcase-panel-simplify\MyFlowHub-Win
+cd d:\project\MyFlowHub3\worktrees\feat-showcase-kv-layout\MyFlowHub-Win
 $env:GOWORK='off'
 wails build -debug -skipembedcreate -nopackage
-```
-
-如果已存在 `frontend/wailsjs`（bindings 已生成），也可单独：
-```powershell
-cd d:\project\MyFlowHub3\worktrees\feat-showcase-panel-simplify\MyFlowHub-Win\frontend
-npm run build
+go test ./... -count=1
 ```
 
 **手工冒烟**
-1) 启动 `wails dev`，打开 `#/showcase`；
-2) 添加/编辑 widget，右键卡片操作 `Edit/Remove`；
-3) Open Window → `#/showcase-window?...`，检查卡片简化与控制正常。
+1) `wails dev` → `#/showcase`：新增/编辑/右键/拖拽；观察单行布局与 tooltip
+2) `Open Window` → `#/showcase-window?screenId=...`：观察单行布局；slider 极窄退化可用
 
 ---
 
-### SC5 - 归档变更（docs/change）
+### KV4 - 归档变更（docs/change）
 **目标**
-- 在本仓库 `docs/change/` 记录变更背景、内容、验收与回滚方式。
+- 新增变更文档记录本次 Key-Value 布局调整与验证方式。
 
 **涉及文件（预期）**
-- `docs/change/2026-03-03_showcase-panel-simplify.md`
-
-**验收**
-- 文档可脱离对话，直接复现“为什么改、改了什么、如何验证”。
+- `docs/change/2026-03-03_showcase-kv-layout.md`
 
 ---
 
-## 4) 风险与注意事项
-- WebView2/浏览器默认 context menu：必须 `@contextmenu.prevent`，否则会与自定义菜单叠加。
-- 右键菜单与拖拽：拖拽只绑定在手柄上（现状如此），但仍需避免菜单覆盖手柄导致误触。
+## 4) 注意事项
+- `rg`/lint 等工具不作为强制门槛，以仓库现有 `wails build` 与 `go test` 为准。
+- slider 的“极窄退化”采用 flex-wrap + min-width 策略，避免引入复杂的 container query 依赖。
+
