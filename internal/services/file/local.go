@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +19,11 @@ func (s *FileService) localList(dir string) (dirs []string, files []string, err 
 		return nil, nil, derr
 	}
 	root := filepath.Join(cfg.BaseDir, filepath.FromSlash(clean))
+	if clean == "" {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, nil, fmt.Errorf("init base dir failed: %w", err)
+		}
+	}
 	entries, rerr := os.ReadDir(root)
 	if rerr != nil {
 		return nil, nil, rerr
