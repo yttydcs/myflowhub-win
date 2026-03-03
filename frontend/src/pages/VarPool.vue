@@ -129,16 +129,57 @@ const loadHomeDefaults = async () => {
 const refreshAll = async () => {
   if (busy.value) return
   busy.value = true
+  const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
+  const isCode4NotFound = (err: unknown) => {
+    const msg = errorMessage(err).toLowerCase()
+    return msg.includes("(code=4)") || /\bcode=4\b/.test(msg)
+  }
+
+  let mineFailed = false
+  let watchAttempted = 0
+  let watchNotFound = 0
+  let watchFailed = 0
+
   try {
     ensureReady()
-    await varpool.listMine()
-    for (const key of varpool.state.keys) {
+
+    try {
+      await varpool.listMine()
+    } catch (err) {
+      if (!isCode4NotFound(err)) {
+        mineFailed = true
+        console.warn(err)
+      }
+    }
+
+    const keys = varpool.state.keys.slice()
+    for (const key of keys) {
       if (selfNodeId.value && Number(key.owner ?? 0) === selfNodeId.value) {
         continue
       }
-      await varpool.getVar(key)
+      watchAttempted += 1
+      try {
+        await varpool.getVar(key)
+      } catch (err) {
+        if (isCode4NotFound(err)) {
+          watchNotFound += 1
+        } else {
+          watchFailed += 1
+          console.warn(err)
+        }
+      }
     }
-    toast.success("VarPool refreshed.")
+
+    if (!mineFailed && watchNotFound === 0 && watchFailed === 0) {
+      toast.success("VarPool refreshed.")
+      return
+    }
+
+    const parts: string[] = []
+    if (mineFailed) parts.push("mine list failed")
+    if (watchNotFound) parts.push(`not found: ${watchNotFound}/${watchAttempted}`)
+    if (watchFailed) parts.push(`failed: ${watchFailed}/${watchAttempted}`)
+    toast.warn("VarPool refreshed with issues.", parts.join(" · "))
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to refresh VarPool data.")
