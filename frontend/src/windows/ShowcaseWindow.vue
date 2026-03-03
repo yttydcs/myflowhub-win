@@ -198,41 +198,15 @@ onBeforeUnmount(() => {
         class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
         :style="widgetCardStyle(widget)"
       >
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ widget.kind === 'topic_button' ? 'TopicBus' : 'VarStore' }}
-            </p>
-            <h5 class="mt-2 text-base font-semibold">{{ safeTitle(widget) }}</h5>
-            <p class="mt-1 text-xs text-muted-foreground">
-              Target={{ widget.targetId || "-" }} · Span={{ widget.layout?.colSpan || 1 }}
-            </p>
-          </div>
-        </div>
+        <h5 class="text-base font-semibold break-words">{{ safeTitle(widget) }}</h5>
 
-        <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="mt-4 grid gap-3">
-          <div class="rounded-xl border border-border/60 bg-background/70 p-4 text-xs text-muted-foreground">
-            <pre class="whitespace-pre-wrap">{{ widget.topicButton.payloadText || "(empty payload)" }}</pre>
-          </div>
+        <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="mt-4">
           <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
             Send
           </Button>
         </div>
 
         <div v-else-if="widget.kind === 'var' && widget.var" class="mt-4 grid gap-4">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var</p>
-              <p class="mt-1 break-all font-medium">
-                {{ widget.var.ownerId }} / {{ widget.var.name }}
-              </p>
-            </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Value</p>
-              <p class="mt-1 break-all font-medium">{{ showcase.getVarValueText(widget) || "-" }}</p>
-            </div>
-          </div>
-
           <div
             v-if="showcase.resolveEffectiveMode(widget) === 'display'"
             class="rounded-xl border border-border/60 bg-background/70 p-4"
@@ -244,11 +218,8 @@ onBeforeUnmount(() => {
 
           <div
             v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'"
-            class="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 px-4 py-3"
+            class="flex items-center justify-end rounded-xl border border-border/60 bg-background/70 px-4 py-3"
           >
-            <div class="text-sm text-muted-foreground">
-              ON={{ widget.var.switch.onValue }} · OFF={{ widget.var.switch.offValue }}
-            </div>
             <label class="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -262,11 +233,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-else class="rounded-xl border border-border/60 bg-background/70 p-4">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div class="text-sm text-muted-foreground">
-                min={{ widget.var.slider.min }} · max={{ widget.var.slider.max }} · step={{ widget.var.slider.step }}
-                · throttle={{ widget.var.slider.throttleMs }}ms
-              </div>
+            <div class="flex items-center justify-end">
               <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
             </div>
             <input

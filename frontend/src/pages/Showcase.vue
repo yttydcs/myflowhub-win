@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { ExternalLink, GripVertical } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -334,6 +334,68 @@ const removeWidget = async (widget: ShowcaseWidget) => {
   }
 }
 
+type WidgetContextMenuState = {
+  open: boolean
+  x: number
+  y: number
+  widget: ShowcaseWidget | null
+}
+
+const widgetContextMenu = reactive<WidgetContextMenuState>({
+  open: false,
+  x: 0,
+  y: 0,
+  widget: null
+})
+
+const widgetContextMenuRef = ref<HTMLElement | null>(null)
+
+const closeWidgetContextMenu = () => {
+  widgetContextMenu.open = false
+  widgetContextMenu.widget = null
+}
+
+const clampWidgetContextMenuToViewport = () => {
+  const el = widgetContextMenuRef.value
+  if (!el) return
+  const padding = 8
+  const maxLeft = Math.max(padding, window.innerWidth - el.offsetWidth - padding)
+  const maxTop = Math.max(padding, window.innerHeight - el.offsetHeight - padding)
+  widgetContextMenu.x = Math.min(Math.max(widgetContextMenu.x, padding), maxLeft)
+  widgetContextMenu.y = Math.min(Math.max(widgetContextMenu.y, padding), maxTop)
+}
+
+const openWidgetContextMenu = async (widget: ShowcaseWidget, event: MouseEvent) => {
+  event.preventDefault()
+  widgetContextMenu.widget = widget
+  widgetContextMenu.x = event.clientX
+  widgetContextMenu.y = event.clientY
+  widgetContextMenu.open = true
+  await nextTick()
+  clampWidgetContextMenuToViewport()
+}
+
+const onWidgetContextMenuEdit = () => {
+  const widget = widgetContextMenu.widget
+  closeWidgetContextMenu()
+  if (!widget) return
+  openEditWidget(widget)
+}
+
+const onWidgetContextMenuRemove = async () => {
+  const widget = widgetContextMenu.widget
+  closeWidgetContextMenu()
+  if (!widget) return
+  await removeWidget(widget)
+}
+
+const onGlobalKeydown = (event: KeyboardEvent) => {
+  if (!widgetContextMenu.open) return
+  if (event.key !== "Escape") return
+  event.preventDefault()
+  closeWidgetContextMenu()
+}
+
 const safeTitle = (widget: ShowcaseWidget) => {
   const title = widget.title?.trim()
   if (title) return title
@@ -432,6 +494,7 @@ const dragState = reactive({
 })
 
 const onDragStart = (widgetId: string, event: DragEvent) => {
+  closeWidgetContextMenu()
   dragState.draggingId = widgetId
   dragState.overId = ""
   if (event.dataTransfer) {
@@ -544,9 +607,16 @@ onMounted(async () => {
     })
     widgetsGridObserver.observe(widgetsGridRef.value)
   }
+
+  window.addEventListener("keydown", onGlobalKeydown)
+  window.addEventListener("resize", closeWidgetContextMenu)
+  window.addEventListener("scroll", closeWidgetContextMenu, true)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onGlobalKeydown)
+  window.removeEventListener("resize", closeWidgetContextMenu)
+  window.removeEventListener("scroll", closeWidgetContextMenu, true)
   widgetsGridObserver?.disconnect()
   void showcase.leave()
 })
@@ -636,71 +706,39 @@ onBeforeUnmount(() => {
             class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
             :class="dragState.overId === widget.id ? 'ring-2 ring-primary/40' : ''"
             :style="widgetCardStyle(widget)"
+            @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
             @dragover.prevent="onDragOver(widget.id)"
             @drop.prevent="onDrop(widget.id)"
           >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="flex items-start gap-3">
-              <button
-                type="button"
-                class="mt-0.5 inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                draggable="true"
-                title="Drag to reorder"
-                @dragstart="onDragStart(widget.id, $event)"
-                @dragend="onDragEnd"
-              >
-                <GripVertical class="h-4 w-4" />
-              </button>
+          <div class="flex items-start gap-3">
+            <button
+              type="button"
+              class="mt-0.5 inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+              draggable="true"
+              title="Drag to reorder"
+              @dragstart="onDragStart(widget.id, $event)"
+              @dragend="onDragEnd"
+            >
+              <GripVertical class="h-4 w-4" />
+            </button>
 
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                  {{ widget.kind === 'topic_button' ? 'TopicBus' : 'VarStore' }}
-                </p>
-                <h5 class="mt-2 text-base font-semibold">{{ safeTitle(widget) }}</h5>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  Target={{ widget.targetId || "-" }} · Span={{ widget.layout?.colSpan || 1 }}
-                </p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <Button size="sm" variant="outline" :disabled="busy" @click="openEditWidget(widget)">Edit</Button>
-              <Button size="sm" variant="outline" :disabled="busy" @click="removeWidget(widget)">Remove</Button>
-            </div>
+            <h5 class="mt-2 text-base font-semibold break-words">{{ safeTitle(widget) }}</h5>
           </div>
 
-          <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="mt-4 grid gap-3">
-            <div class="rounded-xl border border-border/60 bg-background/70 p-4 text-xs text-muted-foreground">
-              <pre class="whitespace-pre-wrap">{{ widget.topicButton.payloadText || "(empty payload)" }}</pre>
-            </div>
+          <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="mt-4">
             <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
               Send
             </Button>
           </div>
 
           <div v-else-if="widget.kind === 'var' && widget.var" class="mt-4 grid gap-4">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var</p>
-                <p class="mt-1 font-medium break-all">
-                  {{ widget.var.ownerId }} / {{ widget.var.name }}
-                </p>
-              </div>
-              <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Value</p>
-                <p class="mt-1 font-medium break-all">{{ showcase.getVarValueText(widget) || "-" }}</p>
-              </div>
-            </div>
-
             <div v-if="showcase.resolveEffectiveMode(widget) === 'display'" class="rounded-xl border border-border/60 bg-background/70 p-4">
               <pre class="whitespace-pre-wrap text-xs text-muted-foreground">
-{{ showcase.getVarValueText(widget) || "No value yet." }}
+ {{ showcase.getVarValueText(widget) || "No value yet." }}
               </pre>
             </div>
 
-            <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 px-4 py-3">
-              <div class="text-sm text-muted-foreground">
-                ON={{ widget.var.switch.onValue }} · OFF={{ widget.var.switch.offValue }}
-              </div>
+            <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex items-center justify-end rounded-xl border border-border/60 bg-background/70 px-4 py-3">
               <label class="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -714,11 +752,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-else class="rounded-xl border border-border/60 bg-background/70 p-4">
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="text-sm text-muted-foreground">
-                  min={{ widget.var.slider.min }} · max={{ widget.var.slider.max }} · step={{ widget.var.slider.step }}
-                  · throttle={{ widget.var.slider.throttleMs }}ms
-                </div>
+              <div class="flex items-center justify-end">
                 <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
               </div>
               <input
@@ -746,6 +780,45 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="widgetContextMenu.open"
+        class="fixed inset-0 z-40"
+        @pointerdown="closeWidgetContextMenu"
+        @contextmenu.prevent="closeWidgetContextMenu"
+      />
+      <div
+        v-if="widgetContextMenu.open"
+        ref="widgetContextMenuRef"
+        class="fixed z-50 w-44 rounded-xl border border-border/60 bg-card/95 p-1 text-sm shadow-xl backdrop-blur"
+        role="menu"
+        aria-label="Widget actions"
+        :style="{ left: `${widgetContextMenu.x}px`, top: `${widgetContextMenu.y}px` }"
+        @pointerdown.stop
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          type="button"
+          class="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="busy || !widgetContextMenu.widget"
+          role="menuitem"
+          @click="onWidgetContextMenuEdit"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center rounded-lg px-3 py-2 text-left text-rose-700 hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="busy || !widgetContextMenu.widget"
+          role="menuitem"
+          @click="onWidgetContextMenuRemove"
+        >
+          Remove
+        </button>
+      </div>
+    </Teleport>
 
     <Overlay :open="widgetDialog.open" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeWidgetDialog">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
