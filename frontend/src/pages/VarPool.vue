@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import NodeVarsDialog from "@/components/varpool/NodeVarsDialog.vue"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useVarPoolStore, type VarPoolKey } from "@/stores/varpool"
@@ -38,6 +39,18 @@ const addWatchDialog = reactive({
   name: "",
   owner: ""
 })
+
+const nodeVarsDialogOpen = ref(false)
+const nodeVarsDialogOwnerId = ref(0)
+
+const openNodeVarsDialog = () => {
+  nodeVarsDialogOwnerId.value = 0
+  nodeVarsDialogOpen.value = true
+}
+
+const closeNodeVarsDialog = () => {
+  nodeVarsDialogOpen.value = false
+}
 
 const fallbackIdentity = reactive({
   nodeId: 0,
@@ -530,6 +543,9 @@ onMounted(async () => {
               Watched Variables
             </p>
             <div class="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">
+                Node Vars
+              </Button>
               <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">
                 Add Watch
               </Button>
@@ -653,6 +669,8 @@ onMounted(async () => {
         </div>
       </div>
     </Overlay>
+
+    <NodeVarsDialog :open="nodeVarsDialogOpen" :ownerId="nodeVarsDialogOwnerId" @close="closeNodeVarsDialog" />
 
     <Overlay
       :open="addWatchDialog.open"

@@ -1,10 +1,10 @@
-# Plan - MyFlowHub-Win：Showcase 独立窗口 + 自定义布局（Columns）+ 实时同步
+# Plan - MyFlowHub-Win：VarPool 节点变量弹窗 + Watch 订阅状态本地持久化
 
 ## Workflow 信息
 - 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`feat/win-showcase-layout`
-- Worktree：`d:\project\MyFlowHub3\worktrees\win-showcase-layout\MyFlowHub-Win`
-- Base：`main`（包含已合并的 Showcase MVP）
+- 分支：`feat/varpool-vars-dialog`
+- Worktree：`d:\project\MyFlowHub3\worktrees\varpool-vars-dialog\MyFlowHub-Win`
+- Base：`main`
 - 规范：
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
   - `d:\project\MyFlowHub3` 根目录 `AGENTS.md`（阶段纪律、worktree 禁令等）
@@ -12,124 +12,98 @@
 ---
 
 ## 0) 当前状态（复用能力）
-- 已有 Showcase MVP：
-  - 页面：`frontend/src/pages/Showcase.vue`
-  - store：`frontend/src/stores/showcase.ts`
-  - Go 配置持久化：`app_showcase.go`（profile-scoped `showcase.config`）
-- TopicBus：`TopicBusService.PublishSimple(...)`（payload Auto：合法 JSON → JSON；否则字符串）
-- VarPool：`Get/Subscribe/Unsubscribe/Send/Set` + Wails events `varpool.changed/deleted`
-- Window 模式示例（独立访问）：Logs 的 `#/log-window` + `window.open`（见 `frontend/src/pages/Logs.vue`、`frontend/src/router/index.ts`）
+- VarPool 页面：`frontend/src/pages/VarPool.vue`（支持 Get/Set/List/Revoke/Subscribe/Unsubscribe）
+- 前端 store：`frontend/src/stores/varpool.ts`
+  - 已有 watch 列表（keys）与 value cache（data）
+  - 已有内存态 `desiredSubs`（用于避免 subscribe_resp 竞态），但 **不会持久化**，重启后丢失
+- Go 本地存储：`internal/storage` → `settings.json`（按 profile 前缀隔离）
+  - watch 列表已持久化：`app_varpool.go` 使用 key `varpool.names`
+- Go VarPool service：`internal/services/varpool/*`
+  - bindings：`VarPoolService.ListSimple/GetSimple/SubscribeSimple/UnsubscribeSimple/...`
+  - 业务事件：`varpool.changed` / `varpool.deleted`
+- 已知限制（本 workflow 接受）：
+  - VarStore 的 `list` 当前仅能列出 **public** 变量名（无服务端分页能力）。
 
 ---
 
 ## 1) 需求分析（已确认）
 
 ### 目标
-在现有 Showcase 基础上增强：
-1) 每个 Screen 可被“独立访问”（像 Logs 一样单独打开窗口）。
-2) 用户可自定义布局（V1 先做 Columns 多列布局：拖拽排序 + 控制宽度/列跨度）。
-3) 具备响应式能力：窗口变窄时自动减少列数；窗口变宽时最多不超过用户设置的最大列数。
-4) Viewer 窗口允许控制（TopicBus publish / VarStore set）。
-5) 多窗口实时同步：Designer 保存配置后，已打开的 Viewer 窗口自动更新。
+1) 在 Win `VarPool` 页面新增弹窗：可按 owner NodeID 列出该节点的变量名列表，便捷 Add Watch。
+2) watch 的订阅偏好（每个 `name#owner` 的 subscribe=true/false）持久化到本地，并在 **每次 session 重连/重新登录** 后自动恢复订阅；不依赖打开 `/varpool` 页面。
 
-### 范围
-- 必须（V1）：
-  - 新增 Viewer 路由页面：`#/showcase-window?screenId=...`（`meta.layout=window`）。
-  - Designer 页面支持：
-    - 为每个 Screen 打开 Viewer 窗口（允许同一 Screen 同时打开多个窗口）。
-    - Columns 布局设置（screen 级）：`maxColumns`、`minColumnWidth`（gap 固定默认值，先不暴露）。
-    - 每个 widget 支持 `colSpan` 配置（默认 1，渲染时自动 clamp 到当前列数）。
-    - 支持拖拽排序 widgets（必须）。
-  - Viewer 页面：
-    - 固定打开指定 `screenId`（不跟随 Designer 当前选择）。
-    - 若 screenId 不存在：显示 “Screen not found” 并停止（不 fallback）。
-  - 实时同步：
-    - 后端 `SaveShowcaseConfig` 成功后广播事件 `showcase.config_changed`；
-    - 所有窗口收到后 reload config；Viewer 需刷新订阅集合（leave/enter）。
-  - 保持既有行为：变量订阅去重、`throttleMs=0` 语义、未登录禁用控制等不回退。
-
-- 可选 / 不做（本轮）：
-  - 绝对布局（absolute / x,y,w,h）
-  - 画布缩放布局（scale / designWidth,designHeight + transform scale）
-  - 更复杂的拖拽定位/缩放（仪表盘式）
-
-### 默认值建议（可调）
-- Columns：
-  - `maxColumns=3`
-  - `minColumnWidth=360px`
-  - `gap=16px`（先固定，不暴露）
-- Widget：
-  - `colSpan=1`
+### 范围（必须 / 可选 / 不做）
+- 必须：
+  - 入口 C：
+    - `#/varpool` 页面提供入口打开弹窗；
+    - `#/devices` 节点列表每个节点提供入口打开弹窗（owner 预填为该节点）。
+  - 弹窗：
+    - 以 `owner NodeID` 为查询对象；
+    - `list` 请求的 `targetID = owner NodeID`（直查该节点）；
+    - 默认仅展示变量 `name`；支持搜索与客户端分页；
+    - 点击 `Add Watch`：仅添加 watch（不自动订阅）。
+  - 订阅偏好：
+    - 按 profile 本地持久化 subscribe=true/false；
+    - 重连/重新登录自动恢复订阅；
+    - Subscribe/Unsubscribe 的手动操作会同步更新持久化。
+- 可选（本轮先做轻量实现）：
+  - 点击变量名后再 `Get` 拉取 value/type/visibility（避免全量 N+1）。
+- 不做：
+  - 扩展协议/wire 或服务端分页；
+  - 列出 private 变量名（当前服务端 list 逻辑无法提供）。
 
 ### 验收标准（MVP）
-1) 在 `#/showcase` 选择某个 Screen，点击“Open Window”能打开 `#/showcase-window?screenId=...`。
-2) 同一 Screen 可开多个 Viewer 窗口（窗口互不覆盖）。
-3) 在 Designer 中拖拽调整 widget 顺序并保存后：
-   - Designer 自身顺序正确；
-   - 已打开的 Viewer 窗口实时同步顺序（无需刷新）。
-4) 在 Designer 中调整 Columns 配置（maxColumns/minColumnWidth）并保存后：
-   - Viewer 响应式列数正确（变窄自动减列，变宽最多 maxColumns）。
-5) `screenId` 不存在时：Viewer 显示 “Screen not found” 并停止（不崩溃）。
-6) Viewer 内 widget 控制可用（TopicBus publish、Var slider/switch 写入）；未连接/未登录时禁用并提示清晰。
-7) 切换 Screen/关闭窗口后，不应产生订阅泄漏（Unsubscribe 正常）。
+1) 在 `#/devices` 选任意节点，点击 “Vars” 能打开弹窗并成功加载变量名列表；点击 `Add Watch` 后，该变量出现在 `#/varpool` 的 watched 列表中（重启后仍在）。
+2) 在 `#/varpool` 对某个 watched 变量点击 Subscribe 后：重启应用 → 重新连接并登录后自动恢复为已订阅（无需手点）。
+3) 断线重连/重新登录：会再次自动恢复订阅，不依赖打开 `#/varpool`。
+4) 未连接/未登录：弹窗加载与订阅恢复不会崩溃，提示清晰。
 
 ### 风险
-- 多窗口同步：Designer save → Viewer reload 可能触发订阅抖动；V1 允许简单 leave/enter，后续可做差分订阅优化。
-- Drag&Drop：原生 HTML5 DnD 细节较多，需要用“拖拽手柄”避免干扰 widget 内部交互。
+- list 仅 public：弹窗看不到 private 变量名（但可手工 Add Watch）。
+- 自动恢复订阅数量大时可能产生瞬时请求峰值：需要做并发限制与失败汇总。
 
 ---
 
 ## 2) 架构设计（分析）
 
-### 总体方案（选型与理由）
-V1 采用“Columns 网格布局 + 轻量拖拽排序”，不引入新布局库，避免依赖膨胀；为后续 absolute/scale 预留 schema。
+### 总体方案（含选型理由）
+- UI 侧新增可复用弹窗组件（基于现有 `Overlay`），在 `VarPool.vue` 与 `Devices.vue` 复用。
+- 数据侧复用 VarStore `ListSimple` 获取 names（无服务端分页 → 客户端分页/搜索）。
+- 持久化新增独立 key 存储“订阅偏好”，保持现有 watch list key 不变，降低迁移风险。
+- 全局自动恢复由 `AppShell.vue` 驱动：监听 session/profile 变化，加载配置并触发恢复逻辑。
 
 ### 模块职责
-- Go（Wails backend）
-  - 扩展 `ShowcaseConfig` schema（screen/layout + widget/colSpan），并保持向后兼容。
-  - `SaveShowcaseConfig` 成功后 `EventsEmit("showcase.config_changed")` 广播同步事件。
-- 前端 store：`frontend/src/stores/showcase.ts`
-  - 解析/规范化 layout 字段与默认值。
-  - 提供 viewer 所需的“固定 screenId 渲染”能力（override screenId，不写回配置）。
-  - 监听 `showcase.config_changed`：reload config，并按需 leave/enter 更新订阅。
-- 前端页面：
-  - `frontend/src/pages/Showcase.vue`：Designer（打开窗口、布局参数编辑、DnD 排序）。
-  - `frontend/src/windows/ShowcaseWindow.vue`（新增）：Viewer（固定 screenId 渲染 + 控制）。
-
-### 数据 / 调用流
-- Designer 保存配置：
-  - `SaveShowcaseConfig` → 存储成功 → `EventsEmit("showcase.config_changed")`
-  - 各窗口收到事件 → `store.load()` → `leave()` / `enter()`（Viewer 需）
-- Columns 响应式列数：
-  - Viewer/Designer 监听容器宽度 W → 计算 `cols = clamp(1,maxColumns,floor((W+gap)/(minColumnWidth+gap)))`
-  - widget `colSpan` 渲染时 clamp 到 `cols`
+- Go（`App`）
+  - 新增：`VarPoolSubPrefs` / `SaveVarPoolSubPrefs`（profile-scoped）。
+- 前端 store（`frontend/src/stores/varpool.ts`）
+  - 加载/保存订阅偏好；Subscribe/Unsubscribe 时同步持久化；移除 watch 时清理偏好。
+  - 自动恢复订阅：并发限制、失败不刷屏。
+  - 提供 `listOwnerNames(ownerId)` 给弹窗调用（`targetID=ownerId`）。
+- 前端 UI
+  - 新增弹窗组件（Node vars dialog）：加载列表、搜索、分页、Add Watch。
+  - `Devices.vue` / `VarPool.vue` 接入弹窗。
+- `AppShell.vue`
+  - 在应用层启动 varpool store：不依赖打开页面；在 session ready 时触发恢复。
 
 ### 接口草案
-- Wails events：
-  - `showcase.config_changed`（payload 可为空；V1 仅用作通知）
-- Config schema（草案）：
-  - `ShowcaseScreen.layout = { mode:"columns", columns:{maxColumns,minColumnWidth,gap} }`
-  - `ShowcaseWidget.layout = { colSpan }`
+- Wails (Go App)：
+  - `VarPoolSubPrefs() -> []{name, owner, subscribed}`
+  - `SaveVarPoolSubPrefs(prefs) -> normalized prefs`
+- 弹窗 list：
+  - `VarPoolService.ListSimple(sourceID, targetID=ownerID, {owner: ownerID})`
 
 ### 错误与安全
-- UI 强校验：
-  - `maxColumns` 合法范围（建议 1~12）
-  - `minColumnWidth` 合法范围（建议 200~1200）
-  - `colSpan` 合法范围（建议 1~maxColumns）
-- Viewer screenId 不存在：仅提示，不做 fallback。
+- 输入校验：ownerID > 0；name 非空；未连接/未登录禁止请求。
+- 安全默认：Add Watch 不自动订阅；仅对 `subscribed=true` 的偏好自动恢复。
 
 ### 性能与测试策略
-- 性能关键点：
-  - `showcase.config_changed` 事件触发 reload 可做最小节流（避免短时间多次 save 导致频繁 reload）。
-  - DnD drop 才触发 save，dragover 不保存。
-- 测试策略：
-  - Go 单测：layout 默认值、`colSpan` clamp、版本迁移/向后兼容、事件广播不 panic。
-  - 前端构建：`npm run build`
-  - 手工：多窗口同步、响应式列数、DnD 排序与不干扰 widget 控制。
+- list：单请求拿 names，客户端分页/搜索；可选点击再 Get，不做全量 N+1。
+- 自动恢复订阅：限制并发（例如 4），失败汇总一次 toast。
+- 测试：Go 单测覆盖解析/规范化；手工冒烟覆盖 Devices/VarPool 弹窗与重连恢复。
 
 ### 可扩展性设计点
-- `layout.mode` 预留 `absolute/scale`，后续仅需扩展 layout 字段与渲染器。
-- 可在 V2 做订阅差分与配置 diff 同步，减少 leave/enter 的抖动。
+- 订阅偏好结构为 `{name, owner, subscribed}`，后续可扩展字段（例如 `lastError/lastRestoredAt`）。
+- 弹窗可扩展为批量 Add Watch、Add&Subscribe、value 预览等。
 
 ---
 
@@ -137,93 +111,90 @@ V1 采用“Columns 网格布局 + 轻量拖拽排序”，不引入新布局库
 
 > 进入 3.2 前必须：本 plan.md 获得确认（阻塞：是）。
 
-### V1 - Go：扩展配置 schema + 广播 config_changed
-- 目标：
-  - 增加 screen/widget layout 字段与默认值；
-  - `SaveShowcaseConfig` 成功后发出 `showcase.config_changed`。
+### 依赖与顺序
+- 顺序：V1（Go 存储 API）→ V2（前端 store 持久化 + 自动恢复）→ V3（弹窗组件）→ V4（Devices/VarPool/AppShell 接入）→ V5（验证回归）→ 3.3（Code Review）→ 4（归档）
+
+### V1 - Go：订阅偏好持久化 API（App）
+- 目标：在 `settings.json`（profile-scoped）新增保存/读取 VarPool 订阅偏好。
 - 涉及文件（预期）：
-  - `app_showcase.go`
-  - `app_showcase_test.go`
-- 验收：
-  - 旧配置（无 layout）加载后自动补齐 columns 默认值；
-  - `colSpan` 缺失/非法时能兜底为 1；
-  - `SaveShowcaseConfig` 保存后会触发 `showcase.config_changed`（手工在前端监听验证）。
+  - `app_varpool.go`
+  - `app_varpool_test.go`（新增）
+- 验收条件：
+  - 前端可调用 `VarPoolSubPrefs/SaveVarPoolSubPrefs`；重启后仍能读取；
+  - 规范化规则正确：去重、trim name、丢弃非法项（空 name / owner=0 视需求处理）。
 - 测试点：
   - `GOWORK=off go test ./... -count=1 -p 1`
 - 回滚点：
-  - 移除新增 layout 字段与事件广播，保持原 Showcase 行为不变。
+  - 删除新增 key 与方法，不影响既有 `varpool.names` watch 列表。
 
-### V2 - 前端：showcase store 支持 layout + viewer override + config_changed reload
+### V2 - 前端：varpool store 持久化 + 自动恢复（不依赖页面）
 - 目标：
-  - 扩展 types/normalize 支持 layout；
-  - viewer 可固定 screenId 渲染（override，不写回配置）；
-  - 监听 `showcase.config_changed` 自动 reload 并刷新订阅。
+  - 加载/保存订阅偏好；Subscribe/Unsubscribe 同步更新偏好；
+  - session 重连/重新登录后自动恢复订阅（并发限制）。
 - 涉及文件（预期）：
-  - `frontend/src/stores/showcase.ts`
-- 验收：
-  - `showcase.config_changed` 到达后，Viewer 画面自动更新；
-  - leave/enter 不产生订阅泄漏；
-  - DnD reorder 后（保存触发事件）Viewer 顺序同步。
+  - `frontend/src/stores/varpool.ts`
+- 验收条件：
+  - Subscribe 后重启并重连/登录，会自动恢复订阅；
+  - Unsubscribe 会持久化为 false，重连不会再次自动订阅；
+  - remove watch 会清理对应偏好；
+  - 恢复过程失败不刷屏（最多 1 次汇总 toast），并记录到 console/logs（按现有风格）。
 - 测试点：
-  - 手工：开两个 viewer 窗口同时观察同步。
+  - 手工：订阅 3 个变量 → 断线重连 → 自动恢复且无重复订阅风暴。
 - 回滚点：
-  - 仅保留 Designer 行为，不影响原 `#/showcase` 使用。
+  - 移除偏好读写与自动恢复逻辑，不影响现有手动订阅。
 
-### V3 - 前端：Designer（DnD 排序 + Columns 配置 + Open Window）
-- 目标：
-  - 增加 Columns 配置与 widget colSpan 配置入口；
-  - 实现拖拽排序（必须，使用拖拽手柄）；
-  - 可打开 viewer 窗口（screenId 固定）。
+### V3 - 前端：节点变量列表弹窗组件（client paging + search）
+- 目标：实现可复用弹窗：按 owner NodeID 拉取 names，支持搜索/分页与 Add Watch。
 - 涉及文件（预期）：
-  - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/router/index.ts`（若新增窗口路由）
-- 验收：
-  - 拖拽排序只在 drop 时保存；
-  - Columns 响应式预览正确；
-  - Open Window 打开 viewer。
+  - `frontend/src/components/varpool/NodeVarsDialog.vue`（新增）
+- 验收条件：
+  - `targetID=ownerID` 的 list 能加载 names；
+  - 搜索与分页只在前端处理（不影响请求）；
+  - Add Watch 对已存在 key 去重（按钮禁用或提示）。
 - 测试点：
-  - `cd frontend; npm ci; npm run build`
+  - 手工：owner 变量名列表较多时翻页/搜索正常。
 - 回滚点：
-  - 移除 UI 编辑入口与 DnD，不影响既有 widgets 控制能力。
+  - 删除新增组件与入口按钮。
 
-### V4 - 前端：Viewer 窗口页（固定 screenId 渲染）
+### V4 - 接入：Devices / VarPool / AppShell
 - 目标：
-  - 新增 `frontend/src/windows/ShowcaseWindow.vue`；
-  - 支持 screen not found 提示；
-  - 支持控制与自动同步。
+  - `Devices.vue`：每个节点提供 “Vars” 按钮打开弹窗（owner 预填）。
+  - `VarPool.vue`：提供入口打开弹窗（owner 可编辑）。
+  - `AppShell.vue`：应用启动后初始化 varpool store，并在 session/profile 变化时触发加载与恢复（不依赖页面）。
 - 涉及文件（预期）：
-  - `frontend/src/windows/ShowcaseWindow.vue`（新增）
-  - `frontend/src/router/index.ts`（新增路由 `/showcase-window`，meta.layout=window）
-- 验收：
-  - `#/showcase-window?screenId=...` 可独立访问；
-  - screenId 不存在时提示并停止；
-  - 多窗口同时打开同一 screenId 正常。
+  - `frontend/src/pages/Devices.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/layout/AppShell.vue`
+- 验收条件：
+  - 两处入口均可用；
+  - 自动恢复在未打开 `#/varpool` 的情况下仍会执行（可通过 Logs/subscribe 状态观察）。
 - 测试点：
-  - `npm run build`
+  - 手工：只停留在 Devices 页，断线重连后仍自动恢复订阅。
 - 回滚点：
-  - 删除窗口路由与页面文件。
+  - 移除入口与 AppShell 初始化，不影响其他模块。
 
 ### V5 - bindings 同步 + 回归验收
-- 目标：
-  - 生成并校验 Wails bindings；完成 MVP 验收条目。
+- 目标：生成 Wails bindings、完成 MVP 验收条目，并确认无明显 UI 回归。
 - 验收：
-  - `GOWORK=off wails generate module` + `npm run build` + `go test` 通过；
-  - 手工验收 1~7 全部通过。
+  - `GOWORK=off wails generate module` 成功；
+  - `GOWORK=off go test ./... -count=1 -p 1` 通过；
+  - `cd frontend; npm run build` 通过；
+  - 手工验收 1~4 全部通过。
 - 回滚点：
   - 回滚本分支全部提交。
 
 ---
 
 ## 3.3) Code Review（完成编码后执行）
-- 需求覆盖：独立窗口、多窗口同屏、DnD 排序、Columns 响应式、实时同步、screen not found
-- 架构合理性：schema 可扩展、事件同步机制合理、store 不产生副作用写回
-- 性能风险：DnD drop 才保存；reload/leave/enter 不频繁；订阅去重
-- 可读性与一致性：代码风格与现有 pages/stores 一致
-- 稳定性与安全：输入校验、未登录禁用、异常提示清晰
-- 测试覆盖：Go 单测 + 前端 build + 手工多窗口验收
+- 需求覆盖：弹窗列表、Devices/VarPool 入口、订阅偏好持久化、重连恢复不依赖页面
+- 架构合理性：职责边界清晰（App 存储 / store 恢复 / UI 仅展示）；无循环依赖
+- 性能风险：list 无 N+1；恢复订阅并发受控；避免重复计算与重复 I/O
+- 可读性与一致性：命名/结构与现有 pages/stores 风格一致
+- 稳定性与安全：输入校验、未连接提示、失败处理不刷屏
+- 测试覆盖：Go 单测 + 前端 build + 手工冒烟
 
 ---
 
 ## 4) 归档变更（完成 Review 后执行）
-- 在 worktree 根目录创建 `docs/change/` 并新增文档：`docs/change/2026-03-03_showcase-layout.md`
-- 内容必须包含：背景/目标、变更内容、plan 任务映射、关键决策与权衡（DnD/实时同步/响应式算法）、测试结果、影响与回滚方案
+- 在 worktree 根目录创建 `docs/change/` 并新增文档：`docs/change/2026-03-03_varpool-dialog-subprefs.md`
+- 文档必须包含：背景/目标、变更内容、plan 任务映射、关键决策与权衡（target=owner、client paging、并发恢复策略）、测试结果、影响与回滚方案

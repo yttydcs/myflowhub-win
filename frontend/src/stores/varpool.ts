@@ -25,6 +25,12 @@ export type VarPoolKey = {
   owner?: number
 }
 
+export type VarPoolSubPref = {
+  name: string
+  owner: number
+  subscribed: boolean
+}
+
 export type VarPoolValue = {
   value: string
   owner: number
@@ -54,6 +60,7 @@ const state = reactive<VarPoolState>({
 })
 
 const desiredSubs = new Map<string, boolean>()
+let restorePromise: Promise<{ attempted: number; failed: number }> | null = null
 let initialized = false
 
 const nowIso = () => new Date().toISOString()
@@ -168,7 +175,62 @@ const desiredSubscribe = (key: VarPoolKey) => {
   const normalized = normalizeKey(key)
   if (!normalized.name) return true
   const stored = desiredSubs.get(keyId(normalized))
-  return stored ?? true
+  return stored ?? false
+}
+
+const ensureSubPrefDefaults = () => {
+  for (const key of state.keys) {
+    const normalized = normalizeKey(key)
+    if (!normalized.name || !normalized.owner) continue
+    if (state.selfNodeId && normalized.owner === state.selfNodeId) continue
+    const id = keyId(normalized)
+    if (!desiredSubs.has(id)) {
+      desiredSubs.set(id, false)
+    }
+  }
+}
+
+const loadSubPrefs = async () => {
+  const raw = await callApp<VarPoolSubPref[]>("VarPoolSubPrefs")
+  desiredSubs.clear()
+  const prefs = Array.isArray(raw) ? raw : []
+  for (const pref of prefs) {
+    const name = String((pref as any)?.name ?? "").trim()
+    const owner = Number((pref as any)?.owner ?? 0) || 0
+    if (!name || owner <= 0) continue
+    desiredSubs.set(keyId({ name, owner }), Boolean((pref as any)?.subscribed))
+  }
+  ensureSubPrefDefaults()
+}
+
+const saveSubPrefs = async () => {
+  ensureSubPrefDefaults()
+  const payload: VarPoolSubPref[] = []
+  for (const key of state.keys) {
+    const normalized = normalizeKey(key)
+    if (!normalized.name || !normalized.owner) continue
+    if (state.selfNodeId && normalized.owner === state.selfNodeId) continue
+    const id = keyId(normalized)
+    payload.push({ name: normalized.name, owner: normalized.owner, subscribed: desiredSubs.get(id) ?? false })
+  }
+  const saved = await callApp<VarPoolSubPref[]>("SaveVarPoolSubPrefs", payload)
+  desiredSubs.clear()
+  const prefs = Array.isArray(saved) ? saved : []
+  for (const pref of prefs) {
+    const name = String((pref as any)?.name ?? "").trim()
+    const owner = Number((pref as any)?.owner ?? 0) || 0
+    if (!name || owner <= 0) continue
+    desiredSubs.set(keyId({ name, owner }), Boolean((pref as any)?.subscribed))
+  }
+  ensureSubPrefDefaults()
+}
+
+const saveSubPrefsBestEffort = async () => {
+  try {
+    await saveSubPrefs()
+  } catch (err) {
+    console.warn(err)
+  }
 }
 
 const saveWatchList = async () => {
@@ -182,7 +244,7 @@ const loadWatchList = async () => {
   const keys = await callApp<VarPoolKey[]>("VarPoolWatchList")
   state.keys = normalizeKeys(Array.isArray(keys) ? keys : [])
   state.data = {}
-  desiredSubs.clear()
+  ensureSubPrefDefaults()
 }
 
 const resolveTargetId = () => {
@@ -200,6 +262,37 @@ const ensureSourceID = () => {
     throw new Error("Login required to send VarPool requests.")
   }
   return state.selfNodeId
+}
+
+const listOwnerNames = async (ownerId: number) => {
+  const sourceID = ensureSourceID()
+  const owner = Number(ownerId || 0)
+  if (!owner || owner <= 0) {
+    throw new Error("Owner NodeID is required.")
+  }
+  const resp = parseResp(await callVarPool<any>("ListSimple", sourceID, owner, { owner }))
+  if (resp.code === 4) {
+    return [] as string[]
+  }
+  if (resp.code !== 1) {
+    const msg = (resp.msg || "").trim()
+    if (msg) {
+      throw new Error(msg)
+    }
+    throw new Error(`VarPool list failed (code=${resp.code})`)
+  }
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const name of resp.names || []) {
+    const trimmed = String(name || "").trim()
+    if (!trimmed) continue
+    const key = trimmed
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(trimmed)
+  }
+  out.sort((a, b) => a.localeCompare(b))
+  return out
 }
 
 const listMine = async () => {
@@ -261,10 +354,12 @@ const subscribeVar = async (input: VarPoolKey) => {
   if (!key.name) throw new Error("Variable name is required.")
   if (!owner) throw new Error("Owner is required.")
   const desiredKey = { name: key.name, owner }
+  upsertKey(desiredKey)
   setDesiredSubscribe(desiredKey, true)
   if (desiredKey.owner !== key.owner) {
     setDesiredSubscribe(key, true)
   }
+  await saveSubPrefsBestEffort()
   const resp = parseResp(await callVarPool<any>("SubscribeSimple", sourceID, targetID, {
     name: key.name,
     owner,
@@ -281,6 +376,7 @@ const unsubscribeVar = async (input: VarPoolKey) => {
   if (!key.name) throw new Error("Variable name is required.")
   if (!owner) throw new Error("Owner is required.")
   const desiredKey = { name: key.name, owner }
+  upsertKey(desiredKey)
   setDesiredSubscribe(desiredKey, false)
   if (desiredKey.owner !== key.owner) {
     setDesiredSubscribe(key, false)
@@ -289,6 +385,7 @@ const unsubscribeVar = async (input: VarPoolKey) => {
   if (desiredKey.owner !== key.owner) {
     updateValue(key, { subKnown: true, subscribed: false })
   }
+  await saveSubPrefsBestEffort()
   await callVarPool("UnsubscribeSimple", sourceID, targetID, {
     name: key.name,
     owner,
@@ -300,7 +397,9 @@ const addWatchKey = async (input: VarPoolKey) => {
   const { key, changed } = upsertKey(input)
   if (!key.name) return
   if (changed && !isSelfKey(key)) {
+    setDesiredSubscribe(key, false)
     await saveWatchList()
+    await saveSubPrefsBestEffort()
   }
 }
 
@@ -310,6 +409,69 @@ const removeWatchKey = async (input: VarPoolKey) => {
   removeLocalKey(key)
   if (!isSelfKey(key)) {
     await saveWatchList()
+    await saveSubPrefsBestEffort()
+  }
+}
+
+const restoreDesiredSubscriptions = async (options?: { concurrency?: number }) => {
+  if (restorePromise) return restorePromise
+  const concurrency = Math.max(1, Number(options?.concurrency ?? 4) || 4)
+
+  restorePromise = (async () => {
+    ensureSubPrefDefaults()
+    let sourceID = 0
+    let targetID = 0
+    try {
+      sourceID = ensureSourceID()
+      targetID = resolveTargetId()
+    } catch (err) {
+      console.warn(err)
+      return { attempted: 0, failed: 0 }
+    }
+    if (!targetID) return { attempted: 0, failed: 0 }
+
+    const pending = state.keys
+      .map((key) => normalizeKey(key))
+      .filter((key) => {
+        if (!key.name || !key.owner) return false
+        if (state.selfNodeId && key.owner === state.selfNodeId) return false
+        return desiredSubs.get(keyId(key)) === true
+      })
+
+    if (!pending.length) {
+      return { attempted: 0, failed: 0 }
+    }
+
+    let cursor = 0
+    let failed = 0
+    const workers = Array.from({ length: Math.min(concurrency, pending.length) }, async () => {
+      while (true) {
+        const idx = cursor
+        cursor += 1
+        const key = pending[idx]
+        if (!key) return
+        try {
+          const resp = parseResp(await callVarPool<any>("SubscribeSimple", sourceID, targetID, {
+            name: key.name,
+            owner: key.owner,
+            subscriber: sourceID
+          }))
+          handleVarSubscribeResp(resp)
+        } catch (err) {
+          console.warn(err)
+          failed += 1
+        }
+      }
+    })
+
+    await Promise.all(workers)
+    return { attempted: pending.length, failed }
+  })()
+
+  try {
+    return await restorePromise
+  } finally {
+    restorePromise = null
   }
 }
 
@@ -432,11 +594,15 @@ export const useVarPoolStore = () => {
     state,
     addWatchKey,
     getVar,
+    listOwnerNames,
     listMine,
+    loadSubPrefs,
     loadWatchList,
     removeWatchKey,
     resolveTargetId,
     revokeVar,
+    restoreDesiredSubscriptions,
+    saveSubPrefs,
     saveWatchList,
     setIdentity: (nodeId: number, hubId: number) => {
       state.selfNodeId = Number(nodeId || 0)
