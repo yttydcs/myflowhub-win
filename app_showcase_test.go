@@ -118,3 +118,85 @@ func TestNormalizeShowcaseWidget_TargetAndTypeDefaults(t *testing.T) {
 		t.Fatalf("expected topic_button target default 1 got %d", screen.Widgets[2].TargetID)
 	}
 }
+
+func TestNormalizeShowcaseLayout_Defaults(t *testing.T) {
+	cfg := normalizeShowcaseConfig(ShowcaseConfig{
+		Version:         1,
+		CurrentScreenID: "s1",
+		Screens: []ShowcaseScreen{
+			{
+				ID:   "s1",
+				Name: "Screen",
+				Widgets: []ShowcaseWidget{
+					{
+						ID:     "w1",
+						Kind:   "topic_button",
+						Layout: ShowcaseWidgetLayout{ColSpan: 0},
+						TopicButton: &ShowcaseTopicButton{
+							Topic: "t",
+							Name:  "n",
+						},
+					},
+				},
+			},
+		},
+	})
+	screen := cfg.Screens[0]
+	if screen.Layout.Mode != showcaseLayoutModeColumns {
+		t.Fatalf("expected layout mode %q got %q", showcaseLayoutModeColumns, screen.Layout.Mode)
+	}
+	if screen.Layout.Columns == nil {
+		t.Fatalf("expected columns layout present")
+	}
+	if screen.Layout.Columns.MaxColumns != 3 || screen.Layout.Columns.MinColumnWidth != 360 || screen.Layout.Columns.Gap != 16 {
+		t.Fatalf("unexpected columns defaults: %+v", screen.Layout.Columns)
+	}
+	if got := screen.Widgets[0].Layout.ColSpan; got != 1 {
+		t.Fatalf("expected widget colSpan default 1 got %d", got)
+	}
+}
+
+func TestNormalizeShowcaseLayout_ClampsWidgetColSpan(t *testing.T) {
+	cfg := normalizeShowcaseConfig(ShowcaseConfig{
+		Version:         1,
+		CurrentScreenID: "s1",
+		Screens: []ShowcaseScreen{
+			{
+				ID:   "s1",
+				Name: "Screen",
+				Layout: ShowcaseScreenLayout{
+					Mode: showcaseLayoutModeColumns,
+					Columns: &ShowcaseColumnsLayout{
+						MaxColumns:     4,
+						MinColumnWidth: 100,
+						Gap:            0,
+					},
+				},
+				Widgets: []ShowcaseWidget{
+					{
+						ID:     "w1",
+						Kind:   "topic_button",
+						Layout: ShowcaseWidgetLayout{ColSpan: 9},
+						TopicButton: &ShowcaseTopicButton{
+							Topic: "t",
+							Name:  "n",
+						},
+					},
+				},
+			},
+		},
+	})
+	screen := cfg.Screens[0]
+	if screen.Layout.Columns == nil {
+		t.Fatalf("expected columns layout present")
+	}
+	if screen.Layout.Columns.MinColumnWidth != 200 {
+		t.Fatalf("expected minColumnWidth clamped to 200 got %d", screen.Layout.Columns.MinColumnWidth)
+	}
+	if screen.Layout.Columns.Gap != 16 {
+		t.Fatalf("expected gap default 16 got %d", screen.Layout.Columns.Gap)
+	}
+	if got := screen.Widgets[0].Layout.ColSpan; got != 4 {
+		t.Fatalf("expected widget colSpan clamped to 4 got %d", got)
+	}
+}

@@ -12,6 +12,7 @@ import VarPool from "@/pages/VarPool.vue"
 import Showcase from "@/pages/Showcase.vue"
 import FileTasks from "@/windows/FileTasks.vue"
 import LogWindow from "@/windows/LogWindow.vue"
+import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
 
 const routes = [
   { path: "/", redirect: "/home" },
@@ -129,6 +130,15 @@ const routes = [
     component: LogWindow,
     meta: {
       title: "Log Window",
+      layout: "window"
+    }
+  },
+  {
+    path: "/showcase-window",
+    name: "showcaseWindow",
+    component: ShowcaseWindow,
+    meta: {
+      title: "Showcase Window",
       layout: "window"
     }
   }

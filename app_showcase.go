@@ -5,11 +5,15 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
 	showcaseConfigKey     = "showcase.config"
 	showcaseConfigVersion = 1
+
+	showcaseLayoutModeColumns = "columns"
 )
 
 type ShowcaseConfig struct {
@@ -19,9 +23,21 @@ type ShowcaseConfig struct {
 }
 
 type ShowcaseScreen struct {
-	ID      string           `json:"id"`
-	Name    string           `json:"name"`
-	Widgets []ShowcaseWidget `json:"widgets,omitempty"`
+	ID      string               `json:"id"`
+	Name    string               `json:"name"`
+	Layout  ShowcaseScreenLayout `json:"layout,omitempty"`
+	Widgets []ShowcaseWidget     `json:"widgets,omitempty"`
+}
+
+type ShowcaseScreenLayout struct {
+	Mode    string                 `json:"mode,omitempty"` // columns (V1)
+	Columns *ShowcaseColumnsLayout `json:"columns,omitempty"`
+}
+
+type ShowcaseColumnsLayout struct {
+	MaxColumns     int `json:"maxColumns,omitempty"`
+	MinColumnWidth int `json:"minColumnWidth,omitempty"` // px
+	Gap            int `json:"gap,omitempty"`            // px
 }
 
 type ShowcaseWidget struct {
@@ -30,8 +46,14 @@ type ShowcaseWidget struct {
 	Title    string `json:"title,omitempty"`
 	TargetID uint32 `json:"targetId,omitempty"`
 
+	Layout ShowcaseWidgetLayout `json:"layout,omitempty"`
+
 	TopicButton *ShowcaseTopicButton `json:"topicButton,omitempty"`
 	Var         *ShowcaseVarWidget   `json:"var,omitempty"`
+}
+
+type ShowcaseWidgetLayout struct {
+	ColSpan int `json:"colSpan,omitempty"`
 }
 
 type ShowcaseTopicButton struct {
@@ -86,6 +108,12 @@ func (a *App) SaveShowcaseConfig(cfg ShowcaseConfig) (ShowcaseConfig, error) {
 	if err := a.store.SetString(profile, showcaseConfigKey, string(data)); err != nil {
 		return ShowcaseConfig{}, err
 	}
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "showcase.config_changed", map[string]any{
+			"ts":      time.Now().UTC().Format(time.RFC3339Nano),
+			"profile": profile,
+		})
+	}
 	return a.ShowcaseConfig()
 }
 
@@ -121,10 +149,10 @@ func normalizeShowcaseConfig(cfg ShowcaseConfig) ShowcaseConfig {
 		screens = append(screens, screen)
 	}
 	if len(screens) == 0 {
-		screens = append(screens, ShowcaseScreen{
+		screens = append(screens, normalizeShowcaseScreen(ShowcaseScreen{
 			ID:   "default",
 			Name: "Default",
-		})
+		}))
 	}
 	cfg.Screens = screens
 
@@ -144,6 +172,8 @@ func normalizeShowcaseScreen(screen ShowcaseScreen) ShowcaseScreen {
 		screen.Name = "Screen"
 	}
 
+	screen.Layout = normalizeShowcaseScreenLayout(screen.Layout)
+
 	widgets := make([]ShowcaseWidget, 0, len(screen.Widgets))
 	seenWidgets := make(map[string]bool, len(screen.Widgets))
 	for _, widget := range screen.Widgets {
@@ -151,6 +181,7 @@ func normalizeShowcaseScreen(screen ShowcaseScreen) ShowcaseScreen {
 		if !ok {
 			continue
 		}
+		widget.Layout = normalizeShowcaseWidgetLayout(widget.Layout, screen.Layout)
 		if widget.ID == "" {
 			continue
 		}
@@ -174,6 +205,7 @@ func normalizeShowcaseWidget(widget ShowcaseWidget) (ShowcaseWidget, bool) {
 	if widget.TargetID == 0 {
 		widget.TargetID = 1
 	}
+	widget.Layout = normalizeShowcaseWidgetLayout(widget.Layout, ShowcaseScreenLayout{})
 
 	switch widget.Kind {
 	case "topic_button":
@@ -208,6 +240,79 @@ func normalizeShowcaseTopicButton(tb ShowcaseTopicButton) ShowcaseTopicButton {
 	tb.Name = strings.TrimSpace(tb.Name)
 	tb.PayloadText = strings.TrimSpace(tb.PayloadText)
 	return tb
+}
+
+func normalizeShowcaseScreenLayout(layout ShowcaseScreenLayout) ShowcaseScreenLayout {
+	layout.Mode = strings.ToLower(strings.TrimSpace(layout.Mode))
+	switch layout.Mode {
+	case "":
+		layout.Mode = showcaseLayoutModeColumns
+		fallthrough
+	case showcaseLayoutModeColumns:
+		cols := layout.Columns
+		if cols == nil {
+			cols = &ShowcaseColumnsLayout{}
+		}
+		*cols = normalizeShowcaseColumnsLayout(*cols)
+		layout.Columns = cols
+	default:
+		layout.Mode = showcaseLayoutModeColumns
+		cols := layout.Columns
+		if cols == nil {
+			cols = &ShowcaseColumnsLayout{}
+		}
+		*cols = normalizeShowcaseColumnsLayout(*cols)
+		layout.Columns = cols
+	}
+	return layout
+}
+
+func normalizeShowcaseColumnsLayout(c ShowcaseColumnsLayout) ShowcaseColumnsLayout {
+	if c.MaxColumns <= 0 {
+		c.MaxColumns = 3
+	}
+	if c.MaxColumns < 1 {
+		c.MaxColumns = 1
+	}
+	if c.MaxColumns > 12 {
+		c.MaxColumns = 12
+	}
+
+	if c.MinColumnWidth <= 0 {
+		c.MinColumnWidth = 360
+	}
+	if c.MinColumnWidth < 200 {
+		c.MinColumnWidth = 200
+	}
+	if c.MinColumnWidth > 1200 {
+		c.MinColumnWidth = 1200
+	}
+
+	if c.Gap <= 0 {
+		c.Gap = 16
+	}
+	if c.Gap > 64 {
+		c.Gap = 64
+	}
+
+	return c
+}
+
+func normalizeShowcaseWidgetLayout(layout ShowcaseWidgetLayout, screenLayout ShowcaseScreenLayout) ShowcaseWidgetLayout {
+	if layout.ColSpan <= 0 {
+		layout.ColSpan = 1
+	}
+	maxCols := 12
+	if screenLayout.Mode == showcaseLayoutModeColumns && screenLayout.Columns != nil && screenLayout.Columns.MaxColumns > 0 {
+		maxCols = screenLayout.Columns.MaxColumns
+	}
+	if maxCols < 1 {
+		maxCols = 1
+	}
+	if layout.ColSpan > maxCols {
+		layout.ColSpan = maxCols
+	}
+	return layout
 }
 
 func normalizeShowcaseVarWidget(v ShowcaseVarWidget) ShowcaseVarWidget {

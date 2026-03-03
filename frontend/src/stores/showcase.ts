@@ -62,11 +62,29 @@ export type ShowcaseTopicButton = {
   payloadText: string
 }
 
+export type ShowcaseColumnsLayout = {
+  maxColumns: number
+  minColumnWidth: number
+  gap: number
+}
+
+export type ShowcaseScreenLayoutMode = "columns"
+
+export type ShowcaseScreenLayout = {
+  mode: ShowcaseScreenLayoutMode
+  columns: ShowcaseColumnsLayout
+}
+
+export type ShowcaseWidgetLayout = {
+  colSpan: number
+}
+
 export type ShowcaseWidget = {
   id: string
   kind: ShowcaseWidgetKind
   title: string
   targetId: number
+  layout: ShowcaseWidgetLayout
   topicButton?: ShowcaseTopicButton
   var?: ShowcaseVarWidget
 }
@@ -74,6 +92,7 @@ export type ShowcaseWidget = {
 export type ShowcaseScreen = {
   id: string
   name: string
+  layout: ShowcaseScreenLayout
   widgets: ShowcaseWidget[]
 }
 
@@ -98,6 +117,8 @@ export type ShowcaseState = {
   lastLoadedAt: string
   selfNodeId: number
   hubId: number
+  fixedScreenId: string
+  screenMissing: boolean
   config: ShowcaseConfig
   values: Record<string, VarSnapshot>
   lastFrameAt: string
@@ -115,6 +136,15 @@ const newId = () => {
 const varKey = (ownerId: number, name: string) => `${ownerId}:${name}`
 const subKey = (targetId: number, ownerId: number, name: string) => `${targetId}:${ownerId}:${name}`
 
+const normalizePositiveInt = (value: any, fallback: number, min: number, max: number) => {
+  let out = Number(value)
+  if (!Number.isFinite(out) || out <= 0) out = fallback
+  out = Math.floor(out)
+  if (out < min) out = min
+  if (out > max) out = max
+  return out
+}
+
 const defaultSlider = (): ShowcaseVarSlider => ({ min: 0, max: 100, step: 1, throttleMs: 50 })
 const defaultSwitch = (): ShowcaseVarSwitch => ({ onValue: "true", offValue: "false" })
 const defaultTypeForMode = (mode: VarWidgetMode): string => {
@@ -128,10 +158,14 @@ const defaultTypeForMode = (mode: VarWidgetMode): string => {
   }
 }
 
+const defaultColumnsLayout = (): ShowcaseColumnsLayout => ({ maxColumns: 3, minColumnWidth: 360, gap: 16 })
+const defaultScreenLayout = (): ShowcaseScreenLayout => ({ mode: "columns", columns: defaultColumnsLayout() })
+const defaultWidgetLayout = (): ShowcaseWidgetLayout => ({ colSpan: 1 })
+
 const emptyConfig = (): ShowcaseConfig => ({
   version: 1,
   currentScreenId: "default",
-  screens: [{ id: "default", name: "Default", widgets: [] }]
+  screens: [{ id: "default", name: "Default", layout: defaultScreenLayout(), widgets: [] }]
 })
 
 const normalizeVarMode = (mode: any): VarWidgetMode => {
@@ -175,6 +209,28 @@ const normalizeSwitch = (raw: any): ShowcaseVarSwitch => {
   return { onValue, offValue }
 }
 
+const normalizeColumnsLayout = (raw: any): ShowcaseColumnsLayout => {
+  const maxColumns = normalizePositiveInt(raw?.maxColumns, 3, 1, 12)
+  const minColumnWidth = normalizePositiveInt(raw?.minColumnWidth, 360, 200, 1200)
+  const gap = normalizePositiveInt(raw?.gap, 16, 1, 64)
+  return { maxColumns, minColumnWidth, gap }
+}
+
+const normalizeScreenLayout = (raw: any): ShowcaseScreenLayout => {
+  const mode = String(raw?.mode ?? "").trim().toLowerCase()
+  if (mode !== "columns") {
+    return { mode: "columns", columns: normalizeColumnsLayout(raw?.columns ?? defaultColumnsLayout()) }
+  }
+  return { mode: "columns", columns: normalizeColumnsLayout(raw?.columns ?? defaultColumnsLayout()) }
+}
+
+const normalizeWidgetLayout = (raw: any, screenLayout?: ShowcaseScreenLayout): ShowcaseWidgetLayout => {
+  const fallback = defaultWidgetLayout()
+  const maxCols = screenLayout?.columns?.maxColumns ?? 12
+  const colSpan = normalizePositiveInt(raw?.colSpan ?? fallback.colSpan, 1, 1, Math.max(1, maxCols))
+  return { colSpan }
+}
+
 const normalizeVarWidget = (raw: any): ShowcaseVarWidget | null => {
   const name = String(raw?.name ?? "").trim()
   const ownerId = Number(raw?.ownerId ?? 0)
@@ -209,16 +265,17 @@ const normalizeWidget = (raw: any): ShowcaseWidget | null => {
   const title = String(raw?.title ?? "").trim()
   let targetId = Number(raw?.targetId ?? 0)
   if (!Number.isFinite(targetId) || targetId <= 0) targetId = 1
+  const layout = normalizeWidgetLayout(raw?.layout, undefined)
 
   if (kind === "topic_button") {
     const topicButton = normalizeTopicButton(raw?.topicButton)
     if (!topicButton) return null
-    return { id, kind, title, targetId, topicButton }
+    return { id, kind, title, targetId, layout, topicButton }
   }
   if (kind === "var") {
     const v = normalizeVarWidget(raw?.var)
     if (!v) return null
-    return { id, kind, title, targetId, var: v }
+    return { id, kind, title, targetId, layout, var: v }
   }
   return null
 }
@@ -227,6 +284,7 @@ const normalizeScreen = (raw: any): ShowcaseScreen | null => {
   const id = String(raw?.id ?? "").trim() || newId()
   const name = String(raw?.name ?? "").trim()
   if (!name) return null
+  const layout = normalizeScreenLayout(raw?.layout)
   const widgets: ShowcaseWidget[] = []
   const seen = new Set<string>()
   const list = Array.isArray(raw?.widgets) ? raw.widgets : []
@@ -235,9 +293,9 @@ const normalizeScreen = (raw: any): ShowcaseScreen | null => {
     if (!widget) continue
     if (seen.has(widget.id)) continue
     seen.add(widget.id)
-    widgets.push(widget)
+    widgets.push({ ...widget, layout: normalizeWidgetLayout(widget.layout, layout) })
   }
-  return { id, name, widgets }
+  return { id, name, layout, widgets }
 }
 
 const normalizeConfig = (raw: any): ShowcaseConfig => {
@@ -273,6 +331,8 @@ const state = reactive<ShowcaseState>({
   lastLoadedAt: "",
   selfNodeId: 0,
   hubId: 0,
+  fixedScreenId: "",
+  screenMissing: false,
   config: emptyConfig(),
   values: {},
   lastFrameAt: "",
@@ -283,6 +343,7 @@ const activeSubs = new Set<string>()
 const sliderTimers = new Map<string, number>()
 const sliderLastSentAt = new Map<string, number>()
 let initialized = false
+let configReloadTimer: number | null = null
 
 const toast = useToastStore()
 
@@ -348,6 +409,30 @@ const ensureListeners = () => {
     state.lastFrameAt = nowIso()
     removeSnapshot(parseVarResp(evt))
   })
+
+  EventsOn("showcase.config_changed", () => {
+    scheduleConfigReload()
+  })
+}
+
+const scheduleConfigReload = () => {
+  if (configReloadTimer !== null) return
+  configReloadTimer = window.setTimeout(async () => {
+    configReloadTimer = null
+    if (state.busy) {
+      scheduleConfigReload()
+      return
+    }
+    try {
+      const fixed = state.fixedScreenId
+      await leave()
+      await load()
+      state.fixedScreenId = fixed
+      await enter()
+    } catch {
+      // ignore: do not spam toasts on background reload
+    }
+  }, 100)
 }
 
 const load = async () => {
@@ -383,9 +468,32 @@ const setIdentity = (nodeId: number, hubId: number) => {
   state.hubId = Number(hubId || 0)
 }
 
+const setFixedScreenId = (screenId: string) => {
+  state.fixedScreenId = String(screenId ?? "").trim()
+  state.screenMissing = false
+}
+
+const clearFixedScreenId = () => {
+  state.fixedScreenId = ""
+  state.screenMissing = false
+}
+
+const screenById = (id: string): ShowcaseScreen | null => {
+  const trimmed = String(id ?? "").trim()
+  if (!trimmed) return null
+  return state.config.screens.find((s) => s.id === trimmed) ?? null
+}
+
 const currentScreen = () => {
   const id = state.config.currentScreenId
   return state.config.screens.find((s) => s.id === id) ?? state.config.screens[0]
+}
+
+const activeScreen = (): ShowcaseScreen | null => {
+  if (state.fixedScreenId) {
+    return screenById(state.fixedScreenId)
+  }
+  return currentScreen()
 }
 
 const selectScreen = async (id: string) => {
@@ -401,7 +509,7 @@ const createScreen = async (name: string) => {
   const trimmed = name.trim()
   if (!trimmed) throw new Error("Screen name is required.")
   const id = newId()
-  state.config.screens.push({ id, name: trimmed, widgets: [] })
+  state.config.screens.push({ id, name: trimmed, layout: defaultScreenLayout(), widgets: [] })
   state.config.currentScreenId = id
   await save()
   await enter()
@@ -447,7 +555,9 @@ const removeWidget = async (widgetId: string) => {
   await save()
 }
 
-const addTopicButton = async (input: Partial<ShowcaseTopicButton> & { title?: string; targetId?: number }) => {
+const addTopicButton = async (
+  input: Partial<ShowcaseTopicButton> & { title?: string; targetId?: number; colSpan?: number }
+) => {
   const screen = currentScreen()
   const topic = String(input.topic ?? "").trim()
   const name = String(input.name ?? "").trim()
@@ -457,12 +567,14 @@ const addTopicButton = async (input: Partial<ShowcaseTopicButton> & { title?: st
   const title = String(input.title ?? "").trim()
   const targetId = Number(input.targetId ?? 0)
   if (!Number.isFinite(targetId) || targetId <= 0) throw new Error("Target ID is required.")
+  const layout = normalizeWidgetLayout({ colSpan: input.colSpan }, screen.layout)
 
   screen.widgets.push({
     id: newId(),
     kind: "topic_button",
     title,
     targetId: Math.floor(targetId),
+    layout,
     topicButton: { topic, name, payloadText }
   })
   await save()
@@ -471,6 +583,7 @@ const addTopicButton = async (input: Partial<ShowcaseTopicButton> & { title?: st
 const addVarWidget = async (input: {
   title?: string
   targetId: number
+  colSpan?: number
   ownerId: number
   name: string
   mode?: VarWidgetMode
@@ -492,12 +605,14 @@ const addVarWidget = async (input: {
   const type = String(input.type ?? "").trim() || defaultTypeForMode(mode)
   const slider = normalizeSlider({ ...defaultSlider(), ...(input.slider ?? {}) })
   const sw = normalizeSwitch({ ...defaultSwitch(), ...(input.switch ?? {}) })
+  const layout = normalizeWidgetLayout({ colSpan: input.colSpan }, screen.layout)
 
   const widget: ShowcaseWidget = {
     id: newId(),
     kind: "var",
     title,
     targetId: Math.floor(targetId),
+    layout,
     var: {
       ownerId,
       name,
@@ -658,8 +773,14 @@ const unsubscribeAll = async () => {
 
 const enter = async () => {
   ensureListeners()
-  const screen = currentScreen()
-  if (!screen) return
+  state.screenMissing = false
+  const screen = activeScreen()
+  if (!screen) {
+    if (state.fixedScreenId) {
+      state.screenMissing = true
+    }
+    return
+  }
   if (!state.selfNodeId) return
 
   const refs: Array<{ targetId: number; ownerId: number; name: string }> = []
@@ -793,6 +914,8 @@ export const useShowcaseStore = () => {
     addVarWidget,
     createScreen,
     currentScreen,
+    activeScreen,
+    clearFixedScreenId,
     deleteScreen,
     enter,
     getVarValueText,
@@ -803,7 +926,9 @@ export const useShowcaseStore = () => {
     removeWidget,
     renameScreen,
     resolveEffectiveMode,
+    screenById,
     selectScreen,
+    setFixedScreenId,
     setIdentity,
     sliderCommit,
     sliderInput,
