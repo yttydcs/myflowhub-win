@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from "vue"
+import { computed, ref, watch, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import {
   Bug,
@@ -21,6 +21,8 @@ import ToastHost from "@/components/ToastHost.vue"
 import { useFileStore } from "@/stores/file"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
+import { useToastStore } from "@/stores/toast"
+import { useVarPoolStore } from "@/stores/varpool"
 
 type NavItem = {
   label: string
@@ -35,8 +37,65 @@ const route = useRoute()
 const fileStore = useFileStore()
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
+const toast = useToastStore()
+const varpool = useVarPoolStore()
 
 const isWindowLayout = computed(() => route.meta.layout === "window")
+
+let varpoolStorageEpoch = 0
+const loadVarPoolStorage = async () => {
+  const myEpoch = ++varpoolStorageEpoch
+  try {
+    await varpool.loadWatchList()
+    await varpool.loadSubPrefs()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load VarPool settings.")
+  }
+  if (varpoolStorageEpoch !== myEpoch) return
+
+  const connected = Boolean(sessionStore.connected)
+  const loggedIn = Boolean(sessionStore.auth.loggedIn)
+  const nodeId = Number(sessionStore.auth.nodeId || 0)
+  const hubId = Number(sessionStore.auth.hubId || 0)
+  varpool.setIdentity(nodeId, hubId)
+  if (connected && loggedIn && nodeId > 0 && hubId > 0) {
+    void restoreVarPoolSubs()
+  }
+}
+
+let varpoolRestoreEpoch = 0
+const restoreVarPoolSubs = async () => {
+  const myEpoch = ++varpoolRestoreEpoch
+  try {
+    const result = await varpool.restoreDesiredSubscriptions({ concurrency: 4 })
+    if (varpoolRestoreEpoch !== myEpoch) return
+    if (result.attempted && result.failed) {
+      toast.warn("VarPool auto-subscribe incomplete.", `${result.failed}/${result.attempted} failed.`)
+    }
+  } catch (err) {
+    if (varpoolRestoreEpoch !== myEpoch) return
+    console.warn(err)
+  }
+}
+
+watch(
+  () => profileStore.state.current,
+  () => {
+    void loadVarPoolStorage()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [sessionStore.connected, sessionStore.auth.loggedIn, sessionStore.auth.nodeId, sessionStore.auth.hubId],
+  ([connected, loggedIn, nodeId, hubId]) => {
+    varpool.setIdentity(Number(nodeId || 0), Number(hubId || 0))
+    if (connected && loggedIn && Number(nodeId || 0) > 0 && Number(hubId || 0) > 0) {
+      void restoreVarPoolSubs()
+    }
+  }
+)
 
 const statusDotClass = computed(() => {
   if (sessionStore.connected) return "bg-emerald-500"

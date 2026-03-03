@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import NodeVarsDialog from "@/components/varpool/NodeVarsDialog.vue"
 import type { DeviceTreeNode, DevicesMode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
 import { useManagementStore } from "@/stores/management"
@@ -58,6 +59,18 @@ const flattenVisible = (root: DeviceTreeNode | null) => {
 }
 
 const visibleNodes = computed(() => flattenVisible(devicesStore.state.root))
+
+const varsDialogOpen = ref(false)
+const varsDialogOwnerId = ref(0)
+
+const openVarsDialog = (node: DeviceTreeNode) => {
+  varsDialogOwnerId.value = node.nodeId
+  varsDialogOpen.value = true
+}
+
+const closeVarsDialog = () => {
+  varsDialogOpen.value = false
+}
 
 const nodeInfoOpen = ref(false)
 const nodeInfoNodeId = ref(0)
@@ -342,6 +355,10 @@ onMounted(async () => {
               </Badge>
               <Badge v-else variant="secondary">Unknown</Badge>
 
+              <Button size="sm" variant="outline" :disabled="!ready" @click.stop="openVarsDialog(node)">
+                Vars
+              </Button>
+
               <Button size="sm" variant="outline" :disabled="!ready" @click.stop="openConfig(node)">
                 Edit
               </Button>
@@ -403,6 +420,8 @@ onMounted(async () => {
         </div>
       </div>
     </Overlay>
+
+    <NodeVarsDialog :open="varsDialogOpen" :ownerId="varsDialogOwnerId" @close="closeVarsDialog" />
 
     <Overlay :open="configOpen" closeOnBackdrop @close="closeConfig">
       <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
