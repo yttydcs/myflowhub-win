@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import { ExternalLink, GripVertical } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import {
@@ -118,6 +120,7 @@ const widgetDialog = reactive({
   kind: "topic_button" as ShowcaseWidgetKind,
   title: "",
   targetId: "",
+  colSpan: "1",
   topic: "",
   eventName: "",
   payloadText: "",
@@ -147,6 +150,7 @@ const resetWidgetDialog = () => {
   widgetDialog.widgetId = ""
   widgetDialog.title = ""
   widgetDialog.targetId = String(selfNodeId.value || 1)
+  widgetDialog.colSpan = "1"
   widgetDialog.topic = ""
   widgetDialog.eventName = ""
   widgetDialog.payloadText = ""
@@ -178,6 +182,7 @@ const openEditWidget = (widget: ShowcaseWidget) => {
   widgetDialog.kind = widget.kind
   widgetDialog.title = widget.title || ""
   widgetDialog.targetId = widget.targetId ? String(widget.targetId) : "1"
+  widgetDialog.colSpan = String(widget.layout?.colSpan ?? 1)
   if (widget.kind === "topic_button" && widget.topicButton) {
     widgetDialog.topic = widget.topicButton.topic
     widgetDialog.eventName = widget.topicButton.name
@@ -215,6 +220,14 @@ const parseNonNegativeInt = (raw: string, field: string) => {
   return parsed
 }
 
+const parseIntInRange = (raw: string, field: string, min: number, max: number) => {
+  const parsed = Number.parseInt(raw.trim(), 10)
+  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${field} must be between ${min} and ${max}.`)
+  }
+  return parsed
+}
+
 const parseFloatStrict = (raw: string, field: string) => {
   const parsed = Number.parseFloat(raw.trim())
   if (!Number.isFinite(parsed)) throw new Error(`${field} must be a valid number.`)
@@ -227,19 +240,22 @@ const submitWidgetDialog = async () => {
   try {
     const title = widgetDialog.title.trim()
     const targetId = parsePositiveInt(widgetDialog.targetId, "Target ID")
+    const screen = showcase.currentScreen()
+    const maxColumns = screen?.layout?.columns?.maxColumns ?? 12
+    const colSpan = parseIntInRange(widgetDialog.colSpan, "Column Span", 1, Math.max(1, maxColumns))
 
     if (widgetDialog.kind === "topic_button") {
       const topic = widgetDialog.topic.trim()
       const name = widgetDialog.eventName.trim()
       const payloadText = widgetDialog.payloadText ?? ""
       if (widgetDialog.mode === "create") {
-        await showcase.addTopicButton({ title, targetId, topic, name, payloadText })
+        await showcase.addTopicButton({ title, targetId, colSpan, topic, name, payloadText })
       } else {
-        const screen = showcase.currentScreen()
         const widget = screen?.widgets.find((w) => w.id === widgetDialog.widgetId)
         if (!widget || widget.kind !== "topic_button") return
         widget.title = title
         widget.targetId = targetId
+        widget.layout.colSpan = colSpan
         widget.topicButton = { topic, name, payloadText }
         await showcase.save()
       }
@@ -267,6 +283,7 @@ const submitWidgetDialog = async () => {
       await showcase.addVarWidget({
         title,
         targetId,
+        colSpan,
         ownerId,
         name: varName,
         mode,
@@ -276,11 +293,11 @@ const submitWidgetDialog = async () => {
         switch: { onValue, offValue }
       })
     } else {
-      const screen = showcase.currentScreen()
       const widget = screen?.widgets.find((w) => w.id === widgetDialog.widgetId)
       if (!widget || widget.kind !== "var" || !widget.var) return
       widget.title = title
       widget.targetId = targetId
+      widget.layout.colSpan = colSpan
       widget.var.ownerId = ownerId
       widget.var.name = varName
       widget.var.mode = mode
@@ -345,6 +362,127 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
   }
 }
 
+const openShowcaseWindow = () => {
+  const screen = showcase.currentScreen()
+  if (!screen) return
+  const base = window.location.href.split("#")[0]
+  const url = `${base}#/showcase-window?screenId=${encodeURIComponent(screen.id)}`
+  const name = `showcase_${screen.id}_${Date.now()}`
+  const win = window.open(url, name, "width=980,height=720")
+  if (win) {
+    win.focus()
+  }
+}
+
+const layoutForm = reactive({
+  maxColumns: "3",
+  minColumnWidth: "360"
+})
+
+const syncLayoutFormFromScreen = () => {
+  const screen = showcase.currentScreen()
+  if (!screen) return
+  layoutForm.maxColumns = String(screen.layout?.columns?.maxColumns ?? 3)
+  layoutForm.minColumnWidth = String(screen.layout?.columns?.minColumnWidth ?? 360)
+}
+
+const saveScreenLayout = async () => {
+  const screen = showcase.currentScreen()
+  if (!screen) return
+  if (busy.value) return
+  busy.value = true
+  try {
+    const maxColumns = parseIntInRange(layoutForm.maxColumns, "Max Columns", 1, 12)
+    const minColumnWidth = parseIntInRange(layoutForm.minColumnWidth, "Min Column Width", 200, 1200)
+    screen.layout.mode = "columns"
+    screen.layout.columns.maxColumns = maxColumns
+    screen.layout.columns.minColumnWidth = minColumnWidth
+    await showcase.save()
+    toast.success("Layout saved.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to save layout.")
+    syncLayoutFormFromScreen()
+  } finally {
+    busy.value = false
+  }
+}
+
+const widgetsGridRef = ref<HTMLElement | null>(null)
+const widgetsGridWidth = ref(0)
+let widgetsGridObserver: ResizeObserver | null = null
+
+const resolvedColumnsLayout = computed(() => showcase.currentScreen()?.layout?.columns ?? { maxColumns: 3, minColumnWidth: 360, gap: 16 })
+const resolvedColumnsCount = computed(() => computeColumnsCount(widgetsGridWidth.value, resolvedColumnsLayout.value))
+const widgetsGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${resolvedColumnsCount.value}, minmax(0, 1fr))`,
+  gap: `${resolvedColumnsLayout.value.gap}px`
+}))
+
+const widgetCardStyle = (widget: ShowcaseWidget) => {
+  const span = clampColSpan(widget.layout?.colSpan ?? 1, resolvedColumnsCount.value)
+  return {
+    gridColumn: `span ${span} / span ${span}`
+  }
+}
+
+const dragState = reactive({
+  draggingId: "",
+  overId: ""
+})
+
+const onDragStart = (widgetId: string, event: DragEvent) => {
+  dragState.draggingId = widgetId
+  dragState.overId = ""
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", widgetId)
+  }
+}
+
+const onDragOver = (widgetId: string) => {
+  if (!dragState.draggingId) return
+  if (dragState.draggingId === widgetId) return
+  dragState.overId = widgetId
+}
+
+const onDragEnd = () => {
+  dragState.draggingId = ""
+  dragState.overId = ""
+}
+
+const onDrop = async (widgetId: string) => {
+  const fromId = dragState.draggingId
+  onDragEnd()
+  if (!fromId || fromId === widgetId) return
+  if (busy.value) return
+
+  const screen = showcase.currentScreen()
+  if (!screen) return
+  const widgets = screen.widgets
+  const fromIndex = widgets.findIndex((w) => w.id === fromId)
+  const toIndex = widgets.findIndex((w) => w.id === widgetId)
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return
+
+  const next = widgets.slice()
+  const [moved] = next.splice(fromIndex, 1)
+  const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex
+  next.splice(insertAt, 0, moved)
+  screen.widgets = next
+
+  busy.value = true
+  try {
+    await showcase.save()
+    toast.success("Reordered.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to reorder widgets.")
+    await showcase.load()
+  } finally {
+    busy.value = false
+  }
+}
+
 watch(
   () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
   () => {
@@ -358,7 +496,15 @@ watch(
     await showcase.leave()
     await loadHomeDefaults()
     await showcase.load()
+    syncLayoutFormFromScreen()
     await showcase.enter()
+  }
+)
+
+watch(
+  () => showcase.state.config.currentScreenId,
+  () => {
+    syncLayoutFormFromScreen()
   }
 )
 
@@ -382,14 +528,26 @@ onMounted(async () => {
   await loadHomeDefaults()
   try {
     await showcase.load()
+    syncLayoutFormFromScreen()
     await showcase.enter()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to load showcase config.")
   }
+
+  if (widgetsGridRef.value) {
+    widgetsGridWidth.value = widgetsGridRef.value.clientWidth
+    widgetsGridObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      widgetsGridWidth.value = entry.contentRect.width
+    })
+    widgetsGridObserver.observe(widgetsGridRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
+  widgetsGridObserver?.disconnect()
   void showcase.leave()
 })
 </script>
@@ -444,21 +602,65 @@ onBeforeUnmount(() => {
                 Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }} · LastVar={{ showcase.state.lastFrameAt || "-" }}
               </p>
             </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
+                <ExternalLink class="mr-2 h-4 w-4" />
+                Open Window
+              </Button>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-4 sm:grid-cols-3">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Max Columns
+              </label>
+              <input v-model="layoutForm.maxColumns" :class="inputClass" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Min Column Width (px)
+              </label>
+              <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
+            </div>
+            <div class="flex items-end">
+              <Button size="sm" :disabled="busy" @click="saveScreenLayout">Save Layout</Button>
+            </div>
           </div>
         </div>
 
-        <div
-          v-for="widget in showcase.currentScreen()?.widgets || []"
-          :key="widget.id"
-          class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
-        >
+        <div ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
+          <div
+            v-for="widget in showcase.currentScreen()?.widgets || []"
+            :key="widget.id"
+            class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+            :class="dragState.overId === widget.id ? 'ring-2 ring-primary/40' : ''"
+            :style="widgetCardStyle(widget)"
+            @dragover.prevent="onDragOver(widget.id)"
+            @drop.prevent="onDrop(widget.id)"
+          >
           <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ widget.kind === 'topic_button' ? 'TopicBus' : 'VarStore' }}
-              </p>
-              <h5 class="mt-2 text-base font-semibold">{{ safeTitle(widget) }}</h5>
-              <p class="mt-1 text-xs text-muted-foreground">Target={{ widget.targetId || "-" }}</p>
+            <div class="flex items-start gap-3">
+              <button
+                type="button"
+                class="mt-0.5 inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                draggable="true"
+                title="Drag to reorder"
+                @dragstart="onDragStart(widget.id, $event)"
+                @dragend="onDragEnd"
+              >
+                <GripVertical class="h-4 w-4" />
+              </button>
+
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                  {{ widget.kind === 'topic_button' ? 'TopicBus' : 'VarStore' }}
+                </p>
+                <h5 class="mt-2 text-base font-semibold">{{ safeTitle(widget) }}</h5>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  Target={{ widget.targetId || "-" }} · Span={{ widget.layout?.colSpan || 1 }}
+                </p>
+              </div>
             </div>
             <div class="flex items-center gap-2">
               <Button size="sm" variant="outline" :disabled="busy" @click="openEditWidget(widget)">Edit</Button>
@@ -532,13 +734,15 @@ onBeforeUnmount(() => {
               />
             </div>
           </div>
-        </div>
+          </div>
 
-        <div
-          v-if="(showcase.currentScreen()?.widgets || []).length === 0"
-          class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
-        >
-          <p class="text-sm text-muted-foreground">No widgets yet.</p>
+          <div
+            v-if="(showcase.currentScreen()?.widgets || []).length === 0"
+            class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+            :style="{ gridColumn: '1 / -1' }"
+          >
+            <p class="text-sm text-muted-foreground">No widgets yet.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -558,7 +762,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="mt-5 grid gap-4">
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-4 sm:grid-cols-3">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Title (optional)
@@ -570,6 +774,12 @@ onBeforeUnmount(() => {
                 Target ID
               </label>
               <input v-model="widgetDialog.targetId" :class="inputClass" :placeholder="String(selfNodeId || 1)" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Column Span
+              </label>
+              <input v-model="widgetDialog.colSpan" :class="inputClass" />
             </div>
           </div>
 
