@@ -200,3 +200,99 @@ func TestNormalizeShowcaseLayout_ClampsWidgetColSpan(t *testing.T) {
 		t.Fatalf("expected widget colSpan clamped to 4 got %d", got)
 	}
 }
+
+func TestNormalizeShowcaseLayout_CanvasDefaults(t *testing.T) {
+	cfg := normalizeShowcaseConfig(ShowcaseConfig{
+		Version:         1,
+		CurrentScreenID: "s1",
+		Screens: []ShowcaseScreen{
+			{
+				ID:   "s1",
+				Name: "Screen",
+				Layout: ShowcaseScreenLayout{
+					Mode: showcaseLayoutModeCanvas,
+				},
+				Widgets: []ShowcaseWidget{
+					{
+						ID:   "w1",
+						Kind: "topic_button",
+						TopicButton: &ShowcaseTopicButton{
+							Topic: "t",
+							Name:  "n",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	screen := cfg.Screens[0]
+	if screen.Layout.Mode != showcaseLayoutModeCanvas {
+		t.Fatalf("expected layout mode %q got %q", showcaseLayoutModeCanvas, screen.Layout.Mode)
+	}
+	if screen.Layout.Canvas == nil {
+		t.Fatalf("expected canvas layout present")
+	}
+	if screen.Layout.Canvas.BaseWidth != showcaseCanvasDefaultBaseWidth || screen.Layout.Canvas.BaseHeight != showcaseCanvasDefaultBaseHeight {
+		t.Fatalf("unexpected canvas defaults: %+v", screen.Layout.Canvas)
+	}
+	if screen.Widgets[0].Layout.CanvasPercent == nil {
+		t.Fatalf("expected widget canvasPercent populated")
+	}
+}
+
+func TestNormalizeShowcaseLayout_CanvasPercentClamps(t *testing.T) {
+	cfg := normalizeShowcaseConfig(ShowcaseConfig{
+		Version:         1,
+		CurrentScreenID: "s1",
+		Screens: []ShowcaseScreen{
+			{
+				ID:   "s1",
+				Name: "Screen",
+				Layout: ShowcaseScreenLayout{
+					Mode: showcaseLayoutModeCanvas,
+					Canvas: &ShowcaseCanvasLayout{
+						BaseWidth:  200,
+						BaseHeight: 100,
+					},
+				},
+				Widgets: []ShowcaseWidget{
+					{
+						ID:   "w1",
+						Kind: "topic_button",
+						Layout: ShowcaseWidgetLayout{
+							CanvasPercent: &ShowcaseCanvasRectPercent{
+								XPct: -5,
+								YPct: 200,
+								WPct: 1,
+								HPct: 1,
+							},
+						},
+						TopicButton: &ShowcaseTopicButton{
+							Topic: "t",
+							Name:  "n",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	screen := cfg.Screens[0]
+	rect := screen.Widgets[0].Layout.CanvasPercent
+	if rect == nil {
+		t.Fatalf("expected canvasPercent present")
+	}
+	if rect.WPct != 40 {
+		t.Fatalf("expected wPct clamped to 40 got %v", rect.WPct)
+	}
+	if rect.HPct != 48 {
+		t.Fatalf("expected hPct clamped to 48 got %v", rect.HPct)
+	}
+	if rect.XPct != 0 {
+		t.Fatalf("expected xPct clamped to 0 got %v", rect.XPct)
+	}
+	if rect.YPct != 52 {
+		t.Fatalf("expected yPct clamped to 52 got %v", rect.YPct)
+	}
+}

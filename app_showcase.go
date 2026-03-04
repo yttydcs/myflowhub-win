@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -14,6 +15,13 @@ const (
 	showcaseConfigVersion = 1
 
 	showcaseLayoutModeColumns = "columns"
+	showcaseLayoutModeCanvas  = "canvas_percent"
+
+	showcaseCanvasDefaultBaseWidth  = 960
+	showcaseCanvasDefaultBaseHeight = 720
+
+	showcaseCanvasMinWidgetWidthPx  = 80
+	showcaseCanvasMinWidgetHeightPx = 48
 )
 
 type ShowcaseConfig struct {
@@ -30,14 +38,20 @@ type ShowcaseScreen struct {
 }
 
 type ShowcaseScreenLayout struct {
-	Mode    string                 `json:"mode,omitempty"` // columns (V1)
+	Mode    string                 `json:"mode,omitempty"` // columns|canvas_percent
 	Columns *ShowcaseColumnsLayout `json:"columns,omitempty"`
+	Canvas  *ShowcaseCanvasLayout  `json:"canvas,omitempty"`
 }
 
 type ShowcaseColumnsLayout struct {
 	MaxColumns     int `json:"maxColumns,omitempty"`
 	MinColumnWidth int `json:"minColumnWidth,omitempty"` // px
 	Gap            int `json:"gap,omitempty"`            // px
+}
+
+type ShowcaseCanvasLayout struct {
+	BaseWidth  int `json:"baseWidth,omitempty"`  // px
+	BaseHeight int `json:"baseHeight,omitempty"` // px
 }
 
 type ShowcaseWidget struct {
@@ -53,7 +67,15 @@ type ShowcaseWidget struct {
 }
 
 type ShowcaseWidgetLayout struct {
-	ColSpan int `json:"colSpan,omitempty"`
+	ColSpan       int                        `json:"colSpan,omitempty"`
+	CanvasPercent *ShowcaseCanvasRectPercent `json:"canvasPercent,omitempty"`
+}
+
+type ShowcaseCanvasRectPercent struct {
+	XPct float64 `json:"xPct,omitempty"`
+	YPct float64 `json:"yPct,omitempty"`
+	WPct float64 `json:"wPct,omitempty"`
+	HPct float64 `json:"hPct,omitempty"`
 }
 
 type ShowcaseTopicButton struct {
@@ -247,23 +269,26 @@ func normalizeShowcaseScreenLayout(layout ShowcaseScreenLayout) ShowcaseScreenLa
 	switch layout.Mode {
 	case "":
 		layout.Mode = showcaseLayoutModeColumns
-		fallthrough
-	case showcaseLayoutModeColumns:
-		cols := layout.Columns
-		if cols == nil {
-			cols = &ShowcaseColumnsLayout{}
-		}
-		*cols = normalizeShowcaseColumnsLayout(*cols)
-		layout.Columns = cols
+	case showcaseLayoutModeColumns, showcaseLayoutModeCanvas:
+		// ok
 	default:
 		layout.Mode = showcaseLayoutModeColumns
-		cols := layout.Columns
-		if cols == nil {
-			cols = &ShowcaseColumnsLayout{}
-		}
-		*cols = normalizeShowcaseColumnsLayout(*cols)
-		layout.Columns = cols
 	}
+
+	cols := layout.Columns
+	if cols == nil {
+		cols = &ShowcaseColumnsLayout{}
+	}
+	*cols = normalizeShowcaseColumnsLayout(*cols)
+	layout.Columns = cols
+
+	canvas := layout.Canvas
+	if canvas == nil {
+		canvas = &ShowcaseCanvasLayout{}
+	}
+	*canvas = normalizeShowcaseCanvasLayout(*canvas)
+	layout.Canvas = canvas
+
 	return layout
 }
 
@@ -312,7 +337,154 @@ func normalizeShowcaseWidgetLayout(layout ShowcaseWidgetLayout, screenLayout Sho
 	if layout.ColSpan > maxCols {
 		layout.ColSpan = maxCols
 	}
+
+	if screenLayout.Mode == showcaseLayoutModeCanvas {
+		rect := layout.CanvasPercent
+		if rect == nil {
+			rect = &ShowcaseCanvasRectPercent{XPct: 0, YPct: 0, WPct: 50, HPct: 10}
+		}
+		*rect = normalizeShowcaseCanvasRectPercent(*rect, screenLayout)
+		layout.CanvasPercent = rect
+	}
 	return layout
+}
+
+func normalizeShowcaseCanvasLayout(c ShowcaseCanvasLayout) ShowcaseCanvasLayout {
+	if c.BaseWidth <= 0 {
+		c.BaseWidth = showcaseCanvasDefaultBaseWidth
+	}
+	if c.BaseHeight <= 0 {
+		c.BaseHeight = showcaseCanvasDefaultBaseHeight
+	}
+
+	minWidth := showcaseCanvasMinWidgetWidthPx * 2
+	if c.BaseWidth < minWidth {
+		c.BaseWidth = minWidth
+	}
+	if c.BaseHeight < showcaseCanvasMinWidgetHeightPx {
+		c.BaseHeight = showcaseCanvasMinWidgetHeightPx
+	}
+
+	if c.BaseWidth > 10000 {
+		c.BaseWidth = 10000
+	}
+	if c.BaseHeight > 10000 {
+		c.BaseHeight = 10000
+	}
+	return c
+}
+
+func normalizeShowcaseCanvasRectPercent(r ShowcaseCanvasRectPercent, screenLayout ShowcaseScreenLayout) ShowcaseCanvasRectPercent {
+	baseWidth := showcaseCanvasDefaultBaseWidth
+	baseHeight := showcaseCanvasDefaultBaseHeight
+	if screenLayout.Canvas != nil {
+		if screenLayout.Canvas.BaseWidth > 0 {
+			baseWidth = screenLayout.Canvas.BaseWidth
+		}
+		if screenLayout.Canvas.BaseHeight > 0 {
+			baseHeight = screenLayout.Canvas.BaseHeight
+		}
+	}
+	if baseWidth <= 0 {
+		baseWidth = showcaseCanvasDefaultBaseWidth
+	}
+	if baseHeight <= 0 {
+		baseHeight = showcaseCanvasDefaultBaseHeight
+	}
+
+	minWPct := ceilPct01((float64(showcaseCanvasMinWidgetWidthPx) / float64(baseWidth)) * 100)
+	minHPct := ceilPct01((float64(showcaseCanvasMinWidgetHeightPx) / float64(baseHeight)) * 100)
+
+	x := finiteOr(r.XPct, 0)
+	y := finiteOr(r.YPct, 0)
+	w := finiteOr(r.WPct, 50)
+	h := finiteOr(r.HPct, 10)
+
+	if w < minWPct {
+		w = minWPct
+	}
+	if h < minHPct {
+		h = minHPct
+	}
+	if w > 100 {
+		w = 100
+	}
+	if h > 100 {
+		h = 100
+	}
+
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	if x > 100-w {
+		x = 100 - w
+	}
+	if y > 100-h {
+		y = 100 - h
+	}
+
+	x = roundPct01(x)
+	y = roundPct01(y)
+	w = roundPct01(w)
+	h = roundPct01(h)
+
+	if w < minWPct {
+		w = minWPct
+	}
+	if h < minHPct {
+		h = minHPct
+	}
+	if w > 100 {
+		w = 100
+	}
+	if h > 100 {
+		h = 100
+	}
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	if x > 100-w {
+		x = 100 - w
+	}
+	if y > 100-h {
+		y = 100 - h
+	}
+
+	return ShowcaseCanvasRectPercent{XPct: x, YPct: y, WPct: w, HPct: h}
+}
+
+func finiteOr(value float64, fallback float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fallback
+	}
+	return value
+}
+
+func roundPct01(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return math.Round(value*10) / 10
+}
+
+func ceilPct01(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	out := math.Ceil(value*10) / 10
+	if out < 0 {
+		return 0
+	}
+	if out > 100 {
+		return 100
+	}
+	return out
 }
 
 func normalizeShowcaseVarWidget(v ShowcaseVarWidget) ShowcaseVarWidget {

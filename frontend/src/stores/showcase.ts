@@ -68,15 +68,29 @@ export type ShowcaseColumnsLayout = {
   gap: number
 }
 
-export type ShowcaseScreenLayoutMode = "columns"
+export type ShowcaseCanvasLayout = {
+  baseWidth: number
+  baseHeight: number
+}
+
+export type ShowcaseScreenLayoutMode = "columns" | "canvas_percent"
 
 export type ShowcaseScreenLayout = {
   mode: ShowcaseScreenLayoutMode
   columns: ShowcaseColumnsLayout
+  canvas: ShowcaseCanvasLayout
 }
 
 export type ShowcaseWidgetLayout = {
   colSpan: number
+  canvasPercent?: ShowcaseCanvasRectPercent
+}
+
+export type ShowcaseCanvasRectPercent = {
+  xPct: number
+  yPct: number
+  wPct: number
+  hPct: number
 }
 
 export type ShowcaseWidget = {
@@ -159,7 +173,12 @@ const defaultTypeForMode = (mode: VarWidgetMode): string => {
 }
 
 const defaultColumnsLayout = (): ShowcaseColumnsLayout => ({ maxColumns: 3, minColumnWidth: 360, gap: 16 })
-const defaultScreenLayout = (): ShowcaseScreenLayout => ({ mode: "columns", columns: defaultColumnsLayout() })
+const defaultCanvasLayout = (): ShowcaseCanvasLayout => ({ baseWidth: 960, baseHeight: 720 })
+const defaultScreenLayout = (): ShowcaseScreenLayout => ({
+  mode: "columns",
+  columns: defaultColumnsLayout(),
+  canvas: defaultCanvasLayout()
+})
 const defaultWidgetLayout = (): ShowcaseWidgetLayout => ({ colSpan: 1 })
 
 const emptyConfig = (): ShowcaseConfig => ({
@@ -216,19 +235,89 @@ const normalizeColumnsLayout = (raw: any): ShowcaseColumnsLayout => {
   return { maxColumns, minColumnWidth, gap }
 }
 
+const normalizeCanvasLayout = (raw: any): ShowcaseCanvasLayout => {
+  const baseWidth = normalizePositiveInt(raw?.baseWidth, 960, 160, 10000)
+  const baseHeight = normalizePositiveInt(raw?.baseHeight, 720, 48, 10000)
+  return { baseWidth, baseHeight }
+}
+
 const normalizeScreenLayout = (raw: any): ShowcaseScreenLayout => {
-  const mode = String(raw?.mode ?? "").trim().toLowerCase()
-  if (mode !== "columns") {
-    return { mode: "columns", columns: normalizeColumnsLayout(raw?.columns ?? defaultColumnsLayout()) }
+  const modeRaw = String(raw?.mode ?? "").trim().toLowerCase()
+  const mode: ShowcaseScreenLayoutMode = modeRaw === "canvas_percent" ? "canvas_percent" : "columns"
+  return {
+    mode,
+    columns: normalizeColumnsLayout(raw?.columns ?? defaultColumnsLayout()),
+    canvas: normalizeCanvasLayout(raw?.canvas ?? defaultCanvasLayout())
   }
-  return { mode: "columns", columns: normalizeColumnsLayout(raw?.columns ?? defaultColumnsLayout()) }
+}
+
+const canvasMinWidgetWidthPx = 80
+const canvasMinWidgetHeightPx = 48
+
+const roundPct01 = (value: number): number => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return 0
+  return Math.round(raw * 10) / 10
+}
+
+const ceilPct01 = (value: number): number => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return 0
+  const out = Math.ceil(raw * 10) / 10
+  if (out < 0) return 0
+  if (out > 100) return 100
+  return out
+}
+
+const clampPct = (value: number, min: number, max: number): number => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return min
+  if (raw < min) return min
+  if (raw > max) return max
+  return raw
+}
+
+const defaultCanvasRectPercent = (): ShowcaseCanvasRectPercent => ({ xPct: 0, yPct: 0, wPct: 50, hPct: 10 })
+
+const normalizeCanvasRectPercent = (raw: any, canvas: ShowcaseCanvasLayout): ShowcaseCanvasRectPercent => {
+  const baseWidth = Number.isFinite(canvas.baseWidth) && canvas.baseWidth > 0 ? canvas.baseWidth : 960
+  const baseHeight = Number.isFinite(canvas.baseHeight) && canvas.baseHeight > 0 ? canvas.baseHeight : 720
+  const minWPct = ceilPct01((canvasMinWidgetWidthPx / baseWidth) * 100)
+  const minHPct = ceilPct01((canvasMinWidgetHeightPx / baseHeight) * 100)
+
+  let wPct = clampPct(Number(raw?.wPct ?? 50), minWPct, 100)
+  let hPct = clampPct(Number(raw?.hPct ?? 10), minHPct, 100)
+  let xPct = clampPct(Number(raw?.xPct ?? 0), 0, 100 - wPct)
+  let yPct = clampPct(Number(raw?.yPct ?? 0), 0, 100 - hPct)
+
+  xPct = roundPct01(xPct)
+  yPct = roundPct01(yPct)
+  wPct = roundPct01(wPct)
+  hPct = roundPct01(hPct)
+
+  wPct = clampPct(wPct, minWPct, 100)
+  hPct = clampPct(hPct, minHPct, 100)
+  xPct = clampPct(xPct, 0, 100 - wPct)
+  yPct = clampPct(yPct, 0, 100 - hPct)
+
+  return { xPct, yPct, wPct, hPct }
 }
 
 const normalizeWidgetLayout = (raw: any, screenLayout?: ShowcaseScreenLayout): ShowcaseWidgetLayout => {
   const fallback = defaultWidgetLayout()
   const maxCols = screenLayout?.columns?.maxColumns ?? 12
   const colSpan = normalizePositiveInt(raw?.colSpan ?? fallback.colSpan, 1, 1, Math.max(1, maxCols))
-  return { colSpan }
+
+  const canvas = screenLayout?.canvas ?? defaultCanvasLayout()
+  const canvasPercentRaw = raw?.canvasPercent
+  const canvasPercent =
+    canvasPercentRaw || screenLayout?.mode === "canvas_percent"
+      ? normalizeCanvasRectPercent(canvasPercentRaw ?? defaultCanvasRectPercent(), canvas)
+      : undefined
+
+  const out: ShowcaseWidgetLayout = { colSpan }
+  if (canvasPercent) out.canvasPercent = canvasPercent
+  return out
 }
 
 const normalizeVarWidget = (raw: any): ShowcaseVarWidget | null => {

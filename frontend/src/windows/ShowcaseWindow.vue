@@ -81,6 +81,7 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
 
 const widgetsGridRef = ref<HTMLElement | null>(null)
 const widgetsGridWidth = ref(0)
+const widgetsGridHeight = ref(0)
 let widgetsGridObserver: ResizeObserver | null = null
 
 const resolvedColumnsLayout = computed(() => screen.value?.layout?.columns ?? { maxColumns: 3, minColumnWidth: 360, gap: 16 })
@@ -89,6 +90,47 @@ const widgetsGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${resolvedColumnsCount.value}, minmax(0, 1fr))`,
   gap: `${resolvedColumnsLayout.value.gap}px`
 }))
+
+const resolvedCanvasLayout = computed(() => screen.value?.layout?.canvas ?? { baseWidth: 960, baseHeight: 720 })
+const canvasMetrics = computed(() => {
+  const baseWidth = resolvedCanvasLayout.value.baseWidth > 0 ? resolvedCanvasLayout.value.baseWidth : 960
+  const baseHeight = resolvedCanvasLayout.value.baseHeight > 0 ? resolvedCanvasLayout.value.baseHeight : 720
+  const containerWidth = widgetsGridWidth.value > 0 ? widgetsGridWidth.value : baseWidth
+  const containerHeight = widgetsGridHeight.value > 0 ? widgetsGridHeight.value : baseHeight
+  const scaleX = baseWidth > 0 ? Math.min(1, containerWidth / baseWidth) : 1
+  const scaleY = baseHeight > 0 ? Math.min(1, containerHeight / baseHeight) : 1
+  const canvasWidth = Math.max(0, Math.round(baseWidth * scaleX))
+  const canvasHeight = Math.max(0, Math.round(baseHeight * scaleY))
+  return { canvasWidth, canvasHeight }
+})
+
+const canvasSurfaceStyle = computed(() => ({
+  width: `${canvasMetrics.value.canvasWidth}px`,
+  height: `${canvasMetrics.value.canvasHeight}px`
+}))
+
+const canvasWidgetStyle = (widget: ShowcaseWidget) => {
+  const rect = widget.layout?.canvasPercent ?? { xPct: 0, yPct: 0, wPct: 50, hPct: 10 }
+  const canvasWidth = canvasMetrics.value.canvasWidth
+  const canvasHeight = canvasMetrics.value.canvasHeight
+
+  const xPct = Number.isFinite(rect.xPct) ? rect.xPct : 0
+  const yPct = Number.isFinite(rect.yPct) ? rect.yPct : 0
+  const wPct = Number.isFinite(rect.wPct) ? rect.wPct : 50
+  const hPct = Number.isFinite(rect.hPct) ? rect.hPct : 10
+
+  const left = (xPct / 100) * canvasWidth
+  const top = (yPct / 100) * canvasHeight
+  const width = (wPct / 100) * canvasWidth
+  const height = (hPct / 100) * canvasHeight
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    height: `${height}px`
+  }
+}
 
 const widgetCardStyle = (widget: ShowcaseWidget) => {
   const span = clampColSpan(widget.layout?.colSpan ?? 1, resolvedColumnsCount.value)
@@ -103,10 +145,12 @@ const setupWidgetsGridObserver = () => {
   const el = widgetsGridRef.value
   if (!el) return
   widgetsGridWidth.value = el.clientWidth
+  widgetsGridHeight.value = el.clientHeight
   widgetsGridObserver = new ResizeObserver((entries) => {
     const entry = entries[0]
     if (!entry) return
     widgetsGridWidth.value = entry.contentRect.width
+    widgetsGridHeight.value = entry.contentRect.height
   })
   widgetsGridObserver.observe(el)
 }
@@ -197,7 +241,7 @@ onBeforeUnmount(() => {
       </p>
     </div>
 
-    <div v-else ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
+    <div v-else-if="screen?.layout?.mode === 'columns'" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
       <div
         v-for="widget in screen?.widgets || []"
         :key="widget.id"
@@ -236,7 +280,6 @@ onBeforeUnmount(() => {
               </div>
 
               <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
                 <input
                   class="min-w-[min(180px,100%)] flex-1"
                   type="range"
@@ -248,6 +291,7 @@ onBeforeUnmount(() => {
                   @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
                   @change="showcase.sliderCommit(widget)"
                 />
+                <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
               </div>
             </div>
           </div>
@@ -260,6 +304,77 @@ onBeforeUnmount(() => {
         :style="{ gridColumn: '1 / -1' }"
       >
         <p class="text-sm text-muted-foreground">No widgets yet.</p>
+      </div>
+    </div>
+
+    <div
+      v-else
+      ref="widgetsGridRef"
+      class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-card/90 p-2 text-card-foreground shadow-sm"
+    >
+      <div class="relative" :style="canvasSurfaceStyle">
+        <div
+          v-for="widget in screen?.widgets || []"
+          :key="widget.id"
+          class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+          :style="canvasWidgetStyle(widget)"
+        >
+          <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+            <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
+              {{ safeTitle(widget) }}
+            </h5>
+
+            <div class="min-w-0">
+              <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
+                <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
+                  Send
+                </Button>
+              </div>
+
+              <div v-else-if="widget.kind === 'var' && widget.var">
+                <div
+                  v-if="showcase.resolveEffectiveMode(widget) === 'display'"
+                  class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
+                  :title="displayValueText(widget)"
+                >
+                  {{ displayValueText(widget) }}
+                </div>
+
+                <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded"
+                    :checked="isVarOn(widget)"
+                    :disabled="busy || !sessionStore.connected || !selfNodeId"
+                    @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
+                  />
+                </div>
+
+                <div v-else class="flex flex-wrap items-center justify-end gap-3">
+                  <input
+                    class="min-w-[min(180px,100%)] flex-1"
+                    type="range"
+                    :min="widget.var.slider.min"
+                    :max="widget.var.slider.max"
+                    :step="widget.var.slider.step"
+                    :value="showcase.sliderValue(widget)"
+                    :disabled="busy || !sessionStore.connected || !selfNodeId"
+                    @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
+                    @change="showcase.sliderCommit(widget)"
+                  />
+                  <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="(screen?.widgets || []).length === 0"
+          class="absolute inset-0 flex items-center justify-center"
+        >
+          <p class="text-sm text-muted-foreground">No widgets yet.</p>
+        </div>
       </div>
     </div>
   </section>

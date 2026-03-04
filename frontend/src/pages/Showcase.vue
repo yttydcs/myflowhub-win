@@ -389,6 +389,20 @@ const onWidgetContextMenuRemove = async () => {
   await removeWidget(widget)
 }
 
+const onWidgetContextMenuBringToFront = async () => {
+  const widget = widgetContextMenu.widget
+  closeWidgetContextMenu()
+  if (!widget) return
+  await reorderWidgetZOrder(widget.id, "front")
+}
+
+const onWidgetContextMenuSendToBack = async () => {
+  const widget = widgetContextMenu.widget
+  closeWidgetContextMenu()
+  if (!widget) return
+  await reorderWidgetZOrder(widget.id, "back")
+}
+
 const onGlobalKeydown = (event: KeyboardEvent) => {
   if (!widgetContextMenu.open) return
   if (event.key !== "Escape") return
@@ -443,6 +457,7 @@ const openShowcaseWindow = () => {
 }
 
 const layoutForm = reactive({
+  mode: "columns" as "columns" | "canvas_percent",
   maxColumns: "3",
   minColumnWidth: "360"
 })
@@ -450,8 +465,54 @@ const layoutForm = reactive({
 const syncLayoutFormFromScreen = () => {
   const screen = showcase.currentScreen()
   if (!screen) return
+  layoutForm.mode = screen.layout?.mode === "canvas_percent" ? "canvas_percent" : "columns"
   layoutForm.maxColumns = String(screen.layout?.columns?.maxColumns ?? 3)
   layoutForm.minColumnWidth = String(screen.layout?.columns?.minColumnWidth ?? 360)
+}
+
+const minCanvasWidgetWidthPx = 80
+const minCanvasWidgetHeightPx = 48
+
+const roundPct01 = (value: number): number => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return 0
+  return Math.round(raw * 10) / 10
+}
+
+const ceilPct01 = (value: number): number => {
+  const raw = Number(value)
+  if (!Number.isFinite(raw)) return 0
+  const out = Math.ceil(raw * 10) / 10
+  if (out < 0) return 0
+  if (out > 100) return 100
+  return out
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
+
+const computeDefaultCanvasHostHeightPx = (): number => {
+  const raw = Math.round(window.innerHeight * 0.7)
+  return Math.min(720, Math.max(360, raw))
+}
+
+const initScreenCanvasLayout = (screen: any) => {
+  const widgets: ShowcaseWidget[] = Array.isArray(screen.widgets) ? screen.widgets : []
+  const cols = 2
+  const rows = Math.max(1, Math.ceil(widgets.length / cols))
+  const wPct = 100 / cols
+  const hPct = 100 / rows
+
+  for (let i = 0; i < widgets.length; i++) {
+    const widget = widgets[i]
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    widget.layout.canvasPercent = {
+      xPct: roundPct01(col * wPct),
+      yPct: roundPct01(row * hPct),
+      wPct: roundPct01(wPct),
+      hPct: roundPct01(hPct)
+    }
+  }
 }
 
 const saveScreenLayout = async () => {
@@ -460,11 +521,36 @@ const saveScreenLayout = async () => {
   if (busy.value) return
   busy.value = true
   try {
-    const maxColumns = parseIntInRange(layoutForm.maxColumns, "Max Columns", 1, 12)
-    const minColumnWidth = parseIntInRange(layoutForm.minColumnWidth, "Min Column Width", 200, 1200)
-    screen.layout.mode = "columns"
-    screen.layout.columns.maxColumns = maxColumns
-    screen.layout.columns.minColumnWidth = minColumnWidth
+    if (layoutForm.mode === "columns") {
+      const maxColumns = parseIntInRange(layoutForm.maxColumns, "Max Columns", 1, 12)
+      const minColumnWidth = parseIntInRange(layoutForm.minColumnWidth, "Min Column Width", 200, 1200)
+      screen.layout.mode = "columns"
+      screen.layout.columns.maxColumns = maxColumns
+      screen.layout.columns.minColumnWidth = minColumnWidth
+    } else {
+      const prevMode = screen.layout.mode
+      screen.layout.mode = "canvas_percent"
+
+      const widgets = screen.widgets ?? []
+      const hasAnyCanvas = widgets.some((w) => Boolean(w.layout?.canvasPercent))
+      const hasAllCanvas = widgets.every((w) => Boolean(w.layout?.canvasPercent))
+
+      if (!hasAnyCanvas) {
+        const containerWidth = widgetsGridWidth.value || widgetsGridRef.value?.clientWidth || 960
+        const baseWidth = Math.max(containerWidth, minCanvasWidgetWidthPx * 2)
+        const rows = Math.max(1, Math.ceil(widgets.length / 2))
+        const baseHeight = Math.max(computeDefaultCanvasHostHeightPx(), rows * minCanvasWidgetHeightPx)
+        screen.layout.canvas.baseWidth = Math.round(baseWidth)
+        screen.layout.canvas.baseHeight = Math.round(baseHeight)
+        initScreenCanvasLayout(screen)
+      } else if (!hasAllCanvas && prevMode !== "canvas_percent") {
+        for (const widget of widgets) {
+          if (widget.layout?.canvasPercent) continue
+          widget.layout.canvasPercent = { xPct: 0, yPct: 0, wPct: 50, hPct: 10 }
+        }
+      }
+    }
+
     await showcase.save()
     toast.success("Layout saved.")
   } catch (err) {
@@ -478,7 +564,10 @@ const saveScreenLayout = async () => {
 
 const widgetsGridRef = ref<HTMLElement | null>(null)
 const widgetsGridWidth = ref(0)
+const widgetsGridHeight = ref(0)
 let widgetsGridObserver: ResizeObserver | null = null
+
+const isCanvasMode = computed(() => showcase.currentScreen()?.layout?.mode === "canvas_percent")
 
 const resolvedColumnsLayout = computed(() => showcase.currentScreen()?.layout?.columns ?? { maxColumns: 3, minColumnWidth: 360, gap: 16 })
 const resolvedColumnsCount = computed(() => computeColumnsCount(widgetsGridWidth.value, resolvedColumnsLayout.value))
@@ -487,11 +576,68 @@ const widgetsGridStyle = computed(() => ({
   gap: `${resolvedColumnsLayout.value.gap}px`
 }))
 
+const resolvedCanvasLayout = computed(() => showcase.currentScreen()?.layout?.canvas ?? { baseWidth: 960, baseHeight: 720 })
+const canvasMetrics = computed(() => {
+  const baseWidth = resolvedCanvasLayout.value.baseWidth > 0 ? resolvedCanvasLayout.value.baseWidth : 960
+  const baseHeight = resolvedCanvasLayout.value.baseHeight > 0 ? resolvedCanvasLayout.value.baseHeight : 720
+  const containerWidth = widgetsGridWidth.value > 0 ? widgetsGridWidth.value : baseWidth
+  const containerHeight = widgetsGridHeight.value > 0 ? widgetsGridHeight.value : baseHeight
+  const scaleX = baseWidth > 0 ? Math.min(1, containerWidth / baseWidth) : 1
+  const scaleY = baseHeight > 0 ? Math.min(1, containerHeight / baseHeight) : 1
+  const canvasWidth = Math.max(0, Math.round(baseWidth * scaleX))
+  const canvasHeight = Math.max(0, Math.round(baseHeight * scaleY))
+  return { canvasWidth, canvasHeight }
+})
+
+const canvasSurfaceStyle = computed(() => ({
+  width: `${canvasMetrics.value.canvasWidth}px`,
+  height: `${canvasMetrics.value.canvasHeight}px`
+}))
+
+const canvasWidgetStyle = (widget: ShowcaseWidget) => {
+  const rect = widget.layout?.canvasPercent ?? { xPct: 0, yPct: 0, wPct: 50, hPct: 10 }
+  const canvasWidth = canvasMetrics.value.canvasWidth
+  const canvasHeight = canvasMetrics.value.canvasHeight
+
+  const xPct = Number.isFinite(rect.xPct) ? rect.xPct : 0
+  const yPct = Number.isFinite(rect.yPct) ? rect.yPct : 0
+  const wPct = Number.isFinite(rect.wPct) ? rect.wPct : 50
+  const hPct = Number.isFinite(rect.hPct) ? rect.hPct : 10
+
+  const left = (xPct / 100) * canvasWidth
+  const top = (yPct / 100) * canvasHeight
+  const width = (wPct / 100) * canvasWidth
+  const height = (hPct / 100) * canvasHeight
+
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    height: `${height}px`
+  }
+}
+
 const widgetCardStyle = (widget: ShowcaseWidget) => {
   const span = clampColSpan(widget.layout?.colSpan ?? 1, resolvedColumnsCount.value)
   return {
     gridColumn: `span ${span} / span ${span}`
   }
+}
+
+const setupWidgetsGridObserver = () => {
+  widgetsGridObserver?.disconnect()
+  widgetsGridObserver = null
+  const el = widgetsGridRef.value
+  if (!el) return
+  widgetsGridWidth.value = el.clientWidth
+  widgetsGridHeight.value = el.clientHeight
+  widgetsGridObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    if (!entry) return
+    widgetsGridWidth.value = entry.contentRect.width
+    widgetsGridHeight.value = entry.contentRect.height
+  })
+  widgetsGridObserver.observe(el)
 }
 
 const dragState = reactive({
@@ -552,6 +698,200 @@ const onDrop = async (widgetId: string) => {
   }
 }
 
+const canvasSurfaceRef = ref<HTMLElement | null>(null)
+
+type CanvasEditMode = "move" | "resize"
+type CanvasRect = { xPct: number; yPct: number; wPct: number; hPct: number }
+
+const canvasEdit = reactive<{
+  active: boolean
+  mode: CanvasEditMode
+  widgetId: string
+  widgetIndex: number
+  startClientX: number
+  startClientY: number
+  startRect: CanvasRect
+  canvasWidthPx: number
+  canvasHeightPx: number
+  minWPct: number
+  minHPct: number
+  changed: boolean
+}>({
+  active: false,
+  mode: "move",
+  widgetId: "",
+  widgetIndex: -1,
+  startClientX: 0,
+  startClientY: 0,
+  startRect: { xPct: 0, yPct: 0, wPct: 50, hPct: 10 },
+  canvasWidthPx: 0,
+  canvasHeightPx: 0,
+  minWPct: 0,
+  minHPct: 0,
+  changed: false
+})
+
+const detachCanvasListeners = () => {
+  window.removeEventListener("pointermove", onCanvasPointerMove)
+  window.removeEventListener("pointerup", onCanvasPointerUp)
+  window.removeEventListener("pointercancel", onCanvasPointerCancel)
+}
+
+const ensureWidgetCanvasRect = (widget: ShowcaseWidget): CanvasRect => {
+  if (!widget.layout.canvasPercent) {
+    widget.layout.canvasPercent = { xPct: 0, yPct: 0, wPct: 50, hPct: 10 }
+  }
+  return widget.layout.canvasPercent as CanvasRect
+}
+
+const canvasMinPct = () => {
+  const baseWidth = resolvedCanvasLayout.value.baseWidth > 0 ? resolvedCanvasLayout.value.baseWidth : 960
+  const baseHeight = resolvedCanvasLayout.value.baseHeight > 0 ? resolvedCanvasLayout.value.baseHeight : 720
+  return {
+    minWPct: ceilPct01((minCanvasWidgetWidthPx / baseWidth) * 100),
+    minHPct: ceilPct01((minCanvasWidgetHeightPx / baseHeight) * 100)
+  }
+}
+
+const startCanvasEdit = (widget: ShowcaseWidget, mode: CanvasEditMode, event: PointerEvent) => {
+  if (!isCanvasMode.value) return
+  if (busy.value) return
+  const screen = showcase.currentScreen()
+  if (!screen || screen.layout.mode !== "canvas_percent") return
+  const idx = screen.widgets.findIndex((w) => w.id === widget.id)
+  if (idx < 0) return
+
+  const canvasEl = canvasSurfaceRef.value
+  if (!canvasEl) return
+  const canvasRect = canvasEl.getBoundingClientRect()
+  if (!canvasRect.width || !canvasRect.height) return
+
+  closeWidgetContextMenu()
+  event.preventDefault()
+  event.stopPropagation()
+
+  const rect = ensureWidgetCanvasRect(widget)
+  canvasEdit.active = true
+  canvasEdit.mode = mode
+  canvasEdit.widgetId = widget.id
+  canvasEdit.widgetIndex = idx
+  canvasEdit.startClientX = event.clientX
+  canvasEdit.startClientY = event.clientY
+  canvasEdit.startRect = { xPct: rect.xPct, yPct: rect.yPct, wPct: rect.wPct, hPct: rect.hPct }
+  canvasEdit.canvasWidthPx = canvasRect.width
+  canvasEdit.canvasHeightPx = canvasRect.height
+  const { minWPct, minHPct } = canvasMinPct()
+  canvasEdit.minWPct = minWPct
+  canvasEdit.minHPct = minHPct
+  canvasEdit.changed = false
+
+  detachCanvasListeners()
+  window.addEventListener("pointermove", onCanvasPointerMove)
+  window.addEventListener("pointerup", onCanvasPointerUp)
+  window.addEventListener("pointercancel", onCanvasPointerCancel)
+}
+
+const endCanvasEdit = async (save: boolean) => {
+  if (!canvasEdit.active) return
+  detachCanvasListeners()
+  const shouldSave = Boolean(save && canvasEdit.changed)
+
+  canvasEdit.active = false
+  canvasEdit.widgetId = ""
+  canvasEdit.widgetIndex = -1
+  canvasEdit.changed = false
+
+  if (!shouldSave) return
+  if (busy.value) return
+
+  busy.value = true
+  try {
+    await showcase.save()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to save canvas layout.")
+    await showcase.load()
+  } finally {
+    busy.value = false
+  }
+}
+
+const onCanvasPointerMove = (event: PointerEvent) => {
+  if (!canvasEdit.active) return
+  const screen = showcase.currentScreen()
+  if (!screen || screen.layout.mode !== "canvas_percent") return
+  let widget = screen.widgets[canvasEdit.widgetIndex]
+  if (!widget || widget.id !== canvasEdit.widgetId) {
+    widget = screen.widgets.find((w) => w.id === canvasEdit.widgetId)
+  }
+  if (!widget) return
+
+  const dxPx = event.clientX - canvasEdit.startClientX
+  const dyPx = event.clientY - canvasEdit.startClientY
+  if (!canvasEdit.canvasWidthPx || !canvasEdit.canvasHeightPx) return
+
+  const dxPct = (dxPx / canvasEdit.canvasWidthPx) * 100
+  const dyPct = (dyPx / canvasEdit.canvasHeightPx) * 100
+  const start = canvasEdit.startRect
+
+  const rect = ensureWidgetCanvasRect(widget)
+  const { minWPct, minHPct } = canvasEdit
+
+  if (canvasEdit.mode === "move") {
+    const maxX = 100 - start.wPct
+    const maxY = 100 - start.hPct
+    rect.xPct = roundPct01(clamp(start.xPct + dxPct, 0, Math.max(0, maxX)))
+    rect.yPct = roundPct01(clamp(start.yPct + dyPct, 0, Math.max(0, maxY)))
+    canvasEdit.changed = true
+    return
+  }
+
+  const maxW = Math.max(0, 100 - start.xPct)
+  const maxH = Math.max(0, 100 - start.yPct)
+  const minW = Math.min(minWPct, maxW)
+  const minH = Math.min(minHPct, maxH)
+  rect.wPct = roundPct01(clamp(start.wPct + dxPct, minW, maxW))
+  rect.hPct = roundPct01(clamp(start.hPct + dyPct, minH, maxH))
+  canvasEdit.changed = true
+}
+
+const onCanvasPointerUp = () => {
+  void endCanvasEdit(true)
+}
+
+const onCanvasPointerCancel = () => {
+  void endCanvasEdit(false)
+}
+
+const reorderWidgetZOrder = async (widgetId: string, direction: "front" | "back") => {
+  const screen = showcase.currentScreen()
+  if (!screen) return
+  const idx = screen.widgets.findIndex((w) => w.id === widgetId)
+  if (idx < 0) return
+  if (busy.value) return
+
+  const next = screen.widgets.slice()
+  const [moved] = next.splice(idx, 1)
+  if (!moved) return
+  if (direction === "front") {
+    next.push(moved)
+  } else {
+    next.unshift(moved)
+  }
+  screen.widgets = next
+
+  busy.value = true
+  try {
+    await showcase.save()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to reorder widgets.")
+    await showcase.load()
+  } finally {
+    busy.value = false
+  }
+}
+
 watch(
   () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
   () => {
@@ -571,9 +911,23 @@ watch(
 )
 
 watch(
+  () => showcase.state.lastLoadedAt,
+  () => {
+    syncLayoutFormFromScreen()
+  }
+)
+
+watch(
   () => showcase.state.config.currentScreenId,
   () => {
     syncLayoutFormFromScreen()
+  }
+)
+
+watch(
+  () => widgetsGridRef.value,
+  () => {
+    setupWidgetsGridObserver()
   }
 )
 
@@ -604,15 +958,7 @@ onMounted(async () => {
     toast.errorOf(err, "Failed to load showcase config.")
   }
 
-  if (widgetsGridRef.value) {
-    widgetsGridWidth.value = widgetsGridRef.value.clientWidth
-    widgetsGridObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      widgetsGridWidth.value = entry.contentRect.width
-    })
-    widgetsGridObserver.observe(widgetsGridRef.value)
-  }
+  setupWidgetsGridObserver()
 
   window.addEventListener("keydown", onGlobalKeydown)
   window.addEventListener("resize", closeWidgetContextMenu)
@@ -620,6 +966,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  detachCanvasListeners()
   window.removeEventListener("keydown", onGlobalKeydown)
   window.removeEventListener("resize", closeWidgetContextMenu)
   window.removeEventListener("scroll", closeWidgetContextMenu, true)
@@ -686,14 +1033,23 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="mt-5 grid gap-4 sm:grid-cols-3">
+          <div class="mt-5 grid gap-4 sm:grid-cols-4">
             <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Layout Mode
+              </label>
+              <select v-model="layoutForm.mode" :class="inputClass">
+                <option value="columns">columns</option>
+                <option value="canvas_percent">canvas_percent</option>
+              </select>
+            </div>
+            <div v-if="layoutForm.mode === 'columns'">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Max Columns
               </label>
               <input v-model="layoutForm.maxColumns" :class="inputClass" />
             </div>
-            <div>
+            <div v-if="layoutForm.mode === 'columns'">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Min Column Width (px)
               </label>
@@ -703,9 +1059,12 @@ onBeforeUnmount(() => {
               <Button size="sm" :disabled="busy" @click="saveScreenLayout">Save Layout</Button>
             </div>
           </div>
+          <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-3 text-xs text-muted-foreground">
+            Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
+          </p>
         </div>
 
-        <div ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
+        <div v-if="!isCanvasMode" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
           <div
             v-for="widget in showcase.currentScreen()?.widgets || []"
             :key="widget.id"
@@ -761,7 +1120,6 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                    <Badge variant="outline">{{ showcase.sliderValue(widget) }}</Badge>
                     <input
                       class="min-w-[min(180px,100%)] flex-1"
                       type="range"
@@ -773,6 +1131,7 @@ onBeforeUnmount(() => {
                       @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
                       @change="showcase.sliderCommit(widget)"
                     />
+                    <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
                   </div>
                 </div>
               </div>
@@ -785,6 +1144,97 @@ onBeforeUnmount(() => {
             :style="{ gridColumn: '1 / -1' }"
           >
             <p class="text-sm text-muted-foreground">No widgets yet.</p>
+          </div>
+        </div>
+
+        <div
+          v-else
+          ref="widgetsGridRef"
+          class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-card/90 p-2 text-card-foreground shadow-sm"
+        >
+          <div ref="canvasSurfaceRef" class="relative" :style="canvasSurfaceStyle">
+            <div
+              v-for="widget in showcase.currentScreen()?.widgets || []"
+              :key="widget.id"
+              class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+              :class="canvasEdit.active && canvasEdit.widgetId === widget.id ? 'ring-2 ring-primary/40' : ''"
+              :style="canvasWidgetStyle(widget)"
+              @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
+            >
+              <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+                <div class="flex min-w-0 items-center gap-3">
+                  <button
+                    type="button"
+                    class="inline-flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                    title="Drag to move"
+                    @pointerdown.stop.prevent="startCanvasEdit(widget, 'move', $event)"
+                  >
+                    <GripVertical class="h-4 w-4" />
+                  </button>
+
+                  <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
+                    {{ safeTitle(widget) }}
+                  </h5>
+                </div>
+
+                <div class="min-w-0">
+                  <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
+                    <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
+                      Send
+                    </Button>
+                  </div>
+
+                  <div v-else-if="widget.kind === 'var' && widget.var">
+                    <div
+                      v-if="showcase.resolveEffectiveMode(widget) === 'display'"
+                      class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
+                      :title="displayValueText(widget)"
+                    >
+                      {{ displayValueText(widget) }}
+                    </div>
+
+                    <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
+                      <input
+                        type="checkbox"
+                        class="h-4 w-4 rounded"
+                        :checked="isVarOn(widget)"
+                        :disabled="busy || !sessionStore.connected || !selfNodeId"
+                        @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
+                      />
+                    </div>
+
+                    <div v-else class="flex flex-wrap items-center justify-end gap-3">
+                      <input
+                        class="min-w-[min(180px,100%)] flex-1"
+                        type="range"
+                        :min="widget.var.slider.min"
+                        :max="widget.var.slider.max"
+                        :step="widget.var.slider.step"
+                        :value="showcase.sliderValue(widget)"
+                        :disabled="busy || !sessionStore.connected || !selfNodeId"
+                        @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
+                        @change="showcase.sliderCommit(widget)"
+                      />
+                      <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
+                title="Resize"
+                @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
+              />
+            </div>
+
+            <div
+              v-if="(showcase.currentScreen()?.widgets || []).length === 0"
+              class="absolute inset-0 flex items-center justify-center"
+            >
+              <p class="text-sm text-muted-foreground">No widgets yet.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -817,6 +1267,30 @@ onBeforeUnmount(() => {
         >
           Edit
         </button>
+
+        <template v-if="isCanvasMode">
+          <div class="my-1 h-px bg-border/60" />
+          <button
+            type="button"
+            class="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="busy || !widgetContextMenu.widget"
+            role="menuitem"
+            @click="onWidgetContextMenuBringToFront"
+          >
+            Bring to Front
+          </button>
+          <button
+            type="button"
+            class="flex w-full items-center rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="busy || !widgetContextMenu.widget"
+            role="menuitem"
+            @click="onWidgetContextMenuSendToBack"
+          >
+            Send to Back
+          </button>
+        </template>
+
+        <div class="my-1 h-px bg-border/60" />
         <button
           type="button"
           class="flex w-full items-center rounded-lg px-3 py-2 text-left text-rose-700 hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"

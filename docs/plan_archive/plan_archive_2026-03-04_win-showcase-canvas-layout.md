@@ -1,3 +1,12 @@
+# Plan Archive - 2026-03-04 - MyFlowHub-Win Showcase canvas_percent
+
+归档时间：2026-03-04  
+分支：`feat/showcase-canvas-layout`  
+Worktree：`d:\project\MyFlowHub3\worktrees\feat-showcase-slider-right\MyFlowHub-Win`  
+来源：`plan.md`
+
+---
+
 # Plan - MyFlowHub-Win：Showcase Canvas Percent 布局（自由拖拽/缩放）+ Slider 值右置
 
 ## Workflow 信息
