@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
 )
 
 func (s *FileService) localList(dir string) (dirs []string, files []string, err error) {
@@ -83,4 +85,50 @@ func (s *FileService) localReadText(dir, name string, maxBytes int) (text string
 		return "", truncated, size, errors.New("not text")
 	}
 	return string(buf), truncated, size, nil
+}
+
+func mkdirInBase(baseDir, dir, name string) error {
+	dir = strings.ReplaceAll(strings.TrimSpace(dir), "\\", "/")
+	name = strings.TrimSpace(name)
+	finalPath, _, err := fileResolvePaths(baseDir, dir, name)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(finalPath)
+	if err == nil {
+		if info != nil && info.IsDir() {
+			return nil
+		}
+		return errors.New("exists")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir failed: %w", err)
+	}
+	if err := os.Mkdir(finalPath, 0o755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			if st, serr := os.Stat(finalPath); serr == nil && st != nil && st.IsDir() {
+				return nil
+			}
+			return errors.New("exists")
+		}
+		return fmt.Errorf("mkdir failed: %w", err)
+	}
+	return nil
+}
+
+func (s *FileService) localMkdir(dir, name string) error {
+	cfg := s.fileConfig()
+	return mkdirInBase(cfg.BaseDir, dir, name)
+}
+
+func (s *FileService) handleLocalWrite(req protocol.WriteReq) error {
+	switch strings.ToLower(strings.TrimSpace(req.Op)) {
+	case opMkdir:
+		return s.localMkdir(req.Dir, req.Name)
+	default:
+		return errors.New("unsupported op")
+	}
 }

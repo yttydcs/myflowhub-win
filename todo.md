@@ -1,94 +1,68 @@
-# Plan - MyFlowHub-Win：File Console 按钮可理解性 + 拖拽放置导入
+# Plan - MyFlowHub-Win：File Console 新建文件夹（mkdir）
 
 ## Workflow 信息
-- 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`fix/file-console-dnd-upload`
-- Worktree：`d:\project\MyFlowHub3\worktrees\MyFlowHub-Win-file-console-dnd`
+- 仓库：`MyFlowHub-Win`
+- 分支：`feat/file-console-mkdir`
+- Worktree：`d:\project\MyFlowHub3\worktrees\MyFlowHub-Win-mkdir`
 - Base：`main`
-- 状态：已完成（待用户确认是否结束 workflow）
+- 当前状态：已完成（待你确认是否结束 workflow）
 
-## 1) 目标与当前状态
+## 项目目标与当前状态
 - 目标：
-  - 解释并修正 File Console 中 `Up` / `Download` “点击似乎无反应”的可理解性问题。
-  - 支持拖拽文件到 File Console 当前目录，完成“直接放置到对应位置”的导入能力（V1：本地节点）。
+  - 在 File Console 增加“新建文件夹”入口；
+  - 前端可输入目录名并调用后端创建；
+  - 本地/远端节点均支持（按 file 子协议 `write(op=mkdir)`）。
 - 当前状态：
-  - `Up` 按钮仅在非根目录可用；根目录时禁用（无明显提示）。
-  - `Download` 仅对“远端节点 + 选中文件”可用；其行为是“打开下载任务参数弹窗”，不是立即下载。
-  - 当前未启用 Wails 文件拖拽（`EnableFileDrop` 未开启），无拖拽导入链路。
+  - `New Folder` 已支持，目录创建成功后自动刷新列表；
+  - 本地节点走本地 mkdir，远端节点走 `write(op=mkdir)` 并 await 响应。
 
-## 2) 任务清单（Checklist）
+## 可执行任务清单（Checklist）
 
-- [x] `FC-DND-1` 明确按钮行为与禁用原因提示（前端）
-  - 目标：为 `Up` / `Download` 增加可理解提示，降低“无反应”感知。
+- [x] `WIN-MKDIR-1` 后端 FileService 新增 mkdir API
+  - 目标：新增 `CreateDirSimple`（必要校验 + await 响应）。
   - 涉及文件：
-    - `frontend/src/pages/File.vue`
+    - `internal/services/file/service.go`
+    - `internal/services/file/local.go`（如需本地 helper）
   - 验收条件：
-    - `Up` 在根目录显示“已在根目录”语义提示；
-    - `Download` 在禁用时可看出触发条件（需远端文件被选中）。
+    - 非法输入返回明确错误；
+    - 目标节点返回成功后接口返回 nil；
+    - 失败时透传可读错误。
   - 测试点：
-    - 本地节点、远端节点、目录/文件选中状态切换时按钮提示变化正确。
+    - 本地创建、非法名称、目标缺失。
   - 回滚点：
-    - 回滚 `File.vue` 中按钮提示相关改动。
+    - 回滚新增 API 与调用路径。
 
-- [x] `FC-DND-2` 启用并接入 Wails 文件拖拽（前端 + 启动配置）
-  - 目标：允许将外部文件拖入 File Console 列表区域。
+- [x] `WIN-MKDIR-2` 前端 store 接入 mkdir 调用
+  - 目标：`useFileStore` 新增 `createDir` 方法封装 Wails binding。
   - 涉及文件：
-    - `main.go`
-    - `frontend/src/pages/File.vue`
-  - 验收条件：
-    - 拖拽到目录列表区域可触发导入逻辑；
-    - 仅本地节点允许导入，远端节点拖拽给出明确提示。
-  - 测试点：
-    - 拖拽区域高亮状态可见；
-    - 回调收到文件路径并进入导入流程。
-  - 回滚点：
-    - 回滚 `main.go` 的 DragAndDrop 配置；
-    - 回滚 `File.vue` 的 OnFileDrop 监听逻辑。
-
-- [x] `FC-DND-3` 后端导入能力（安全默认 + 错误处理）
-  - 目标：新增 `ImportLocalFiles`，将拖拽源文件复制到 `BaseDir/currentDir`。
-  - 涉及文件：
-    - `internal/services/file/local.go`
     - `frontend/src/stores/file.ts`
   - 验收条件：
-    - 仅接受常规文件；目录/非法路径被跳过并返回原因；
-    - 目标路径受 `fileSanitizeDir/fileResolvePaths` 约束，禁止越界；
-    - 默认不覆盖同名文件（安全默认），可返回跳过列表；
-    - 成功后刷新目录列表。
-  - 测试点：
-    - 正常导入、重复文件跳过、目标目录非法、目录拖入跳过。
+    - 页面可通过 store 调用创建目录。
   - 回滚点：
-    - 回滚新增导入 API 与前端调用。
+    - 回滚 store 新增方法。
 
-- [x] `FC-DND-4` 单测与回归验证
-  - 目标：补充导入逻辑关键路径测试，执行回归。
+- [x] `WIN-MKDIR-3` File Console UI 增加“New Folder”
+  - 目标：新增按钮 + 弹窗输入目录名 + 成功后刷新列表。
   - 涉及文件：
-    - `internal/services/file/import_test.go`（如需新增）
+    - `frontend/src/pages/File.vue`
   - 验收条件：
-    - 新增测试通过；
-    - 现有 `go test ./...` 不回归。
+    - 可创建目录并在列表看到；
+    - 输入为空/非法有提示；
+    - 不影响既有 Up/Download/Offer/拖拽逻辑。
   - 测试点：
-    - 覆盖导入成功/覆盖策略/非法输入。
+    - 根目录/子目录创建；
+    - 已存在目录行为（应成功或合理提示）。
   - 回滚点：
-    - 回滚新增测试文件。
+    - 回滚页面新增弹窗与按钮。
 
-- [x] `FC-DND-5` Code Review（3.3）与归档（4）
-  - 目标：按要求完成逐项审查并归档到 `docs/change`。
+- [x] `WIN-MKDIR-4` 回归验证与归档
+  - 目标：执行 Go 测试并补充变更归档文档。
   - 涉及文件：
-    - `docs/change/2026-03-05_win-file-console-dnd-upload.md`
+    - `docs/change/2026-03-05_win-file-console-mkdir.md`
   - 验收条件：
-    - 评审结论完整（通过/不通过）；
-    - 归档文档包含任务映射、权衡、验证与回滚方案。
-  - 回滚点：
-    - 文档层无需代码回滚。
+    - `go test ./...` 通过；
+    - 文档包含任务映射、验证与回滚方案。
 
-## 3) 依赖与风险
-- 依赖：
-  - Wails v2 拖拽能力（`options.DragAndDrop.EnableFileDrop` + 前端 `OnFileDrop`）。
-- 风险：
-  - 平台差异导致拖拽事件触发行为不同；需在 Windows 运行态冒烟。
-  - 大文件复制耗时导致 UI 感知延迟；V1 先保证正确性与可观测 toast，后续可扩展进度事件。
-
-## 4) 注意事项
-- 本次拖拽导入范围限定为“本地节点当前目录”；远端节点不直接写入，避免越权与协议复杂度上升。
-- 默认不覆盖同名文件，避免误覆盖；若后续需要覆盖策略，回到本计划新增任务确认后再做。
+## 风险与注意事项
+- `CreateDir` 需与现有 `fileSanitizeDir/fileSanitizeName` 一致，避免目录穿越。
+- 若远端节点尚未升级到 `subproto/file v0.1.2`，`op=mkdir` 可能返回 `invalid op`，需给前端友好错误提示。
