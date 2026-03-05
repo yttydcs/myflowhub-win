@@ -1,12 +1,25 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import {
+  ArrowUp,
+  ChevronRight,
+  Download,
+  File,
+  Folder,
+  FolderPlus,
+  ListChecks,
+  RefreshCw,
+  Send,
+  Settings,
+  Upload
+} from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
-import { useFileStore } from "@/stores/file"
+import { useFileStore, type FileEntry } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 import FileTasks from "@/windows/FileTasks.vue"
-import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime"
+import { CanResolveFilePaths, OnFileDrop, OnFileDropOff, ResolveFilePaths } from "../../wailsjs/runtime/runtime"
 
 const fileStore = useFileStore()
 const sessionStore = useSessionStore()
@@ -18,6 +31,22 @@ const offerOpen = ref(false)
 const addNodeOpen = ref(false)
 const newFolderOpen = ref(false)
 const tasksInlineOpen = ref(false)
+const uploadInputRef = ref<HTMLInputElement | null>(null)
+const fileContextMenuRef = ref<HTMLElement | null>(null)
+
+type FileContextMenuState = {
+  open: boolean
+  x: number
+  y: number
+  entry: FileEntry | null
+}
+
+const fileContextMenu = reactive<FileContextMenuState>({
+  open: false,
+  x: 0,
+  y: 0,
+  entry: null
+})
 
 const prefsDraft = reactive({ ...fileStore.state.prefs })
 const downloadForm = reactive({
@@ -63,11 +92,28 @@ const dropHintText = computed(() =>
     ? "Drag files here to import into current directory."
     : "Switch to Local Node to enable drag import."
 )
+const breadcrumbItems = computed(() => {
+  const parts = currentDir.value.split("/").filter(Boolean)
+  const items: Array<{ label: string; dir: string }> = [{ label: "/", dir: "" }]
+  let built = ""
+  for (const part of parts) {
+    built = built ? `${built}/${part}` : part
+    items.push({ label: part, dir: built })
+  }
+  return items
+})
 
 const joinDir = (base: string, name: string) => {
   const clean = base ? `${base}/${name}` : name
   return clean.replace(/\\/g, "/")
 }
+
+const normalizeDirValue = (dir: string) =>
+  String(dir ?? "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
 
 const refreshList = async () => {
   if (!currentNodeId.value) return
@@ -89,11 +135,11 @@ const selectNode = async (nodeId: number) => {
   await refreshList()
 }
 
-const selectEntry = (entry: any) => {
+const selectEntry = (entry: FileEntry) => {
   fileStore.state.selected = entry
 }
 
-const openEntry = async (entry: any) => {
+const openEntry = async (entry: FileEntry) => {
   if (entry.isDir) {
     fileStore.state.currentDir = joinDir(currentDir.value, entry.name)
     await refreshList()
@@ -107,6 +153,13 @@ const goUp = async () => {
   if (parts.length === 0) return
   parts.pop()
   fileStore.state.currentDir = parts.join("/")
+  await refreshList()
+}
+
+const goToDir = async (dir: string) => {
+  const normalized = normalizeDirValue(dir)
+  if (normalized === normalizeDirValue(currentDir.value)) return
+  fileStore.state.currentDir = normalized
   await refreshList()
 }
 
@@ -217,13 +270,13 @@ const confirmCreateDir = async () => {
   }
 }
 
-const importDroppedFiles = async (paths: string[]) => {
+const importLocalPaths = async (paths: string[], errorPrefix: string) => {
   const normalized = Array.isArray(paths)
     ? paths.map((item) => String(item ?? "").trim()).filter(Boolean)
     : []
   if (!normalized.length) return
   if (!canDropImport.value) {
-    toast.warn("Drag import is available only when Local Node is selected.")
+    toast.warn("Upload is available only when Local Node is selected.")
     return
   }
   try {
@@ -240,8 +293,124 @@ const importDroppedFiles = async (paths: string[]) => {
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to import dropped files.")
+    toast.errorOf(err, `${errorPrefix}.`)
   }
+}
+
+const importDroppedFiles = async (paths: string[]) => {
+  await importLocalPaths(paths, "Failed to import dropped files")
+}
+
+const openUploadPicker = () => {
+  if (!canDropImport.value) {
+    toast.warn("Upload is available only when Local Node is selected.")
+    return
+  }
+  uploadInputRef.value?.click()
+}
+
+const resolvePickedPaths = async (files: FileList) => {
+  const list = Array.from(files || [])
+  if (!list.length) return []
+  const canResolve = await CanResolveFilePaths()
+  if (!canResolve) {
+    throw new Error("Runtime cannot resolve selected file paths.")
+  }
+  const resolved = await ResolveFilePaths(list)
+  if (!Array.isArray(resolved)) return []
+  return resolved.map((item) => String(item ?? "").trim()).filter(Boolean)
+}
+
+const onUploadInputChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null
+  const files = input?.files
+  if (!files || files.length === 0) return
+  try {
+    const paths = await resolvePickedPaths(files)
+    await importLocalPaths(paths, "Failed to upload files")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to upload files.")
+  } finally {
+    if (input) input.value = ""
+  }
+}
+
+const closeFileContextMenu = () => {
+  fileContextMenu.open = false
+  fileContextMenu.entry = null
+}
+
+const clampFileContextMenuToViewport = () => {
+  const el = fileContextMenuRef.value
+  if (!el) return
+  const padding = 8
+  const maxLeft = Math.max(padding, window.innerWidth - el.offsetWidth - padding)
+  const maxTop = Math.max(padding, window.innerHeight - el.offsetHeight - padding)
+  fileContextMenu.x = Math.min(Math.max(fileContextMenu.x, padding), maxLeft)
+  fileContextMenu.y = Math.min(Math.max(fileContextMenu.y, padding), maxTop)
+}
+
+const openFileContextMenu = async (event: MouseEvent, entry?: FileEntry) => {
+  event.preventDefault()
+  if (entry) {
+    selectEntry(entry)
+    fileContextMenu.entry = entry
+  } else {
+    fileContextMenu.entry = selected.value
+  }
+  fileContextMenu.x = event.clientX
+  fileContextMenu.y = event.clientY
+  fileContextMenu.open = true
+  await nextTick()
+  clampFileContextMenuToViewport()
+}
+
+const openListContextMenu = async (event: MouseEvent) => {
+  await openFileContextMenu(event)
+}
+
+const openEntryContextMenu = async (entry: FileEntry, event: MouseEvent) => {
+  await openFileContextMenu(event, entry)
+}
+
+const onContextUpload = () => {
+  closeFileContextMenu()
+  openUploadPicker()
+}
+
+const onContextDownload = () => {
+  closeFileContextMenu()
+  if (!canDownload.value) {
+    toast.warn(downloadButtonTitle.value)
+    return
+  }
+  openDownloadDialog()
+}
+
+const onContextCreateFolder = () => {
+  closeFileContextMenu()
+  if (!canCreateDir.value) {
+    toast.warn("Select a node first.")
+    return
+  }
+  openCreateDirDialog()
+}
+
+const onContextSendRemote = () => {
+  closeFileContextMenu()
+  if (!canOffer.value) {
+    toast.warn("Select a local file first.")
+    return
+  }
+  openOfferDialog()
+}
+
+const onGlobalKeydown = (event: KeyboardEvent) => {
+  if (!fileContextMenu.open) return
+  if (event.key !== "Escape") return
+  event.preventDefault()
+  closeFileContextMenu()
 }
 
 const openAddNodeDialog = () => {
@@ -289,6 +458,9 @@ onMounted(async () => {
   OnFileDrop((_x: number, _y: number, paths: string[]) => {
     void importDroppedFiles(paths)
   }, true)
+  window.addEventListener("keydown", onGlobalKeydown)
+  window.addEventListener("resize", closeFileContextMenu)
+  window.addEventListener("scroll", closeFileContextMenu, true)
   await fileStore.loadPrefs()
   await fileStore.loadNodes()
   if (!currentNodeId.value) {
@@ -303,12 +475,17 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onGlobalKeydown)
+  window.removeEventListener("resize", closeFileContextMenu)
+  window.removeEventListener("scroll", closeFileContextMenu, true)
   OnFileDropOff()
 })
 </script>
 
 <template>
   <section class="space-y-6">
+    <input ref="uploadInputRef" type="file" class="hidden" multiple @change="onUploadInputChange" />
+
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex items-center justify-between">
@@ -354,44 +531,75 @@ onBeforeUnmount(() => {
             <h2 class="text-lg font-semibold">
               Node {{ currentNodeId || "-" }}
             </h2>
-            <p class="text-xs text-muted-foreground">
-              Dir: {{ currentDir || "/" }}
-            </p>
+            <div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
+              <span class="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">Dir</span>
+              <div class="flex flex-wrap items-center gap-1">
+                <template v-for="(item, index) in breadcrumbItems" :key="item.dir || '/'">
+                  <button
+                    type="button"
+                    class="rounded px-1 py-0.5 font-medium transition"
+                    :class="
+                      index === breadcrumbItems.length - 1
+                        ? 'bg-primary/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                    "
+                    :title="item.dir || '/'"
+                    @click="goToDir(item.dir)"
+                  >
+                    {{ item.label }}
+                  </button>
+                  <ChevronRight v-if="index < breadcrumbItems.length - 1" class="h-3 w-3 text-muted-foreground/70" />
+                </template>
+              </div>
+            </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" @click="openTasks">Tasks</Button>
-            <Button size="sm" variant="outline" @click="openSettings">Settings</Button>
-            <Button size="sm" variant="outline" @click="refreshList">Refresh</Button>
+            <Button size="icon" variant="outline" title="Tasks" @click="openTasks">
+              <ListChecks class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Tasks</span>
+            </Button>
+            <Button size="icon" variant="outline" title="Settings" @click="openSettings">
+              <Settings class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Settings</span>
+            </Button>
+            <Button size="icon" variant="outline" title="Refresh directory" @click="refreshList">
+              <RefreshCw class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Refresh</span>
+            </Button>
             <span class="mx-1 hidden h-6 w-px bg-border/60 sm:block" />
             <Button
-              size="sm"
+              size="icon"
               variant="outline"
               :disabled="!currentDir"
               :title="upButtonTitle"
               @click="goUp"
             >
-              Up
+              <ArrowUp class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Up</span>
             </Button>
             <Button
-              size="sm"
+              size="icon"
               variant="outline"
               :disabled="!canCreateDir"
               :title="createDirButtonTitle"
               @click="openCreateDirDialog"
             >
-              New Folder
+              <FolderPlus class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">New Folder</span>
             </Button>
             <Button
-              size="sm"
+              size="icon"
               variant="outline"
               :disabled="!canDownload"
               :title="downloadButtonTitle"
               @click="openDownloadDialog"
             >
-              Download
+              <Download class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Download</span>
             </Button>
-            <Button size="sm" variant="outline" :disabled="!canOffer" @click="openOfferDialog">
-              Offer
+            <Button size="icon" variant="outline" :disabled="!canOffer" title="Send selected file to remote node" @click="openOfferDialog">
+              <Send class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Send to Remote</span>
             </Button>
           </div>
         </div>
@@ -417,7 +625,7 @@ onBeforeUnmount(() => {
           >
             {{ fileStore.state.listMessage }}
           </div>
-          <div v-else class="max-h-[420px] overflow-y-auto">
+          <div v-else class="max-h-[420px] overflow-y-auto" @contextmenu.prevent="openListContextMenu">
             <div
               v-for="entry in fileStore.state.entries"
               :key="entry.name"
@@ -425,12 +633,14 @@ onBeforeUnmount(() => {
               :class="selected?.name === entry.name ? 'bg-muted/70' : ''"
               @click="selectEntry(entry)"
               @dblclick="openEntry(entry)"
+              @contextmenu.prevent="openEntryContextMenu(entry, $event)"
             >
               <span
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-semibold uppercase"
+                class="flex h-8 w-8 items-center justify-center rounded-lg"
                 :class="entry.isDir ? 'bg-amber-500/20 text-amber-700' : 'bg-slate-500/20 text-slate-700'"
               >
-                {{ entry.isDir ? "DIR" : "FILE" }}
+                <Folder v-if="entry.isDir" class="h-4 w-4" aria-hidden="true" />
+                <File v-else class="h-4 w-4" aria-hidden="true" />
               </span>
               <div class="flex-1">
                 <p class="font-medium">{{ entry.name }}</p>
@@ -450,6 +660,67 @@ onBeforeUnmount(() => {
     <div v-if="tasksInlineOpen" class="rounded-2xl border bg-card/90 p-4 shadow-sm">
       <FileTasks />
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="fileContextMenu.open"
+        class="fixed inset-0 z-40"
+        @pointerdown="closeFileContextMenu"
+        @contextmenu.prevent="closeFileContextMenu"
+      />
+      <div
+        v-if="fileContextMenu.open"
+        ref="fileContextMenuRef"
+        class="fixed z-50 w-56 rounded-xl border border-border/60 bg-card/95 p-1 text-sm shadow-xl backdrop-blur"
+        role="menu"
+        aria-label="File actions"
+        :style="{ left: `${fileContextMenu.x}px`, top: `${fileContextMenu.y}px` }"
+        @pointerdown.stop
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!canDropImport"
+          role="menuitem"
+          @click="onContextUpload"
+        >
+          <Upload class="h-4 w-4" aria-hidden="true" />
+          Upload
+        </button>
+        <button
+          type="button"
+          class="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!canDownload"
+          role="menuitem"
+          @click="onContextDownload"
+        >
+          <Download class="h-4 w-4" aria-hidden="true" />
+          Download
+        </button>
+        <button
+          type="button"
+          class="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!canCreateDir"
+          role="menuitem"
+          @click="onContextCreateFolder"
+        >
+          <FolderPlus class="h-4 w-4" aria-hidden="true" />
+          New Folder
+        </button>
+        <button
+          type="button"
+          class="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!canOffer"
+          role="menuitem"
+          @click="onContextSendRemote"
+        >
+          <Send class="h-4 w-4" aria-hidden="true" />
+          Send to Remote
+        </button>
+      </div>
+    </Teleport>
 
     <Overlay :open="settingsOpen" @close="settingsOpen = false">
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 shadow-xl">
