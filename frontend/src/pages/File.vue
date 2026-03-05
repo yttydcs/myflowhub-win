@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { useFileStore } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 import FileTasks from "@/windows/FileTasks.vue"
+import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime"
 
 const fileStore = useFileStore()
 const sessionStore = useSessionStore()
@@ -40,6 +41,21 @@ const isDirSelected = computed(() => selected.value?.isDir ?? false)
 const isFileSelected = computed(() => hasSelection.value && !isDirSelected.value)
 const canDownload = computed(() => isFileSelected.value && currentNodeId.value !== selfNodeId.value)
 const canOffer = computed(() => isFileSelected.value && isLocalNode.value)
+const canDropImport = computed(() => isLocalNode.value && currentNodeId.value > 0)
+const upButtonTitle = computed(() => (currentDir.value ? "Go to parent directory." : "Already at root directory."))
+const downloadButtonTitle = computed(() => {
+  if (canDownload.value) return "Download selected remote file."
+  if (!currentNodeId.value) return "Select a node first."
+  if (!hasSelection.value) return "Select a file first."
+  if (isDirSelected.value) return "Download works for files only."
+  if (currentNodeId.value === selfNodeId.value) return "Download is for remote files only."
+  return "Download unavailable."
+})
+const dropHintText = computed(() =>
+  canDropImport.value
+    ? "Drag files here to import into current directory."
+    : "Switch to Local Node to enable drag import."
+)
 
 const joinDir = (base: string, name: string) => {
   const clean = base ? `${base}/${name}` : name
@@ -163,6 +179,33 @@ const openTasks = () => {
   }
 }
 
+const importDroppedFiles = async (paths: string[]) => {
+  const normalized = Array.isArray(paths)
+    ? paths.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : []
+  if (!normalized.length) return
+  if (!canDropImport.value) {
+    toast.warn("Drag import is available only when Local Node is selected.")
+    return
+  }
+  try {
+    const result = await fileStore.importLocalFiles(currentDir.value, normalized, false)
+    if (result.imported.length > 0) {
+      toast.success(`Imported ${result.imported.length} file(s).`)
+      await refreshList()
+    }
+    if (result.skipped.length > 0) {
+      const firstReason = result.skipped[0]?.reason ? ` (${result.skipped[0].reason})` : ""
+      toast.warn(`Skipped ${result.skipped.length} item(s)${firstReason}.`)
+    } else if (result.imported.length === 0) {
+      toast.warn("No files were imported.")
+    }
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to import dropped files.")
+  }
+}
+
 const openAddNodeDialog = () => {
   newNodeId.value = ""
   addNodeOpen.value = true
@@ -205,6 +248,9 @@ watch(
 )
 
 onMounted(async () => {
+  OnFileDrop((_x: number, _y: number, paths: string[]) => {
+    void importDroppedFiles(paths)
+  }, true)
   await fileStore.loadPrefs()
   await fileStore.loadNodes()
   if (!currentNodeId.value) {
@@ -216,6 +262,10 @@ onMounted(async () => {
   if (currentNodeId.value) {
     await refreshList()
   }
+})
+
+onBeforeUnmount(() => {
+  OnFileDropOff()
 })
 </script>
 
@@ -275,8 +325,22 @@ onMounted(async () => {
             <Button size="sm" variant="outline" @click="openSettings">Settings</Button>
             <Button size="sm" variant="outline" @click="refreshList">Refresh</Button>
             <span class="mx-1 hidden h-6 w-px bg-border/60 sm:block" />
-            <Button size="sm" variant="outline" :disabled="!currentDir" @click="goUp">Up</Button>
-            <Button size="sm" variant="outline" :disabled="!canDownload" @click="openDownloadDialog">
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!currentDir"
+              :title="upButtonTitle"
+              @click="goUp"
+            >
+              Up
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canDownload"
+              :title="downloadButtonTitle"
+              @click="openDownloadDialog"
+            >
               Download
             </Button>
             <Button size="sm" variant="outline" :disabled="!canOffer" @click="openOfferDialog">
@@ -285,9 +349,17 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="mt-4 rounded-xl border border-border/60 bg-background/60">
-          <div class="border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase text-muted-foreground">
-            Directory Listing
+        <div
+          class="file-drop-zone mt-4 rounded-xl border border-border/60 bg-background/60"
+          :style="{ '--wails-drop-target': 'drop' }"
+        >
+          <div
+            class="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase text-muted-foreground"
+          >
+            <span>Directory Listing</span>
+            <span class="text-[11px] font-medium normal-case tracking-normal text-muted-foreground/85">
+              {{ dropHintText }}
+            </span>
           </div>
           <div v-if="fileStore.state.listing" class="px-4 py-6 text-sm text-muted-foreground">
             Loading...
@@ -507,3 +579,15 @@ onMounted(async () => {
     </Overlay>
   </section>
 </template>
+
+<style scoped>
+.file-drop-zone {
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.file-drop-zone.wails-drop-target-active {
+  border-color: hsl(var(--primary) / 0.45);
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.25);
+}
+</style>

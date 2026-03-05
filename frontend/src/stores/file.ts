@@ -64,6 +64,25 @@ export type FileEntry = {
   isDir: boolean
 }
 
+export type FileImportItem = {
+  sourcePath: string
+  name: string
+  dir: string
+  savedPath: string
+  size: number
+}
+
+export type FileImportFailure = {
+  sourcePath: string
+  reason: string
+}
+
+export type FileImportResult = {
+  dir: string
+  imported: FileImportItem[]
+  skipped: FileImportFailure[]
+}
+
 type FileState = {
   selfNodeId: number
   hubId: number
@@ -240,6 +259,10 @@ const startOffer = async (consumer: number, dir: string, name: string, wantHash:
   await callFile("StartOffer", sourceID, hubID, consumer, dir, name, wantHash)
 }
 
+const importLocalFiles = async (targetDir: string, sourcePaths: string[], overwrite: boolean) => {
+  return callFile<FileImportResult>("ImportLocalFiles", targetDir, sourcePaths, overwrite)
+}
+
 const loadTasks = async () => {
   const tasks = await callFile<FileTask[]>("TasksSnapshot")
   state.tasks = Array.isArray(tasks) ? tasks : []
@@ -395,6 +418,7 @@ export const useFileStore = () => {
     openTasksWindow,
     rejectOffer,
     requestList,
+    importLocalFiles,
     saveNodes,
     savePrefs,
     setIdentity,
