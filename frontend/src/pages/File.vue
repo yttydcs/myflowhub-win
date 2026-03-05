@@ -16,6 +16,7 @@ const settingsOpen = ref(false)
 const downloadOpen = ref(false)
 const offerOpen = ref(false)
 const addNodeOpen = ref(false)
+const newFolderOpen = ref(false)
 const tasksInlineOpen = ref(false)
 
 const prefsDraft = reactive({ ...fileStore.state.prefs })
@@ -29,6 +30,7 @@ const offerForm = reactive({
   wantHash: true
 })
 const newNodeId = ref("")
+const newFolderName = ref("")
 
 const selfNodeId = computed(() => Number(sessionStore.auth.nodeId || fileStore.state.selfNodeId || 0))
 const currentNodeId = computed(() => Number(fileStore.state.currentNodeId || 0))
@@ -42,6 +44,11 @@ const isFileSelected = computed(() => hasSelection.value && !isDirSelected.value
 const canDownload = computed(() => isFileSelected.value && currentNodeId.value !== selfNodeId.value)
 const canOffer = computed(() => isFileSelected.value && isLocalNode.value)
 const canDropImport = computed(() => isLocalNode.value && currentNodeId.value > 0)
+const canCreateDir = computed(() => currentNodeId.value > 0)
+const createDirButtonTitle = computed(() => {
+  if (canCreateDir.value) return "Create a folder in current directory."
+  return "Select a node first."
+})
 const upButtonTitle = computed(() => (currentDir.value ? "Go to parent directory." : "Already at root directory."))
 const downloadButtonTitle = computed(() => {
   if (canDownload.value) return "Download selected remote file."
@@ -176,6 +183,37 @@ const openTasks = () => {
   const opened = fileStore.openTasksWindow()
   if (!opened) {
     tasksInlineOpen.value = true
+  }
+}
+
+const openCreateDirDialog = () => {
+  if (!canCreateDir.value) return
+  newFolderName.value = ""
+  newFolderOpen.value = true
+}
+
+const confirmCreateDir = async () => {
+  const name = newFolderName.value.trim()
+  if (!name) {
+    toast.warn("Folder name is required.")
+    return
+  }
+  if (name === "." || name === "..") {
+    toast.warn("Invalid folder name.")
+    return
+  }
+  if (/[\\/]/.test(name)) {
+    toast.warn("Folder name cannot contain path separators.")
+    return
+  }
+  try {
+    await fileStore.createDir(currentNodeId.value, currentDir.value, name)
+    newFolderOpen.value = false
+    toast.success("Folder created.")
+    await refreshList()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to create folder.")
   }
 }
 
@@ -333,6 +371,15 @@ onBeforeUnmount(() => {
               @click="goUp"
             >
               Up
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canCreateDir"
+              :title="createDirButtonTitle"
+              @click="openCreateDirDialog"
+            >
+              New Folder
             </Button>
             <Button
               size="sm"
@@ -559,6 +606,29 @@ onBeforeUnmount(() => {
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
           <Button @click="saveNode">Save</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="newFolderOpen" @close="newFolderOpen = false">
+      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">New Folder</h2>
+        <p class="mt-2 text-sm text-muted-foreground">
+          Current dir: {{ currentDir || "/" }}
+        </p>
+        <div class="mt-4">
+          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            Folder Name
+          </label>
+          <input
+            v-model="newFolderName"
+            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            @keydown.enter.prevent="confirmCreateDir"
+          />
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="newFolderOpen = false">Cancel</Button>
+          <Button @click="confirmCreateDir">Create</Button>
         </div>
       </div>
     </Overlay>

@@ -18,6 +18,7 @@ import (
 )
 
 const defaultFileTimeout = 8 * time.Second
+const opMkdir = "mkdir"
 
 type FileService struct {
 	session *sessionsvc.SessionService
@@ -95,6 +96,22 @@ func (s *FileService) Offer(ctx context.Context, sourceID, hubID uint32, req pro
 
 func (s *FileService) OfferSimple(sourceID, hubID uint32, req protocol.WriteReq) error {
 	return s.Offer(context.Background(), sourceID, hubID, req)
+}
+
+func (s *FileService) CreateDir(ctx context.Context, sourceID, hubID, targetID uint32, dir, name string) error {
+	req := protocol.WriteReq{
+		Op:     opMkdir,
+		Target: targetID,
+		Dir:    strings.TrimSpace(dir),
+		Name:   strings.TrimSpace(name),
+	}
+	return s.writeAndAwait(ctx, sourceID, hubID, req)
+}
+
+func (s *FileService) CreateDirSimple(sourceID, hubID, targetID uint32, dir, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFileTimeout)
+	defer cancel()
+	return s.CreateDir(ctx, sourceID, hubID, targetID, dir, name)
 }
 
 func (s *FileService) Read(ctx context.Context, sourceID, hubID uint32, req protocol.ReadReq) error {
@@ -183,6 +200,60 @@ func (s *FileService) Write(ctx context.Context, sourceID, hubID uint32, req pro
 		return err
 	}
 	return s.sendCtrl(ctx, sourceID, hubID, payload, "write", req.Op)
+}
+
+func (s *FileService) writeAndAwait(ctx context.Context, sourceID, hubID uint32, req protocol.WriteReq) error {
+	if strings.TrimSpace(req.Op) == "" {
+		return errors.New("op is required")
+	}
+	if req.Target == 0 {
+		return errors.New("target is required")
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return errors.New("name is required")
+	}
+	if req.Target == sourceID {
+		return s.handleLocalWrite(req)
+	}
+	if hubID == 0 {
+		return errors.New("hub_id is required")
+	}
+	if s.session == nil {
+		return errors.New("session service not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	payload, err := transport.EncodeMessage(protocol.ActionWrite, req)
+	if err != nil {
+		return err
+	}
+	ctrlPayload := make([]byte, 1+len(payload))
+	ctrlPayload[0] = protocol.KindCtrl
+	copy(ctrlPayload[1:], payload)
+
+	resp, err := s.session.SendCommandAndAwait(ctx, protocol.SubProtoFile, sourceID, hubID, ctrlPayload, protocol.ActionWriteResp)
+	if err != nil {
+		return fmt.Errorf("file write await: %w", err)
+	}
+
+	var out protocol.WriteResp
+	if err := json.Unmarshal(resp.Message.Data, &out); err != nil {
+		return err
+	}
+	if out.Code != 1 {
+		msg := strings.TrimSpace(out.Msg)
+		if msg != "" {
+			return fmt.Errorf("%s (code=%d)", msg, out.Code)
+		}
+		return fmt.Errorf("file write failed (code=%d)", out.Code)
+	}
+
+	if s.logs != nil {
+		s.logs.Appendf("info", "file write ok op=%s", strings.TrimSpace(req.Op))
+	}
+	return nil
 }
 
 func (s *FileService) Send(ctx context.Context, sourceID, hubID uint32, action string, data any) error {

@@ -259,6 +259,25 @@ const startOffer = async (consumer: number, dir: string, name: string, wantHash:
   await callFile("StartOffer", sourceID, hubID, consumer, dir, name, wantHash)
 }
 
+const createDir = async (targetNodeId: number, dir: string, name: string) => {
+  const target = Number(targetNodeId || 0)
+  if (!target) throw new Error("Node ID required.")
+
+  const normalizedDir = normalizeDir(dir)
+  const folderName = String(name ?? "").trim()
+  if (!folderName) throw new Error("Folder name required.")
+  if (folderName === "." || folderName === "..") {
+    throw new Error("Invalid folder name.")
+  }
+  if (/[\\/]/.test(folderName)) {
+    throw new Error("Folder name cannot contain path separators.")
+  }
+
+  const sourceID = state.selfNodeId
+  const hubID = state.hubId
+  await callFile("CreateDirSimple", sourceID, hubID, target, normalizedDir, folderName)
+}
+
 const importLocalFiles = async (targetDir: string, sourcePaths: string[], overwrite: boolean) => {
   return callFile<FileImportResult>("ImportLocalFiles", targetDir, sourcePaths, overwrite)
 }
@@ -410,6 +429,7 @@ export const useFileStore = () => {
     acceptOffer,
     cancelTask,
     closePreview,
+    createDir,
     loadNodes,
     loadPrefs,
     loadTasks,
