@@ -1,180 +1,43 @@
-# Plan - MyFlowHub-Win：Showcase Canvas Percent 布局（自由拖拽/缩放）+ Slider 值右置
+# Plan - MyFlowHub-Win：VarPool 联动适配 VarStore 回应语义
 
 ## Workflow 信息
-- 范围：单仓库（`MyFlowHub-Win`）
-- 分支：`feat/showcase-canvas-layout`
-- Worktree：`d:\project\MyFlowHub3\worktrees\feat-showcase-slider-right\MyFlowHub-Win`
+- Repo：`MyFlowHub-Win`
+- 分支：`refactor/varstore-hop-align`
+- Worktree：`d:\project\MyFlowHub3\worktrees\varstore-hop-align\win`
 - Base：`main`
-- 规范：
-  - `d:\project\MyFlowHub3\guide.md`（commit 信息中文，前缀可英文）
-  - `d:\project\MyFlowHub3` 根目录 `AGENTS.md`（阶段纪律、worktree 禁令等）
+- 关联仓库：`MyFlowHub-SubProto`、`MyFlowHub-SDK`、`MyFlowHub-Server`
 
----
+## 项目目标与当前状态
+- 目标：确保 Win 侧 VarPool 在 VarStore 新回程策略（逐跳 Cmd 响应）下行为一致、UI 不回归。
+- 当前状态：SDK await 已完成 VarStore `MajorCmd` 响应兼容；Win 侧待在升级 SDK/SubProto 版本后做冒烟验证，并按需做最小适配（WIN-1/WIN-2）。
 
-## 0) 当前状态（项目现状）
-- Showcase 已存在：
-  - Designer：`frontend/src/pages/Showcase.vue`
-  - Viewer Window：`frontend/src/windows/ShowcaseWindow.vue`
-- 现有 Screen Layout 仅支持 `columns`（maxColumns/minColumnWidth/gap；widget 仅 colSpan）。
-- 近期已完成：widget 卡片 Key-Value 单行布局（不在本 workflow 改动范围内）。
+## 依赖关系
+- 依赖 SDK await 对 VarStore `MajorCmd` 响应的兼容。
+- 依赖 SubProto 新规则（`set_resp` value、list 空集合语义、subscriber 规则）。
 
----
+## 风险与注意事项
+- 避免 UI 侧重复处理 owner 通知与请求响应导致状态闪动。
+- 避免对无关子协议 await 行为产生副作用。
 
-## 1) 需求分析（已确认）
+## 可执行任务清单（Checklist）
 
-### 目标
-1) Slider 模式：数值（Badge）显示在滑块右侧；极窄时允许退化为两行（第一行 slider，第二行右对齐 value）。
-2) 新增一种 Screen 布局模式（暂名：`canvas_percent`）：用户可自由拖拽放置 widget，并可调整大小；位置/大小用百分比保存。
-3) 缩放算法：非等比（x/y 分别缩小）、宽高都适配、上限固定为 1（不放大）。
-4) Designer 右键菜单新增：置顶 / 置底（用于重叠时 z-order）。
+### WIN-1 VarPool 服务层兼容检查与最小改造
+- 目标：确认并修复 VarPool 服务对响应 major/action 的假设，保证请求-响应闭环稳定。
+- 涉及模块/文件：`internal/services/varpool/service.go`、必要的 await 调用封装文件。
+- 验收条件：get/set/list/revoke/subscribe 在新回程语义下可正常返回。
+- 测试点：VarPool 服务层单测或最小集成测试。
+- 回滚点：恢复服务层匹配策略改动。
 
-### 范围（必须 / 不做）
-- 必须：
-  - 同时覆盖 Designer + Viewer Window；
-  - 仅扩展 Showcase config 与 UI 渲染/交互；TopicBus/VarPool 数据流不改。
-- 不做：
-  - 不做像素绝对布局（px）持久化；
-  - 不引入第三方拖拽缩放库（V1 自研最小交互）。
+### WIN-2 前端状态语义校准
+- 目标：前端 store/UI 与新规则一致：list 空集合成功展示、set 失败不误刷新缓存、notify 不重复提示。
+- 涉及模块/文件：`frontend/src/stores/varpool.ts`、必要页面文件。
+- 验收条件：UI 行为与服务返回码一致，不出现空列表误报错误。
+- 测试点：手动冒烟 + （如存在）前端测试用例。
+- 回滚点：回退 store 侧处理分支。
 
-### 验收标准
-- Slider：Designer + Viewer 均满足 value 在右；极窄退化可用。
-- `canvas_percent`：
-  - Designer：可拖拽移动 + resize 缩放；保存后 Viewer 实时同步；
-  - Viewer：按百分比渲染，随窗口缩小可同时适配宽高；不放大；
-  - 右键菜单：置顶/置底生效（数组顺序即 z-order）。
-- columns 屏幕不回归。
-
-### 风险
-- 拖拽/缩放与控件交互冲突（需用专用移动手柄与 resize 手柄隔离事件）。
-- 非等比缩小后 widget 可能变得过小，需要最小尺寸 clamp。
-
----
-
-## 2) 架构设计（分析结论）
-
-### 总体方案（采用）
-- Screen 新增 `layout.mode = "canvas_percent"`：
-  - Screen 级 `layout.canvas.baseWidth/baseHeight`（px，用于 scale 上限=1）。
-  - Widget 级新增 `layout.canvasPercent = { xPct, yPct, wPct, hPct }`（0–100，保存 0.1% 精度）。
-- 渲染（Designer/Viewer 一致）：
-  - 测量容器 `cw/ch`；
-  - `scaleX=min(1, cw/baseW)`，`scaleY=min(1, ch/baseH)`；
-  - `canvasW=baseW*scaleX`，`canvasH=baseH*scaleY`，画布居中；
-  - widget 用百分比换算为像素进行 absolute 定位与尺寸（不使用 transform，避免字体/控件被拉伸变形）。
-- z-order：
-  - 置顶：将 widget 移到数组末尾；置底：移到数组开头；Viewer/Designer 均以数组顺序决定覆盖层级。
-
----
-
-## 3.1) 计划拆分（Checklist，需确认后进入编码）
-
-### CAN1 - Slider：value 右置（Designer + Viewer）
-**目标**
-- `slider` value（Badge）显示在 `<input type="range">` 的右侧；
-- 极窄时自动换行：第一行 slider，第二行右对齐 value。
-
-**涉及文件**
-- `frontend/src/pages/Showcase.vue`
-- `frontend/src/windows/ShowcaseWindow.vue`
-
-**验收**
-- 两处 `slider` 展示一致；拖动/松手发送逻辑不回归。
-
-**回滚**
-- 回滚上述两文件的 slider 区块布局。
-
----
-
-### CAN2 - 配置结构扩展（Go + TS normalize）
-**目标**
-- 扩展 ShowcaseConfig schema 支持 `canvas_percent`：
-  - Go：`app_showcase.go` 增加 layout canvas 字段与 normalize/clamp；
-  - TS：`frontend/src/stores/showcase.ts` 增加类型与 normalize/clamp；
-- 旧配置兼容：未识别 mode 默认回退到 columns。
-
-**涉及文件**
-- `app_showcase.go`
-- `frontend/src/stores/showcase.ts`
-
-**验收**
-- 旧 profile 配置可正常加载；
-- 新字段缺失/越界会被 normalize（不崩溃）。
-
-**测试点**
-- `go test ./... -count=1`（覆盖基本解析/normalize 路径）。
-
-**回滚**
-- revert schema 相关提交。
-
----
-
-### CAN3 - Viewer：渲染 `canvas_percent`
-**目标**
-- `ShowcaseWindow.vue` 支持按 `screen.layout.mode` 渲染：
-  - columns：保持现状；
-  - canvas_percent：画布居中 + absolute widgets + z-order。
-
-**涉及文件**
-- `frontend/src/windows/ShowcaseWindow.vue`
-
-**验收**
-- `#/showcase-window?screenId=...` 在 canvas 模式可正常展示与控制；
-- 窗口缩小：宽高都适配且不放大。
-
-**回滚**
-- 回滚该文件对 canvas 模式渲染的新增代码。
-
----
-
-### CAN4 - Designer：编辑 `canvas_percent`（拖拽/缩放 + 置顶/置底）
-**目标**
-- 在 Designer 增加布局模式选择（columns/canvas_percent）；
-- 切换到 canvas_percent 时自动写入 `baseWidth/baseHeight`（取当时容器尺寸）；
-- widget 支持：
-  - 移动：拖拽手柄（不影响控件本体交互）；
-  - 缩放：右下角 resize handle；
-  - 右键菜单：Edit/Remove + 置顶/置底；
-- pointerup 才触发 `showcase.save()`（避免高频落盘）。
-
-**涉及文件**
-- `frontend/src/pages/Showcase.vue`
-
-**验收**
-- 可拖拽/缩放并保存；
-- “置顶/置底”可改变遮挡关系；
-- 保存后已打开 Viewer 实时同步。
-
-**回滚**
-- 回滚该文件对 canvas 模式编辑器的新增代码。
-
----
-
-### CAN5 - 本地验证（构建 + 冒烟）
-**命令**
-```powershell
-cd d:\project\MyFlowHub3\worktrees\feat-showcase-slider-right\MyFlowHub-Win
-$env:GOWORK='off'
-wails build -debug -skipembedcreate -nopackage
-go test ./... -count=1
-```
-
-**手工冒烟**
-1) `wails dev` → `#/showcase`：切换 layout、拖拽移动/缩放、右键置顶/置底；
-2) `Open Window`：观察实时同步；缩放与 slider 右置效果。
-
----
-
-### CAN6 - 归档变更（docs/change + plan_archive）
-**目标**
-- 新增变更文档与 plan 归档，便于审计交接。
-
-**涉及文件（预期）**
-- `docs/change/2026-03-04_showcase-canvas-layout.md`
-- `docs/plan_archive/plan_archive_2026-03-04_win-showcase-canvas-layout.md`
-
----
-
-## 4) 注意事项
-- `canvas_percent` 的拖拽/缩放坐标转换需基于画布实际像素尺寸（已应用 scaleX/scaleY 后）。
-- 最小尺寸与边界 clamp 必须在 normalize 与交互更新两处都生效，避免保存坏数据。
-
+### WIN-3 归档变更
+- 目标：沉淀 Win 联动改造内容与验证结果。
+- 涉及模块/文件：`docs/change/2026-03-06_varstore-hop-align-win.md`
+- 验收条件：文档覆盖 WIN-1~WIN-2，含风险与回滚步骤。
+- 测试点：文档命令/操作可复现。
+- 回滚点：文档改动可独立回退。
