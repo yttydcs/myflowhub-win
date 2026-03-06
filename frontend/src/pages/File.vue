@@ -29,6 +29,7 @@ const toast = useToastStore()
 const settingsOpen = ref(false)
 const downloadOpen = ref(false)
 const offerOpen = ref(false)
+const offerNodePickerOpen = ref(false)
 const addNodeOpen = ref(false)
 const newFolderOpen = ref(false)
 const tasksInlineOpen = ref(false)
@@ -56,10 +57,11 @@ const downloadForm = reactive({
   wantHash: true
 })
 const offerForm = reactive({
-  targetId: 0,
+  targetId: "",
   remoteDir: "",
   wantHash: true
 })
+const offerPickerTargetId = ref(0)
 const newNodeId = ref("")
 const newFolderName = ref("")
 
@@ -211,15 +213,32 @@ const confirmDownload = async () => {
 const openOfferDialog = () => {
   if (!selected.value || selected.value.isDir) return
   const suggestion = fileStore.state.nodes.find((node) => node > 0 && node !== selfNodeId.value) ?? 0
-  offerForm.targetId = suggestion
+  offerForm.targetId = suggestion ? String(suggestion) : ""
+  offerPickerTargetId.value = suggestion
   offerForm.remoteDir = currentDir.value
   offerForm.wantHash = Boolean(fileStore.state.prefs.wantSha256)
+  offerNodePickerOpen.value = false
   offerOpen.value = true
+}
+
+const openOfferNodePicker = () => {
+  const parsed = Number.parseInt(String(offerForm.targetId || "").trim(), 10)
+  offerPickerTargetId.value = Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+  offerNodePickerOpen.value = true
+}
+
+const onOfferTargetPicked = (nodeId: number) => {
+  const next = Number(nodeId || 0)
+  if (!Number.isInteger(next) || next <= 0) return
+  if (next === selfNodeId.value) return
+  offerPickerTargetId.value = next
+  offerForm.targetId = String(next)
+  offerNodePickerOpen.value = false
 }
 
 const confirmOffer = async () => {
   if (!selected.value) return
-  const targetId = Number(offerForm.targetId || 0)
+  const targetId = Number.parseInt(String(offerForm.targetId || "").trim(), 10)
   if (!Number.isInteger(targetId) || targetId <= 0) {
     toast.warn("Please select a target node.")
     return
@@ -848,12 +867,21 @@ onBeforeUnmount(() => {
           <p>Local file: {{ currentDir || "/" }}/{{ selected?.name }}</p>
         </div>
         <div class="mt-4 grid gap-3">
-          <OfferNodeTreePicker
-            v-model="offerForm.targetId"
-            :source-id="selfNodeId"
-            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
-            :exclude-node-id="selfNodeId"
-          />
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Target Node ID
+            </label>
+            <div class="mt-2 flex items-center gap-2">
+              <input
+                v-model="offerForm.targetId"
+                class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="Node ID"
+              />
+              <Button type="button" variant="outline" class="h-10 px-3" @click="openOfferNodePicker">
+                Select
+              </Button>
+            </div>
+          </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Remote Dir (relative)
@@ -872,6 +900,29 @@ onBeforeUnmount(() => {
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="offerOpen = false">Cancel</Button>
           <Button @click="confirmOffer">Send</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="offerNodePickerOpen" closeOnBackdrop @close="offerNodePickerOpen = false">
+      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">Select Target Node</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Click a node in the tree to apply it.
+            </p>
+          </div>
+          <Button variant="outline" @click="offerNodePickerOpen = false">Close</Button>
+        </div>
+        <div class="mt-4">
+          <OfferNodeTreePicker
+            :model-value="offerPickerTargetId"
+            :source-id="selfNodeId"
+            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+            :exclude-node-id="selfNodeId"
+            @update:model-value="onOfferTargetPicked"
+          />
         </div>
       </div>
     </Overlay>
