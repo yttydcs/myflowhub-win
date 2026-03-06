@@ -387,10 +387,5 @@ watch(
         </div>
       </div>
     </div>
-
-    <p class="mt-2 text-xs text-muted-foreground">
-      Selected target:
-      <span class="font-mono text-foreground">{{ modelValue || "-" }}</span>
-    </p>
   </div>
 </template>
