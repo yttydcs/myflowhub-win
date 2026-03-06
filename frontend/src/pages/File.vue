@@ -8,10 +8,12 @@ import {
   Folder,
   FolderPlus,
   ListChecks,
+  Plus,
   RefreshCw,
   Send,
   Settings,
-  Upload
+  Upload,
+  X
 } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -30,6 +32,7 @@ const settingsOpen = ref(false)
 const downloadOpen = ref(false)
 const offerOpen = ref(false)
 const offerNodePickerOpen = ref(false)
+const browserNodePickerOpen = ref(false)
 const addNodeOpen = ref(false)
 const newFolderOpen = ref(false)
 const tasksInlineOpen = ref(false)
@@ -62,6 +65,7 @@ const offerForm = reactive({
   wantHash: true
 })
 const offerPickerTargetId = ref(0)
+const browserPickerTargetId = ref(0)
 const newNodeId = ref("")
 const newFolderName = ref("")
 
@@ -232,8 +236,49 @@ const onOfferTargetPicked = (nodeId: number) => {
   if (!Number.isInteger(next) || next <= 0) return
   if (next === selfNodeId.value) return
   offerPickerTargetId.value = next
+}
+
+const confirmOfferTargetPicker = () => {
+  const next = Number(offerPickerTargetId.value || 0)
+  if (!Number.isInteger(next) || next <= 0) {
+    toast.warn("Please select a target node.")
+    return
+  }
+  if (next === selfNodeId.value) {
+    toast.warn("Target node must be remote.")
+    return
+  }
   offerForm.targetId = String(next)
   offerNodePickerOpen.value = false
+}
+
+const openBrowserNodePicker = () => {
+  browserPickerTargetId.value = currentNodeId.value || selfNodeId.value || 0
+  browserNodePickerOpen.value = true
+}
+
+const onBrowserNodePicked = (nodeId: number) => {
+  const next = Number(nodeId || 0)
+  if (!Number.isInteger(next) || next <= 0) return
+  browserPickerTargetId.value = next
+}
+
+const confirmBrowserNodePicker = async () => {
+  const next = Number(browserPickerTargetId.value || 0)
+  if (!Number.isInteger(next) || next <= 0) {
+    toast.warn("Please select a node.")
+    return
+  }
+  try {
+    if (next !== selfNodeId.value && !fileStore.state.nodes.includes(next)) {
+      await fileStore.saveNodes([...fileStore.state.nodes, next])
+    }
+    await selectNode(next)
+    browserNodePickerOpen.value = false
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to select node.")
+  }
 }
 
 const confirmOffer = async () => {
@@ -516,7 +561,13 @@ onBeforeUnmount(() => {
       <aside class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold">Nodes</h2>
-          <Button size="sm" variant="outline" @click="openAddNodeDialog">Add</Button>
+          <div class="flex items-center gap-2">
+            <Button size="sm" variant="outline" @click="openBrowserNodePicker">Select</Button>
+            <Button size="icon" variant="outline" title="Add remote node" @click="openAddNodeDialog">
+              <Plus class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Add</span>
+            </Button>
+          </div>
         </div>
         <div class="mt-3 space-y-2">
           <button
@@ -907,13 +958,15 @@ onBeforeUnmount(() => {
     <Overlay :open="offerNodePickerOpen" closeOnBackdrop @close="offerNodePickerOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex items-start justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-semibold">Select Target Node</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Click a node in the tree to apply it.
-            </p>
-          </div>
-          <Button variant="outline" @click="offerNodePickerOpen = false">Close</Button>
+          <h2 class="text-lg font-semibold">Select Target Node</h2>
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+            aria-label="Close"
+            @click="offerNodePickerOpen = false"
+          >
+            <X class="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
         <div class="mt-4">
           <OfferNodeTreePicker
@@ -923,6 +976,38 @@ onBeforeUnmount(() => {
             :exclude-node-id="selfNodeId"
             @update:model-value="onOfferTargetPicked"
           />
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="outline" @click="offerNodePickerOpen = false">Cancel</Button>
+          <Button @click="confirmOfferTargetPicker">Confirm</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="browserNodePickerOpen" closeOnBackdrop @close="browserNodePickerOpen = false">
+      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-lg font-semibold">Select Node</h2>
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+            aria-label="Close"
+            @click="browserNodePickerOpen = false"
+          >
+            <X class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="mt-4">
+          <OfferNodeTreePicker
+            :model-value="browserPickerTargetId"
+            :source-id="selfNodeId"
+            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+            @update:model-value="onBrowserNodePicked"
+          />
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="outline" @click="browserNodePickerOpen = false">Cancel</Button>
+          <Button @click="confirmBrowserNodePicker">Confirm</Button>
         </div>
       </div>
     </Overlay>

@@ -1,68 +1,100 @@
-# Plan - MyFlowHub-Win：Offer 目标节点输入框 + 选择按钮弹窗树
+# Plan - MyFlowHub-Win：File Nodes 选择器交互优化（图标按钮 + 确定回填）
 
 ## Workflow 信息
 - 仓库：`MyFlowHub-Win`
-- 分支：`feat/file-offer-target-picker-dialog`
-- Worktree：`d:\project\MyFlowHub3\worktrees\MyFlowHub-Win-feat-offer-target-picker-dialog`
+- 分支：`feat/file-node-picker-confirm`
+- Worktree：`d:\project\MyFlowHub3\worktrees\MyFlowHub-Win-feat-node-picker-confirm`
 - Base：`main`
 - 当前状态：已完成（阶段 1 → 4 已完成，待用户确认是否结束 workflow）
 
 ## 项目目标与当前状态
 - 目标：
-  - 将 Offer 弹窗中的目标节点选择改为“输入框 + 选择按钮”；
-  - 点击按钮弹出树形节点选择框；
-  - 点击节点后回填 NodeID 到输入框。
+  - 左侧 Nodes 顶部 Add 改图标；
+  - 新增左侧 Select 按钮，用树形选择节点；
+  - Select Target Node 弹窗改为“选中 + 确定回填”；
+  - 移除弹窗冗余文案与 selected target 展示；
+  - 右上角关闭改无边框图标。
 - 当前状态：
-  - 现有 `Target Node ID` 使用内嵌树组件，不符合“输入框+按钮”交互预期。
+  - Offer 节点选择是“点击即回填”；
+  - Nodes 顶部仅有文本 Add 按钮；
+  - 选择弹窗仍有多余描述与 selected target 文本。
 
 ## 可执行任务清单（Checklist）
 
-- [x] `OFFER-PICKER-UI-1` 需求落地：输入框 + 选择按钮
-  - 目标：Offer 表单提供可手输 NodeID 的输入框，右侧提供选择按钮。
-  - 涉及模块 / 文件：
+- [x] `NODE-PICKER-1` 左侧 Nodes 顶部操作区改造
+  - 目标：Add 改图标，并新增 Select 按钮。
+  - 涉及文件：
     - `frontend/src/pages/File.vue`
   - 验收条件：
-    - 输入框风格与 `Remote Dir (relative)` 输入一致；
-    - 右侧有可点击 `Select` 按钮。
+    - Add 为 icon 按钮；
+    - Select 可打开节点树选择弹窗。
   - 测试点：
-    - 手输合法/非法 nodeId 时发送校验正确。
+    - 点击 Add 仍可打开原 Add Node 流程；
+    - 点击 Select 可进入选择流程。
   - 回滚点：
-    - 回滚 `File.vue` 中 Offer 目标输入区域。
+    - 回滚 Nodes 顶部按钮区改动。
 
-- [x] `OFFER-PICKER-UI-2` 弹窗树形选择并回填
-  - 目标：点击选择按钮打开树形弹窗，点击节点后把 nodeId 回填输入框。
-  - 涉及模块 / 文件：
+- [x] `NODE-PICKER-2` Offer 选择弹窗改为“确定回填”
+  - 目标：点击树节点仅选中，Confirm 才回填 `Target Node ID`。
+  - 涉及文件：
     - `frontend/src/pages/File.vue`
-    - `frontend/src/components/file/OfferNodeTreePicker.vue`（复用）
   - 验收条件：
-    - 可打开/关闭选择弹窗；
-    - 点击可选节点后回填输入框；
-    - 本地节点仍不可作为远端目标。
+    - 点击节点不立即回填；
+    - 点击 Confirm 后回填并关闭弹窗；
+    - 本地节点限制仍生效。
   - 测试点：
-    - 选择节点后发送成功；
-    - 取消选择不改变原值。
+    - 展开节点时不误触回填；
+    - Confirm 后发送正常。
   - 回滚点：
-    - 删除选择弹窗接入逻辑，恢复原布局。
+    - 回滚 Offer 选择弹窗交互改动。
 
-- [x] `OFFER-PICKER-UI-3` 回归验证、Code Review、归档
-  - 目标：验证关键路径，输出评审结论并归档。
-  - 涉及模块 / 文件：
+- [x] `NODE-PICKER-3` 选择弹窗 UI 清理
+  - 目标：移除提示描述、移除 selected target 展示、右上角 Close 改图标无边框。
+  - 涉及文件：
     - `frontend/src/pages/File.vue`
-    - `docs/change/2026-03-06_win-file-offer-target-picker-dialog.md`
+    - `frontend/src/components/file/OfferNodeTreePicker.vue`
   - 验收条件：
-    - Offer 发送路径不回归；
-    - 审查结论完整；
+    - 不再显示 `Click a node in the tree to apply it.`；
+    - 不再显示 `Selected target`；
+    - 关闭按钮为无边框图标。
+  - 测试点：
+    - 弹窗视觉与交互符合要求。
+  - 回滚点：
+    - 回滚上述文件 UI 变更。
+
+- [x] `NODE-PICKER-4` 左侧 Select 弹窗确认选择并切换节点
+  - 目标：左侧 Select 使用同一树选择器，Confirm 后切换浏览节点。
+  - 涉及文件：
+    - `frontend/src/pages/File.vue`
+  - 验收条件：
+    - 选择并 Confirm 后切换到对应 Node；
+    - 远端节点可自动加入 saved nodes（若尚未保存）。
+  - 测试点：
+    - 选择本地节点/远端节点均可切换；
+    - 远端节点首次选择后出现在列表。
+  - 回滚点：
+    - 回滚左侧 Select 接入。
+
+- [x] `NODE-PICKER-5` 回归验证、Code Review、归档
+  - 目标：完成验证、评审与归档。
+  - 涉及文件：
+    - `frontend/src/pages/File.vue`
+    - `frontend/src/components/file/OfferNodeTreePicker.vue`
+    - `docs/change/2026-03-06_win-file-node-picker-confirm.md`
+  - 验收条件：
+    - 关键路径验证通过；
+    - 评审结论完整；
     - docs/change 文档完整。
   - 测试点：
-    - `go test ./...`（如受环境限制，至少保证后端回归）；
-    - 前端构建尝试并记录结果。
+    - `go test ./...`；
+    - 前端 build 尝试并记录结果。
   - 回滚点：
     - 回滚本次新增/修改文件。
 
 ## 依赖关系
-- `OFFER-PICKER-UI-2` 依赖 `OFFER-PICKER-UI-1`；
-- `OFFER-PICKER-UI-3` 依赖前置任务完成。
+- `NODE-PICKER-2/3/4` 依赖 `NODE-PICKER-1`；
+- `NODE-PICKER-5` 依赖前置任务完成。
 
 ## 风险与注意事项
-- 弹窗嵌套时需确保不会误关闭父 Offer 弹窗；
-- 选择后应只回填 nodeId，不应改变 `Remote Dir` 和 `wantHash`。
+- 弹窗内展开节点和选中节点均为点击行为，需保留最小误触风险；
+- Select 选择远端节点时需避免重复写入 saved nodes。
