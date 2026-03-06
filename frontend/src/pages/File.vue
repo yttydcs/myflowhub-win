@@ -34,6 +34,7 @@ const offerOpen = ref(false)
 const offerNodePickerOpen = ref(false)
 const browserNodePickerOpen = ref(false)
 const addNodeOpen = ref(false)
+const addNodePickerOpen = ref(false)
 const newFolderOpen = ref(false)
 const tasksInlineOpen = ref(false)
 const uploadInputRef = ref<HTMLInputElement | null>(null)
@@ -66,6 +67,7 @@ const offerForm = reactive({
 })
 const offerPickerTargetId = ref(0)
 const browserPickerTargetId = ref(0)
+const addNodePickerTargetId = ref(0)
 const newNodeId = ref("")
 const newFolderName = ref("")
 
@@ -486,7 +488,36 @@ const onGlobalKeydown = (event: KeyboardEvent) => {
 
 const openAddNodeDialog = () => {
   newNodeId.value = ""
+  addNodePickerTargetId.value = 0
+  addNodePickerOpen.value = false
   addNodeOpen.value = true
+}
+
+const openAddNodePicker = () => {
+  const parsed = Number.parseInt(newNodeId.value.trim(), 10)
+  addNodePickerTargetId.value = Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+  addNodePickerOpen.value = true
+}
+
+const onAddNodePicked = (nodeId: number) => {
+  const next = Number(nodeId || 0)
+  if (!Number.isInteger(next) || next <= 0) return
+  if (next === selfNodeId.value) return
+  addNodePickerTargetId.value = next
+}
+
+const confirmAddNodePicker = () => {
+  const next = Number(addNodePickerTargetId.value || 0)
+  if (!Number.isInteger(next) || next <= 0) {
+    toast.warn("Please select a node.")
+    return
+  }
+  if (next === selfNodeId.value) {
+    toast.warn("Please select a remote node.")
+    return
+  }
+  newNodeId.value = String(next)
+  addNodePickerOpen.value = false
 }
 
 const saveNode = async () => {
@@ -1019,14 +1050,49 @@ onBeforeUnmount(() => {
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             Node ID
           </label>
-          <input
-            v-model="newNodeId"
-            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          />
+          <div class="mt-2 flex items-center gap-2">
+            <input
+              v-model="newNodeId"
+              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Node ID"
+            />
+            <Button type="button" variant="outline" class="h-10 px-3" @click="openAddNodePicker">
+              Select
+            </Button>
+          </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
           <Button @click="saveNode">Save</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="addNodePickerOpen" closeOnBackdrop @close="addNodePickerOpen = false">
+      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-lg font-semibold">Select Remote Node</h2>
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+            aria-label="Close"
+            @click="addNodePickerOpen = false"
+          >
+            <X class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="mt-4">
+          <OfferNodeTreePicker
+            :model-value="addNodePickerTargetId"
+            :source-id="selfNodeId"
+            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+            :exclude-node-id="selfNodeId"
+            @update:model-value="onAddNodePicked"
+          />
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="outline" @click="addNodePickerOpen = false">Cancel</Button>
+          <Button @click="confirmAddNodePicker">Confirm</Button>
         </div>
       </div>
     </Overlay>
