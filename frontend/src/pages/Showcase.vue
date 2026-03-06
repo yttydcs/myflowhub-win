@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
-import { Database, ExternalLink, GripVertical, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
+import { CircleHelp, Database, ExternalLink, GripVertical, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { Tooltip } from "@/components/ui/tooltip"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -234,17 +235,26 @@ const parseFloatStrict = (raw: string, field: string) => {
   return parsed
 }
 
+const resolveVarTargetID = (fallback?: number) => {
+  const parsedFallback =
+    Number.isFinite(fallback) && Number(fallback) > 0 ? Math.floor(Number(fallback)) : 0
+  if (parsedFallback > 0) return parsedFallback
+  const hubTarget = Number.isFinite(hubId.value) && Number(hubId.value) > 0 ? Math.floor(Number(hubId.value)) : 0
+  if (hubTarget > 0) return hubTarget
+  throw new Error("Hub NodeID is required for variable widgets.")
+}
+
 const submitWidgetDialog = async () => {
   if (busy.value) return
   busy.value = true
   try {
     const title = widgetDialog.title.trim()
-    const targetId = parsePositiveInt(widgetDialog.targetId, "Target ID")
     const screen = showcase.currentScreen()
     const maxColumns = screen?.layout?.columns?.maxColumns ?? 12
     const colSpan = parseIntInRange(widgetDialog.colSpan, "Column Span", 1, Math.max(1, maxColumns))
 
     if (widgetDialog.kind === "topic_button") {
+      const targetId = parsePositiveInt(widgetDialog.targetId, "Target ID")
       const topic = widgetDialog.topic.trim()
       const name = widgetDialog.eventName.trim()
       const payloadText = widgetDialog.payloadText ?? ""
@@ -277,9 +287,14 @@ const submitWidgetDialog = async () => {
     const throttleMs = parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle (ms)")
     const onValue = widgetDialog.switchOnValue.trim()
     const offValue = widgetDialog.switchOffValue.trim()
-    if (!onValue || !offValue) throw new Error("Switch on/off values are required.")
+    if (mode === "switch" && (!onValue || !offValue)) throw new Error("Switch on/off values are required.")
+    const switchSetting = {
+      onValue: onValue || "true",
+      offValue: offValue || "false"
+    }
 
     if (widgetDialog.mode === "create") {
+      const targetId = resolveVarTargetID()
       await showcase.addVarWidget({
         title,
         targetId,
@@ -290,13 +305,13 @@ const submitWidgetDialog = async () => {
         visibility,
         type,
         slider: { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs },
-        switch: { onValue, offValue }
+        switch: switchSetting
       })
     } else {
       const widget = screen?.widgets.find((w) => w.id === widgetDialog.widgetId)
       if (!widget || widget.kind !== "var" || !widget.var) return
       widget.title = title
-      widget.targetId = targetId
+      widget.targetId = resolveVarTargetID(widget.targetId)
       widget.layout.colSpan = colSpan
       widget.var.ownerId = ownerId
       widget.var.name = varName
@@ -304,7 +319,7 @@ const submitWidgetDialog = async () => {
       widget.var.visibility = visibility
       widget.var.type = type
       widget.var.slider = { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs }
-      widget.var.switch = { onValue, offValue }
+      widget.var.switch = switchSetting
       await showcase.save()
       await showcase.leave()
       await showcase.enter()
@@ -986,30 +1001,47 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <Button size="icon" :disabled="busy" title="Refresh Vars" @click="refreshVars">
-        <RefreshCw class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">Refresh Vars</span>
-      </Button>
-      <Button size="icon" variant="outline" :disabled="busy" title="New Screen" @click="promptCreateScreen">
-        <Plus class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">New Screen</span>
-      </Button>
-      <Button size="icon" variant="outline" :disabled="busy" title="Rename Screen" @click="promptRenameScreen">
-        <Pencil class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">Rename Screen</span>
-      </Button>
-      <Button size="icon" variant="outline" :disabled="busy" title="Delete Screen" @click="deleteCurrentScreen">
-        <Trash2 class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">Delete Screen</span>
-      </Button>
-      <Button size="icon" :disabled="busy" title="Add Event" @click="openCreateWidget('topic_button')">
-        <Rss class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">Add Event</span>
-      </Button>
-      <Button size="icon" variant="outline" :disabled="busy" title="Add Var" @click="openCreateWidget('var')">
-        <Database class="h-4 w-4" aria-hidden="true" />
-        <span class="sr-only">Add Var</span>
-      </Button>
+      <div class="flex flex-wrap items-center gap-2">
+        <Tooltip content="Refresh Vars" side="bottom">
+          <Button size="icon" :disabled="busy" @click="refreshVars">
+            <RefreshCw class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">Refresh Vars</span>
+          </Button>
+        </Tooltip>
+        <Tooltip content="New Screen" side="bottom">
+          <Button size="icon" variant="outline" :disabled="busy" @click="promptCreateScreen">
+            <Plus class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">New Screen</span>
+          </Button>
+        </Tooltip>
+        <Tooltip content="Rename Screen" side="bottom">
+          <Button size="icon" variant="outline" :disabled="busy" @click="promptRenameScreen">
+            <Pencil class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">Rename Screen</span>
+          </Button>
+        </Tooltip>
+        <Tooltip content="Delete Screen" side="bottom">
+          <Button size="icon" variant="outline" :disabled="busy" @click="deleteCurrentScreen">
+            <Trash2 class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">Delete Screen</span>
+          </Button>
+        </Tooltip>
+      </div>
+      <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
+      <div class="flex flex-wrap items-center gap-2">
+        <Tooltip content="Add Event" side="bottom">
+          <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
+            <Rss class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">Add Event</span>
+          </Button>
+        </Tooltip>
+        <Tooltip content="Add Var" side="bottom">
+          <Button size="icon" variant="outline" :disabled="busy" @click="openCreateWidget('var')">
+            <Database class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">Add Var</span>
+          </Button>
+        </Tooltip>
+      </div>
     </div>
 
     <div class="grid gap-6 lg:grid-cols-[0.35fr_0.65fr]">
@@ -1336,14 +1368,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="mt-5 grid gap-4">
-          <div class="grid gap-4 sm:grid-cols-3">
+          <div class="grid gap-4" :class="widgetDialog.kind === 'topic_button' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Title (optional)
               </label>
               <input v-model="widgetDialog.title" :class="inputClass" />
             </div>
-            <div>
+            <div v-if="widgetDialog.kind === 'topic_button'">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Target ID
               </label>
@@ -1426,12 +1458,17 @@ onBeforeUnmount(() => {
               </div>
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Throttle (ms)
+                  <Tooltip
+                    content="Set to 0 to disable throttling (sends on every drag update). This may cause congestion."
+                    side="bottom"
+                  >
+                    <span class="inline-flex cursor-help items-center gap-1">
+                      Throttle (ms)
+                      <CircleHelp class="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                  </Tooltip>
                 </label>
                 <input v-model="widgetDialog.sliderThrottleMs" :class="inputClass" />
-                <p class="mt-2 text-xs text-muted-foreground">
-                  Set to 0 to disable throttling (sends on every drag update). This may cause congestion.
-                </p>
               </div>
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1441,18 +1478,24 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  On Value
-                </label>
-                <input v-model="widgetDialog.switchOnValue" :class="inputClass" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Off Value
-                </label>
-                <input v-model="widgetDialog.switchOffValue" :class="inputClass" />
+            <div v-if="widgetDialog.varMode === 'switch'" class="grid gap-4">
+              <div class="h-px bg-border/60" />
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Switch Settings
+              </p>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    On Value
+                  </label>
+                  <input v-model="widgetDialog.switchOnValue" :class="inputClass" />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Off Value
+                  </label>
+                  <input v-model="widgetDialog.switchOffValue" :class="inputClass" />
+                </div>
               </div>
             </div>
           </div>
