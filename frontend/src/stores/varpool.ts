@@ -269,6 +269,14 @@ const resolveTargetId = () => {
   return parsed
 }
 
+const resolveHubTargetId = () => {
+  const hubId = Number(state.defaultTargetId || 0)
+  if (!hubId || hubId <= 0) {
+    throw new Error("Hub target is unavailable. Re-login and retry.")
+  }
+  return hubId
+}
+
 const ensureSourceID = () => {
   if (!state.selfNodeId) {
     throw new Error("Login required to send VarPool requests.")
@@ -278,11 +286,12 @@ const ensureSourceID = () => {
 
 const listOwnerNames = async (ownerId: number) => {
   const sourceID = ensureSourceID()
+  const targetID = resolveHubTargetId()
   const owner = Number(ownerId || 0)
   if (!owner || owner <= 0) {
     throw new Error("Owner NodeID is required.")
   }
-  const resp = parseResp(await callVarPool<any>("ListSimple", sourceID, owner, { owner }))
+  const resp = parseResp(await callVarPool<any>("ListSimple", sourceID, targetID, { owner }))
   if (resp.code === 4) {
     return [] as string[]
   }
