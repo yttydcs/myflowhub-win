@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
-import { ExternalLink, GripVertical } from "lucide-vue-next"
+import { Database, ExternalLink, GripVertical, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -985,13 +985,31 @@ onBeforeUnmount(() => {
       <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
     </div>
 
-    <div class="flex flex-wrap gap-2">
-      <Button size="sm" :disabled="busy" @click="refreshVars">Refresh Vars</Button>
-      <Button size="sm" variant="outline" :disabled="busy" @click="promptCreateScreen">New Screen</Button>
-      <Button size="sm" variant="outline" :disabled="busy" @click="promptRenameScreen">Rename Screen</Button>
-      <Button size="sm" variant="outline" :disabled="busy" @click="deleteCurrentScreen">Delete Screen</Button>
-      <Button size="sm" :disabled="busy" @click="openCreateWidget('topic_button')">Add Event</Button>
-      <Button size="sm" variant="outline" :disabled="busy" @click="openCreateWidget('var')">Add Var</Button>
+    <div class="flex flex-wrap items-center gap-2">
+      <Button size="icon" :disabled="busy" title="Refresh Vars" @click="refreshVars">
+        <RefreshCw class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">Refresh Vars</span>
+      </Button>
+      <Button size="icon" variant="outline" :disabled="busy" title="New Screen" @click="promptCreateScreen">
+        <Plus class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">New Screen</span>
+      </Button>
+      <Button size="icon" variant="outline" :disabled="busy" title="Rename Screen" @click="promptRenameScreen">
+        <Pencil class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">Rename Screen</span>
+      </Button>
+      <Button size="icon" variant="outline" :disabled="busy" title="Delete Screen" @click="deleteCurrentScreen">
+        <Trash2 class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">Delete Screen</span>
+      </Button>
+      <Button size="icon" :disabled="busy" title="Add Event" @click="openCreateWidget('topic_button')">
+        <Rss class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">Add Event</span>
+      </Button>
+      <Button size="icon" variant="outline" :disabled="busy" title="Add Var" @click="openCreateWidget('var')">
+        <Database class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">Add Var</span>
+      </Button>
     </div>
 
     <div class="grid gap-6 lg:grid-cols-[0.35fr_0.65fr]">
