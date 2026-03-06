@@ -253,10 +253,21 @@ const startPull = async (provider: number, dir: string, name: string, saveDir: s
   await callFile("StartPull", sourceID, hubID, provider, dir, name, saveDir, saveName, wantHash)
 }
 
-const startOffer = async (consumer: number, dir: string, name: string, wantHash: boolean) => {
+const startOffer = async (consumer: number, sourceDir: string, name: string, remoteDir: string, wantHash: boolean) => {
+  const normalizedSourceDir = normalizeDir(sourceDir)
+  const normalizedRemoteDir = normalizeDir(remoteDir)
   const sourceID = state.selfNodeId
   const hubID = state.hubId
-  await callFile("StartOffer", sourceID, hubID, consumer, dir, name, wantHash)
+  const api = (window as any)?.go?.file?.FileService
+  const supportsRemoteDir = typeof api?.StartOfferToDir === "function"
+  if (supportsRemoteDir) {
+    await callFile("StartOfferToDir", sourceID, hubID, consumer, normalizedSourceDir, name, normalizedRemoteDir, wantHash)
+    return
+  }
+  if (normalizedSourceDir !== normalizedRemoteDir) {
+    throw new Error("Backend does not support custom remote dir yet.")
+  }
+  await callFile("StartOffer", sourceID, hubID, consumer, normalizedSourceDir, name, wantHash)
 }
 
 const createDir = async (targetNodeId: number, dir: string, name: string) => {

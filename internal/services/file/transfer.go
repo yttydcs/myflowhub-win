@@ -1067,6 +1067,10 @@ func (s *FileService) StartPull(sourceID, hubID, provider uint32, dir, name, sav
 }
 
 func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name string, wantHash bool) error {
+	return s.StartOfferToDir(sourceID, hubID, consumer, dir, name, dir, wantHash)
+}
+
+func (s *FileService) StartOfferToDir(sourceID, hubID, consumer uint32, sourceDir, name, remoteDir string, wantHash bool) error {
 	if s.session == nil {
 		return errors.New("session not initialized")
 	}
@@ -1077,10 +1081,14 @@ func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name str
 		return errors.New("identity not set")
 	}
 	cfg := s.fileConfig()
-	dir = strings.ReplaceAll(strings.TrimSpace(dir), "\\", "/")
+	sourceDir = strings.ReplaceAll(strings.TrimSpace(sourceDir), "\\", "/")
+	remoteDir = strings.ReplaceAll(strings.TrimSpace(remoteDir), "\\", "/")
 	name = strings.TrimSpace(name)
-	if _, err := fileSanitizeDir(dir); err != nil {
-		return errors.New("invalid dir")
+	if _, err := fileSanitizeDir(sourceDir); err != nil {
+		return errors.New("invalid source dir")
+	}
+	if _, err := fileSanitizeDir(remoteDir); err != nil {
+		return errors.New("invalid remote dir")
 	}
 	if _, err := fileSanitizeName(name); err != nil {
 		return errors.New("invalid name")
@@ -1089,7 +1097,7 @@ func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name str
 	if err != nil {
 		return errors.New("invalid base dir")
 	}
-	absFile := filepath.Join(absBase, filepath.FromSlash(strings.TrimSpace(dir)), strings.TrimSpace(name))
+	absFile := filepath.Join(absBase, filepath.FromSlash(strings.TrimSpace(sourceDir)), strings.TrimSpace(name))
 	absFile, err = filepath.Abs(absFile)
 	if err != nil {
 		return errors.New("invalid file path")
@@ -1126,10 +1134,13 @@ func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name str
 		provider:     sourceID,
 		consumer:     consumer,
 		peer:         consumer,
-		dir:          dir,
+		dir:          remoteDir,
 		name:         name,
 		size:         size,
 		wantHash:     wantHash,
+		localDir:     sourceDir,
+		localName:    name,
+		localPath:    absFile,
 		filePath:     absFile,
 		status:       taskStatusPreparing,
 	}
@@ -1137,7 +1148,7 @@ func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name str
 		id:         sid,
 		provider:   sourceID,
 		consumer:   consumer,
-		dir:        dir,
+		dir:        remoteDir,
 		name:       name,
 		filePath:   absFile,
 		size:       size,
@@ -1173,7 +1184,7 @@ func (s *FileService) StartOffer(sourceID, hubID, consumer uint32, dir, name str
 			Op:        protocol.OpOffer,
 			Target:    consumer,
 			SessionID: fileUUIDToString(sid),
-			Dir:       dir,
+			Dir:       remoteDir,
 			Name:      name,
 			Size:      size,
 			Sha256:    shaHex,
@@ -1245,7 +1256,11 @@ func (s *FileService) RetryTask(taskID string) error {
 		if strings.TrimSpace(filePath) == "" {
 			return errors.New("file path missing")
 		}
-		return s.StartOffer(sourceID, hubID, consumer, dir, name, wantHash)
+		sourceDir := strings.TrimSpace(localDir)
+		if sourceDir == "" {
+			sourceDir = strings.TrimSpace(dir)
+		}
+		return s.StartOfferToDir(sourceID, hubID, consumer, sourceDir, name, dir, wantHash)
 	}
 	return errors.New("unsupported task")
 }
