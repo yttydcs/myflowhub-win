@@ -284,7 +284,7 @@ const submitWidgetDialog = async () => {
     const sliderMin = parseFloatStrict(widgetDialog.sliderMin, "Min")
     const sliderMax = parseFloatStrict(widgetDialog.sliderMax, "Max")
     const sliderStep = parseFloatStrict(widgetDialog.sliderStep, "Step")
-    const throttleMs = parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle (ms)")
+    const throttleMs = parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle")
     const onValue = widgetDialog.switchOnValue.trim()
     const offValue = widgetDialog.switchOffValue.trim()
     if (mode === "switch" && (!onValue || !offValue)) throw new Error("Switch on/off values are required.")
@@ -1459,11 +1459,11 @@ onBeforeUnmount(() => {
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   <Tooltip
-                    content="Set to 0 to disable throttling (sends on every drag update). This may cause congestion."
+                    content="Unit: milliseconds (ms). Set to 0 to disable throttling (sends on every drag update). This may cause congestion."
                     side="bottom"
                   >
                     <span class="inline-flex cursor-help items-center gap-1">
-                      Throttle (ms)
+                      Throttle
                       <CircleHelp class="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
                   </Tooltip>
