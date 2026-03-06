@@ -15,6 +15,7 @@ import {
 } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import OfferNodeTreePicker from "@/components/file/OfferNodeTreePicker.vue"
 import { useFileStore, type FileEntry } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -55,7 +56,8 @@ const downloadForm = reactive({
   wantHash: true
 })
 const offerForm = reactive({
-  targetId: "",
+  targetId: 0,
+  remoteDir: "",
   wantHash: true
 })
 const newNodeId = ref("")
@@ -208,22 +210,27 @@ const confirmDownload = async () => {
 
 const openOfferDialog = () => {
   if (!selected.value || selected.value.isDir) return
-  const suggestion =
-    fileStore.state.nodes.find((node) => node !== selfNodeId.value) ?? 0
-  offerForm.targetId = suggestion ? String(suggestion) : ""
+  const suggestion = fileStore.state.nodes.find((node) => node > 0 && node !== selfNodeId.value) ?? 0
+  offerForm.targetId = suggestion
+  offerForm.remoteDir = currentDir.value
   offerForm.wantHash = Boolean(fileStore.state.prefs.wantSha256)
   offerOpen.value = true
 }
 
 const confirmOffer = async () => {
   if (!selected.value) return
-  const targetId = Number.parseInt(offerForm.targetId.trim(), 10)
-  if (!targetId) {
-    toast.warn("Target Node ID is required.")
+  const targetId = Number(offerForm.targetId || 0)
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    toast.warn("Please select a target node.")
     return
   }
+  if (targetId === selfNodeId.value) {
+    toast.warn("Target node must be remote.")
+    return
+  }
+  const remoteDir = normalizeDirValue(offerForm.remoteDir)
   try {
-    await fileStore.startOffer(targetId, currentDir.value, selected.value.name, offerForm.wantHash)
+    await fileStore.startOffer(targetId, currentDir.value, selected.value.name, remoteDir, offerForm.wantHash)
     offerOpen.value = false
     toast.success("Offer sent.")
   } catch (err) {
@@ -841,13 +848,20 @@ onBeforeUnmount(() => {
           <p>Local file: {{ currentDir || "/" }}/{{ selected?.name }}</p>
         </div>
         <div class="mt-4 grid gap-3">
+          <OfferNodeTreePicker
+            v-model="offerForm.targetId"
+            :source-id="selfNodeId"
+            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+            :exclude-node-id="selfNodeId"
+          />
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Target Node ID
+              Remote Dir (relative)
             </label>
             <input
-              v-model="offerForm.targetId"
+              v-model="offerForm.remoteDir"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="/ for root"
             />
           </div>
           <label class="flex items-center gap-2 text-sm text-muted-foreground">
