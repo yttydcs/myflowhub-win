@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
-import { CircleHelp, Database, ExternalLink, GripVertical, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
+import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
+import { useVarPoolStore } from "@/stores/varpool"
 import {
   useShowcaseStore,
   type ShowcaseWidget,
@@ -19,6 +20,7 @@ import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
+const varpool = useVarPoolStore()
 const showcase = useShowcaseStore()
 const toast = useToastStore()
 
@@ -138,6 +140,19 @@ const widgetDialog = reactive({
   switchOffValue: "false"
 })
 
+type VarQuickPickItem = {
+  name: string
+  owner: number
+  mine: boolean
+  subscribed: boolean
+}
+
+const varQuickPickDialog = reactive({
+  open: false,
+  query: "",
+  refreshing: false
+})
+
 const defaultTypeForMode = (mode: VarWidgetMode) => {
   if (mode === "slider") return "float64"
   if (mode === "switch") return "bool"
@@ -205,7 +220,89 @@ const openEditWidget = (widget: ShowcaseWidget) => {
   }
 }
 
+const varQuickPickItems = computed<VarQuickPickItem[]>(() => {
+  const merged = new Map<string, VarQuickPickItem>()
+  const selfID = Number(selfNodeId.value || 0)
+  for (const key of varpool.state.keys) {
+    const name = String(key.name ?? "").trim()
+    const owner = Number(key.owner ?? 0)
+    if (!name || !Number.isFinite(owner) || owner <= 0) continue
+    const snap = varpool.valueForKey({ name, owner })
+    const mine = selfID > 0 && owner === selfID
+    const subscribed = Boolean(snap.subKnown && snap.subscribed)
+    if (!mine && !subscribed) continue
+    const id = `${owner}:${name}`
+    const existing = merged.get(id)
+    if (existing) {
+      existing.mine = existing.mine || mine
+      existing.subscribed = existing.subscribed || subscribed
+      continue
+    }
+    merged.set(id, { name, owner, mine, subscribed })
+  }
+  const out = Array.from(merged.values())
+  out.sort((a, b) => {
+    if (a.mine !== b.mine) return a.mine ? -1 : 1
+    if (a.subscribed !== b.subscribed) return a.subscribed ? -1 : 1
+    if (a.owner !== b.owner) return a.owner - b.owner
+    return a.name.localeCompare(b.name)
+  })
+  return out
+})
+
+const filteredVarQuickPickItems = computed(() => {
+  const q = varQuickPickDialog.query.trim().toLowerCase()
+  if (!q) return varQuickPickItems.value
+  return varQuickPickItems.value.filter(
+    (item) => item.name.toLowerCase().includes(q) || String(item.owner).includes(q)
+  )
+})
+
+const subscribedVarQuickPickItems = computed(() =>
+  filteredVarQuickPickItems.value.filter((item) => item.subscribed)
+)
+
+const mineVarQuickPickItems = computed(() => filteredVarQuickPickItems.value.filter((item) => item.mine))
+
+const closeVarQuickPickDialog = () => {
+  varQuickPickDialog.open = false
+}
+
+const refreshVarQuickPickMine = async (showSuccess = true) => {
+  if (varQuickPickDialog.refreshing) return
+  varQuickPickDialog.refreshing = true
+  try {
+    varpool.setIdentity(selfNodeId.value, hubId.value)
+    if (!selfNodeId.value) {
+      throw new Error("Login to a node before loading mine variables.")
+    }
+    await varpool.listMine()
+    if (showSuccess) {
+      toast.success("Mine variables refreshed.")
+    }
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load mine variables.")
+  } finally {
+    varQuickPickDialog.refreshing = false
+  }
+}
+
+const openVarQuickPickDialog = () => {
+  if (widgetDialog.kind !== "var") return
+  varQuickPickDialog.query = ""
+  varQuickPickDialog.open = true
+  void refreshVarQuickPickMine(false)
+}
+
+const applyVarQuickPick = (item: VarQuickPickItem) => {
+  widgetDialog.ownerId = String(item.owner)
+  widgetDialog.varName = item.name
+  closeVarQuickPickDialog()
+}
+
 const closeWidgetDialog = () => {
+  closeVarQuickPickDialog()
   widgetDialog.open = false
 }
 
@@ -1417,9 +1514,17 @@ onBeforeUnmount(() => {
                 <input v-model="widgetDialog.ownerId" :class="inputClass" :placeholder="String(selfNodeId || '')" />
               </div>
               <div class="sm:col-span-2">
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Variable Name
-                </label>
+                <div class="flex items-center justify-between gap-2">
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Variable Name
+                  </label>
+                  <Tooltip content="Pick from subscribed or mine variables." side="bottom">
+                    <Button size="icon" variant="outline" :disabled="busy" @click="openVarQuickPickDialog">
+                      <ListChecks class="h-4 w-4" aria-hidden="true" />
+                      <span class="sr-only">Pick Variable</span>
+                    </Button>
+                  </Tooltip>
+                </div>
                 <input v-model="widgetDialog.varName" :class="inputClass" />
               </div>
             </div>
@@ -1504,6 +1609,97 @@ onBeforeUnmount(() => {
         <div class="mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="outline" :disabled="busy" @click="closeWidgetDialog">Cancel</Button>
           <Button :disabled="busy" @click="submitWidgetDialog">Save</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay
+      :open="varQuickPickDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      @close="closeVarQuickPickDialog"
+    >
+      <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">VarStore</p>
+            <h3 class="mt-2 text-lg font-semibold">Pick Variable</h3>
+            <p class="mt-1 text-xs text-muted-foreground">Data source: current subscribed variables and mine.</p>
+          </div>
+          <Badge variant="secondary">{{ filteredVarQuickPickItems.length }}</Badge>
+        </div>
+
+        <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <input
+            v-model="varQuickPickDialog.query"
+            :class="inputClass"
+            placeholder="Filter by variable name or owner node id."
+          />
+          <Button
+            variant="outline"
+            class="sm:mt-2"
+            :disabled="varQuickPickDialog.refreshing || !selfNodeId"
+            @click="refreshVarQuickPickMine(true)"
+          >
+            <RefreshCw class="mr-2 h-4 w-4" :class="varQuickPickDialog.refreshing ? 'animate-spin' : ''" />
+            Refresh Mine
+          </Button>
+        </div>
+
+        <div class="mt-5 grid gap-4 md:grid-cols-2">
+          <div class="rounded-xl border border-border/60 bg-background/60">
+            <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Subscribed</p>
+              <Badge variant="outline">{{ subscribedVarQuickPickItems.length }}</Badge>
+            </div>
+            <div class="max-h-72 space-y-2 overflow-auto p-3">
+              <button
+                v-for="item in subscribedVarQuickPickItems"
+                :key="`sub-${item.owner}-${item.name}`"
+                type="button"
+                class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
+                @click="applyVarQuickPick(item)"
+              >
+                <p class="truncate text-sm font-semibold">{{ item.name }}</p>
+                <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>Owner {{ item.owner }}</span>
+                  <Badge v-if="item.mine" variant="secondary">mine</Badge>
+                </div>
+              </button>
+              <p v-if="subscribedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+                No subscribed variables.
+              </p>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-border/60 bg-background/60">
+            <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Mine</p>
+              <Badge variant="outline">{{ mineVarQuickPickItems.length }}</Badge>
+            </div>
+            <div class="max-h-72 space-y-2 overflow-auto p-3">
+              <button
+                v-for="item in mineVarQuickPickItems"
+                :key="`mine-${item.owner}-${item.name}`"
+                type="button"
+                class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
+                @click="applyVarQuickPick(item)"
+              >
+                <p class="truncate text-sm font-semibold">{{ item.name }}</p>
+                <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>Owner {{ item.owner }}</span>
+                  <Badge v-if="item.subscribed" variant="secondary">subscribed</Badge>
+                </div>
+              </button>
+              <p v-if="mineVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+                No mine variables.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <Button variant="outline" @click="closeVarQuickPickDialog">Close</Button>
         </div>
       </div>
     </Overlay>
