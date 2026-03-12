@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { VueFlow, type Connection } from "@vue-flow/core"
+import { VueFlow, type Connection, type EdgeMouseEvent, type NodeDragEvent, type NodeMouseEvent } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import { MiniMap } from "@vue-flow/minimap"
@@ -81,24 +81,25 @@ const onConnect = (conn: Connection) => {
   emit("connect", source, target)
 }
 
-const onNodeClick = (_: unknown, node: any) => {
-  if (!node?.id) return
-  emit("select-node", String(node.id))
+const onNodeClick = (payload: NodeMouseEvent) => {
+  const id = String(payload?.node?.id ?? "").trim()
+  if (!id) return
+  emit("select-node", id)
 }
 
-const onEdgeClick = (_: unknown, edge: any) => {
-  const from = String(edge?.source ?? "")
-  const to = String(edge?.target ?? "")
+const onEdgeClick = (payload: EdgeMouseEvent) => {
+  const from = String(payload?.edge?.source ?? "").trim()
+  const to = String(payload?.edge?.target ?? "").trim()
   if (!from || !to) return
   emit("select-edge", from, to)
 }
 
 const onPaneClick = () => emit("clear-selection")
 
-const onNodeDragStop = (_: unknown, node: any) => {
-  const id = String(node?.id ?? "")
-  const x = Number(node?.position?.x ?? 0)
-  const y = Number(node?.position?.y ?? 0)
+const onNodeDragStop = (payload: NodeDragEvent) => {
+  const id = String(payload?.node?.id ?? "").trim()
+  const x = Number(payload?.node?.position?.x ?? 0)
+  const y = Number(payload?.node?.position?.y ?? 0)
   if (!id) return
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
   emit("node-moved", id, x, y)
@@ -120,10 +121,10 @@ const nodeTypes = {
       :max-zoom="2"
       :is-valid-connection="isValidConnection"
       @connect="onConnect"
-      @nodeClick="onNodeClick"
-      @edgeClick="onEdgeClick"
-      @paneClick="onPaneClick"
-      @nodeDragStop="onNodeDragStop"
+      @node-click="onNodeClick"
+      @edge-click="onEdgeClick"
+      @pane-click="onPaneClick"
+      @node-drag-stop="onNodeDragStop"
     >
       <Background :gap="18" :size="1" class="opacity-60" />
       <MiniMap
