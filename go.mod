@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
-	github.com/yttydcs/myflowhub-core v0.4.0
+	github.com/yttydcs/myflowhub-core v0.4.1
 	github.com/yttydcs/myflowhub-proto v0.1.1
 	github.com/yttydcs/myflowhub-sdk v0.1.4
 )
