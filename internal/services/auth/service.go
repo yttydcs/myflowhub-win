@@ -233,8 +233,12 @@ func toUIError(err error) error {
 	}
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))
 	switch {
+	case strings.Contains(msg, "timed out"):
+		return errors.New("request timed out")
 	case strings.Contains(msg, "session not initialized"):
 		return errors.New("not connected")
+	case strings.Contains(msg, "aborted by the software in your host machine"):
+		return errors.New("connection aborted")
 	case strings.Contains(msg, "connection") && strings.Contains(msg, "closed"):
 		return errors.New("connection closed")
 	default:
