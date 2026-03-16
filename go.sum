@@ -61,12 +61,12 @@ github.com/wailsapp/mimetype v1.4.1 h1:pQN9ycO7uo4vsUUuPeHEYoUkLVkaRntMnHJxVwYhw
 github.com/wailsapp/mimetype v1.4.1/go.mod h1:9aV5k31bBOv5z6u+QP8TltzvNGJPmNJD4XlAL3U+j3o=
 github.com/wailsapp/wails/v2 v2.11.0 h1:seLacV8pqupq32IjS4Y7V8ucab0WZwtK6VvUVxSBtqQ=
 github.com/wailsapp/wails/v2 v2.11.0/go.mod h1:jrf0ZaM6+GBc1wRmXsM8cIvzlg0karYin3erahI4+0k=
-github.com/yttydcs/myflowhub-core v0.4.7-0.20260316021423-d992975ec6ad h1:V5d6FoLntTwb75rdOvbnryqHx70UN3ej0w6FIgc90Jg=
-github.com/yttydcs/myflowhub-core v0.4.7-0.20260316021423-d992975ec6ad/go.mod h1:/XfiiRJgVlnEe9Eo2ug0yn4l9x7k3+wq+3GJXZkJzUU=
+github.com/yttydcs/myflowhub-core v0.4.7 h1:rHcOv0fc5eAE+UcRTQniEs55TFPFqNP4Pd22Mp7EXfQ=
+github.com/yttydcs/myflowhub-core v0.4.7/go.mod h1:/XfiiRJgVlnEe9Eo2ug0yn4l9x7k3+wq+3GJXZkJzUU=
 github.com/yttydcs/myflowhub-proto v0.1.1 h1:0oVHnHaYbrV6CWQ0mREWMwDDkkUBIpPMTtLw2TjJLY8=
 github.com/yttydcs/myflowhub-proto v0.1.1/go.mod h1:1shJnnAYNZYd1KnGNtvgdygTaeCyx5duMnxrRLRouOc=
-github.com/yttydcs/myflowhub-sdk v0.1.10-0.20260316021802-bd10cd7ada93 h1:W3OAQctIOKgtohyT0a8cly+7q4sG01ilnoSBRB+ZXos=
-github.com/yttydcs/myflowhub-sdk v0.1.10-0.20260316021802-bd10cd7ada93/go.mod h1:6urdN3xKNjP8rVMryLeBw/LX8pPkWBdkeJ3xaiV2Yyk=
+github.com/yttydcs/myflowhub-sdk v0.1.10 h1:JOCK4G56kjYs3XGihcmQWBPG8OxgUPfqWJWafMjhiQ8=
+github.com/yttydcs/myflowhub-sdk v0.1.10/go.mod h1:iG97TuBShhG8ZKcCCPGlHULYMbeOvtMq2yDcC9o97Yw=
 go.uber.org/mock v0.5.2 h1:LbtPTcP8A5k9WPXj54PPPbjcI4Y6lhyOZXn+VS7wNko=
 go.uber.org/mock v0.5.2/go.mod h1:wLlUxC2vVTPTaE3UD51E0BGOAElKrILxhVSDYQLld5o=
 golang.org/x/crypto v0.41.0 h1:WKYxWedPGCTVVl5+WHSSrOBT0O8lx32+zxmHxijgXp4=
