@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
+import { LayoutGrid, Link2Off, ListChecks, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useFlowStore } from "@/stores/flow"
 import { useSessionStore } from "@/stores/session"
@@ -13,6 +15,7 @@ const toast = useToastStore()
 
 const addNodeOpen = ref(false)
 const selectedCapabilityKey = ref("")
+const nodeIdDraft = ref("")
 
 const nodeDraft = reactive({
   id: "",
@@ -99,9 +102,23 @@ const selectFlow = async (flowId: string) => {
 }
 
 const openAddNodeDialog = () => {
-  nodeDraft.id = ""
+  nodeDraft.id = flowStore.suggestNodeId()
   nodeDraft.kind = "local"
   addNodeOpen.value = true
+}
+
+const commitNodeId = () => {
+  const node = selectedNode.value
+  if (!node) return
+  const oldId = node.id
+  try {
+    flowStore.renameNodeId(oldId, nodeIdDraft.value)
+    nodeIdDraft.value = node.id
+  } catch (err) {
+    console.warn(err)
+    nodeIdDraft.value = oldId
+    toast.errorOf(err, "Failed to rename node.")
+  }
 }
 
 const saveNode = () => {
@@ -259,6 +276,14 @@ watch(
   }
 )
 
+watch(
+  () => selectedNode.value?.id ?? "",
+  (id) => {
+    nodeIdDraft.value = id
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   void refreshList().catch(() => {})
   window.addEventListener("keydown", onKeyDown)
@@ -310,14 +335,57 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 placeholder="Node ID"
               />
             </div>
-            <Button variant="outline" size="sm" @click="refreshList">Refresh</Button>
-            <Button variant="outline" size="sm" @click="startNew">New</Button>
-            <Button variant="outline" size="sm" :disabled="!canUndo" @click="undo">Undo</Button>
-            <Button variant="outline" size="sm" :disabled="!canRedo" @click="redo">Redo</Button>
-            <Button variant="outline" size="sm" @click="autoLayout">Auto Layout</Button>
-            <Button size="sm" @click="saveFlow">Save</Button>
-            <Button variant="outline" size="sm" @click="runFlow">Run</Button>
-            <Button variant="outline" size="sm" @click="statusFlow">Status</Button>
+            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
+            <Tooltip content="Refresh Flows" side="bottom">
+              <Button size="icon" variant="outline" @click="refreshList">
+                <RefreshCw class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Refresh Flows</span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="New Flow" side="bottom">
+              <Button size="icon" variant="outline" @click="startNew">
+                <Plus class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">New Flow</span>
+              </Button>
+            </Tooltip>
+            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
+            <Tooltip content="Undo (Ctrl+Z)" side="bottom">
+              <Button size="icon" variant="outline" :disabled="!canUndo" @click="undo">
+                <Undo2 class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Undo</span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="Redo (Ctrl+Y)" side="bottom">
+              <Button size="icon" variant="outline" :disabled="!canRedo" @click="redo">
+                <Redo2 class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Redo</span>
+              </Button>
+            </Tooltip>
+            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
+            <Tooltip content="Auto Layout" side="bottom">
+              <Button size="icon" variant="outline" @click="autoLayout">
+                <LayoutGrid class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Auto Layout</span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="Save (Ctrl+S)" side="bottom">
+              <Button size="icon" @click="saveFlow">
+                <Save class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Save</span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="Run" side="bottom">
+              <Button size="icon" variant="outline" @click="runFlow">
+                <Play class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Run</span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="Status" side="bottom">
+              <Button size="icon" variant="outline" @click="statusFlow">
+                <ListChecks class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Status</span>
+              </Button>
+            </Tooltip>
           </div>
         </div>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
@@ -444,23 +512,34 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
               Drag nodes to reposition. Drag from a node handle to connect nodes.
             </div>
             <div class="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" @click="openAddNodeDialog">Add Node</Button>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="flowStore.state.selectedNodeIndex < 0"
-                @click="removeNode"
-              >
-                Remove Node
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="flowStore.state.selectedEdgeIndex < 0"
-                @click="removeEdge"
-              >
-                Remove Edge
-              </Button>
+              <Tooltip content="Add Node" side="bottom">
+                <Button size="icon" variant="outline" @click="openAddNodeDialog">
+                  <Plus class="h-4 w-4" aria-hidden="true" />
+                  <span class="sr-only">Add Node</span>
+                </Button>
+              </Tooltip>
+              <Tooltip content="Remove Node (Delete)" side="bottom">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  :disabled="flowStore.state.selectedNodeIndex < 0"
+                  @click="removeNode"
+                >
+                  <Trash2 class="h-4 w-4" aria-hidden="true" />
+                  <span class="sr-only">Remove Node</span>
+                </Button>
+              </Tooltip>
+              <Tooltip content="Remove Edge (Delete)" side="bottom">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  :disabled="flowStore.state.selectedEdgeIndex < 0"
+                  @click="removeEdge"
+                >
+                  <Link2Off class="h-4 w-4" aria-hidden="true" />
+                  <span class="sr-only">Remove Edge</span>
+                </Button>
+              </Tooltip>
             </div>
           </div>
 
@@ -488,12 +567,13 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 Node ID
               </label>
               <input
-                :value="selectedNode.id"
-                disabled
+                v-model="nodeIdDraft"
                 class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                @blur="commitNodeId"
+                @keydown.enter.prevent="commitNodeId"
               />
               <p class="mt-1 text-[11px] text-muted-foreground">
-                Node ID is the graph key and cannot be changed.
+                Node ID must be unique. Renaming updates all connected edges.
               </p>
             </div>
             <div class="grid gap-3 md:grid-cols-2">

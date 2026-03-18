@@ -389,6 +389,16 @@ const newDraft = () => {
   resetHistory()
 }
 
+const suggestNodeId = (prefix = "n") => {
+  const normalizedPrefix = prefix.trim() || "n"
+  const used = new Set(state.nodes.map((node) => node.id.trim()).filter(Boolean))
+  for (let i = 1; i <= 99999; i += 1) {
+    const candidate = `${normalizedPrefix}${i}`
+    if (!used.has(candidate)) return candidate
+  }
+  return `${normalizedPrefix}${Date.now().toString(36)}`
+}
+
 const addNode = (id: string, kind: "local" | "exec") => {
   const trimmed = id.trim()
   if (!trimmed) {
@@ -414,6 +424,37 @@ const addNode = (id: string, kind: "local" | "exec") => {
   state.selectedNodeIndex = state.nodes.length - 1
   state.selectedEdgeIndex = -1
   commitHistory()
+}
+
+const renameNodeId = (oldId: string, newId: string) => {
+  const from = oldId.trim()
+  const to = newId.trim()
+  if (!from) {
+    throw new Error("Old node ID is required.")
+  }
+  if (!to) {
+    throw new Error("Node ID is required.")
+  }
+  if (from === to) {
+    return false
+  }
+
+  const node = state.nodes.find((n) => n.id.trim() === from)
+  if (!node) {
+    throw new Error("Node does not exist.")
+  }
+  if (state.nodes.some((n) => n.id.trim() === to)) {
+    throw new Error("Node ID must be unique.")
+  }
+
+  node.id = to
+  state.edges = state.edges.map((edge) => ({
+    from: edge.from.trim() === from ? to : edge.from,
+    to: edge.to.trim() === from ? to : edge.to
+  }))
+  commitHistory()
+  state.message = "Node ID updated."
+  return true
 }
 
 const removeSelectedNode = () => {
@@ -948,6 +989,8 @@ export const useFlowStore = () => {
     getFlow,
     listFlows,
     newDraft,
+    suggestNodeId,
+    renameNodeId,
     removeSelectedEdge,
     removeSelectedNode,
     redo,
