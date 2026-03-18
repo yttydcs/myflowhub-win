@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	protocolexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	"github.com/yttydcs/myflowhub-proto/protocol/flow"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
@@ -15,6 +16,7 @@ import (
 )
 
 const defaultFlowTimeout = 8 * time.Second
+const defaultExecCapQueryTimeout = 8 * time.Second
 
 type FlowService struct {
 	session *sessionsvc.SessionService
@@ -142,6 +144,34 @@ func (s *FlowService) GetSimple(sourceID, targetID uint32, req flow.GetReq) (flo
 	return s.Get(ctx, sourceID, targetID, req)
 }
 
+func (s *FlowService) ExecCapQuery(ctx context.Context, sourceID, targetID uint32, req protocolexec.CapQueryReq) (protocolexec.CapQueryResp, error) {
+	req.ReqID = strings.TrimSpace(req.ReqID)
+	if req.ReqID == "" {
+		return protocolexec.CapQueryResp{}, errors.New("req_id is required")
+	}
+	if req.RequesterNode == 0 {
+		req.RequesterNode = sourceID
+	}
+	if req.Limit <= 0 {
+		req.Limit = 200
+	}
+	payload, err := transport.EncodeMessage(protocolexec.ActionCapQuery, req)
+	if err != nil {
+		return protocolexec.CapQueryResp{}, err
+	}
+	var resp protocolexec.CapQueryResp
+	if err := s.sendAndAwaitExec(ctx, sourceID, targetID, payload, protocolexec.ActionCapQuery, protocolexec.ActionCapQueryResp, &resp); err != nil {
+		return protocolexec.CapQueryResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *FlowService) ExecCapQuerySimple(sourceID, targetID uint32, req protocolexec.CapQueryReq) (protocolexec.CapQueryResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultExecCapQueryTimeout)
+	defer cancel()
+	return s.ExecCapQuery(ctx, sourceID, targetID, req)
+}
+
 func (s *FlowService) Send(ctx context.Context, sourceID, targetID uint32, action string, data any) error {
 	payload, err := transport.EncodeMessage(action, data)
 	if err != nil {
@@ -222,6 +252,49 @@ func (s *FlowService) sendAndAwait(ctx context.Context, sourceID, targetID uint3
 	return nil
 }
 
+func (s *FlowService) sendAndAwaitExec(ctx context.Context, sourceID, targetID uint32, payload []byte, reqAction, respAction string, out any) error {
+	if s.session == nil {
+		return errors.New("session service not initialized")
+	}
+	if out == nil {
+		return errors.New("exec out is required")
+	}
+	trimmedAction := strings.TrimSpace(reqAction)
+
+	resp, err := s.session.SendCommandAndAwait(ctx, protocolexec.SubProtoExec, sourceID, targetID, payload, respAction)
+	if err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "exec %s await failed: %v", trimmedAction, err)
+		}
+		return fmt.Errorf("exec %s: %w", trimmedAction, toUIError(err))
+	}
+
+	if err := json.Unmarshal(resp.Message.Data, out); err != nil {
+		if s.logs != nil {
+			s.logs.Appendf("error", "exec %s decode failed: %v", trimmedAction, err)
+		}
+		return err
+	}
+	code, msg := extractCodeMsg(out)
+	if code != 1 {
+		msg = strings.TrimSpace(msg)
+		if msg != "" {
+			if s.logs != nil {
+				s.logs.Appendf("warn", "exec %s failed (code=%d msg=%q)", trimmedAction, code, msg)
+			}
+			return fmt.Errorf("%s (code=%d)", msg, code)
+		}
+		if s.logs != nil {
+			s.logs.Appendf("warn", "exec %s failed (code=%d)", trimmedAction, code)
+		}
+		return fmt.Errorf("exec %s failed (code=%d)", trimmedAction, code)
+	}
+	if s.logs != nil {
+		s.logs.Appendf("info", "exec %s ok", trimmedAction)
+	}
+	return nil
+}
+
 func toUIError(err error) error {
 	if err == nil {
 		return nil
@@ -266,6 +339,11 @@ func extractCodeMsg(v any) (int, string) {
 		}
 		return t.Code, t.Msg
 	case *flow.GetResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *protocolexec.CapQueryResp:
 		if t == nil {
 			return 0, ""
 		}

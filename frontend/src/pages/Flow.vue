@@ -12,6 +12,7 @@ const sessionStore = useSessionStore()
 const toast = useToastStore()
 
 const addNodeOpen = ref(false)
+const selectedCapabilityKey = ref("")
 
 const nodeDraft = reactive({
   id: "",
@@ -147,6 +148,27 @@ const onCanvasClear = () => {
   flowStore.clearSelection()
 }
 
+const loadExecCapabilities = async () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "exec") return
+  try {
+    await flowStore.queryExecCapabilities(node.method)
+    selectedCapabilityKey.value = flowStore.state.execCapabilities[0]?.key ?? ""
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to query capabilities.")
+  }
+}
+
+const applyExecCapability = () => {
+  try {
+    flowStore.applyExecCapability(selectedCapabilityKey.value)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to apply capability.")
+  }
+}
+
 const isEditableTarget = (target: EventTarget | null) => {
   const el = target as HTMLElement | null
   if (!el) return false
@@ -230,6 +252,13 @@ watch(
   }
 )
 
+watch(
+  () => flowStore.state.selectedNodeIndex,
+  () => {
+    selectedCapabilityKey.value = ""
+  }
+)
+
 onMounted(() => {
   void refreshList().catch(() => {})
   window.addEventListener("keydown", onKeyDown)
@@ -257,7 +286,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
           >
             <p class="font-semibold">{{ flow.name || flow.flowId }}</p>
             <p class="text-xs text-muted-foreground">
-              every {{ flow.everyMs }} ms · last {{ flow.lastStatus || "idle" }}
+              {{ flow.everyMs > 0 ? `every ${flow.everyMs} ms` : "non-interval trigger" }} · last
+              {{ flow.lastStatus || "idle" }}
             </p>
           </button>
           <div v-if="!flowStore.state.flows.length" class="text-xs text-muted-foreground">
@@ -299,6 +329,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
               v-model="flowStore.state.flowId"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               placeholder="flow_id (uuid recommended)"
+              @blur="flowStore.commitHistory()"
             />
           </div>
           <div>
@@ -309,8 +340,25 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
               v-model="flowStore.state.flowName"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               placeholder="Optional name"
+              @blur="flowStore.commitHistory()"
             />
           </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Trigger
+            </label>
+            <select
+              v-model="flowStore.state.triggerType"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              @change="flowStore.commitHistory()"
+            >
+              <option value="interval">interval</option>
+              <option value="event">event</option>
+              <option value="var_changed">var_changed</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="flowStore.state.triggerType === 'interval'" class="mt-4 grid gap-4 md:grid-cols-2">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Every (ms)
@@ -321,6 +369,71 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
               min="1"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               placeholder="60000"
+              @blur="flowStore.commitHistory()"
+            />
+          </div>
+        </div>
+        <div v-else-if="flowStore.state.triggerType === 'event'" class="mt-4 grid gap-4 md:grid-cols-3">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Event Mode
+            </label>
+            <select
+              v-model="flowStore.state.eventMode"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              @change="flowStore.commitHistory()"
+            >
+              <option value="publish">publish</option>
+              <option value="received">received</option>
+              <option value="any">any</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Event Name
+            </label>
+            <input
+              v-model="flowStore.state.eventName"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="topicbus publish name"
+              @blur="flowStore.commitHistory()"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Event Topic
+            </label>
+            <input
+              v-model="flowStore.state.eventTopic"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="topic name"
+              @blur="flowStore.commitHistory()"
+            />
+          </div>
+        </div>
+        <div v-else class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Var Owner
+            </label>
+            <input
+              v-model.number="flowStore.state.varOwner"
+              type="number"
+              min="0"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="0 = any owner"
+              @blur="flowStore.commitHistory()"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Var Name
+            </label>
+            <input
+              v-model="flowStore.state.varName"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="empty = any name"
+              @blur="flowStore.commitHistory()"
             />
           </div>
         </div>
@@ -460,6 +573,44 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 @blur="flowStore.commitHistory()"
               />
+              <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="flowStore.state.execCapabilitiesLoading"
+                    @click="loadExecCapabilities"
+                  >
+                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Load Capabilities" }}
+                  </Button>
+                  <span class="text-[11px] text-muted-foreground">
+                    query by current Method prefix
+                  </span>
+                </div>
+                <div v-if="flowStore.state.execCapabilities.length" class="space-y-2">
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Capability
+                  </label>
+                  <select
+                    v-model="selectedCapabilityKey"
+                    class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option
+                      v-for="route in flowStore.state.execCapabilities"
+                      :key="route.key"
+                      :value="route.key"
+                    >
+                      {{ route.label }}
+                    </option>
+                  </select>
+                  <Button size="sm" variant="outline" @click="applyExecCapability">
+                    Use Selected Capability
+                  </Button>
+                </div>
+                <p v-else class="text-[11px] text-muted-foreground">
+                  No capability cached. Click "Load Capabilities" to pick one.
+                </p>
+              </div>
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">

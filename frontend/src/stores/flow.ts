@@ -51,10 +51,25 @@ export type FlowStatus = {
   nodes: FlowStatusNode[]
 }
 
+export type ExecCapabilityRoute = {
+  key: string
+  providerNode: number
+  viaNode: number
+  method: string
+  version: string
+  label: string
+}
+
 type FlowDraftSnapshot = {
   flowId: string
   flowName: string
+  triggerType: "interval" | "event" | "var_changed"
+  eventMode: "publish" | "received" | "any"
   everyMs: number
+  eventName: string
+  eventTopic: string
+  varOwner: number
+  varName: string
   nodes: FlowNodeDraft[]
   edges: FlowEdge[]
   selectedNodeIndex: number
@@ -68,13 +83,21 @@ type FlowState = {
   flows: FlowSummary[]
   flowId: string
   flowName: string
+  triggerType: "interval" | "event" | "var_changed"
+  eventMode: "publish" | "received" | "any"
   everyMs: number
+  eventName: string
+  eventTopic: string
+  varOwner: number
+  varName: string
   nodes: FlowNodeDraft[]
   edges: FlowEdge[]
   selectedNodeIndex: number
   selectedEdgeIndex: number
   statusRunId: string
   lastStatus: FlowStatus
+  execCapabilities: ExecCapabilityRoute[]
+  execCapabilitiesLoading: boolean
   message: string
   historyIndex: number
   historyLength: number
@@ -87,7 +110,13 @@ const state = reactive<FlowState>({
   flows: [],
   flowId: "",
   flowName: "",
+  triggerType: "interval",
+  eventMode: "publish",
   everyMs: 60000,
+  eventName: "",
+  eventTopic: "",
+  varOwner: 0,
+  varName: "",
   nodes: [],
   edges: [],
   selectedNodeIndex: -1,
@@ -99,6 +128,8 @@ const state = reactive<FlowState>({
     executorNode: 0,
     nodes: []
   },
+  execCapabilities: [],
+  execCapabilitiesLoading: false,
   message: "",
   historyIndex: 0,
   historyLength: 1
@@ -113,7 +144,13 @@ const snapshotToJSON = (snapshot: FlowDraftSnapshot) => JSON.stringify(snapshot)
 const takeSnapshot = (): FlowDraftSnapshot => ({
   flowId: state.flowId,
   flowName: state.flowName,
+  triggerType: state.triggerType,
+  eventMode: state.eventMode,
   everyMs: state.everyMs,
+  eventName: state.eventName,
+  eventTopic: state.eventTopic,
+  varOwner: state.varOwner,
+  varName: state.varName,
   nodes: state.nodes.map((node) => ({
     id: node.id,
     kind: node.kind,
@@ -145,7 +182,13 @@ const resetHistory = () => {
 const applySnapshot = (snapshot: FlowDraftSnapshot) => {
   state.flowId = snapshot.flowId
   state.flowName = snapshot.flowName
+  state.triggerType = snapshot.triggerType
+  state.eventMode = snapshot.eventMode
   state.everyMs = snapshot.everyMs
+  state.eventName = snapshot.eventName
+  state.eventTopic = snapshot.eventTopic
+  state.varOwner = snapshot.varOwner
+  state.varName = snapshot.varName
   state.nodes = snapshot.nodes.map((node) => ({ ...node }))
   state.edges = snapshot.edges.map((edge) => ({ ...edge }))
   state.selectedNodeIndex =
@@ -307,15 +350,42 @@ const mapEdge = (input: any): FlowEdge => ({
   to: String(input?.to ?? "").trim()
 })
 
+const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
+  const providerNode = Number(input?.provider_node ?? 0)
+  const viaNode = Number(input?.via_node ?? 0)
+  const method = String(input?.method ?? "").trim()
+  const version = String(input?.version ?? "").trim()
+  const providerText = providerNode > 0 ? String(providerNode) : "-"
+  const viaText = viaNode > 0 ? ` via ${viaNode}` : ""
+  const versionText = version ? `@${version}` : ""
+  const label = `${providerText} · ${method}${versionText}${viaText}`
+  return {
+    key: `${providerNode}|${method}|${version}`,
+    providerNode: providerNode > 0 ? Math.trunc(providerNode) : 0,
+    viaNode: viaNode > 0 ? Math.trunc(viaNode) : 0,
+    method,
+    version,
+    label
+  }
+}
+
 const newDraft = () => {
   state.flowId = ""
   state.flowName = ""
+  state.triggerType = "interval"
+  state.eventMode = "publish"
   state.everyMs = 60000
+  state.eventName = ""
+  state.eventTopic = ""
+  state.varOwner = 0
+  state.varName = ""
   state.nodes = []
   state.edges = []
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   state.statusRunId = ""
+  state.execCapabilities = []
+  state.execCapabilitiesLoading = false
   resetHistory()
 }
 
@@ -591,6 +661,40 @@ const buildGraph = () => {
   return { nodes, edges }
 }
 
+const buildTrigger = () => {
+  const triggerType = state.triggerType
+  if (triggerType === "event") {
+    const eventName = state.eventName.trim()
+    const eventTopic = state.eventTopic.trim()
+    if (!eventName && !eventTopic) {
+      throw new Error("Event trigger requires event name or event topic.")
+    }
+    return {
+      type: "event",
+      event_mode: state.eventMode,
+      event_name: eventName || undefined,
+      event_topic: eventTopic || undefined
+    }
+  }
+  if (triggerType === "var_changed") {
+    const owner = Number(state.varOwner || 0)
+    if (!Number.isFinite(owner) || owner < 0) {
+      throw new Error("Var owner must be a non-negative number.")
+    }
+    const varName = state.varName.trim()
+    return {
+      type: "var_changed",
+      var_owner: owner > 0 ? Math.trunc(owner) : undefined,
+      var_name: varName || undefined
+    }
+  }
+  const everyMs = Number(state.everyMs)
+  if (!everyMs || everyMs <= 0) {
+    throw new Error("EveryMs must be a positive number.")
+  }
+  return { type: "interval", every_ms: everyMs }
+}
+
 const listFlows = async () => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -623,10 +727,7 @@ const saveFlow = async () => {
   if (!flowId) {
     throw new Error("Flow ID is required.")
   }
-  const everyMs = Number(state.everyMs)
-  if (!everyMs || everyMs <= 0) {
-    throw new Error("EveryMs must be a positive number.")
-  }
+  const trigger = buildTrigger()
   const graph = buildGraph()
   const req = {
     req_id: newReqId(),
@@ -634,7 +735,7 @@ const saveFlow = async () => {
     executor_node: executorNode,
     flow_id: flowId,
     name: state.flowName.trim(),
-    trigger: { type: "interval", every_ms: everyMs },
+    trigger,
     graph
   }
   const resp = await callFlow<any>("SetSimple", sourceID, hubID, req)
@@ -697,21 +798,87 @@ const handleGetResp = (data: any) => {
   }
   state.flowId = String(data?.flow_id ?? "")
   state.flowName = String(data?.name ?? "")
-  const everyMs = Number(data?.trigger?.every_ms ?? 0)
-  if (everyMs > 0) {
-    state.everyMs = everyMs
+  const trigger = data?.trigger ?? {}
+  const triggerType = String(trigger?.type ?? "interval").trim().toLowerCase()
+  if (triggerType === "event" || triggerType === "var_changed") {
+    state.triggerType = triggerType
+  } else {
+    state.triggerType = "interval"
   }
+  const everyMs = Number(trigger?.every_ms ?? 0)
+  state.everyMs = everyMs > 0 ? everyMs : 60000
+  const rawEventMode = String(trigger?.event_mode ?? "publish").trim().toLowerCase()
+  if (rawEventMode === "received" || rawEventMode === "any") {
+    state.eventMode = rawEventMode
+  } else {
+    state.eventMode = "publish"
+  }
+  state.eventName = String(trigger?.event_name ?? "").trim()
+  state.eventTopic = String(trigger?.event_topic ?? "").trim()
+  const varOwner = Number(trigger?.var_owner ?? 0)
+  state.varOwner = Number.isFinite(varOwner) && varOwner > 0 ? Math.trunc(varOwner) : 0
+  state.varName = String(trigger?.var_name ?? "").trim()
   const nodes = Array.isArray(data?.graph?.nodes) ? data.graph.nodes : []
   const edges = Array.isArray(data?.graph?.edges) ? data.graph.edges : []
   state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
   state.edges = edges.map(mapEdge)
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
+  state.execCapabilities = []
+  state.execCapabilitiesLoading = false
   state.message = "Flow loaded."
   resetHistory()
   if (state.selfNodeId && state.hubId) {
     void statusFlow("").catch(() => {})
   }
+}
+
+const queryExecCapabilities = async (methodFilter?: string) => {
+  const { sourceID } = ensureIdentity()
+  const executorNode = resolveTargetNode()
+  const method = String(methodFilter ?? "").trim()
+  const req = {
+    req_id: newReqId(),
+    requester_node: sourceID,
+    method: method || undefined,
+    prefix: method.length > 0,
+    limit: 200
+  }
+  state.execCapabilitiesLoading = true
+  try {
+    const data = await callFlow<any>("ExecCapQuerySimple", sourceID, executorNode, req)
+    const code = Number(data?.code ?? 0)
+    const msg = String(data?.msg ?? "")
+    if (code !== 1) {
+      state.execCapabilities = []
+      state.message = msg || "Capability query failed."
+      return
+    }
+    const routes = Array.isArray(data?.routes) ? data.routes : []
+    state.execCapabilities = routes
+      .map(mapExecCapabilityRoute)
+      .filter((route) => route.providerNode > 0 && route.method.length > 0)
+    state.message = state.execCapabilities.length
+      ? `Capability list updated (${state.execCapabilities.length}).`
+      : "No capability matched."
+  } finally {
+    state.execCapabilitiesLoading = false
+  }
+}
+
+const applyExecCapability = (key: string) => {
+  const selected = state.nodes[state.selectedNodeIndex]
+  if (!selected || selected.kind !== "exec") {
+    throw new Error("Select an exec node first.")
+  }
+  const route = state.execCapabilities.find((item) => item.key === String(key).trim())
+  if (!route) {
+    throw new Error("Capability not found in current list.")
+  }
+  selected.method = route.method
+  selected.target = route.providerNode
+  commitHistory()
+  state.message = `Capability applied: ${route.method} @ node ${route.providerNode}.`
 }
 
 const handleSetResp = (data: any) => {
@@ -786,6 +953,8 @@ export const useFlowStore = () => {
     redo,
     runFlow,
     saveFlow,
+    queryExecCapabilities,
+    applyExecCapability,
     undo,
     selectEdgeByEndpoints: (from: string, to: string) => {
       const fromId = from.trim()
