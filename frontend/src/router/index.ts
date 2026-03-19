@@ -9,6 +9,7 @@ import Logs from "@/pages/Logs.vue"
 import Presets from "@/pages/Presets.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
+import Permissions from "@/pages/Permissions.vue"
 import Showcase from "@/pages/Showcase.vue"
 import FileTasks from "@/windows/FileTasks.vue"
 import LogWindow from "@/windows/LogWindow.vue"
@@ -113,6 +114,15 @@ const routes = [
     meta: {
       title: "Presets",
       subtitle: "Run stress tests and reusable automation recipes."
+    }
+  },
+  {
+    path: "/permissions",
+    name: "permissions",
+    component: Permissions,
+    meta: {
+      title: "Permissions",
+      subtitle: "Manage authority role/perms policy and runtime snapshot."
     }
   },
   {

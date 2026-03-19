@@ -12,7 +12,8 @@ import {
   Network,
   Rss,
   Server,
-  Share2
+  Share2,
+  ShieldCheck
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -182,6 +183,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/devices",
         icon: Network,
         tone: "bg-violet-500/15 text-violet-700"
+      },
+      {
+        label: "Permissions",
+        description: "Authority role/perms",
+        to: "/permissions",
+        icon: ShieldCheck,
+        tone: "bg-emerald-500/15 text-emerald-700"
       },
       {
         label: "File Console",

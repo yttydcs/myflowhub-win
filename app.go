@@ -16,6 +16,7 @@ import (
 	localhubsvc "github.com/yttydcs/myflowhub-win/internal/services/localhub"
 	logssvc "github.com/yttydcs/myflowhub-win/internal/services/logs"
 	mgmtsvc "github.com/yttydcs/myflowhub-win/internal/services/management"
+	permissionsvc "github.com/yttydcs/myflowhub-win/internal/services/permission"
 	presetssvc "github.com/yttydcs/myflowhub-win/internal/services/presets"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	topicbussvc "github.com/yttydcs/myflowhub-win/internal/services/topicbus"
@@ -35,6 +36,7 @@ type App struct {
 	file         *filesvc.FileService
 	flow         *flowsvc.FlowService
 	management   *mgmtsvc.ManagementService
+	permission   *permissionsvc.PermissionService
 	debug        *debugsvc.DebugService
 	presets      *presetssvc.PresetService
 	store        *storagesvc.Store
@@ -74,6 +76,8 @@ func NewApp() *App {
 		presets:    presetssvc.New(session, bus),
 		store:      store,
 	}
+	// Keep shared service instances to avoid duplicated state and logging.
+	app.permission = permissionsvc.New(app.auth, app.management, logs)
 	if store != nil {
 		current := store.CurrentProfile()
 		app.auth.SetKeysPath(store.NodeKeysPath(current))
@@ -82,7 +86,7 @@ func NewApp() *App {
 }
 
 func (a *App) Bindings() []interface{} {
-	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.file, a.flow, a.management, a.debug, a.presets}
+	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.file, a.flow, a.management, a.permission, a.debug, a.presets}
 }
 
 func (a *App) Startup(ctx context.Context) {
