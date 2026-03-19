@@ -1,120 +1,123 @@
-# Plan - Win：DAG 节点 ID 自动生成 + 工具栏图标化
+# Plan - Win：Flow Exec 能力选择器（按节点+能力联动）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Win`
-- 分支：`feat/win-dag-nodeid-icons`
-- Worktree：`d:\project\MyFlowHub3\repo\MyFlowHub-Win\worktrees\feat-win-dag-nodeid-icons`
+- 分支：`feat/win-flow-capability-picker`
+- Worktree：`d:\project\MyFlowHub3\repo\MyFlowHub-Win\repo\MyFlowHub-Win\worktrees\feat-win-flow-capability-picker`
 - Base：`main`
 
 ## 项目目标与当前状态
 - 目标：
-  - 新增 DAG 节点时自动生成不重复的 Node ID（大小写敏感）；
-  - 允许在右侧 Node Detail 修改 Node ID，并自动同步更新 edges 引用；
-  - 将 Flow Editor 顶部工具条 + Add/Remove Node/Edge 统一改为图标按钮，并使用 Tooltip 展示功能说明（风格对齐 Showcase 顶部）。
+  - 在 Flow 页的 exec 节点编辑中，支持“先选目标节点，再选能力”的可视化配置；
+  - 选择能力后自动回填 `spec.target`、`spec.method`（必要时可回填示例 `args`）；
+  - 保持现有保存/运行协议不变，兼容已有手填 method 的历史 flow。
 - 当前状态：
-  - Add Node 需要手动输入 Node ID，且不提供自动生成；
-  - Node Detail 的 Node ID 输入框 disabled，无法改名；
-  - Flow Editor 顶部与 Add/Remove Node/Edge 使用文本按钮，视觉密度较高。
+  - exec 节点能力查询依赖“当前 method 前缀”手动输入触发；
+  - capability 列表为单层列表，缺少按 provider node 的联动筛选；
+  - 用户需手动维护 target 与 method 的一致性，易出错。
 
 ## 范围
 - 必须：
-  - 自动生成 Node ID（避免重复）并支持手动修改（重复校验，大小写敏感）；
-  - 改名时自动更新所有 `edges[].from/to`（旧 ID → 新 ID）；
-  - 变更应纳入 undo/redo 历史；
-  - 工具条与 Add/Remove Node/Edge 改为 icon + tooltip，并保留可访问性文本（`sr-only`）。
+  - `kind=exec` 时提供目标节点选择与能力选择联动；
+  - 能力选择后自动写入 `selectedNode.target` + `selectedNode.method`；
+  - 目标节点切换后，能力列表按该节点过滤；
+  - 对未知/历史能力配置保持兼容，不强制清空已有 method；
+  - 保存、运行、状态查询链路不回归。
 - 可选：
-  - Tooltip 文案包含快捷键提示（例如 Save: `Ctrl+S`）。
+  - 若后端返回可用 schema，默认填充 args 模板（当前先保留接口位）。
 - 不做：
-  - 不改协议/服务端；
-  - 不调整 Flow 的执行语义与节点类型（local/exec）；
-  - 不做 UI 大改版（仅对齐已有 Showcase toolbar 组件风格）。
+  - 不改后端协议字段；
+  - 不引入自动选路（cap_query 决策）；
+  - 不改变 local 节点语义。
 
 ## 可执行任务清单（Checklist）
 
-### WIN-DAG-1 - 自动生成 Node ID（Add Node 预填）
+### WIN-CAP-1 - 能力选择交互建模
 - 目标：
-  - 打开 Add Node 弹窗时，自动填入一个唯一 Node ID（默认形如 `n1/n2/...`）。
-- 涉及模块 / 文件：
-  - `frontend/src/stores/flow.ts`（新增 `suggestNodeId()`）
-  - `frontend/src/pages/Flow.vue`（`openAddNodeDialog()` 使用建议 ID）
-- 验收条件：
-  - 直接点 Add 可成功新增节点；连续新增不会重复。
-- 测试点：
-  - 新建草稿，连续 Add Node 3 次，检查 ID 唯一；
-  - 手动改成重复 ID，Add 时能提示失败。
-- 回滚点：
-  - 回退 `suggestNodeId()` 与对应 UI 改动。
-
-### WIN-DAG-2 - 支持改名 Node ID（同步更新 edges + history）
-- 目标：
-  - 在 Node Detail 中允许编辑 Node ID；改名时自动更新所有引用该节点的边。
-- 涉及模块 / 文件：
-  - `frontend/src/stores/flow.ts`（新增 `renameNodeId(oldId, newId)`）
-  - `frontend/src/pages/Flow.vue`（Node Detail 增加可编辑输入与提交流程）
-- 验收条件：
-  - 改名后 edges 的 `from/to` 被正确替换；
-  - 改名会进入历史快照，undo/redo 可回退/恢复。
-- 测试点：
-  - 创建 3 节点 + 2 条边；改名中间节点；确认两条边同步更新；
-  - undo/redo 验证改名与边更新可回退/恢复；
-  - 重复 ID 被拒绝且不会破坏现有状态。
-- 回滚点：
-  - 回退改名逻辑；恢复 Node ID disabled。
-
-### WIN-DAG-3 - Flow 工具条与节点操作按钮图标化（Tooltip）
-- 目标：
-  - 将 Flow Editor 顶部工具条与 Add/Remove Node/Edge 改为 icon 按钮，并使用 Tooltip 展示功能说明。
+  - 在前端建立 provider 节点选项与能力选项的联动计算逻辑。
 - 涉及模块 / 文件：
   - `frontend/src/pages/Flow.vue`
 - 验收条件：
-  - Tooltip 正常显示；禁用态逻辑不变；功能行为与原文本按钮一致。
+  - 可从能力缓存中提取 provider node 列表；
+  - 目标节点变化时，能力下拉即时收敛到该节点。
 - 测试点：
-  - Refresh/New/Undo/Redo/AutoLayout/Save/Run/Status；
-  - Add/Remove Node/Edge；
-  - 键盘快捷键仍可用（如 `Ctrl+S`、`Ctrl+Z`）。
+  - 切换目标节点后 capability 选项变化正确；
+  - 无能力时提示文案明确。
 - 回滚点：
-  - 回退到原文本按钮布局。
+  - 回退新增计算属性与 watcher。
 
-### WIN-DAG-4 - 最小构建与人工验收
+### WIN-CAP-2 - exec 节点详情改造（节点+能力联动）
 - 目标：
-  - 证明前端能正常构建，且核心交互可用。
+  - 以“目标节点 + 能力”为主路径替代手填 method 前缀操作。
 - 涉及模块 / 文件：
-  - `frontend/` 构建产物（不提交）
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/stores/flow.ts`（如需补充 helper）
 - 验收条件：
-  - `frontend` 构建成功；关键交互按上述测试点通过。
+  - 选择能力后 `target/method` 被写回节点；
+  - 已有未知 method 不会被强制覆盖。
 - 测试点：
-  - `cd frontend && npm run build`
+  - 新建 exec 节点，加载能力并选择后可保存；
+  - 历史 flow 中 method 不在列表时，仍可显示并运行。
 - 回滚点：
-  - 清理本地构建产物；回退相关提交。
+  - 回退 exec 节点详情区改动。
 
-### WIN-DAG-5 - Code Review（强制）
+### WIN-CAP-3 - 输入校验与错误反馈收敛
 - 目标：
-  - 审查需求覆盖、架构合理性、稳定性与可维护性。
+  - 对能力查询/应用失败给出清晰反馈，避免 silent failure。
 - 涉及模块 / 文件：
-  - 本 workflow 全部改动文件
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/stores/flow.ts`
 - 验收条件：
-  - 形成逐项通过/不通过结论。
+  - 能力查询失败保留 toast；
+  - 选择无效能力时阻止提交并提示。
 - 测试点：
-  - Review 清单齐全。
+  - 模拟 403/timeout；
+  - 选择已失效能力 key。
 - 回滚点：
-  - 若不通过，回到对应任务修订。
+  - 回退新增校验与提示逻辑。
 
-### WIN-DAG-6 - 归档变更（强制）
+### WIN-CAP-4 - 构建与关键路径验证
 - 目标：
-  - 输出可交接、可审计的变更说明。
+  - 验证本次改造对主流程无破坏。
 - 涉及模块 / 文件：
-  - `docs/change/2026-03-18_win-dag-nodeid-icons.md`
+  - `frontend/`（构建）
 - 验收条件：
-  - 文档包含背景/目标、具体改动、任务映射、设计权衡、测试结果、影响与回滚。
+  - `npm run build` 通过；
+  - Flow 编辑保存/运行/状态查询可用。
 - 测试点：
-  - 文档完整可复现。
+  - 连接 root 节点，创建 exec 节点并配置能力后 Save + Run。
 - 回滚点：
-  - 回退归档文档。
+  - 清理构建产物并回退改动。
+
+### WIN-CAP-5 - Code Review（强制）
+- 目标：
+  - 对需求覆盖、架构、性能、可维护性逐项审查。
+- 涉及模块 / 文件：
+  - 本 workflow 全量改动文件
+- 验收条件：
+  - Review 清单形成通过/不通过结论。
+- 测试点：
+  - 与 plan 映射完整。
+- 回滚点：
+  - 若不通过，回到对应任务修复。
+
+### WIN-CAP-6 - 归档变更（强制）
+- 目标：
+  - 输出可交接、可审计的变更文档。
+- 涉及模块 / 文件：
+  - `docs/change/2026-03-19_win-flow-capability-picker.md`
+- 验收条件：
+  - 包含背景、变更明细、任务映射、权衡、测试、风险与回滚。
+- 测试点：
+  - 文档可单独用于交接。
+- 回滚点：
+  - 回退该归档文档。
 
 ## 依赖关系
-- `WIN-DAG-1` → `WIN-DAG-2` → `WIN-DAG-3` → `WIN-DAG-4` → `WIN-DAG-5` → `WIN-DAG-6`
+- `WIN-CAP-1` → `WIN-CAP-2` → `WIN-CAP-3` → `WIN-CAP-4` → `WIN-CAP-5` → `WIN-CAP-6`
 
 ## 风险与注意事项
-- Node ID 改名必须同步更新 edges，否则会造成图显示/选择异常；
-- commitHistory 基于 snapshot diff：需要避免在 UI 层产生“输入框显示值与 state 不一致”的状态；
-- 图标按钮需保留 `sr-only` 文本，避免可访问性退化。
+- 能力缓存来自远端查询，存在过期风险：需容忍“当前方法不在列表”的状态；
+- 节点切换与 capability 选择存在状态同步问题：必须避免 watcher 循环触发；
+- 不应把 capability 视图状态写入持久化 spec，避免污染后端协议；
+- 大列表能力渲染需避免重复计算：通过 computed 缓存 provider/options 映射。

@@ -30,6 +30,37 @@ const selectedEdge = computed(
   () => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null
 )
 
+const execProviderNodes = computed(() => {
+  const seen = new Set<number>()
+  for (const route of flowStore.state.execCapabilities) {
+    if (route.providerNode > 0) {
+      seen.add(route.providerNode)
+    }
+  }
+  return [...seen].sort((a, b) => a - b)
+})
+
+const execProviderNodesWithCurrent = computed(() => {
+  const options = [...execProviderNodes.value]
+  const node = selectedNode.value
+  if (!node || node.kind !== "exec") return options
+  const current = Number(node.target || 0)
+  if (current > 0 && !options.includes(current)) {
+    options.push(current)
+    options.sort((a, b) => a - b)
+  }
+  return options
+})
+
+const execCapabilitiesForTarget = computed(() => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "exec") return []
+  const target = Number(node.target || 0)
+  const routes = flowStore.state.execCapabilities
+  if (target <= 0) return routes
+  return routes.filter((route) => route.providerNode === target)
+})
+
 const canUndo = computed(() => flowStore.state.historyIndex > 0)
 const canRedo = computed(
   () => flowStore.state.historyIndex >= 0 && flowStore.state.historyIndex < flowStore.state.historyLength - 1
@@ -165,12 +196,34 @@ const onCanvasClear = () => {
   flowStore.clearSelection()
 }
 
+const syncSelectedCapabilityByNode = () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "exec") {
+    selectedCapabilityKey.value = ""
+    return
+  }
+  const method = node.method.trim()
+  const target = Number(node.target || 0)
+  if (!method || target <= 0) {
+    selectedCapabilityKey.value = ""
+    return
+  }
+  const matched = flowStore.state.execCapabilities.find(
+    (route) => route.providerNode === target && route.method === method
+  )
+  selectedCapabilityKey.value = matched?.key ?? ""
+}
+
 const loadExecCapabilities = async () => {
   const node = selectedNode.value
   if (!node || node.kind !== "exec") return
   try {
-    await flowStore.queryExecCapabilities(node.method)
-    selectedCapabilityKey.value = flowStore.state.execCapabilities[0]?.key ?? ""
+    await flowStore.queryExecCapabilities("")
+    syncSelectedCapabilityByNode()
+    if (!selectedCapabilityKey.value) {
+      selectedCapabilityKey.value =
+        execCapabilitiesForTarget.value[0]?.key ?? flowStore.state.execCapabilities[0]?.key ?? ""
+    }
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to query capabilities.")
@@ -178,11 +231,23 @@ const loadExecCapabilities = async () => {
 }
 
 const applyExecCapability = () => {
+  if (!selectedCapabilityKey.value) return
   try {
     flowStore.applyExecCapability(selectedCapabilityKey.value)
+    syncSelectedCapabilityByNode()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to apply capability.")
+  }
+}
+
+const onExecTargetChanged = () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "exec") return
+  flowStore.commitHistory()
+  syncSelectedCapabilityByNode()
+  if (!selectedCapabilityKey.value) {
+    selectedCapabilityKey.value = execCapabilitiesForTarget.value[0]?.key ?? ""
   }
 }
 
@@ -272,7 +337,7 @@ watch(
 watch(
   () => flowStore.state.selectedNodeIndex,
   () => {
-    selectedCapabilityKey.value = ""
+    syncSelectedCapabilityByNode()
   }
 )
 
@@ -282,6 +347,20 @@ watch(
     nodeIdDraft.value = id
   },
   { immediate: true }
+)
+
+watch(
+  () => [selectedNode.value?.kind ?? "", selectedNode.value?.target ?? 0, selectedNode.value?.method ?? ""],
+  () => {
+    syncSelectedCapabilityByNode()
+  }
+)
+
+watch(
+  () => flowStore.state.execCapabilities.map((route) => route.key).join("|"),
+  () => {
+    syncSelectedCapabilityByNode()
+  }
 )
 
 onMounted(() => {
@@ -631,7 +710,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 />
               </div>
             </div>
-            <div>
+            <div v-if="selectedNode.kind === 'local'">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Method
               </label>
@@ -642,17 +721,38 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 @blur="flowStore.commitHistory()"
               />
             </div>
-            <div v-if="selectedNode.kind === 'exec'">
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Target Node
-              </label>
-              <input
-                v-model.number="selectedNode.target"
-                type="number"
-                min="0"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                @blur="flowStore.commitHistory()"
-              />
+            <div v-else class="space-y-3">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Target Node
+                </label>
+                <select
+                  v-model.number="selectedNode.target"
+                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @change="onExecTargetChanged"
+                >
+                  <option :value="0">Select target node</option>
+                  <option
+                    v-for="nodeId in execProviderNodesWithCurrent"
+                    :key="`provider-${nodeId}`"
+                    :value="nodeId"
+                  >
+                    {{
+                      execProviderNodes.includes(nodeId)
+                        ? `node ${nodeId}`
+                        : `node ${nodeId} (current, not in cache)`
+                    }}
+                  </option>
+                </select>
+                <input
+                  v-model.number="selectedNode.target"
+                  type="number"
+                  min="0"
+                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="manual target node id"
+                  @blur="flowStore.commitHistory(); syncSelectedCapabilityByNode()"
+                />
+              </div>
               <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
                 <div class="flex flex-wrap items-center gap-2">
                   <Button
@@ -661,35 +761,56 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                     :disabled="flowStore.state.execCapabilitiesLoading"
                     @click="loadExecCapabilities"
                   >
-                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Load Capabilities" }}
+                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Refresh Capabilities" }}
                   </Button>
                   <span class="text-[11px] text-muted-foreground">
-                    query by current Method prefix
+                    query all capabilities and filter by selected target
                   </span>
                 </div>
-                <div v-if="flowStore.state.execCapabilities.length" class="space-y-2">
+                <div v-if="execCapabilitiesForTarget.length" class="space-y-2">
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Capability
                   </label>
                   <select
                     v-model="selectedCapabilityKey"
                     class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    @change="applyExecCapability"
                   >
                     <option
-                      v-for="route in flowStore.state.execCapabilities"
+                      v-for="route in execCapabilitiesForTarget"
                       :key="route.key"
                       :value="route.key"
                     >
                       {{ route.label }}
                     </option>
                   </select>
-                  <Button size="sm" variant="outline" @click="applyExecCapability">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="!selectedCapabilityKey"
+                    @click="applyExecCapability"
+                  >
                     Use Selected Capability
                   </Button>
                 </div>
                 <p v-else class="text-[11px] text-muted-foreground">
-                  No capability cached. Click "Load Capabilities" to pick one.
+                  {{
+                    selectedNode.target > 0
+                      ? "No capability found on selected target. Refresh or choose another node."
+                      : "No capability cached. Click \"Refresh Capabilities\" first."
+                  }}
                 </p>
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Method (manual override)
+                </label>
+                <input
+                  v-model="selectedNode.method"
+                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="preferred: pick from capability list"
+                  @blur="flowStore.commitHistory()"
+                />
               </div>
             </div>
             <div>

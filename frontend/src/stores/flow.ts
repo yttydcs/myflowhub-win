@@ -360,7 +360,7 @@ const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
   const versionText = version ? `@${version}` : ""
   const label = `${providerText} · ${method}${versionText}${viaText}`
   return {
-    key: `${providerNode}|${method}|${version}`,
+    key: `${providerNode}|${viaNode}|${method}|${version}`,
     providerNode: providerNode > 0 ? Math.trunc(providerNode) : 0,
     viaNode: viaNode > 0 ? Math.trunc(viaNode) : 0,
     method,
