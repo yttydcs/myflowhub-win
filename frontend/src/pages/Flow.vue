@@ -15,12 +15,10 @@ const toast = useToastStore()
 
 const addNodeOpen = ref(false)
 const selectedCapabilityKey = ref("")
-const selectedLocalCapabilityKey = ref("")
 const nodeIdDraft = ref("")
 
 const nodeDraft = reactive({
-  id: "",
-  kind: "local" as "local" | "exec"
+  id: ""
 })
 
 const selectedNode = computed(
@@ -31,7 +29,7 @@ const selectedEdge = computed(
   () => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null
 )
 
-const execProviderNodes = computed(() => {
+const capabilityProviderNodes = computed(() => {
   const seen = new Set<number>()
   for (const route of flowStore.state.execCapabilities) {
     if (route.providerNode > 0) {
@@ -41,10 +39,10 @@ const execProviderNodes = computed(() => {
   return [...seen].sort((a, b) => a - b)
 })
 
-const execProviderNodesWithCurrent = computed(() => {
-  const options = [...execProviderNodes.value]
+const capabilityProviderNodesWithCurrent = computed(() => {
+  const options = [...capabilityProviderNodes.value]
   const node = selectedNode.value
-  if (!node || node.kind !== "exec") return options
+  if (!node || node.kind !== "call") return options
   const current = Number(node.target || 0)
   if (current > 0 && !options.includes(current)) {
     options.push(current)
@@ -53,16 +51,7 @@ const execProviderNodesWithCurrent = computed(() => {
   return options
 })
 
-const execCapabilitiesForTarget = computed(() => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "exec") return []
-  const target = Number(node.target || 0)
-  const routes = flowStore.state.execCapabilities
-  if (target <= 0) return routes
-  return routes.filter((route) => route.providerNode === target)
-})
-
-const executorNodeForLocal = computed(() => {
+const executorNodeForCall = computed(() => {
   const raw = flowStore.state.targetId.trim()
   if (raw) {
     const parsed = Number.parseInt(raw, 10)
@@ -74,12 +63,20 @@ const executorNodeForLocal = computed(() => {
   return Number.isFinite(hub) && hub > 0 ? Math.trunc(hub) : 0
 })
 
-const localCapabilitiesForExecutor = computed(() => {
+const capabilityFilterTarget = computed(() => {
   const node = selectedNode.value
-  if (!node || node.kind !== "local") return []
-  const executor = executorNodeForLocal.value
-  if (executor <= 0) return []
-  return flowStore.state.execCapabilities.filter((route) => route.providerNode === executor)
+  if (!node || node.kind !== "call") return 0
+  const target = Number(node.target || 0)
+  if (target > 0) return Math.trunc(target)
+  return executorNodeForCall.value > 0 ? executorNodeForCall.value : 0
+})
+
+const capabilitiesForCurrentTarget = computed(() => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "call") return []
+  const providerNode = capabilityFilterTarget.value
+  if (providerNode <= 0) return []
+  return flowStore.state.execCapabilities.filter((route) => route.providerNode === providerNode)
 })
 
 const canUndo = computed(() => flowStore.state.historyIndex > 0)
@@ -155,7 +152,6 @@ const selectFlow = async (flowId: string) => {
 
 const openAddNodeDialog = () => {
   nodeDraft.id = flowStore.suggestNodeId()
-  nodeDraft.kind = "local"
   addNodeOpen.value = true
 }
 
@@ -175,7 +171,7 @@ const commitNodeId = () => {
 
 const saveNode = () => {
   try {
-    flowStore.addNode(nodeDraft.id, nodeDraft.kind)
+    flowStore.addNode(nodeDraft.id)
     addNodeOpen.value = false
   } catch (err) {
     console.warn(err)
@@ -219,46 +215,30 @@ const onCanvasClear = () => {
 
 const syncSelectedCapabilityByNode = () => {
   const node = selectedNode.value
-  if (!node || node.kind !== "exec") {
+  if (!node || node.kind !== "call") {
     selectedCapabilityKey.value = ""
     return
   }
   const method = node.method.trim()
-  const target = Number(node.target || 0)
-  if (!method || target <= 0) {
+  const providerNode = capabilityFilterTarget.value
+  if (!method || providerNode <= 0) {
     selectedCapabilityKey.value = ""
     return
   }
   const matched = flowStore.state.execCapabilities.find(
-    (route) => route.providerNode === target && route.method === method
+    (route) => route.providerNode === providerNode && route.method === method
   )
   selectedCapabilityKey.value = matched?.key ?? ""
 }
 
-const syncSelectedLocalCapabilityByNode = () => {
+const loadCapabilities = async () => {
   const node = selectedNode.value
-  if (!node || node.kind !== "local") {
-    selectedLocalCapabilityKey.value = ""
-    return
-  }
-  const method = node.method.trim()
-  if (!method) {
-    selectedLocalCapabilityKey.value = ""
-    return
-  }
-  const matched = localCapabilitiesForExecutor.value.find((route) => route.method === method)
-  selectedLocalCapabilityKey.value = matched?.key ?? ""
-}
-
-const loadExecCapabilities = async () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "exec") return
+  if (!node || node.kind !== "call") return
   try {
     await flowStore.queryExecCapabilities("")
     syncSelectedCapabilityByNode()
     if (!selectedCapabilityKey.value) {
-      selectedCapabilityKey.value =
-        execCapabilitiesForTarget.value[0]?.key ?? flowStore.state.execCapabilities[0]?.key ?? ""
+      selectedCapabilityKey.value = capabilitiesForCurrentTarget.value[0]?.key ?? ""
     }
   } catch (err) {
     console.warn(err)
@@ -266,10 +246,10 @@ const loadExecCapabilities = async () => {
   }
 }
 
-const applyExecCapability = () => {
+const applyCapability = () => {
   if (!selectedCapabilityKey.value) return
   try {
-    flowStore.applyExecCapability(selectedCapabilityKey.value)
+    flowStore.applyCallCapability(selectedCapabilityKey.value)
     syncSelectedCapabilityByNode()
   } catch (err) {
     console.warn(err)
@@ -277,40 +257,13 @@ const applyExecCapability = () => {
   }
 }
 
-const loadLocalCapabilities = async () => {
+const onCallTargetChanged = () => {
   const node = selectedNode.value
-  if (!node || node.kind !== "local") return
-  try {
-    await flowStore.queryExecCapabilities("")
-    syncSelectedLocalCapabilityByNode()
-    if (!selectedLocalCapabilityKey.value) {
-      selectedLocalCapabilityKey.value = localCapabilitiesForExecutor.value[0]?.key ?? ""
-    }
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to query capabilities.")
-  }
-}
-
-const applyLocalCapability = () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "local") return
-  if (!selectedLocalCapabilityKey.value) return
-  const route = localCapabilitiesForExecutor.value.find((item) => item.key === selectedLocalCapabilityKey.value)
-  if (!route) return
-  node.method = route.method
-  flowStore.commitHistory()
-  flowStore.state.message = `Local capability applied: ${route.method}.`
-  syncSelectedLocalCapabilityByNode()
-}
-
-const onExecTargetChanged = () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "exec") return
+  if (!node || node.kind !== "call") return
   flowStore.commitHistory()
   syncSelectedCapabilityByNode()
   if (!selectedCapabilityKey.value) {
-    selectedCapabilityKey.value = execCapabilitiesForTarget.value[0]?.key ?? ""
+    selectedCapabilityKey.value = capabilitiesForCurrentTarget.value[0]?.key ?? ""
   }
 }
 
@@ -401,7 +354,6 @@ watch(
   () => flowStore.state.selectedNodeIndex,
   () => {
     syncSelectedCapabilityByNode()
-    syncSelectedLocalCapabilityByNode()
   }
 )
 
@@ -417,7 +369,6 @@ watch(
   () => [selectedNode.value?.kind ?? "", selectedNode.value?.target ?? 0, selectedNode.value?.method ?? ""],
   () => {
     syncSelectedCapabilityByNode()
-    syncSelectedLocalCapabilityByNode()
   }
 )
 
@@ -425,14 +376,13 @@ watch(
   () => flowStore.state.execCapabilities.map((route) => route.key).join("|"),
   () => {
     syncSelectedCapabilityByNode()
-    syncSelectedLocalCapabilityByNode()
   }
 )
 
 watch(
-  () => executorNodeForLocal.value,
+  () => executorNodeForCall.value,
   () => {
-    syncSelectedLocalCapabilityByNode()
+    syncSelectedCapabilityByNode()
   }
 )
 
@@ -733,14 +683,11 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   Kind
                 </label>
-                <select
-                  v-model="selectedNode.kind"
-                  @change="flowStore.commitHistory()"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="local">local</option>
-                  <option value="exec">exec</option>
-                </select>
+                <input
+                  value="call"
+                  disabled
+                  class="mt-2 h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+                />
               </div>
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -783,68 +730,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 />
               </div>
             </div>
-            <div v-if="selectedNode.kind === 'local'" class="space-y-3">
-              <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
-                <div class="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="flowStore.state.execCapabilitiesLoading"
-                    @click="loadLocalCapabilities"
-                  >
-                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Refresh Capabilities" }}
-                  </Button>
-                  <span class="text-[11px] text-muted-foreground">
-                    query capabilities on executor node {{ executorNodeForLocal || "-" }}
-                  </span>
-                </div>
-                <div v-if="localCapabilitiesForExecutor.length" class="space-y-2">
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Local Capability
-                  </label>
-                  <select
-                    v-model="selectedLocalCapabilityKey"
-                    class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    @change="applyLocalCapability"
-                  >
-                    <option
-                      v-for="route in localCapabilitiesForExecutor"
-                      :key="route.key"
-                      :value="route.key"
-                    >
-                      {{ route.label }}
-                    </option>
-                  </select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="!selectedLocalCapabilityKey"
-                    @click="applyLocalCapability"
-                  >
-                    Use Selected Capability
-                  </Button>
-                </div>
-                <p v-else class="text-[11px] text-muted-foreground">
-                  {{
-                    executorNodeForLocal > 0
-                      ? "No local capability cached for current executor. Click \"Refresh Capabilities\" first."
-                      : "Executor node is required before querying local capabilities."
-                  }}
-                </p>
-              </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Method (manual override)
-                </label>
-                <input
-                  v-model="selectedNode.method"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="preferred: pick from local capability list"
-                  @blur="flowStore.commitHistory()"
-                />
-              </div>
-            </div>
-            <div v-else class="space-y-3">
+            <div class="space-y-3">
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   Target Node
@@ -852,16 +738,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 <select
                   v-model.number="selectedNode.target"
                   class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  @change="onExecTargetChanged"
+                  @change="onCallTargetChanged"
                 >
-                  <option :value="0">Select target node</option>
+                  <option :value="0">Local call (executor node)</option>
                   <option
-                    v-for="nodeId in execProviderNodesWithCurrent"
+                    v-for="nodeId in capabilityProviderNodesWithCurrent"
                     :key="`provider-${nodeId}`"
                     :value="nodeId"
                   >
                     {{
-                      execProviderNodes.includes(nodeId)
+                      capabilityProviderNodes.includes(nodeId)
                         ? `node ${nodeId}`
                         : `node ${nodeId} (current, not in cache)`
                     }}
@@ -872,9 +758,12 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                   type="number"
                   min="0"
                   class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="manual target node id"
+                  placeholder="manual target node id (0 = local call)"
                   @blur="flowStore.commitHistory(); syncSelectedCapabilityByNode()"
                 />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  target = 0 means local call on executor node {{ executorNodeForCall || "-" }}.
+                </p>
               </div>
               <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
                 <div class="flex flex-wrap items-center gap-2">
@@ -882,25 +771,29 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                     size="sm"
                     variant="outline"
                     :disabled="flowStore.state.execCapabilitiesLoading"
-                    @click="loadExecCapabilities"
+                    @click="loadCapabilities"
                   >
                     {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Refresh Capabilities" }}
                   </Button>
                   <span class="text-[11px] text-muted-foreground">
-                    query all capabilities and filter by selected target
+                    {{
+                      selectedNode.target > 0
+                        ? `filter by target node ${selectedNode.target}`
+                        : `filter by executor node ${executorNodeForCall || "-"}`
+                    }}
                   </span>
                 </div>
-                <div v-if="execCapabilitiesForTarget.length" class="space-y-2">
+                <div v-if="capabilitiesForCurrentTarget.length" class="space-y-2">
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Capability
                   </label>
                   <select
                     v-model="selectedCapabilityKey"
                     class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    @change="applyExecCapability"
+                    @change="applyCapability"
                   >
                     <option
-                      v-for="route in execCapabilitiesForTarget"
+                      v-for="route in capabilitiesForCurrentTarget"
                       :key="route.key"
                       :value="route.key"
                     >
@@ -911,16 +804,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                     size="sm"
                     variant="outline"
                     :disabled="!selectedCapabilityKey"
-                    @click="applyExecCapability"
+                    @click="applyCapability"
                   >
                     Use Selected Capability
                   </Button>
                 </div>
                 <p v-else class="text-[11px] text-muted-foreground">
                   {{
-                    selectedNode.target > 0
-                      ? "No capability found on selected target. Refresh or choose another node."
-                      : "No capability cached. Click \"Refresh Capabilities\" first."
+                    capabilityFilterTarget > 0
+                      ? "No capability found on current target filter. Refresh or adjust target."
+                      : "Executor node is required before querying capabilities."
                   }}
                 </p>
               </div>
@@ -993,18 +886,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
               v-model="nodeDraft.id"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Kind
-            </label>
-            <select
-              v-model="nodeDraft.kind"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="local">local</option>
-              <option value="exec">exec</option>
-            </select>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">

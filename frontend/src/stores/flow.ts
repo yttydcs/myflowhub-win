@@ -21,7 +21,7 @@ export type FlowSummary = {
 
 export type FlowNodeDraft = {
   id: string
-  kind: "local" | "exec" | ""
+  kind: "call" | ""
   allowFail: boolean
   retry: number
   timeoutMs: number
@@ -328,17 +328,22 @@ const defaultNodePosition = (index: number) => {
 }
 
 const mapNode = (input: any, index: number): FlowNodeDraft => {
-  const kind = String(input?.kind ?? "").toLowerCase()
+  const sourceKind = String(input?.kind ?? "").toLowerCase()
   const { method, target, argsText, x, y } = parseSpec(input?.spec)
+  let mappedTarget = Number.isFinite(target) ? Number(target) : 0
+  if (mappedTarget < 0) mappedTarget = 0
+  if (sourceKind === "local") {
+    mappedTarget = 0
+  }
   const pos = defaultNodePosition(index)
   return {
     id: String(input?.id ?? "").trim(),
-    kind: kind === "exec" ? "exec" : "local",
+    kind: "call",
     allowFail: Boolean(input?.allow_fail ?? input?.allowFail ?? false),
     retry: Number(input?.retry ?? 1),
     timeoutMs: Number(input?.timeout_ms ?? input?.timeoutMs ?? 3000),
     method,
-    target,
+    target: mappedTarget,
     args: argsText,
     x: Number.isFinite(x) ? Number(x) : pos.x,
     y: Number.isFinite(y) ? Number(y) : pos.y
@@ -399,7 +404,7 @@ const suggestNodeId = (prefix = "n") => {
   return `${normalizedPrefix}${Date.now().toString(36)}`
 }
 
-const addNode = (id: string, kind: "local" | "exec") => {
+const addNode = (id: string) => {
   const trimmed = id.trim()
   if (!trimmed) {
     throw new Error("Node ID is required.")
@@ -410,7 +415,7 @@ const addNode = (id: string, kind: "local" | "exec") => {
   const pos = defaultNodePosition(state.nodes.length)
   const node: FlowNodeDraft = {
     id: trimmed,
-    kind,
+    kind: "call",
     allowFail: false,
     retry: 1,
     timeoutMs: 3000,
@@ -645,12 +650,10 @@ const buildSpec = (node: FlowNodeDraft) => {
   } catch {
     throw new Error(`Node ${node.id || "<unnamed>"} args must be valid JSON.`)
   }
-  if (node.kind === "exec") {
-    if (!node.target) {
-      throw new Error(`Node ${node.id || "<unnamed>"} requires target node.`)
-    }
+  const target = Number(node.target || 0)
+  if (Number.isFinite(target) && target > 0) {
     return {
-      target: node.target,
+      target: Math.trunc(target),
       method,
       args: parsedArgs,
       _ui: { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
@@ -677,11 +680,10 @@ const buildGraph = () => {
       throw new Error(`Duplicate node ID: ${id}`)
     }
     seen.add(id)
-    const kind = node.kind === "exec" ? "exec" : "local"
     const spec = buildSpec(node)
     return {
       id,
-      kind,
+      kind: "call",
       allow_fail: Boolean(node.allowFail),
       retry: Number(node.retry ?? 1),
       timeout_ms: Number(node.timeoutMs ?? 3000),
@@ -907,10 +909,10 @@ const queryExecCapabilities = async (methodFilter?: string) => {
   }
 }
 
-const applyExecCapability = (key: string) => {
+const applyCallCapability = (key: string) => {
   const selected = state.nodes[state.selectedNodeIndex]
-  if (!selected || selected.kind !== "exec") {
-    throw new Error("Select an exec node first.")
+  if (!selected || selected.kind !== "call") {
+    throw new Error("Select a call node first.")
   }
   const route = state.execCapabilities.find((item) => item.key === String(key).trim())
   if (!route) {
@@ -997,7 +999,8 @@ export const useFlowStore = () => {
     runFlow,
     saveFlow,
     queryExecCapabilities,
-    applyExecCapability,
+    applyCallCapability,
+    applyExecCapability: applyCallCapability,
     undo,
     selectEdgeByEndpoints: (from: string, to: string) => {
       const fromId = from.trim()
