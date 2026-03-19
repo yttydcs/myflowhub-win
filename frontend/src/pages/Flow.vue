@@ -15,6 +15,7 @@ const toast = useToastStore()
 
 const addNodeOpen = ref(false)
 const selectedCapabilityKey = ref("")
+const selectedLocalCapabilityKey = ref("")
 const nodeIdDraft = ref("")
 
 const nodeDraft = reactive({
@@ -59,6 +60,26 @@ const execCapabilitiesForTarget = computed(() => {
   const routes = flowStore.state.execCapabilities
   if (target <= 0) return routes
   return routes.filter((route) => route.providerNode === target)
+})
+
+const executorNodeForLocal = computed(() => {
+  const raw = flowStore.state.targetId.trim()
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10)
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed
+    }
+  }
+  const hub = Number(flowStore.state.hubId || 0)
+  return Number.isFinite(hub) && hub > 0 ? Math.trunc(hub) : 0
+})
+
+const localCapabilitiesForExecutor = computed(() => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "local") return []
+  const executor = executorNodeForLocal.value
+  if (executor <= 0) return []
+  return flowStore.state.execCapabilities.filter((route) => route.providerNode === executor)
 })
 
 const canUndo = computed(() => flowStore.state.historyIndex > 0)
@@ -214,6 +235,21 @@ const syncSelectedCapabilityByNode = () => {
   selectedCapabilityKey.value = matched?.key ?? ""
 }
 
+const syncSelectedLocalCapabilityByNode = () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "local") {
+    selectedLocalCapabilityKey.value = ""
+    return
+  }
+  const method = node.method.trim()
+  if (!method) {
+    selectedLocalCapabilityKey.value = ""
+    return
+  }
+  const matched = localCapabilitiesForExecutor.value.find((route) => route.method === method)
+  selectedLocalCapabilityKey.value = matched?.key ?? ""
+}
+
 const loadExecCapabilities = async () => {
   const node = selectedNode.value
   if (!node || node.kind !== "exec") return
@@ -239,6 +275,33 @@ const applyExecCapability = () => {
     console.warn(err)
     toast.errorOf(err, "Failed to apply capability.")
   }
+}
+
+const loadLocalCapabilities = async () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "local") return
+  try {
+    await flowStore.queryExecCapabilities("")
+    syncSelectedLocalCapabilityByNode()
+    if (!selectedLocalCapabilityKey.value) {
+      selectedLocalCapabilityKey.value = localCapabilitiesForExecutor.value[0]?.key ?? ""
+    }
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to query capabilities.")
+  }
+}
+
+const applyLocalCapability = () => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "local") return
+  if (!selectedLocalCapabilityKey.value) return
+  const route = localCapabilitiesForExecutor.value.find((item) => item.key === selectedLocalCapabilityKey.value)
+  if (!route) return
+  node.method = route.method
+  flowStore.commitHistory()
+  flowStore.state.message = `Local capability applied: ${route.method}.`
+  syncSelectedLocalCapabilityByNode()
 }
 
 const onExecTargetChanged = () => {
@@ -338,6 +401,7 @@ watch(
   () => flowStore.state.selectedNodeIndex,
   () => {
     syncSelectedCapabilityByNode()
+    syncSelectedLocalCapabilityByNode()
   }
 )
 
@@ -353,6 +417,7 @@ watch(
   () => [selectedNode.value?.kind ?? "", selectedNode.value?.target ?? 0, selectedNode.value?.method ?? ""],
   () => {
     syncSelectedCapabilityByNode()
+    syncSelectedLocalCapabilityByNode()
   }
 )
 
@@ -360,6 +425,14 @@ watch(
   () => flowStore.state.execCapabilities.map((route) => route.key).join("|"),
   () => {
     syncSelectedCapabilityByNode()
+    syncSelectedLocalCapabilityByNode()
+  }
+)
+
+watch(
+  () => executorNodeForLocal.value,
+  () => {
+    syncSelectedLocalCapabilityByNode()
   }
 )
 
@@ -710,16 +783,66 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
                 />
               </div>
             </div>
-            <div v-if="selectedNode.kind === 'local'">
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Method
-              </label>
-              <input
-                v-model="selectedNode.method"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="method name"
-                @blur="flowStore.commitHistory()"
-              />
+            <div v-if="selectedNode.kind === 'local'" class="space-y-3">
+              <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="flowStore.state.execCapabilitiesLoading"
+                    @click="loadLocalCapabilities"
+                  >
+                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Refresh Capabilities" }}
+                  </Button>
+                  <span class="text-[11px] text-muted-foreground">
+                    query capabilities on executor node {{ executorNodeForLocal || "-" }}
+                  </span>
+                </div>
+                <div v-if="localCapabilitiesForExecutor.length" class="space-y-2">
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Local Capability
+                  </label>
+                  <select
+                    v-model="selectedLocalCapabilityKey"
+                    class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    @change="applyLocalCapability"
+                  >
+                    <option
+                      v-for="route in localCapabilitiesForExecutor"
+                      :key="route.key"
+                      :value="route.key"
+                    >
+                      {{ route.label }}
+                    </option>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="!selectedLocalCapabilityKey"
+                    @click="applyLocalCapability"
+                  >
+                    Use Selected Capability
+                  </Button>
+                </div>
+                <p v-else class="text-[11px] text-muted-foreground">
+                  {{
+                    executorNodeForLocal > 0
+                      ? "No local capability cached for current executor. Click \"Refresh Capabilities\" first."
+                      : "Executor node is required before querying local capabilities."
+                  }}
+                </p>
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Method (manual override)
+                </label>
+                <input
+                  v-model="selectedNode.method"
+                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="preferred: pick from local capability list"
+                  @blur="flowStore.commitHistory()"
+                />
+              </div>
             </div>
             <div v-else class="space-y-3">
               <div>
