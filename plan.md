@@ -1,99 +1,145 @@
-# Plan - Win：升级依赖并发布 RFCOMM 写出修复版本
+# Plan - Win：Authority 权限配置独立页面（V1）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Win`
-- 分支：`chore/win-rfcomm-write-bump`
-- Worktree：`d:\project\MyFlowHub3\worktrees\chore-win-rfcomm-write-bump\repo\MyFlowHub-Win`
+- 分支：`feat/win-authority-permissions-v1`
+- Worktree：`D:\project\MyFlowHub3\repo\MyFlowHub-Win\worktrees\feat-win-authority-permissions-v1`
 - Base：`main`
-- 依赖仓：
-  - `MyFlowHub-Core`
-  - `MyFlowHub-SDK`
+- 设计输入文档：
+  - `docs/core.md`
+  - `docs/权限.md`
+  - `docs/2-auth.md`
+  - `docs/3-varstore.md`
+  - `docs/4-topicbus.md`
+  - `docs/5-file.md`
+  - `docs/6-flow.md`
+  - `docs/7-exec.md`
 
 ## 项目目标与当前状态
 - 目标：
-  - 将 Win 桌面端升级到包含 RFCOMM 写出修复的新 Core / SDK 版本；
-  - 做最小必要验证并准备新的 release；
-  - 让 B 电脑通过 release 包获得可用的 RFCOMM 注册链路。
+  - 新增 Win 端独立“权限配置”页面，管理当前连接网络的 authority 侧权限策略。
+  - 支持可写 `role/perms` 策略，且同时满足“持久化生效 + 运行时立即生效”。
+  - 在不改 Server 协议的前提下完成 V1（使用现有 `management config_set` + `auth perms_snapshot` 能力）。
 - 当前状态：
-  - Win 端当前使用 `myflowhub-core v0.4.2`、`myflowhub-sdk v0.1.4`；
-  - 真实测试中可以连接 RFCOMM，但 register 发送后常出现长时间无响应；
-  - 根因已定位为底层帧发送短写，不是 UI 按钮或 payload 长度问题。
+  - 无独立权限页面；仅 `LocalHub` 页面包含本地 sidecar `auth.*` 参数编辑。
+  - Win `AuthService` 仅提供登录/注册/通用 Send，无 `get_perms/list_roles/perms_snapshot` 的强类型方法。
+  - `management` 已支持按目标节点执行 `config get/set/list`，可用于 authority 持久化。
 
 ## 范围
 - 必须：
-  - 升级 Win 对 Core / SDK 的依赖版本；
-  - 做最小必要构建/测试验证；
-  - 归档本次依赖升级与 release 准备；
-  - 推送代码并创建新的 Win release tag。
+  - 新增独立权限页面与导航入口。
+  - 新增 authority 策略读取、编辑、校验、保存能力。
+  - 保存时同时执行：配置持久化（`config_set`）+ 运行时应用（`perms_snapshot`）。
+  - 保存后提供最小回读验证（至少 `list_roles` 或关键节点 `get_perms`）。
 - 可选：
-  - 若发现版本联动问题，补最小必要的兼容性调整。
+  - authority NodeID 自动解析（默认 `hubId`）+ 手动覆盖输入。
+  - 增加 `perms_invalidate(refresh=true)` 作为运行时刷新增强。
 - 不做：
-  - 不新增 UI 功能；
-  - 不改 Home 页面交互；
-  - 不改 auth 业务逻辑。
+  - 不新增 Server 端 `policy_set` 原生动作（该项留待 V2）。
+  - 不改 `varstore/topicbus/file/flow/exec` 协议行为。
+  - 不在本 workflow 内进行跨仓库发布与合并。
 
 ## 可执行任务清单（Checklist）
 
-### WIN-RFCOMM-1 - 升级 Core / SDK 依赖
+### [x] WIN-PERM-V1-1 - Go 服务层扩展（Auth/Permission 编排）
 - 目标：
-  - 将 `go.mod` / `go.sum` 对齐到修复后的 Core 与 SDK 版本。
+  - 提供权限页面所需的强类型后端接口，避免前端直接拼 action 字符串。
 - 涉及模块 / 文件：
-  - `go.mod`
-  - `go.sum`
+  - `internal/services/auth/service.go`
+  - 新增 `internal/services/permission/service.go`
+  - `app.go`（注册/绑定新服务）
 - 验收条件：
-  - `go list -m` 显示依赖已升级；
-  - 不引入计划外业务改动。
+  - 支持 `GetPerms`、`ListRoles`、`PushPermsSnapshot`（可选 `InvalidatePerms`）。
+  - 支持一次性编排保存：`config_set(auth.*)` + `perms_snapshot`。
+  - 输入校验完整（空 key、格式错误、node id 非法等）。
 - 测试点：
-  - `go mod tidy`
-  - `go list -m github.com/yttydcs/myflowhub-core`
-  - `go list -m github.com/yttydcs/myflowhub-sdk`
+  - `go test ./... -count=1`
+  - 至少补充 1 组编排逻辑单元测试（解析与错误路径）。
 - 回滚点：
-  - 回退依赖版本提交。
+  - 回退新增 service 与 `app.go` 绑定改动。
 
-### WIN-RFCOMM-2 - 执行最小验证
+### [x] WIN-PERM-V1-2 - 前端权限页面与状态管理
 - 目标：
-  - 证明升级后的 Win 仓库可通过最小必要测试/构建校验。
+  - 提供独立页面实现 authority 权限策略查看与编辑。
 - 涉及模块 / 文件：
-  - 全仓测试
+  - 新增 `frontend/src/pages/Permissions.vue`
+  - 新增 `frontend/src/stores/permissions.ts`
+  - `frontend/src/router/index.ts`
+  - `frontend/src/layout/AppShell.vue`
 - 验收条件：
-  - `GOWORK=off go test ./... -count=1` 通过；
-  - 如需额外 release 准备文件，仅做最小化处理。
+  - 页面可加载 authority 策略（4 个核心配置：`auth.default_role`、`auth.default_perms`、`auth.node_roles`、`auth.role_perms`）。
+  - 页面可保存并显示保存结果（成功/失败提示）。
+  - 表单包含基本格式校验，避免提交明显非法策略。
 - 测试点：
-  - `GOWORK=off go test ./... -count=1`
+  - `npm run build`
+  - 手工冒烟：加载、编辑、保存、回读。
 - 回滚点：
-  - 回退依赖升级；删除临时验证产物。
+  - 回退页面/路由/store 改动，导航恢复原样。
 
-### WIN-RFCOMM-3 - Code Review（强制）
+### [x] WIN-PERM-V1-3 - Wails bindings 与类型对齐
 - 目标：
-  - 审查依赖升级范围、兼容性、稳定性与验证证据。
+  - 确保新增 Go 接口可被前端稳定调用。
 - 涉及模块 / 文件：
-  - 本 workflow 全部改动文件
+  - `frontend/wailsjs/**`（本地生成产物，若仓库忽略则不提交）
 - 验收条件：
-  - 形成逐项通过/不通过结论。
+  - 前端调用新增后端接口无运行时 `binding unavailable` 错误。
 - 测试点：
-  - Review 结论完整。
+  - `GOWORK=off wails generate module`
 - 回滚点：
-  - 修订依赖升级或取消发版。
+  - 重新生成 bindings 或回退新增接口。
 
-### WIN-RFCOMM-4 - 归档与发布准备
+### [x] WIN-PERM-V1-4 - 关键路径验证
 - 目标：
-  - 生成归档文档，并准备新的 release tag。
+  - 验证“持久化 + 运行时”双生效链路可用。
 - 涉及模块 / 文件：
-  - `docs/change/2026-03-15_win-rfcomm-write-bump.md`
+  - 全仓（不新增业务文件）
 - 验收条件：
-  - 归档文档说明版本来源、测试、影响与回滚；
-  - 明确本次 release 目的是携带 RFCOMM 写出修复。
+  - 保存后，`ConfigGet(auth.*)` 与运行时查询结果（`list_roles/get_perms`）一致。
+  - 错误路径可观测（超时/未连接/权限不足）。
 - 测试点：
-  - 归档内容完整可交接。
+  - `GOWORK=off go test ./... -count=1`（通过）
+  - `npm run build`（通过）
+  - chrome-devtools 冒烟验证页面流程（受限：浏览器直开缺少 Wails runtime，页面无法完整挂载）。
 - 回滚点：
-  - 回退归档文档。
+  - 回退权限页相关提交。
+
+### [x] WIN-PERM-V1-5 - Code Review（强制）
+- 目标：
+  - 逐项审查需求覆盖、架构、性能、稳定性、安全与测试完整性。
+- 涉及模块 / 文件：
+  - 本 workflow 全部改动文件。
+- 验收条件：
+  - 输出“通过/不通过”逐项结论。
+  - 不通过项回流到 `WIN-PERM-V1-1/2/3/4` 修复。
+- 测试点：
+  - Review 清单完整可审计。
+- 回滚点：
+  - 回滚不通过改动并重审。
+
+### [x] WIN-PERM-V1-6 - 归档文档（强制）
+- 目标：
+  - 归档本次权限页面 V1 的设计、实现、验证、影响与回滚方案。
+- 涉及模块 / 文件：
+  - `docs/change/2026-03-18_win-authority-permissions-v1.md`（文件名日期按实际提交日调整）
+- 验收条件：
+  - 文档包含任务映射、关键权衡、验证结果、风险与回滚。
+- 测试点：
+  - 文档可被其他同事独立接手执行。
+- 回滚点：
+  - 回退该归档文件并重新补齐。
 
 ## 依赖关系
-- `WIN-RFCOMM-1` 完成后进入 `WIN-RFCOMM-2`
-- `WIN-RFCOMM-2` 完成后进入 `WIN-RFCOMM-3`
-- `WIN-RFCOMM-3` 通过后进入 `WIN-RFCOMM-4`
+- `WIN-PERM-V1-1` 完成后可并行推进 `WIN-PERM-V1-2` 与 `WIN-PERM-V1-3`。
+- `WIN-PERM-V1-2` + `WIN-PERM-V1-3` 完成后进入 `WIN-PERM-V1-4`。
+- `WIN-PERM-V1-4` 通过后进入 `WIN-PERM-V1-5`。
+- `WIN-PERM-V1-5` 通过后进入 `WIN-PERM-V1-6`。
 
 ## 风险与注意事项
-- Win release 必须基于已经推送的 Core / SDK tag，否则依赖无法在 `GOWORK=off` 下稳定解析；
-- 本仓应保持“仅依赖升级 + 发布准备”的最小改动原则；
-- 若 GitHub release workflow 依赖 tag 命名规则，需要按既有版本策略递增。
+- V1 非原生事务：`config_set` 与 `perms_snapshot` 之间存在短窗口不一致风险。
+- `management config_set` 当前为通用配置入口，缺少专用策略动作审计语义；需要在日志与变更归档中补足。
+- `perms_snapshot`/`perms_invalidate` 依赖 authority 与子树链路健康，网络抖动可能导致局部延迟生效。
+- 需严格限制计划外改动：仅触达权限页面与最小必要服务层。
+
+## 待确认（进入 3.2 前）
+- 保存目标 authority 解析策略：默认 `hubId` 并允许手动覆盖（建议）。
+- 保存失败策略：默认“尽力执行并返回分步结果”（建议），而非强原子回滚。
