@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Showcase Window
+          Showcase Viewer
         </p>
         <h1 class="mt-2 text-lg font-semibold">{{ screenName }}</h1>
         <p class="mt-2 text-xs text-muted-foreground">

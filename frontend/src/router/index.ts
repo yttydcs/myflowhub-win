@@ -10,10 +10,11 @@ import Presets from "@/pages/Presets.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
 import Permissions from "@/pages/Permissions.vue"
-import Showcase from "@/pages/Showcase.vue"
+import ShowcaseCenter from "@/pages/ShowcaseCenter.vue"
 import FileTasks from "@/windows/FileTasks.vue"
 import FlowEditorWindow from "@/windows/FlowEditorWindow.vue"
 import LogWindow from "@/windows/LogWindow.vue"
+import ShowcaseEditorWindow from "@/windows/ShowcaseEditorWindow.vue"
 import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
 
 const routes = [
@@ -66,10 +67,10 @@ const routes = [
   {
     path: "/showcase",
     name: "showcase",
-    component: Showcase,
+    component: ShowcaseCenter,
     meta: {
-      title: "Showcase",
-      subtitle: "Compose buttons and variable widgets into reusable screens."
+      title: "Showcase Center",
+      subtitle: "Manage showcase screens and open dedicated editor or viewer windows."
     }
   },
   {
@@ -158,7 +159,16 @@ const routes = [
     name: "showcaseWindow",
     component: ShowcaseWindow,
     meta: {
-      title: "Showcase Window",
+      title: "Showcase Viewer",
+      layout: "window"
+    }
+  },
+  {
+    path: "/showcase-editor-window",
+    name: "showcaseEditorWindow",
+    component: ShowcaseEditorWindow,
+    meta: {
+      title: "Showcase Editor",
       layout: "window"
     }
   }

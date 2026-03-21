@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestNormalizeShowcaseConfig_Default(t *testing.T) {
 	cfg := normalizeShowcaseConfig(ShowcaseConfig{})
@@ -15,6 +18,12 @@ func TestNormalizeShowcaseConfig_Default(t *testing.T) {
 	}
 	if cfg.CurrentScreenID != cfg.Screens[0].ID {
 		t.Fatalf("expected currentScreenId=%q got %q", cfg.Screens[0].ID, cfg.CurrentScreenID)
+	}
+	if cfg.Screens[0].UpdatedAt == "" {
+		t.Fatalf("expected default screen updatedAt populated")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, cfg.Screens[0].UpdatedAt); err != nil {
+		t.Fatalf("expected valid updatedAt got %q: %v", cfg.Screens[0].UpdatedAt, err)
 	}
 }
 
@@ -294,5 +303,35 @@ func TestNormalizeShowcaseLayout_CanvasPercentClamps(t *testing.T) {
 	}
 	if rect.YPct != 52 {
 		t.Fatalf("expected yPct clamped to 52 got %v", rect.YPct)
+	}
+}
+
+func TestNormalizeShowcaseScreen_UpdatedAt(t *testing.T) {
+	const valid = "2026-03-21T10:15:20Z"
+
+	cfg := normalizeShowcaseConfig(ShowcaseConfig{
+		Version:         1,
+		CurrentScreenID: "s1",
+		Screens: []ShowcaseScreen{
+			{
+				ID:        "s1",
+				Name:      "Screen",
+				UpdatedAt: valid,
+			},
+			{
+				ID:        "s2",
+				Name:      "Broken Timestamp",
+				UpdatedAt: "not-a-timestamp",
+			},
+		},
+	})
+
+	if got := cfg.Screens[0].UpdatedAt; got != valid {
+		t.Fatalf("expected valid updatedAt preserved got %q", got)
+	}
+	if got := cfg.Screens[1].UpdatedAt; got == "" {
+		t.Fatalf("expected invalid updatedAt replaced")
+	} else if _, err := time.Parse(time.RFC3339Nano, got); err != nil {
+		t.Fatalf("expected replacement updatedAt to be valid got %q: %v", got, err)
 	}
 }

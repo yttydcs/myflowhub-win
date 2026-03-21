@@ -106,8 +106,18 @@ export type ShowcaseWidget = {
 export type ShowcaseScreen = {
   id: string
   name: string
+  updatedAt: string
   layout: ShowcaseScreenLayout
   widgets: ShowcaseWidget[]
+}
+
+export type ShowcaseScreenSummary = {
+  id: string
+  name: string
+  layoutMode: ShowcaseScreenLayoutMode
+  widgetCount: number
+  updatedAt: string
+  isCurrent: boolean
 }
 
 export type ShowcaseConfig = {
@@ -140,6 +150,14 @@ export type ShowcaseState = {
 }
 
 const nowIso = () => new Date().toISOString()
+
+const normalizeTimestamp = (value: any, fallback = nowIso()) => {
+  const raw = String(value ?? "").trim()
+  if (!raw) return fallback
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) return fallback
+  return new Date(parsed).toISOString()
+}
 
 const newId = () => {
   const uuid = (globalThis as any)?.crypto?.randomUUID?.()
@@ -184,7 +202,7 @@ const defaultWidgetLayout = (): ShowcaseWidgetLayout => ({ colSpan: 1 })
 const emptyConfig = (): ShowcaseConfig => ({
   version: 1,
   currentScreenId: "default",
-  screens: [{ id: "default", name: "Default", layout: defaultScreenLayout(), widgets: [] }]
+  screens: [{ id: "default", name: "Default", updatedAt: nowIso(), layout: defaultScreenLayout(), widgets: [] }]
 })
 
 const normalizeVarMode = (mode: any): VarWidgetMode => {
@@ -374,6 +392,7 @@ const normalizeScreen = (raw: any): ShowcaseScreen | null => {
   const name = String(raw?.name ?? "").trim()
   if (!name) return null
   const layout = normalizeScreenLayout(raw?.layout)
+  const updatedAt = normalizeTimestamp(raw?.updatedAt)
   const widgets: ShowcaseWidget[] = []
   const seen = new Set<string>()
   const list = Array.isArray(raw?.widgets) ? raw.widgets : []
@@ -384,7 +403,7 @@ const normalizeScreen = (raw: any): ShowcaseScreen | null => {
     seen.add(widget.id)
     widgets.push({ ...widget, layout: normalizeWidgetLayout(widget.layout, layout) })
   }
-  return { id, name, layout, widgets }
+  return { id, name, updatedAt, layout, widgets }
 }
 
 const normalizeConfig = (raw: any): ShowcaseConfig => {
@@ -414,6 +433,55 @@ const normalizeConfig = (raw: any): ShowcaseConfig => {
   }
 }
 
+const cloneScreen = (
+  screen: ShowcaseScreen,
+  options?: { resetID?: boolean; resetWidgetIDs?: boolean; name?: string; updatedAt?: string }
+): ShowcaseScreen => {
+  const raw = JSON.parse(JSON.stringify(screen ?? {}))
+  if (options?.resetID) {
+    raw.id = newId()
+  }
+  if (options?.name !== undefined) {
+    raw.name = options.name
+  }
+  if (options?.updatedAt !== undefined) {
+    raw.updatedAt = options.updatedAt
+  }
+  if (options?.resetWidgetIDs && Array.isArray(raw.widgets)) {
+    raw.widgets = raw.widgets.map((widget: any) => ({ ...widget, id: newId() }))
+  }
+  const normalized = normalizeScreen(raw)
+  if (!normalized) {
+    throw new Error("Screen is invalid.")
+  }
+  return normalized
+}
+
+const cloneConfig = (config: ShowcaseConfig): ShowcaseConfig => normalizeConfig(JSON.parse(JSON.stringify(config ?? emptyConfig())))
+
+const touchScreen = (screen: ShowcaseScreen, timestamp = nowIso()) => {
+  screen.updatedAt = normalizeTimestamp(timestamp, timestamp)
+}
+
+const makeDuplicateScreenName = (name: string, screens: ShowcaseScreen[]): string => {
+  const baseName = String(name ?? "").trim() || "Screen"
+  const existing = new Set(screens.map((item) => item.name.trim().toLowerCase()).filter(Boolean))
+
+  const first = `${baseName} Copy`
+  if (!existing.has(first.toLowerCase())) {
+    return first
+  }
+
+  let index = 2
+  for (;;) {
+    const candidate = `${baseName} Copy ${index}`
+    if (!existing.has(candidate.toLowerCase())) {
+      return candidate
+    }
+    index += 1
+  }
+}
+
 const state = reactive<ShowcaseState>({
   loaded: false,
   busy: false,
@@ -433,6 +501,8 @@ const sliderTimers = new Map<string, number>()
 const sliderLastSentAt = new Map<string, number>()
 let initialized = false
 let configReloadTimer: number | null = null
+let configReloadEnabled = true
+let pendingConfigReload = false
 
 const toast = useToastStore()
 
@@ -500,8 +570,20 @@ const ensureListeners = () => {
   })
 
   EventsOn("showcase.config_changed", () => {
+    if (!configReloadEnabled) {
+      pendingConfigReload = true
+      return
+    }
     scheduleConfigReload()
   })
+}
+
+const setConfigReloadEnabled = (enabled: boolean) => {
+  configReloadEnabled = Boolean(enabled)
+  if (configReloadEnabled && pendingConfigReload) {
+    pendingConfigReload = false
+    scheduleConfigReload()
+  }
 }
 
 const scheduleConfigReload = () => {
@@ -538,15 +620,17 @@ const load = async () => {
   }
 }
 
-const save = async () => {
+const save = async (config?: ShowcaseConfig) => {
   ensureListeners()
   if (state.busy) return
   state.busy = true
   try {
-    const raw = await callApp<any>("SaveShowcaseConfig", state.config)
+    const payload = config ? cloneConfig(config) : cloneConfig(state.config)
+    const raw = await callApp<any>("SaveShowcaseConfig", payload)
     state.config = normalizeConfig(raw)
     state.loaded = true
     state.lastLoadedAt = nowIso()
+    pendingConfigReload = false
   } finally {
     state.busy = false
   }
@@ -585,6 +669,22 @@ const activeScreen = (): ShowcaseScreen | null => {
   return currentScreen()
 }
 
+const listScreenSummaries = (): ShowcaseScreenSummary[] =>
+  state.config.screens.map((screen) => ({
+    id: screen.id,
+    name: screen.name,
+    layoutMode: screen.layout.mode,
+    widgetCount: screen.widgets.length,
+    updatedAt: screen.updatedAt,
+    isCurrent: screen.id === state.config.currentScreenId
+  }))
+
+const cloneScreenByID = (id: string): ShowcaseScreen | null => {
+  const screen = screenById(id)
+  if (!screen) return null
+  return cloneScreen(screen)
+}
+
 const selectScreen = async (id: string) => {
   const trimmed = id.trim()
   if (!trimmed || trimmed === state.config.currentScreenId) return
@@ -598,10 +698,12 @@ const createScreen = async (name: string) => {
   const trimmed = name.trim()
   if (!trimmed) throw new Error("Screen name is required.")
   const id = newId()
-  state.config.screens.push({ id, name: trimmed, layout: defaultScreenLayout(), widgets: [] })
+  await leave()
+  state.config.screens.push({ id, name: trimmed, updatedAt: nowIso(), layout: defaultScreenLayout(), widgets: [] })
   state.config.currentScreenId = id
   await save()
   await enter()
+  return screenById(id)
 }
 
 const renameScreen = async (id: string, name: string) => {
@@ -610,7 +712,47 @@ const renameScreen = async (id: string, name: string) => {
   const screen = state.config.screens.find((s) => s.id === id)
   if (!screen) return
   screen.name = trimmed
+  touchScreen(screen)
   await save()
+}
+
+const duplicateScreen = async (id: string, name?: string) => {
+  const screen = screenById(id)
+  if (!screen) {
+    throw new Error("Screen not found.")
+  }
+  const duplicate = cloneScreen(screen, {
+    resetID: true,
+    resetWidgetIDs: true,
+    name: String(name ?? "").trim() || makeDuplicateScreenName(screen.name, state.config.screens),
+    updatedAt: nowIso()
+  })
+  const index = state.config.screens.findIndex((item) => item.id === id)
+  if (index < 0) {
+    throw new Error("Screen not found.")
+  }
+  await leave()
+  state.config.screens.splice(index + 1, 0, duplicate)
+  state.config.currentScreenId = duplicate.id
+  await save()
+  await enter()
+  return duplicate
+}
+
+const saveScreenDraft = async (screenId: string, draft: ShowcaseScreen) => {
+  const trimmed = String(screenId ?? "").trim()
+  if (!trimmed) {
+    throw new Error("Screen ID is required.")
+  }
+  const next = cloneConfig(state.config)
+  const index = next.screens.findIndex((screen) => screen.id === trimmed)
+  if (index < 0) {
+    throw new Error("Screen not found.")
+  }
+  const normalized = cloneScreen({ ...draft, id: trimmed }, { updatedAt: nowIso() })
+  next.screens.splice(index, 1, normalized)
+  await save(next)
+  return screenById(trimmed)
 }
 
 const deleteScreen = async (id: string) => {
@@ -641,6 +783,7 @@ const removeWidget = async (widgetId: string) => {
     await unsubscribeVarWidget(widget)
   }
   screen.widgets = screen.widgets.filter((w) => w.id !== widgetId)
+  touchScreen(screen)
   await save()
 }
 
@@ -666,6 +809,7 @@ const addTopicButton = async (
     layout,
     topicButton: { topic, name, payloadText }
   })
+  touchScreen(screen)
   await save()
 }
 
@@ -713,6 +857,7 @@ const addVarWidget = async (input: {
     }
   }
   screen.widgets.push(widget)
+  touchScreen(screen)
   await save()
   await ensureVarActive(widget)
 }
@@ -860,18 +1005,8 @@ const unsubscribeAll = async () => {
   }
 }
 
-const enter = async () => {
-  ensureListeners()
-  state.screenMissing = false
-  const screen = activeScreen()
-  if (!screen) {
-    if (state.fixedScreenId) {
-      state.screenMissing = true
-    }
-    return
-  }
-  if (!state.selfNodeId) return
-
+const collectVarRefs = (screen: ShowcaseScreen | null): Array<{ targetId: number; ownerId: number; name: string }> => {
+  if (!screen) return []
   const refs: Array<{ targetId: number; ownerId: number; name: string }> = []
   const seen = new Set<string>()
   for (const widget of screen.widgets) {
@@ -881,15 +1016,34 @@ const enter = async () => {
     if (!ownerId || !name) continue
     const targetId = Number.isFinite(widget.targetId) && widget.targetId > 0 ? Math.floor(widget.targetId) : 0
     if (!targetId) continue
-    const k = subKey(targetId, ownerId, name)
-    if (seen.has(k)) continue
-    seen.add(k)
+    const key = subKey(targetId, ownerId, name)
+    if (seen.has(key)) continue
+    seen.add(key)
     refs.push({ targetId, ownerId, name })
   }
+  return refs
+}
 
+const enterScreen = async (screen?: ShowcaseScreen | null) => {
+  ensureListeners()
+  state.screenMissing = false
+  const targetScreen = screen ?? activeScreen()
+  if (!targetScreen) {
+    if (state.fixedScreenId) {
+      state.screenMissing = true
+    }
+    return
+  }
+  if (!state.selfNodeId) return
+
+  const refs = collectVarRefs(targetScreen)
   for (const ref of refs) {
     await getAndSubscribe(ref.targetId, ref.ownerId, ref.name)
   }
+}
+
+const enter = async () => {
+  await enterScreen()
 }
 
 const leave = async () => {
@@ -1005,18 +1159,24 @@ export const useShowcaseStore = () => {
     currentScreen,
     activeScreen,
     clearFixedScreenId,
+    cloneScreenByID,
     deleteScreen,
+    duplicateScreen,
     enter,
+    enterScreen,
     getVarValueText,
     leave,
+    listScreenSummaries,
     load,
     save,
+    saveScreenDraft,
     publishTopicButton,
     removeWidget,
     renameScreen,
     resolveEffectiveMode,
     screenById,
     selectScreen,
+    setConfigReloadEnabled,
     setFixedScreenId,
     setIdentity,
     sliderCommit,
