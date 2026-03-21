@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, markRaw } from "vue"
-import { VueFlow, type Connection, type EdgeMouseEvent, type NodeDragEvent, type NodeMouseEvent } from "@vue-flow/core"
+import {
+  VueFlow,
+  Position,
+  type Connection,
+  type EdgeMouseEvent,
+  type NodeDragEvent,
+  type NodeMouseEvent
+} from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
 import { MiniMap } from "@vue-flow/minimap"
@@ -27,8 +34,6 @@ const emit = defineEmits<{
   (event: "clear-selection"): void
 }>()
 
-const hasNode = (id: string) => props.nodes.some((node) => node.id === id)
-
 const statusByNodeId = computed(() => {
   const map = new Map<string, FlowStatusNode>()
   for (const node of props.statusNodes) {
@@ -39,16 +44,6 @@ const statusByNodeId = computed(() => {
   return map
 })
 
-const isValidConnection = (conn: Connection): boolean => {
-  const source = conn.source?.trim() ?? ""
-  const target = conn.target?.trim() ?? ""
-  if (!source || !target) return false
-  if (source === target) return false
-  if (!hasNode(source) || !hasNode(target)) return false
-  if (props.edges.some((edge) => edge.from === source && edge.to === target)) return false
-  return true
-}
-
 const canvasNodes = computed(() =>
   props.nodes
     .filter((node) => node.id.trim() !== "")
@@ -58,6 +53,9 @@ const canvasNodes = computed(() =>
       data: { label: node.id, status: statusByNodeId.value.get(node.id) },
       type: "flowNode",
       draggable: true,
+      connectable: true,
+      targetPosition: Position.Left,
+      sourcePosition: Position.Right,
       selected: props.selectedNodeId === node.id
     }))
 )
@@ -120,7 +118,6 @@ const nodeTypes = {
       :min-zoom="0.2"
       :max-zoom="2"
       :nodes-connectable="true"
-      :is-valid-connection="isValidConnection"
       @connect="onConnect"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
