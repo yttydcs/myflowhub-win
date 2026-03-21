@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,10 +10,12 @@ import {
   type AppSettingsState
 } from "@/stores/appSettings"
 import { useProfileStore } from "@/stores/profile"
+import { useTopicBusStore } from "@/stores/topicbus"
 import { useToastStore } from "@/stores/toast"
 
 const appSettings = useAppSettingsStore()
 const profileStore = useProfileStore()
+const topicbus = useTopicBusStore()
 const toast = useToastStore()
 
 const panelStyle = { padding: "var(--app-panel-pad)" }
@@ -27,14 +29,21 @@ const draft = reactive<AppSettingsState>({
   density: "comfortable",
   reduceMotion: false
 })
+const topicbusBusy = ref(false)
+const topicbusMaxEventsInput = ref("500")
 
 const syncDraft = () => {
   Object.assign(draft, normalizeAppSettings(appSettings.state.settings))
 }
 
+const syncTopicBusDraft = () => {
+  topicbusMaxEventsInput.value = String(topicbus.state.maxEvents || 500)
+}
+
 const loadPage = async () => {
-  await Promise.all([appSettings.load(), appSettings.loadAbout()])
+  await Promise.all([appSettings.load(), appSettings.loadAbout(), topicbus.loadPrefs()])
   syncDraft()
+  syncTopicBusDraft()
 }
 
 const dirty = computed(
@@ -79,6 +88,31 @@ const resetSettings = async () => {
     console.warn(err)
     toast.errorOf(err, "Failed to restore defaults.")
   }
+}
+
+const applyTopicBusMaxEvents = async () => {
+  if (topicbusBusy.value) return
+  topicbusBusy.value = true
+  try {
+    const raw = topicbusMaxEventsInput.value.trim()
+    const parsed = Number.parseInt(raw || String(topicbus.state.maxEvents || 500), 10)
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      throw new Error("Max events must be a positive number.")
+    }
+    await topicbus.setMaxEvents(parsed)
+    syncTopicBusDraft()
+    toast.success("TopicBus max events updated.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to update TopicBus max events.")
+  } finally {
+    topicbusBusy.value = false
+  }
+}
+
+const clearTopicBusEvents = () => {
+  topicbus.clearEvents()
+  toast.success("TopicBus cached events cleared.")
 }
 
 watch(
@@ -247,6 +281,39 @@ watch(
       </div>
 
       <div class="space-y-6">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                TopicBus
+              </p>
+              <h3 class="mt-1 text-lg font-semibold">Event Cache Settings</h3>
+              <p class="mt-2 text-sm text-muted-foreground">
+                TopicBus windows only show events received after they open. Your own publish actions do not echo back.
+              </p>
+            </div>
+            <Badge variant="secondary">{{ topicbus.state.maxEvents }} max</Badge>
+          </div>
+
+          <div class="mt-5 grid gap-4">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Max Events
+              </label>
+              <input
+                v-model="topicbusMaxEventsInput"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="500"
+              />
+            </div>
+          </div>
+
+          <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" :disabled="topicbusBusy" @click="clearTopicBusEvents">Clear Cached</Button>
+            <Button :disabled="topicbusBusy" @click="applyTopicBusMaxEvents">Apply Limit</Button>
+          </div>
+        </div>
+
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             About

@@ -28,8 +28,6 @@ const subForm = reactive({
   text: ""
 })
 
-const maxEventsInput = ref(String(topicbus.state.maxEvents || 500))
-
 const fallbackIdentity = reactive({
   nodeId: 0,
   hubId: 0
@@ -131,14 +129,9 @@ const loadHomeDefaults = async () => {
   topicbus.setIdentity(selfNodeId.value, hubId.value)
 }
 
-const syncMaxEventsInput = () => {
-  maxEventsInput.value = String(topicbus.state.maxEvents || 500)
-}
-
 const loadPreferences = async () => {
   try {
     await topicbus.loadPrefs()
-    syncMaxEventsInput()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to load TopicBus preferences.")
@@ -176,26 +169,6 @@ const restoreAndSync = async () => {
     }
   }
   await syncRemoteTopics(true)
-}
-
-const applyMaxEvents = async () => {
-  if (busy.value) return
-  busy.value = true
-  try {
-    const raw = maxEventsInput.value.trim()
-    const parsed = Number.parseInt(raw || String(topicbus.state.maxEvents || 500), 10)
-    if (Number.isNaN(parsed) || parsed <= 0) {
-      throw new Error("Max events must be a positive number.")
-    }
-    await topicbus.setMaxEvents(parsed)
-    syncMaxEventsInput()
-    toast.success("Max events updated.")
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to update max events.")
-  } finally {
-    busy.value = false
-  }
 }
 
 const subscribeFromInput = async () => {
@@ -287,11 +260,6 @@ const resubscribeAll = async () => {
   } finally {
     busy.value = false
   }
-}
-
-const clearEvents = () => {
-  topicbus.clearEvents()
-  toast.success("Cached events cleared.")
 }
 
 const openTopicWindow = (item?: TopicBusChannelItem) => {
@@ -448,39 +416,6 @@ onMounted(async () => {
           </div>
         </section>
 
-        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Cache & Window</p>
-              <h3 class="text-lg font-semibold">Event Cache Settings</h3>
-              <p class="text-sm text-muted-foreground">
-                Channel windows only show messages received after the window opens. Your own publish actions do not echo back.
-              </p>
-            </div>
-            <Badge variant="secondary">Window-first</Badge>
-          </div>
-
-          <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Max Events
-              </label>
-              <input v-model="maxEventsInput" :class="inputClass" placeholder="500" />
-            </div>
-            <div class="flex flex-col justify-end gap-2">
-              <Button variant="outline" :disabled="busy" @click="applyMaxEvents">Apply Limit</Button>
-              <Button variant="ghost" :disabled="busy" @click="clearEvents">Clear Cached</Button>
-            </div>
-          </div>
-
-          <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-            <p class="font-medium text-foreground">Recommended workflow</p>
-            <p class="mt-1">
-              Keep this page for setup, then jump to <span class="font-semibold text-foreground">Channels</span> and open
-              a dedicated window for `All` or a specific topic.
-            </p>
-          </div>
-        </section>
       </div>
 
       <div class="space-y-6">

@@ -51,7 +51,6 @@ const requestedTopic = computed(() => String(route.query.topic ?? "").trim())
 const requestedScope = computed(() => String(route.query.scope ?? "").trim().toLowerCase())
 const isAllWindow = computed(() => requestedScope.value === "all" || !requestedTopic.value)
 const windowTitle = computed(() => (isAllWindow.value ? "All Channels" : requestedTopic.value || fallbackTitle))
-const windowModeLabel = computed(() => (isAllWindow.value ? "Aggregate Window" : "Channel Window"))
 const resolvedTopicLabel = computed(() => (isAllWindow.value ? "All known topics" : requestedTopic.value || "-"))
 const resolvedTargetLabel = computed(() => topicbus.state.targetId.trim() || (hubId.value ? String(hubId.value) : "-"))
 const receivePanelPercent = computed(() => `${Math.round(splitRatio.value * 100)}%`)
@@ -326,18 +325,9 @@ onBeforeUnmount(() => {
 <template>
   <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">TopicBus Window</p>
-          <h1 class="mt-1 text-xl font-semibold">{{ windowTitle }}</h1>
-          <p class="mt-2 text-sm text-muted-foreground">
-            {{ isAllWindow ? "Watch every known topic from the moment this window opens." : "Focus on one topic with a dedicated receive and send workspace." }}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{{ windowModeLabel }}</Badge>
-          <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
-        </div>
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <h1 class="text-xl font-semibold">{{ windowTitle }}</h1>
+        <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
       </div>
     </header>
 
