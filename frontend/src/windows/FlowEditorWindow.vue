@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
-import { LayoutGrid, Link2Off, Plus, Redo2, Save, Trash2, Undo2 } from "lucide-vue-next"
+import { LayoutGrid, Link2Off, Plus, Redo2, Save, Trash2, Undo2, X } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -30,6 +30,7 @@ const nodeDraft = reactive({
 
 const selectedNode = computed(() => flowStore.state.nodes[flowStore.state.selectedNodeIndex] ?? null)
 const selectedEdge = computed(() => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null)
+const nodeDetailOpen = computed(() => Boolean(selectedNode.value))
 
 const canUndo = computed(() => flowStore.state.historyIndex > 0)
 const canRedo = computed(
@@ -37,6 +38,10 @@ const canRedo = computed(
 )
 
 const projectId = computed(() => String(route.query.projectId ?? "").trim())
+
+const closeNodeDetail = () => {
+  flowStore.clearSelection()
+}
 
 const commitNodeId = () => {
   const node = selectedNode.value
@@ -118,10 +123,9 @@ const saveProject = async () => {
   }
   saveBusy.value = true
   try {
-    const payload = flowStore.exportPayload()
-    await projectsStore.saveProjectPayload(id, payload)
-    const latest = projectsStore.getProjectByID(id)
-    loadedProjectName.value = latest?.name || payload.name || id
+    const graph = flowStore.exportGraphDraft()
+    const saved = await projectsStore.saveProjectGraph(id, graph)
+    loadedProjectName.value = saved.name || saved.flowId || id
     toast.success("Project saved.")
   } catch (err) {
     console.warn(err)
@@ -145,12 +149,7 @@ const loadProject = async () => {
     }
     loadedProjectId.value = project.projectId
     loadedProjectName.value = project.name || project.flowId
-    flowStore.loadFromPayload({
-      flow_id: project.flowId,
-      name: project.name,
-      trigger: projectsStore.toTriggerWire(project.trigger),
-      graph: project.graph
-    })
+    flowStore.loadGraphDraft(project.graph)
     nodeIdDraft.value = selectedNode.value?.id ?? ""
   } catch (err) {
     console.warn(err)
@@ -250,9 +249,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="space-y-4">
-    <div class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-3">
+  <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
+    <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             Flow Project Editor
@@ -260,7 +259,26 @@ onUnmounted(() => {
           <h1 class="mt-1 text-xl font-semibold">{{ loadedProjectName || "Untitled Project" }}</h1>
           <p class="mt-1 text-xs text-muted-foreground">project_id {{ loadedProjectId || projectId || "-" }}</p>
         </div>
-        <div class="flex items-center gap-2">
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Tooltip content="Add Node" side="bottom">
+            <Button size="icon" variant="outline" @click="openAddNodeDialog">
+              <Plus class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Add Node</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Remove Node (Delete)" side="bottom">
+            <Button size="icon" variant="outline" :disabled="flowStore.state.selectedNodeIndex < 0" @click="removeNode">
+              <Trash2 class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Remove Node</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Remove Edge (Delete)" side="bottom">
+            <Button size="icon" variant="outline" :disabled="flowStore.state.selectedEdgeIndex < 0" @click="removeEdge">
+              <Link2Off class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Remove Edge</span>
+            </Button>
+          </Tooltip>
           <Tooltip content="Undo (Ctrl+Z)" side="bottom">
             <Button size="icon" variant="outline" :disabled="!canUndo" @click="flowStore.undo()">
               <Undo2 class="h-4 w-4" aria-hidden="true" />
@@ -287,162 +305,28 @@ onUnmounted(() => {
           </Tooltip>
         </div>
       </div>
-    </div>
 
-    <div v-if="loading" class="rounded-2xl border bg-card/90 p-6 text-sm text-muted-foreground shadow-sm">
+      <p class="mt-3 text-xs text-muted-foreground">
+        Pure workflow editing only. Trigger and deployment settings stay in the project center.
+      </p>
+    </header>
+
+    <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
       Loading project...
     </div>
 
-    <div v-else class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <div class="grid gap-4 md:grid-cols-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Flow ID
-            </label>
-            <input
-              v-model="flowStore.state.flowId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="flow_id"
-              @blur="flowStore.commitHistory()"
-            />
+    <div v-else class="relative flex-1 min-h-0 overflow-hidden">
+      <div class="flex h-full min-h-0 flex-col p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="text-xs text-muted-foreground">
+            Drag nodes to reposition. Drag from node handles to connect. Click a node to open the right-side detail drawer.
           </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Name
-            </label>
-            <input
-              v-model="flowStore.state.flowName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Optional name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Trigger
-            </label>
-            <select
-              v-model="flowStore.state.triggerType"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="flowStore.commitHistory()"
-            >
-              <option value="interval">interval</option>
-              <option value="event">event</option>
-              <option value="var_changed">var_changed</option>
-            </select>
+          <div class="text-xs text-muted-foreground">
+            Click blank canvas to close the drawer.
           </div>
         </div>
 
-        <div v-if="flowStore.state.triggerType === 'interval'" class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Every (ms)
-            </label>
-            <input
-              v-model.number="flowStore.state.everyMs"
-              type="number"
-              min="1"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="60000"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-
-        <div v-else-if="flowStore.state.triggerType === 'event'" class="mt-4 grid gap-4 md:grid-cols-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Mode
-            </label>
-            <select
-              v-model="flowStore.state.eventMode"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="flowStore.commitHistory()"
-            >
-              <option value="publish">publish</option>
-              <option value="received">received</option>
-              <option value="any">any</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Name
-            </label>
-            <input
-              v-model="flowStore.state.eventName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="topicbus publish name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Topic
-            </label>
-            <input
-              v-model="flowStore.state.eventTopic"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="topic name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-
-        <div v-else class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Var Owner
-            </label>
-            <input
-              v-model.number="flowStore.state.varOwner"
-              type="number"
-              min="0"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="0 = any owner"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Var Name
-            </label>
-            <input
-              v-model="flowStore.state.varName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="empty = any name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-
-        <div class="mt-6 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="text-xs text-muted-foreground">
-              Drag nodes to reposition. Drag from a node handle to connect nodes.
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Tooltip content="Add Node" side="bottom">
-                <Button size="icon" variant="outline" @click="openAddNodeDialog">
-                  <Plus class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Add Node</span>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Remove Node (Delete)" side="bottom">
-                <Button size="icon" variant="outline" :disabled="flowStore.state.selectedNodeIndex < 0" @click="removeNode">
-                  <Trash2 class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Remove Node</span>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Remove Edge (Delete)" side="bottom">
-                <Button size="icon" variant="outline" :disabled="flowStore.state.selectedEdgeIndex < 0" @click="removeEdge">
-                  <Link2Off class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Remove Edge</span>
-                </Button>
-              </Tooltip>
-            </div>
-          </div>
-
+        <div class="flex-1 min-h-0">
           <FlowCanvas
             :nodes="flowStore.state.nodes"
             :edges="flowStore.state.edges"
@@ -456,119 +340,149 @@ onUnmounted(() => {
             @clear-selection="onCanvasClear"
           />
         </div>
-      </section>
+      </div>
 
-      <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <h3 class="text-sm font-semibold">Node Detail</h3>
-        <div v-if="selectedNode" class="mt-4 space-y-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Node ID
-            </label>
-            <input
-              v-model="nodeIdDraft"
-              class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @blur="commitNodeId"
-              @keydown.enter.prevent="commitNodeId"
-            />
-            <p class="mt-1 text-[11px] text-muted-foreground">
-              Node ID must be unique. Renaming updates all connected edges.
-            </p>
-          </div>
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Kind
-              </label>
-              <input
-                value="call"
-                disabled
-                class="mt-2 h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
-              />
+      <Overlay
+        :open="nodeDetailOpen"
+        overlayClass="bg-black/20 p-0 items-stretch justify-end"
+        zIndexClass="z-30"
+        closeOnBackdrop
+        @close="closeNodeDetail"
+      >
+        <aside
+          v-if="selectedNode"
+          class="h-full w-full max-w-[420px] border-l border-border/70 bg-card/96 shadow-2xl"
+          @click.stop
+        >
+          <div class="flex h-full flex-col">
+            <div class="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Node Detail</p>
+                <h2 class="mt-1 text-lg font-semibold">{{ selectedNode.id }}</h2>
+              </div>
+              <Button size="icon" variant="ghost" @click="closeNodeDetail">
+                <X class="h-4 w-4" aria-hidden="true" />
+                <span class="sr-only">Close</span>
+              </Button>
             </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Allow Fail
-              </label>
-              <div class="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  v-model="selectedNode.allowFail"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border"
-                  @change="flowStore.commitHistory()"
-                />
-                <span>Continue on error</span>
+
+            <div class="flex-1 overflow-y-auto px-5 py-4">
+              <div class="space-y-4">
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Node ID
+                  </label>
+                  <input
+                    v-model="nodeIdDraft"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    @blur="commitNodeId"
+                    @keydown.enter.prevent="commitNodeId"
+                  />
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    Node ID must be unique. Renaming updates all connected edges.
+                  </p>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Kind
+                    </label>
+                    <input
+                      value="call"
+                      disabled
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Allow Fail
+                    </label>
+                    <div class="mt-2 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
+                      <input
+                        v-model="selectedNode.allowFail"
+                        type="checkbox"
+                        class="h-4 w-4 rounded border"
+                        @change="flowStore.commitHistory()"
+                      />
+                      <span class="text-muted-foreground">Continue on error</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Retry
+                    </label>
+                    <input
+                      v-model.number="selectedNode.retry"
+                      type="number"
+                      min="0"
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      @blur="flowStore.commitHistory()"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Timeout (ms)
+                    </label>
+                    <input
+                      v-model.number="selectedNode.timeoutMs"
+                      type="number"
+                      min="0"
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      @blur="flowStore.commitHistory()"
+                    />
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Target Node
+                    </label>
+                    <input
+                      v-model.number="selectedNode.target"
+                      type="number"
+                      min="0"
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="0 = local call"
+                      @blur="flowStore.commitHistory()"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Method
+                    </label>
+                    <input
+                      v-model="selectedNode.method"
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      placeholder="method name"
+                      @blur="flowStore.commitHistory()"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Args (JSON)
+                  </label>
+                  <textarea
+                    v-model="selectedNode.args"
+                    rows="10"
+                    class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                    @blur="flowStore.commitHistory()"
+                  />
+                </div>
               </div>
             </div>
           </div>
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Retry
-              </label>
-              <input
-                v-model.number="selectedNode.retry"
-                type="number"
-                min="0"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                @blur="flowStore.commitHistory()"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Timeout (ms)
-              </label>
-              <input
-                v-model.number="selectedNode.timeoutMs"
-                type="number"
-                min="0"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                @blur="flowStore.commitHistory()"
-              />
-            </div>
-          </div>
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Target Node
-              </label>
-              <input
-                v-model.number="selectedNode.target"
-                type="number"
-                min="0"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="0 = local call"
-                @blur="flowStore.commitHistory()"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Method
-              </label>
-              <input
-                v-model="selectedNode.method"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="method name"
-                @blur="flowStore.commitHistory()"
-              />
-            </div>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Args (JSON)
-            </label>
-            <textarea
-              v-model="selectedNode.args"
-              rows="6"
-              class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-        <div v-else class="mt-3 text-xs text-muted-foreground">
-          Select a node to edit its details.
-        </div>
-      </section>
+        </aside>
+      </Overlay>
     </div>
 
     <Overlay :open="addNodeOpen" @close="addNodeOpen = false">

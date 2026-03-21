@@ -42,6 +42,17 @@ const toast = useToastStore()
 const varpool = useVarPoolStore()
 
 const isWindowLayout = computed(() => route.meta.layout === "window")
+const isFullBleedWindow = computed(() => route.name === "flowEditorWindow")
+const windowMainClass = computed(() =>
+  isFullBleedWindow.value
+    ? "relative h-screen overflow-hidden p-0"
+    : "relative min-h-screen overflow-y-auto px-6 py-6"
+)
+const windowViewClass = computed(() =>
+  isFullBleedWindow.value
+    ? "h-full animate-in fade-in slide-in-from-bottom-2 duration-500"
+    : "animate-in fade-in slide-in-from-bottom-2 duration-500"
+)
 
 let varpoolStorageEpoch = 0
 const loadVarPoolStorage = async () => {
@@ -288,12 +299,12 @@ const selectProfile = async (name: string) => {
           />
         </div>
 
-        <main class="relative min-h-screen overflow-y-auto px-6 py-6">
+        <main :class="windowMainClass">
           <RouterView v-slot="{ Component }">
             <component
               :is="Component"
               :key="route.fullPath"
-              class="animate-in fade-in slide-in-from-bottom-2 duration-500"
+              :class="windowViewClass"
             />
           </RouterView>
         </main>

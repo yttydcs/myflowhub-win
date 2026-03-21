@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
-import { PencilLine, Plus, RefreshCw, Rocket, Trash2 } from "lucide-vue-next"
+import { PencilLine, Plus, RefreshCw, Rocket, Settings2, Trash2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -17,13 +17,19 @@ const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 
+const activeTab = ref<"projects" | "deployments">("projects")
 const currentDeployNodeId = ref("")
 
 const createDialogOpen = ref(false)
 const createForm = reactive({
-  projectId: "",
-  flowId: "",
   name: ""
+})
+
+const metaDialogOpen = ref(false)
+const metaForm = reactive({
+  projectId: "",
+  projectName: "",
+  flowId: ""
 })
 
 const deployDialogOpen = ref(false)
@@ -85,9 +91,29 @@ const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
   varName: trigger.varName
 })
 
+const ensureDeploymentsLoaded = async (options?: { force?: boolean }) => {
+  if (activeTab.value !== "deployments") return
+  if (!ready.value) return
+  const nodeId = currentDeployNodeId.value.trim()
+  if (!nodeId) return
+  const sameNode = flowProjects.state.deploymentsNodeId === nodeId
+  if (!options?.force && sameNode) return
+  await reloadDeployments()
+}
+
+const setActiveTab = async (tab: "projects" | "deployments") => {
+  activeTab.value = tab
+  if (tab === "deployments") {
+    try {
+      await ensureDeploymentsLoaded()
+    } catch (err) {
+      console.warn(err)
+      toast.errorOf(err, "Failed to load current deployments.")
+    }
+  }
+}
+
 const openCreateDialog = () => {
-  createForm.projectId = ""
-  createForm.flowId = ""
   createForm.name = ""
   createDialogOpen.value = true
 }
@@ -95,8 +121,6 @@ const openCreateDialog = () => {
 const createProject = async () => {
   try {
     await flowProjects.createProject({
-      projectId: createForm.projectId,
-      flowId: createForm.flowId,
       name: createForm.name
     })
     createDialogOpen.value = false
@@ -104,6 +128,33 @@ const createProject = async () => {
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to create project.")
+  }
+}
+
+const openMetaDialog = (projectId: string) => {
+  const project = flowProjects.getProjectByID(projectId)
+  if (!project) {
+    toast.error("Project not found.")
+    return
+  }
+  metaForm.projectId = project.projectId
+  metaForm.projectName = project.name
+  metaForm.flowId = project.flowId
+  metaDialogOpen.value = true
+}
+
+const saveMeta = async () => {
+  try {
+    await flowProjects.updateProjectMeta({
+      projectId: metaForm.projectId,
+      name: metaForm.projectName,
+      flowId: metaForm.flowId
+    })
+    metaDialogOpen.value = false
+    toast.success("Project metadata saved.")
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to save project metadata.")
   }
 }
 
@@ -159,13 +210,21 @@ const pickNode = async (target: "deploy" | "deployments") => {
   nodePickerOpen.value = true
 }
 
-const chooseNode = (nodeId: number) => {
+const chooseNode = async (nodeId: number) => {
+  nodePickerOpen.value = false
   if (nodePickerTarget.value === "deploy") {
     deployForm.nodeId = String(nodeId)
-  } else {
-    currentDeployNodeId.value = String(nodeId)
+    return
   }
-  nodePickerOpen.value = false
+  currentDeployNodeId.value = String(nodeId)
+  if (activeTab.value === "deployments") {
+    try {
+      await reloadDeployments()
+    } catch (err) {
+      console.warn(err)
+      toast.errorOf(err, "Failed to load current deployments.")
+    }
+  }
 }
 
 const toggleNode = async (node: DeviceTreeNode) => {
@@ -209,6 +268,7 @@ const deployNow = async () => {
     deployDialogOpen.value = false
     toast.success("Deployment saved to target node.")
     currentDeployNodeId.value = deployForm.nodeId
+    activeTab.value = "deployments"
     await reloadDeployments()
   } catch (err) {
     console.warn(err)
@@ -248,12 +308,17 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => ready.value,
+  async (isReady) => {
+    if (!isReady || activeTab.value !== "deployments") return
+    await ensureDeploymentsLoaded({ force: true })
+  }
+)
+
 onMounted(async () => {
   if (!currentDeployNodeId.value && sessionStore.auth.hubId) {
     currentDeployNodeId.value = String(sessionStore.auth.hubId)
-  }
-  if (ready.value && currentDeployNodeId.value) {
-    await reloadDeployments()
   }
 })
 </script>
@@ -261,6 +326,95 @@ onMounted(async () => {
 <template>
   <section class="space-y-6">
     <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Workspace</p>
+          <h2 class="mt-1 text-lg font-semibold">Flow Project Center</h2>
+        </div>
+
+        <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
+          <button
+            type="button"
+            :class="[
+              'rounded-full px-4 py-2 text-sm font-semibold transition',
+              activeTab === 'projects'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted/70'
+            ]"
+            @click="setActiveTab('projects')"
+          >
+            Local Projects
+          </button>
+          <button
+            type="button"
+            :class="[
+              'rounded-full px-4 py-2 text-sm font-semibold transition',
+              activeTab === 'deployments'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted/70'
+            ]"
+            @click="setActiveTab('deployments')"
+          >
+            Current Deployments
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'projects'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Local</p>
+          <h2 class="mt-1 text-lg font-semibold">Flow Projects</h2>
+        </div>
+        <Button @click="openCreateDialog">
+          <Plus class="mr-2 h-4 w-4" />
+          New Project
+        </Button>
+      </div>
+
+      <div class="mt-4 space-y-2">
+        <article
+          v-for="project in flowProjects.state.projects"
+          :key="project.projectId"
+          class="rounded-xl border border-border/60 bg-background/70 p-4"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="space-y-1">
+              <p class="font-semibold">{{ project.name || project.flowId }}</p>
+              <p class="text-xs text-muted-foreground">flow_id: {{ project.flowId }}</p>
+              <p class="text-xs text-muted-foreground">project_id: {{ project.projectId }}</p>
+              <p class="text-xs text-muted-foreground">updated: {{ project.updatedAt }}</p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" @click="openMetaDialog(project.projectId)">
+                <Settings2 class="mr-1 h-4 w-4" />
+                Meta
+              </Button>
+              <Button size="sm" variant="outline" @click="openEditor(project.projectId)">
+                <PencilLine class="mr-1 h-4 w-4" />
+                Edit
+              </Button>
+              <Button size="sm" @click="openDeployDialog(project.projectId)">
+                <Rocket class="mr-1 h-4 w-4" />
+                Deploy
+              </Button>
+              <Button size="sm" variant="outline" @click="deleteProject(project.projectId)">
+                <Trash2 class="mr-1 h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        </article>
+
+        <div v-if="!flowProjects.state.projects.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+          No local projects yet. Create one and open the editor window.
+        </div>
+      </div>
+    </section>
+
+    <section v-else class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Runtime</p>
@@ -275,7 +429,7 @@ onMounted(async () => {
               placeholder="Node ID"
             />
           </div>
-          <Button size="sm" variant="outline" @click="pickNode('deployments')">Choose from tree</Button>
+          <Button size="sm" variant="outline" @click="pickNode('deployments')">Select node</Button>
           <Button size="sm" :disabled="flowProjects.state.deploymentsLoading" @click="reloadDeployments">
             <RefreshCw class="mr-2 h-4 w-4" />
             Refresh
@@ -314,74 +468,10 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Local</p>
-          <h2 class="mt-1 text-lg font-semibold">Flow Projects</h2>
-        </div>
-        <Button @click="openCreateDialog">
-          <Plus class="mr-2 h-4 w-4" />
-          New Project
-        </Button>
-      </div>
-
-      <div class="mt-4 space-y-2">
-        <article
-          v-for="project in flowProjects.state.projects"
-          :key="project.projectId"
-          class="rounded-xl border border-border/60 bg-background/70 p-3"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p class="font-semibold">{{ project.name || project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">project_id: {{ project.projectId }}</p>
-              <p class="text-xs text-muted-foreground">flow_id: {{ project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">updated: {{ project.updatedAt }}</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" @click="openEditor(project.projectId)">
-                <PencilLine class="mr-1 h-4 w-4" />
-                Edit
-              </Button>
-              <Button size="sm" @click="openDeployDialog(project.projectId)">
-                <Rocket class="mr-1 h-4 w-4" />
-                Deploy
-              </Button>
-              <Button size="sm" variant="outline" @click="deleteProject(project.projectId)">
-                <Trash2 class="mr-1 h-4 w-4" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </article>
-
-        <div v-if="!flowProjects.state.projects.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-          No local projects yet. Create one and open the editor window.
-        </div>
-      </div>
-    </section>
-
     <Overlay :open="createDialogOpen" @close="createDialogOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
         <h2 class="text-lg font-semibold">Create Flow Project</h2>
         <div class="mt-4 grid gap-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">project_id</label>
-            <input
-              v-model="createForm.projectId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Optional, auto generated if empty"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">flow_id</label>
-            <input
-              v-model="createForm.flowId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Required"
-            />
-          </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">name</label>
             <input
@@ -391,9 +481,51 @@ onMounted(async () => {
             />
           </div>
         </div>
+        <p class="mt-4 text-xs text-muted-foreground">
+          A unique local project id and a default random <code>flow_id</code> will be generated automatically. You can change metadata later from the project list.
+        </p>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="createDialogOpen = false">Cancel</Button>
           <Button @click="createProject">Create</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="metaDialogOpen" @close="metaDialogOpen = false">
+      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">Project Metadata</h2>
+        <div class="mt-4 grid gap-4">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">project_id</label>
+            <input
+              :value="metaForm.projectId"
+              disabled
+              class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">name</label>
+            <input
+              v-model="metaForm.projectName"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Optional"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">flow_id</label>
+            <input
+              v-model="metaForm.flowId"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Required"
+            />
+          </div>
+        </div>
+        <p class="mt-4 text-xs text-muted-foreground">
+          <code>flow_id</code> must stay unique among local projects because it is the deployment identity used on target nodes.
+        </p>
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="metaDialogOpen = false">Cancel</Button>
+          <Button @click="saveMeta">Save</Button>
         </div>
       </div>
     </Overlay>
@@ -413,7 +545,7 @@ onMounted(async () => {
             />
           </div>
           <div class="flex items-end">
-            <Button variant="outline" @click="pickNode('deploy')">Choose from device tree</Button>
+            <Button variant="outline" @click="pickNode('deploy')">Select node</Button>
           </div>
         </div>
 
@@ -502,7 +634,7 @@ onMounted(async () => {
     <Overlay :open="nodePickerOpen" @close="nodePickerOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Select Node</h2>
+          <h2 class="text-lg font-semibold">Select node</h2>
           <Button size="sm" variant="outline" @click="devicesStore.loadRoot">Reload Tree</Button>
         </div>
         <div class="mt-4 max-h-[70vh] space-y-2 overflow-y-auto">
