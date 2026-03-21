@@ -6,16 +6,30 @@ import { Overlay } from "@/components/ui/overlay"
 import NodeVarsDialog from "@/components/varpool/NodeVarsDialog.vue"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
-import { useVarPoolStore, type VarPoolKey } from "@/stores/varpool"
+import { useVarPoolStore, type VarPoolKey, type VarPoolValue } from "@/stores/varpool"
 import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
+
+type VarPoolTab = "control" | "mine" | "watch"
+
+type VarPoolEntry = {
+  key: VarPoolKey
+  snapshot: VarPoolValue
+}
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const varpool = useVarPoolStore()
 const toast = useToastStore()
 
+const tabs: { id: VarPoolTab; label: string }[] = [
+  { id: "control", label: "Control" },
+  { id: "mine", label: "Mine" },
+  { id: "watch", label: "Watch" }
+]
+
 const busy = ref(false)
+const activeTab = ref<VarPoolTab>("control")
 
 const editDialog = reactive({
   open: false,
@@ -81,12 +95,38 @@ const groupedKeys = computed(() => {
   return { mine, others }
 })
 
-const subscribedKeys = computed(() =>
-  varpool.state.keys.filter((key) => {
-    const value = varpool.valueForKey(key)
-    return value.subKnown && value.subscribed
-  })
+const buildEntry = (key: VarPoolKey): VarPoolEntry => ({
+  key,
+  snapshot: varpool.valueForKey(key)
+})
+
+const mineEntries = computed(() => groupedKeys.value.mine.map(buildEntry))
+const watchEntries = computed(() => groupedKeys.value.others.map(buildEntry))
+const subscribedEntries = computed(() =>
+  watchEntries.value.filter(({ snapshot }) => snapshot.subKnown && snapshot.subscribed)
 )
+
+const summaryItems = computed(() => [
+  { label: "Connected", value: connectedLabel.value },
+  { label: "NodeID", value: selfNodeId.value ? String(selfNodeId.value) : "-" },
+  { label: "HubID", value: hubId.value ? String(hubId.value) : "-" },
+  { label: "Cached Keys", value: String(varpool.state.keys.length) },
+  { label: "Mine Count", value: String(mineEntries.value.length) },
+  { label: "Watch Count", value: String(watchEntries.value.length) },
+  { label: "Subscribed Count", value: String(subscribedEntries.value.length) },
+  { label: "Last Frame", value: varpool.state.lastFrameAt || "-" }
+])
+
+const setActiveTab = (tab: VarPoolTab) => {
+  activeTab.value = tab
+}
+
+const tabButtonClass = (tab: VarPoolTab) => [
+  "rounded-full px-4 py-2 text-sm font-semibold transition",
+  activeTab.value === tab
+    ? "bg-primary text-primary-foreground shadow-sm"
+    : "text-muted-foreground hover:bg-muted/70"
+]
 
 const parseOwner = (value: string, required: boolean) => {
   const trimmed = value.trim()
@@ -429,226 +469,223 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="grid gap-6">
-    <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                VarPool Control
-              </p>
-              <h3 class="text-lg font-semibold">Target & Identity</h3>
-              <p class="text-sm text-muted-foreground">
-                Use your logged-in node to list variables and watch other owners.
-              </p>
-            </div>
-            <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
-          </div>
-
-          <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Target Node ID
-              </label>
-              <input
-                v-model="varpool.state.targetId"
-                :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
-                :class="inputClass"
-              />
-            </div>
-            <div class="flex flex-col justify-end gap-2">
-              <Button :disabled="busy" @click="refreshAll">Refresh All</Button>
-              <Button variant="outline" :disabled="busy" @click="persistWatchList">
-                Save Watch List
-              </Button>
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <span>NodeID: {{ selfNodeId || "-" }}</span>
-            <span>HubID: {{ hubId || "-" }}</span>
-            <span>Cached keys: {{ varpool.state.keys.length }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Subscriptions
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">Active List</h3>
-          <div class="mt-4 space-y-2 text-sm text-muted-foreground">
-            <div
-              v-for="key in subscribedKeys"
-              :key="`${key.name}-${key.owner}`"
-              class="rounded-lg border border-border/60 bg-background/70 px-3 py-2"
-            >
-              {{ key.name }} #{{ key.owner ?? "-" }}
-            </div>
-            <p v-if="subscribedKeys.length === 0">No active subscriptions.</p>
-          </div>
-        </div>
-
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Snapshot
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">VarPool Status</h3>
-          <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Target</p>
-              <p>{{ varpool.state.targetId || hubId || "-" }}</p>
-            </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Last Frame</p>
-              <p>{{ varpool.state.lastFrameAt || "-" }}</p>
-            </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Watch Count</p>
-              <p>{{ varpool.state.keys.length }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="space-y-4">
+  <section class="space-y-6">
+    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Cached Variables
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Workspace</p>
+          <h2 class="mt-1 text-lg font-semibold">VarPool Control Center</h2>
+        </div>
+
+        <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            :class="tabButtonClass(tab.id)"
+            :aria-pressed="activeTab === tab.id"
+            @click="setActiveTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'control'" class="space-y-4">
+      <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+              VarPool Control
+            </p>
+            <h3 class="text-lg font-semibold">Target & Identity</h3>
+            <p class="text-sm text-muted-foreground">
+              Use your logged-in node to list variables and manage watch targets.
+            </p>
+          </div>
+          <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Target Node ID
+            </label>
+            <input
+              v-model="varpool.state.targetId"
+              :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
+              :class="inputClass"
+            />
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <Button :disabled="busy" @click="refreshAll">Refresh All</Button>
+            <Button variant="outline" :disabled="busy" @click="persistWatchList">Save Watch List</Button>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Snapshot</p>
+        <h3 class="mt-2 text-lg font-semibold">VarPool Status</h3>
+        <div class="mt-4 space-y-3 text-sm text-muted-foreground">
+          <div
+            v-for="item in summaryItems"
+            :key="item.label"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2"
+          >
+            <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ item.label }}</p>
+            <p class="font-medium text-foreground">{{ item.value }}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+              Subscriptions
+            </p>
+            <h3 class="text-lg font-semibold">Active List</h3>
+          </div>
+          <Badge variant="outline">{{ subscribedEntries.length }} active</Badge>
+        </div>
+
+        <div class="mt-4 space-y-3">
+          <div
+            v-for="entry in subscribedEntries"
+            :key="`${entry.key.name}-${entry.key.owner}`"
+            class="rounded-xl border border-border/60 bg-background/70 px-4 py-3"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="font-semibold">{{ entry.key.name }}</p>
+                <p class="text-xs text-muted-foreground">Owner {{ entry.key.owner ?? "-" }}</p>
+              </div>
+              <Badge variant="secondary">Subscribed</Badge>
+            </div>
+          </div>
+          <p v-if="subscribedEntries.length === 0" class="text-sm text-muted-foreground">
+            No active subscriptions.
           </p>
-          <h3 class="text-lg font-semibold">VarPool Inventory</h3>
         </div>
-        <Badge variant="outline">Updated: {{ varpool.state.lastFrameAt || "-" }}</Badge>
+      </section>
+    </section>
+
+    <section v-if="activeTab === 'mine'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Mine</p>
+          <h3 class="mt-1 text-lg font-semibold">My Variables</h3>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Updated: {{ varpool.state.lastFrameAt || "-" }}</Badge>
+          <Button size="sm" variant="outline" :disabled="busy" @click="openAddMineDialog">
+            Add Variable
+          </Button>
+        </div>
       </div>
 
-      <div class="space-y-4">
-        <div>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              My Variables
-            </p>
-            <div class="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" :disabled="busy" @click="openAddMineDialog">
-                Add Variable
-              </Button>
-            </div>
-          </div>
-          <div class="mt-3 grid gap-3">
-            <div
-              v-for="key in groupedKeys.mine"
-              :key="`${key.name}-${key.owner}`"
-              class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 class="text-base font-semibold">{{ key.name }}</h4>
-                  <p class="text-xs text-muted-foreground">
-                    Owner {{ key.owner ?? "-" }} ·
-                    {{ varpool.valueForKey(key).visibility || "unknown" }} ·
-                    {{ varpool.valueForKey(key).kind || "unknown" }}
-                  </p>
-                </div>
-                <Badge variant="secondary">Mine</Badge>
-              </div>
-              <p class="mt-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-                {{ varpool.valueForKey(key).value || "-" }}
+      <div class="mt-4 space-y-3">
+        <article
+          v-for="entry in mineEntries"
+          :key="`${entry.key.name}-${entry.key.owner}`"
+          class="rounded-2xl border border-border/60 bg-background/70 p-5"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 class="text-base font-semibold">{{ entry.key.name }}</h4>
+              <p class="text-xs text-muted-foreground">
+                Owner {{ entry.key.owner ?? "-" }} ·
+                {{ entry.snapshot.visibility || "unknown" }} ·
+                {{ entry.snapshot.kind || "unknown" }}
               </p>
-              <div class="mt-4 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(key)">
-                  Refresh
-                </Button>
-                <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(key)">
-                  Edit
-                </Button>
-                <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(key)">
-                  Revoke
-                </Button>
-                <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(key)">
-                  Remove
-                </Button>
-              </div>
             </div>
-            <p v-if="groupedKeys.mine.length === 0" class="text-sm text-muted-foreground">
-              No variables yet.
-            </p>
+            <Badge variant="secondary">Mine</Badge>
           </div>
-        </div>
+          <p class="mt-3 rounded-lg border border-border/60 bg-card/90 px-3 py-2 text-sm">
+            {{ entry.snapshot.value || "-" }}
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(entry.key)">
+              Refresh
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(entry.key)">
+              Edit
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(entry.key)">
+              Revoke
+            </Button>
+            <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(entry.key)">
+              Remove
+            </Button>
+          </div>
+        </article>
 
+        <p v-if="mineEntries.length === 0" class="text-sm text-muted-foreground">No variables yet.</p>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'watch'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              Watched Variables
-            </p>
-            <div class="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">
-                Node Vars
-              </Button>
-              <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">
-                Add Watch
-              </Button>
-              <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">
-                Reload Saved
-              </Button>
-            </div>
-          </div>
-          <div class="mt-3 grid gap-3">
-            <div
-              v-for="key in groupedKeys.others"
-              :key="`${key.name}-${key.owner}`"
-              class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 class="text-base font-semibold">{{ key.name }}</h4>
-                  <p class="text-xs text-muted-foreground">
-                    Owner {{ key.owner ?? "-" }} ·
-                    {{ varpool.valueForKey(key).visibility || "unknown" }} ·
-                    {{ varpool.valueForKey(key).kind || "unknown" }}
-                  </p>
-                </div>
-                <Badge
-                  v-if="varpool.valueForKey(key).subKnown && varpool.valueForKey(key).subscribed"
-                  variant="secondary"
-                >
-                  Subscribed
-                </Badge>
-              </div>
-              <p class="mt-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-                {{ varpool.valueForKey(key).value || "-" }}
-              </p>
-              <div class="mt-4 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(key)">
-                  Refresh
-                </Button>
-                <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(key)">
-                  Edit
-                </Button>
-                <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(key)">
-                  Revoke
-                </Button>
-                <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(key)">
-                  Remove
-                </Button>
-                <Button size="sm" variant="outline" :disabled="busy" @click="toggleSubscribe(key)">
-                  {{
-                    varpool.valueForKey(key).subKnown && varpool.valueForKey(key).subscribed
-                      ? "Unsubscribe"
-                      : "Subscribe"
-                  }}
-                </Button>
-              </div>
-            </div>
-            <p v-if="groupedKeys.others.length === 0" class="text-sm text-muted-foreground">
-              No watched variables yet.
-            </p>
-          </div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Watch</p>
+          <h3 class="mt-1 text-lg font-semibold">Watched Variables</h3>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">Node Vars</Button>
+          <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">Add Watch</Button>
+          <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">Reload Saved</Button>
         </div>
       </div>
-    </div>
+
+      <div class="mt-4 space-y-3">
+        <article
+          v-for="entry in watchEntries"
+          :key="`${entry.key.name}-${entry.key.owner}`"
+          class="rounded-2xl border border-border/60 bg-background/70 p-5"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 class="text-base font-semibold">{{ entry.key.name }}</h4>
+              <p class="text-xs text-muted-foreground">
+                Owner {{ entry.key.owner ?? "-" }} ·
+                {{ entry.snapshot.visibility || "unknown" }} ·
+                {{ entry.snapshot.kind || "unknown" }}
+              </p>
+            </div>
+            <Badge v-if="entry.snapshot.subKnown && entry.snapshot.subscribed" variant="secondary">
+              Subscribed
+            </Badge>
+          </div>
+          <p class="mt-3 rounded-lg border border-border/60 bg-card/90 px-3 py-2 text-sm">
+            {{ entry.snapshot.value || "-" }}
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(entry.key)">
+              Refresh
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(entry.key)">
+              Edit
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(entry.key)">
+              Revoke
+            </Button>
+            <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(entry.key)">
+              Remove
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="toggleSubscribe(entry.key)">
+              {{ entry.snapshot.subKnown && entry.snapshot.subscribed ? "Unsubscribe" : "Subscribe" }}
+            </Button>
+          </div>
+        </article>
+
+        <p v-if="watchEntries.length === 0" class="text-sm text-muted-foreground">
+          No watched variables yet.
+        </p>
+      </div>
+    </section>
 
     <Overlay
       :open="addMineDialog.open"
