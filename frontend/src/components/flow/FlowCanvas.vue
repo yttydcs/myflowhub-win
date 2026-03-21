@@ -119,6 +119,7 @@ const nodeTypes = {
       :fit-view-on-init="true"
       :min-zoom="0.2"
       :max-zoom="2"
+      :nodes-connectable="true"
       :is-valid-connection="isValidConnection"
       @connect="onConnect"
       @node-click="onNodeClick"

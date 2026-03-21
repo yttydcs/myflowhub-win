@@ -40,11 +40,24 @@ const statusTone = computed(() => {
 
 <template>
   <div
-    class="min-w-[160px] rounded-xl border bg-background/90 px-3 py-2 shadow-sm"
-    :class="selected ? 'ring-2 ring-primary/40 ring-offset-2 ring-offset-background' : ''"
+    class="min-w-[176px] rounded-xl border bg-background/95 px-3 py-2 shadow-sm transition-shadow"
+    :class="selected ? 'ring-2 ring-primary/40 ring-offset-2 ring-offset-background shadow-md' : ''"
   >
-    <Handle type="target" :position="Position.Left" class="h-2 w-2 border border-border/60 bg-background" />
-    <Handle type="source" :position="Position.Right" class="h-2 w-2 border border-border/60 bg-background" />
+    <Handle
+      type="target"
+      :position="Position.Left"
+      class="!-left-2.5 !h-4 !w-4 !border-2 !border-sky-700 !bg-sky-400 shadow-sm"
+    />
+    <Handle
+      type="source"
+      :position="Position.Right"
+      class="!-right-2.5 !h-4 !w-4 !border-2 !border-emerald-700 !bg-emerald-400 shadow-sm"
+    />
+
+    <div class="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.24em]">
+      <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">In</span>
+      <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">Out</span>
+    </div>
 
     <div class="flex items-start justify-between gap-2">
       <p class="truncate text-xs font-semibold text-foreground">{{ label }}</p>
