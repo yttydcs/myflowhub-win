@@ -12,6 +12,7 @@ import VarPool from "@/pages/VarPool.vue"
 import Permissions from "@/pages/Permissions.vue"
 import Showcase from "@/pages/Showcase.vue"
 import FileTasks from "@/windows/FileTasks.vue"
+import FlowEditorWindow from "@/windows/FlowEditorWindow.vue"
 import LogWindow from "@/windows/LogWindow.vue"
 import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
 
@@ -95,7 +96,16 @@ const routes = [
     component: Flow,
     meta: {
       title: "Flow",
-      subtitle: "Build, deploy, and run flow graphs."
+      subtitle: "Manage local projects, deployments, and editor windows."
+    }
+  },
+  {
+    path: "/flow-editor-window",
+    name: "flowEditorWindow",
+    component: FlowEditorWindow,
+    meta: {
+      title: "Flow Editor",
+      layout: "window"
     }
   },
   {

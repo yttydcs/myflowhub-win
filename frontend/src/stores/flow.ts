@@ -37,6 +37,16 @@ export type FlowEdge = {
   to: string
 }
 
+export type FlowPayload = {
+  flow_id: string
+  name: string
+  trigger: Record<string, any>
+  graph: {
+    nodes: Array<Record<string, any>>
+    edges: Array<Record<string, any>>
+  }
+}
+
 export type FlowStatusNode = {
   id: string
   status: string
@@ -839,40 +849,75 @@ const handleGetResp = (data: any) => {
     state.message = msg || "Flow load failed."
     return
   }
-  state.flowId = String(data?.flow_id ?? "")
-  state.flowName = String(data?.name ?? "")
+  applyFlowPayload(data, "Flow loaded.", true)
+}
+
+const applyFlowPayload = (data: any, successMessage: string, refreshStatus: boolean) => {
+  state.flowId = String(data?.flow_id ?? data?.flowId ?? "").trim()
+  state.flowName = String(data?.name ?? "").trim()
   const trigger = data?.trigger ?? {}
-  const triggerType = String(trigger?.type ?? "interval").trim().toLowerCase()
+  const triggerType = String(trigger?.type ?? trigger?.triggerType ?? "interval").trim().toLowerCase()
   if (triggerType === "event" || triggerType === "var_changed") {
     state.triggerType = triggerType
   } else {
     state.triggerType = "interval"
   }
-  const everyMs = Number(trigger?.every_ms ?? 0)
+  const everyMs = Number(trigger?.every_ms ?? trigger?.everyMs ?? 0)
   state.everyMs = everyMs > 0 ? everyMs : 60000
-  const rawEventMode = String(trigger?.event_mode ?? "publish").trim().toLowerCase()
+  const rawEventMode = String(trigger?.event_mode ?? trigger?.eventMode ?? "publish").trim().toLowerCase()
   if (rawEventMode === "received" || rawEventMode === "any") {
     state.eventMode = rawEventMode
   } else {
     state.eventMode = "publish"
   }
-  state.eventName = String(trigger?.event_name ?? "").trim()
-  state.eventTopic = String(trigger?.event_topic ?? "").trim()
-  const varOwner = Number(trigger?.var_owner ?? 0)
+  state.eventName = String(trigger?.event_name ?? trigger?.eventName ?? "").trim()
+  state.eventTopic = String(trigger?.event_topic ?? trigger?.eventTopic ?? "").trim()
+  const varOwner = Number(trigger?.var_owner ?? trigger?.varOwner ?? 0)
   state.varOwner = Number.isFinite(varOwner) && varOwner > 0 ? Math.trunc(varOwner) : 0
-  state.varName = String(trigger?.var_name ?? "").trim()
-  const nodes = Array.isArray(data?.graph?.nodes) ? data.graph.nodes : []
-  const edges = Array.isArray(data?.graph?.edges) ? data.graph.edges : []
+  state.varName = String(trigger?.var_name ?? trigger?.varName ?? "").trim()
+  const graph = data?.graph ?? {}
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
   state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
   state.edges = edges.map(mapEdge)
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   state.execCapabilities = []
   state.execCapabilitiesLoading = false
-  state.message = "Flow loaded."
+  state.message = successMessage
   resetHistory()
-  if (state.selfNodeId && state.hubId) {
+  if (refreshStatus && state.selfNodeId && state.hubId) {
     void statusFlow("").catch(() => {})
+  }
+}
+
+const loadFromPayload = (data: any) => {
+  const flowID = String(data?.flow_id ?? data?.flowId ?? "").trim()
+  if (!flowID) {
+    throw new Error("flow_id is required.")
+  }
+  applyFlowPayload(
+    {
+      flow_id: flowID,
+      name: String(data?.name ?? "").trim(),
+      trigger: data?.trigger ?? {},
+      graph: data?.graph ?? {}
+    },
+    "Draft loaded.",
+    false
+  )
+}
+
+const exportPayload = (): FlowPayload => {
+  const flowID = state.flowId.trim()
+  if (!flowID) {
+    throw new Error("Flow ID is required.")
+  }
+  return {
+    flow_id: flowID,
+    name: state.flowName.trim(),
+    trigger: buildTrigger(),
+    graph: buildGraph()
   }
 }
 
@@ -998,6 +1043,8 @@ export const useFlowStore = () => {
     redo,
     runFlow,
     saveFlow,
+    loadFromPayload,
+    exportPayload,
     queryExecCapabilities,
     applyCallCapability,
     applyExecCapability: applyCallCapability,

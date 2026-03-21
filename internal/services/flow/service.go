@@ -18,6 +18,25 @@ import (
 const defaultFlowTimeout = 8 * time.Second
 const defaultExecCapQueryTimeout = 8 * time.Second
 
+const (
+	actionDelete     = "delete"
+	actionDeleteResp = "delete_resp"
+)
+
+type DeleteReq struct {
+	ReqID        string `json:"req_id"`
+	OriginNode   uint32 `json:"origin_node,omitempty"`
+	ExecutorNode uint32 `json:"executor_node,omitempty"`
+	FlowID       string `json:"flow_id"`
+}
+
+type DeleteResp struct {
+	ReqID  string `json:"req_id"`
+	Code   int    `json:"code"`
+	Msg    string `json:"msg,omitempty"`
+	FlowID string `json:"flow_id,omitempty"`
+}
+
 type FlowService struct {
 	session *sessionsvc.SessionService
 	logs    *logs.LogService
@@ -142,6 +161,32 @@ func (s *FlowService) GetSimple(sourceID, targetID uint32, req flow.GetReq) (flo
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Get(ctx, sourceID, targetID, req)
+}
+
+func (s *FlowService) Delete(ctx context.Context, sourceID, targetID uint32, req DeleteReq) (DeleteResp, error) {
+	req.ReqID = strings.TrimSpace(req.ReqID)
+	req.FlowID = strings.TrimSpace(req.FlowID)
+	if req.ReqID == "" {
+		return DeleteResp{}, errors.New("req_id is required")
+	}
+	if req.FlowID == "" {
+		return DeleteResp{}, errors.New("flow_id is required")
+	}
+	payload, err := transport.EncodeMessage(actionDelete, req)
+	if err != nil {
+		return DeleteResp{}, err
+	}
+	var resp DeleteResp
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, actionDelete, actionDeleteResp, &resp, req.FlowID); err != nil {
+		return DeleteResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *FlowService) DeleteSimple(sourceID, targetID uint32, req DeleteReq) (DeleteResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
+	defer cancel()
+	return s.Delete(ctx, sourceID, targetID, req)
 }
 
 func (s *FlowService) ExecCapQuery(ctx context.Context, sourceID, targetID uint32, req protocolexec.CapQueryReq) (protocolexec.CapQueryResp, error) {
@@ -339,6 +384,11 @@ func extractCodeMsg(v any) (int, string) {
 		}
 		return t.Code, t.Msg
 	case *flow.GetResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *DeleteResp:
 		if t == nil {
 			return 0, ""
 		}

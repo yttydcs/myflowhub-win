@@ -1,896 +1,544 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
-import { LayoutGrid, Link2Off, ListChecks, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
+import { computed, onMounted, reactive, ref, watch } from "vue"
+import { PencilLine, Plus, RefreshCw, Rocket, Trash2 } from "lucide-vue-next"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
-import { Tooltip } from "@/components/ui/tooltip"
-import FlowCanvas from "@/components/flow/FlowCanvas.vue"
-import { useFlowStore } from "@/stores/flow"
+import type { DeviceTreeNode } from "@/stores/devices"
+import { useDevicesStore } from "@/stores/devices"
+import { useFlowProjectsStore, type FlowTriggerDraft } from "@/stores/flowProjects"
+import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 
-const flowStore = useFlowStore()
+const flowProjects = useFlowProjectsStore()
+const devicesStore = useDevicesStore()
+const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 
-const addNodeOpen = ref(false)
-const selectedCapabilityKey = ref("")
-const nodeIdDraft = ref("")
+const currentDeployNodeId = ref("")
 
-const nodeDraft = reactive({
-  id: ""
+const createDialogOpen = ref(false)
+const createForm = reactive({
+  projectId: "",
+  flowId: "",
+  name: ""
 })
 
-const selectedNode = computed(
-  () => flowStore.state.nodes[flowStore.state.selectedNodeIndex] ?? null
-)
+const deployDialogOpen = ref(false)
+const deployForm = reactive({
+  projectId: "",
+  projectName: "",
+  flowId: "",
+  nodeId: "",
+  trigger: {
+    type: "interval",
+    everyMs: 60000,
+    eventMode: "publish",
+    eventName: "",
+    eventTopic: "",
+    varOwner: 0,
+    varName: ""
+  } as FlowTriggerDraft
+})
 
-const selectedEdge = computed(
-  () => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null
-)
+const nodePickerOpen = ref(false)
+const nodePickerTarget = ref<"deploy" | "deployments">("deploy")
 
-const capabilityProviderNodes = computed(() => {
-  const seen = new Set<number>()
-  for (const route of flowStore.state.execCapabilities) {
-    if (route.providerNode > 0) {
-      seen.add(route.providerNode)
+const ready = computed(() => Boolean(sessionStore.connected && sessionStore.auth.nodeId && sessionStore.auth.hubId))
+
+const flattenVisible = (root: DeviceTreeNode | null) => {
+  const out: { node: DeviceTreeNode; depth: number }[] = []
+  if (!root) return out
+
+  const walk = (node: DeviceTreeNode, depth: number) => {
+    out.push({ node, depth })
+    if (!node.expanded || !node.children?.length) return
+    for (const child of node.children) {
+      walk(child, depth + 1)
     }
   }
-  return [...seen].sort((a, b) => a - b)
+
+  walk(root, 0)
+  return out
+}
+
+const visibleNodes = computed(() => flattenVisible(devicesStore.state.root))
+
+const loadProjects = async () => {
+  try {
+    await flowProjects.loadProjects()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load local flow projects.")
+  }
+}
+
+const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
+  type: trigger.type,
+  everyMs: trigger.everyMs,
+  eventMode: trigger.eventMode,
+  eventName: trigger.eventName,
+  eventTopic: trigger.eventTopic,
+  varOwner: trigger.varOwner,
+  varName: trigger.varName
 })
 
-const capabilityProviderNodesWithCurrent = computed(() => {
-  const options = [...capabilityProviderNodes.value]
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") return options
-  const current = Number(node.target || 0)
-  if (current > 0 && !options.includes(current)) {
-    options.push(current)
-    options.sort((a, b) => a - b)
-  }
-  return options
-})
+const openCreateDialog = () => {
+  createForm.projectId = ""
+  createForm.flowId = ""
+  createForm.name = ""
+  createDialogOpen.value = true
+}
 
-const executorNodeForCall = computed(() => {
-  const raw = flowStore.state.targetId.trim()
-  if (raw) {
-    const parsed = Number.parseInt(raw, 10)
-    if (!Number.isNaN(parsed) && parsed > 0) {
-      return parsed
-    }
-  }
-  const hub = Number(flowStore.state.hubId || 0)
-  return Number.isFinite(hub) && hub > 0 ? Math.trunc(hub) : 0
-})
-
-const capabilityFilterTarget = computed(() => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") return 0
-  const target = Number(node.target || 0)
-  if (target > 0) return Math.trunc(target)
-  return executorNodeForCall.value > 0 ? executorNodeForCall.value : 0
-})
-
-const capabilitiesForCurrentTarget = computed(() => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") return []
-  const providerNode = capabilityFilterTarget.value
-  if (providerNode <= 0) return []
-  return flowStore.state.execCapabilities.filter((route) => route.providerNode === providerNode)
-})
-
-const canUndo = computed(() => flowStore.state.historyIndex > 0)
-const canRedo = computed(
-  () => flowStore.state.historyIndex >= 0 && flowStore.state.historyIndex < flowStore.state.historyLength - 1
-)
-
-const refreshList = async () => {
+const createProject = async () => {
   try {
-    await flowStore.listFlows()
+    await flowProjects.createProject({
+      projectId: createForm.projectId,
+      flowId: createForm.flowId,
+      name: createForm.name
+    })
+    createDialogOpen.value = false
+    toast.success("Project created.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to refresh flows.")
+    toast.errorOf(err, "Failed to create project.")
   }
 }
 
-const startNew = () => {
-  flowStore.newDraft()
-}
-
-const saveFlow = async () => {
+const deleteProject = async (projectId: string) => {
+  const ok = window.confirm(`Delete local project '${projectId}'? This does not delete remote deployment.`)
+  if (!ok) return
   try {
-    await flowStore.saveFlow()
+    await flowProjects.deleteProject(projectId)
+    toast.success("Project deleted.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save flow.")
+    toast.errorOf(err, "Failed to delete local project.")
   }
 }
 
-const autoLayout = () => {
+const openEditor = (projectId: string) => {
   try {
-    flowStore.autoLayoutTB()
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to auto layout.")
-  }
-}
-
-const undo = () => {
-  flowStore.undo()
-}
-
-const redo = () => {
-  flowStore.redo()
-}
-
-const runFlow = async () => {
-  try {
-    await flowStore.runFlow()
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to run flow.")
-  }
-}
-
-const statusFlow = async () => {
-  try {
-    await flowStore.statusFlow(flowStore.state.statusRunId)
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to fetch status.")
-  }
-}
-
-const selectFlow = async (flowId: string) => {
-  try {
-    await flowStore.getFlow(flowId)
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to load flow.")
-  }
-}
-
-const openAddNodeDialog = () => {
-  nodeDraft.id = flowStore.suggestNodeId()
-  addNodeOpen.value = true
-}
-
-const commitNodeId = () => {
-  const node = selectedNode.value
-  if (!node) return
-  const oldId = node.id
-  try {
-    flowStore.renameNodeId(oldId, nodeIdDraft.value)
-    nodeIdDraft.value = node.id
-  } catch (err) {
-    console.warn(err)
-    nodeIdDraft.value = oldId
-    toast.errorOf(err, "Failed to rename node.")
-  }
-}
-
-const saveNode = () => {
-  try {
-    flowStore.addNode(nodeDraft.id)
-    addNodeOpen.value = false
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to add node.")
-  }
-}
-
-const removeNode = () => {
-  flowStore.removeSelectedNode()
-}
-
-const removeEdge = () => {
-  flowStore.removeSelectedEdge()
-}
-
-const onCanvasConnect = (from: string, to: string) => {
-  try {
-    flowStore.addEdge(from, to)
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to connect nodes.")
-  }
-}
-
-const onCanvasSelectNode = (nodeId: string) => {
-  flowStore.selectNodeById(nodeId)
-}
-
-const onCanvasSelectEdge = (from: string, to: string) => {
-  flowStore.selectEdgeByEndpoints(from, to)
-}
-
-const onCanvasNodeMoved = (nodeId: string, x: number, y: number) => {
-  flowStore.setNodePosition(nodeId, x, y)
-  flowStore.commitHistory()
-}
-
-const onCanvasClear = () => {
-  flowStore.clearSelection()
-}
-
-const syncSelectedCapabilityByNode = () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") {
-    selectedCapabilityKey.value = ""
-    return
-  }
-  const method = node.method.trim()
-  const providerNode = capabilityFilterTarget.value
-  if (!method || providerNode <= 0) {
-    selectedCapabilityKey.value = ""
-    return
-  }
-  const matched = flowStore.state.execCapabilities.find(
-    (route) => route.providerNode === providerNode && route.method === method
-  )
-  selectedCapabilityKey.value = matched?.key ?? ""
-}
-
-const loadCapabilities = async () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") return
-  try {
-    await flowStore.queryExecCapabilities("")
-    syncSelectedCapabilityByNode()
-    if (!selectedCapabilityKey.value) {
-      selectedCapabilityKey.value = capabilitiesForCurrentTarget.value[0]?.key ?? ""
+    const opened = flowProjects.openEditorWindow(projectId)
+    if (!opened) {
+      toast.warn("Editor window was blocked by browser popup policy.")
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to query capabilities.")
+    toast.errorOf(err, "Failed to open editor window.")
   }
 }
 
-const applyCapability = () => {
-  if (!selectedCapabilityKey.value) return
+const openDeployDialog = (projectId: string) => {
+  const project = flowProjects.getProjectByID(projectId)
+  if (!project) {
+    toast.error("Project not found.")
+    return
+  }
+  deployForm.projectId = project.projectId
+  deployForm.projectName = project.name || project.flowId
+  deployForm.flowId = project.flowId
+  deployForm.nodeId = currentDeployNodeId.value || String(sessionStore.auth.hubId || "")
+  deployForm.trigger = normalizeTriggerDraft(project.trigger)
+  deployDialogOpen.value = true
+}
+
+const pickNode = async (target: "deploy" | "deployments") => {
+  nodePickerTarget.value = target
+  if (!devicesStore.state.rootTargetId && sessionStore.auth.hubId) {
+    devicesStore.state.rootTargetId = String(sessionStore.auth.hubId)
+  }
   try {
-    flowStore.applyCallCapability(selectedCapabilityKey.value)
-    syncSelectedCapabilityByNode()
+    await devicesStore.loadRoot()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to apply capability.")
+    toast.errorOf(err, "Failed to load device tree.")
+  }
+  nodePickerOpen.value = true
+}
+
+const chooseNode = (nodeId: number) => {
+  if (nodePickerTarget.value === "deploy") {
+    deployForm.nodeId = String(nodeId)
+  } else {
+    currentDeployNodeId.value = String(nodeId)
+  }
+  nodePickerOpen.value = false
+}
+
+const toggleNode = async (node: DeviceTreeNode) => {
+  try {
+    await devicesStore.toggle(node.key)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to expand node.")
   }
 }
 
-const onCallTargetChanged = () => {
-  const node = selectedNode.value
-  if (!node || node.kind !== "call") return
-  flowStore.commitHistory()
-  syncSelectedCapabilityByNode()
-  if (!selectedCapabilityKey.value) {
-    selectedCapabilityKey.value = capabilitiesForCurrentTarget.value[0]?.key ?? ""
+const reloadDeployments = async () => {
+  try {
+    await flowProjects.loadDeployments(currentDeployNodeId.value)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load current deployments.")
   }
 }
 
-const isEditableTarget = (target: EventTarget | null) => {
-  const el = target as HTMLElement | null
-  if (!el) return false
-  if (el.isContentEditable) return true
-  const tag = el.tagName?.toLowerCase()
-  return tag === "input" || tag === "textarea" || tag === "select"
-}
-
-const onKeyDown = (event: KeyboardEvent) => {
-  if (addNodeOpen.value) return
-
-  const key = event.key || ""
-  const lower = key.toLowerCase()
-  const ctrl = event.ctrlKey || event.metaKey
-
-  if (ctrl && lower === "s") {
-    event.preventDefault()
-    void saveFlow()
-    return
-  }
-
-  const editable = isEditableTarget(event.target)
-  if (editable) return
-
-  if (key === "Delete") {
-    event.preventDefault()
-    if (flowStore.state.selectedEdgeIndex >= 0) {
-      flowStore.removeSelectedEdge()
-    } else if (flowStore.state.selectedNodeIndex >= 0) {
-      flowStore.removeSelectedNode()
+const deployNow = async () => {
+  try {
+    const first = await flowProjects.deployProject({
+      projectId: deployForm.projectId,
+      nodeId: deployForm.nodeId,
+      trigger: deployForm.trigger,
+      overwrite: false
+    })
+    if (first.overwriteRequired) {
+      const confirmed = window.confirm(
+        `Flow '${deployForm.flowId}' already exists on node ${deployForm.nodeId}. Overwrite deployment?`
+      )
+      if (!confirmed) return
+      await flowProjects.deployProject({
+        projectId: deployForm.projectId,
+        nodeId: deployForm.nodeId,
+        trigger: deployForm.trigger,
+        overwrite: true
+      })
     }
-    return
+    deployDialogOpen.value = false
+    toast.success("Deployment saved to target node.")
+    currentDeployNodeId.value = deployForm.nodeId
+    await reloadDeployments()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to deploy project.")
   }
+}
 
-  if (ctrl && lower === "z" && !event.shiftKey) {
-    event.preventDefault()
-    flowStore.undo()
-    return
-  }
-
-  if (ctrl && (lower === "y" || (lower === "z" && event.shiftKey))) {
-    event.preventDefault()
-    flowStore.redo()
+const deleteDeployment = async (flowId: string) => {
+  const nodeId = currentDeployNodeId.value
+  const ok = window.confirm(`Delete deployment '${flowId}' from node ${nodeId}?`)
+  if (!ok) return
+  try {
+    await flowProjects.deleteDeployment(nodeId, flowId)
+    toast.success("Deployment deleted.")
+    await reloadDeployments()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to delete deployment.")
   }
 }
 
 watch(
-  () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
-  ([nodeId, hubId]) => {
-    flowStore.setIdentity(Number(nodeId), Number(hubId))
+  () => profileStore.state.current,
+  async () => {
+    await loadProjects()
   },
   { immediate: true }
 )
 
 watch(
-  () => flowStore.state.message,
-  (msg) => {
-    const trimmed = msg.trim()
-    if (!trimmed) return
-    const lower = trimmed.toLowerCase()
-    const isError =
-      lower.includes("failed") ||
-      lower.includes("error") ||
-      lower.includes("timeout") ||
-      lower.includes("timed out") ||
-      lower.includes("unable")
-    if (isError) {
-      toast.error(trimmed)
-    } else if (
-      lower.includes("saved") ||
-      lower.includes("loaded") ||
-      lower.includes("updated") ||
-      lower.includes("started") ||
-      lower.includes("applied")
-    ) {
-      toast.success(trimmed)
-    } else {
-      toast.info(trimmed)
+  () => sessionStore.auth.hubId,
+  (hubId) => {
+    if (!currentDeployNodeId.value && Number(hubId || 0) > 0) {
+      currentDeployNodeId.value = String(hubId)
     }
-    flowStore.state.message = ""
-  }
-)
-
-watch(
-  () => flowStore.state.selectedNodeIndex,
-  () => {
-    syncSelectedCapabilityByNode()
-  }
-)
-
-watch(
-  () => selectedNode.value?.id ?? "",
-  (id) => {
-    nodeIdDraft.value = id
   },
   { immediate: true }
 )
 
-watch(
-  () => [selectedNode.value?.kind ?? "", selectedNode.value?.target ?? 0, selectedNode.value?.method ?? ""],
-  () => {
-    syncSelectedCapabilityByNode()
+onMounted(async () => {
+  if (!currentDeployNodeId.value && sessionStore.auth.hubId) {
+    currentDeployNodeId.value = String(sessionStore.auth.hubId)
   }
-)
-
-watch(
-  () => flowStore.state.execCapabilities.map((route) => route.key).join("|"),
-  () => {
-    syncSelectedCapabilityByNode()
+  if (ready.value && currentDeployNodeId.value) {
+    await reloadDeployments()
   }
-)
-
-watch(
-  () => executorNodeForCall.value,
-  () => {
-    syncSelectedCapabilityByNode()
-  }
-)
-
-onMounted(() => {
-  void refreshList().catch(() => {})
-  window.addEventListener("keydown", onKeyDown)
 })
-
-onUnmounted(() => window.removeEventListener("keydown", onKeyDown))
 </script>
 
 <template>
   <section class="space-y-6">
-    <div class="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_minmax(0,360px)]">
-      <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold">Flows</h2>
-          <span class="text-xs text-muted-foreground">{{ flowStore.state.flows.length }} items</span>
+    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Runtime</p>
+          <h2 class="mt-1 text-lg font-semibold">Current Deployments</h2>
         </div>
-        <div class="mt-3 space-y-2">
-          <button
-            v-for="flow in flowStore.state.flows"
-            :key="flow.flowId"
-            type="button"
-            class="w-full rounded-xl border px-3 py-2 text-left text-sm transition"
-            :class="flow.flowId === flowStore.state.flowId ? 'border-primary/60 bg-primary/10' : 'border-transparent hover:border-border/60 hover:bg-muted/60'"
-            @click="selectFlow(flow.flowId)"
-          >
-            <p class="font-semibold">{{ flow.name || flow.flowId }}</p>
-            <p class="text-xs text-muted-foreground">
-              {{ flow.everyMs > 0 ? `every ${flow.everyMs} ms` : "non-interval trigger" }} · last
-              {{ flow.lastStatus || "idle" }}
-            </p>
-          </button>
-          <div v-if="!flowStore.state.flows.length" class="text-xs text-muted-foreground">
-            No flows yet. Refresh after connecting to a node.
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+            <span class="font-semibold uppercase tracking-[0.2em]">Node</span>
+            <input
+              v-model="currentDeployNodeId"
+              class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              placeholder="Node ID"
+            />
           </div>
+          <Button size="sm" variant="outline" @click="pickNode('deployments')">Choose from tree</Button>
+          <Button size="sm" :disabled="flowProjects.state.deploymentsLoading" @click="reloadDeployments">
+            <RefreshCw class="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
         </div>
-      </section>
+      </div>
 
-      <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold">Flow Editor</h2>
-          <div class="flex flex-wrap items-center gap-2">
-            <div
-              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
-            >
-              <span class="font-semibold uppercase tracking-[0.2em]">Executor</span>
-              <input
-                v-model="flowStore.state.targetId"
-                class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-                placeholder="Node ID"
-              />
+      <div class="mt-4 space-y-2">
+        <article
+          v-for="item in flowProjects.state.deployments"
+          :key="item.flowId"
+          class="rounded-xl border border-border/60 bg-background/70 p-3"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold">{{ item.name || item.flowId }}</p>
+              <p class="text-xs text-muted-foreground">flow_id: {{ item.flowId }}</p>
             </div>
-            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-            <Tooltip content="Refresh Flows" side="bottom">
-              <Button size="icon" variant="outline" @click="refreshList">
-                <RefreshCw class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Refresh Flows</span>
+            <div class="flex items-center gap-2">
+              <Badge variant="secondary">{{ item.lastStatus || "idle" }}</Badge>
+              <Button size="sm" variant="outline" @click="deleteDeployment(item.flowId)">
+                <Trash2 class="mr-1 h-4 w-4" />
+                Delete
               </Button>
-            </Tooltip>
-            <Tooltip content="New Flow" side="bottom">
-              <Button size="icon" variant="outline" @click="startNew">
-                <Plus class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">New Flow</span>
+            </div>
+          </div>
+          <div class="mt-2 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+            <p><span class="font-semibold text-foreground">Trigger:</span> {{ item.triggerLabel }}</p>
+            <p><span class="font-semibold text-foreground">last_run_id:</span> {{ item.lastRunId || "-" }}</p>
+          </div>
+        </article>
+
+        <div v-if="!flowProjects.state.deployments.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+          No deployments found for this node.
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Local</p>
+          <h2 class="mt-1 text-lg font-semibold">Flow Projects</h2>
+        </div>
+        <Button @click="openCreateDialog">
+          <Plus class="mr-2 h-4 w-4" />
+          New Project
+        </Button>
+      </div>
+
+      <div class="mt-4 space-y-2">
+        <article
+          v-for="project in flowProjects.state.projects"
+          :key="project.projectId"
+          class="rounded-xl border border-border/60 bg-background/70 p-3"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold">{{ project.name || project.flowId }}</p>
+              <p class="text-xs text-muted-foreground">project_id: {{ project.projectId }}</p>
+              <p class="text-xs text-muted-foreground">flow_id: {{ project.flowId }}</p>
+              <p class="text-xs text-muted-foreground">updated: {{ project.updatedAt }}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" @click="openEditor(project.projectId)">
+                <PencilLine class="mr-1 h-4 w-4" />
+                Edit
               </Button>
-            </Tooltip>
-            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-            <Tooltip content="Undo (Ctrl+Z)" side="bottom">
-              <Button size="icon" variant="outline" :disabled="!canUndo" @click="undo">
-                <Undo2 class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Undo</span>
+              <Button size="sm" @click="openDeployDialog(project.projectId)">
+                <Rocket class="mr-1 h-4 w-4" />
+                Deploy
               </Button>
-            </Tooltip>
-            <Tooltip content="Redo (Ctrl+Y)" side="bottom">
-              <Button size="icon" variant="outline" :disabled="!canRedo" @click="redo">
-                <Redo2 class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Redo</span>
+              <Button size="sm" variant="outline" @click="deleteProject(project.projectId)">
+                <Trash2 class="mr-1 h-4 w-4" />
+                Delete
               </Button>
-            </Tooltip>
-            <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-            <Tooltip content="Auto Layout" side="bottom">
-              <Button size="icon" variant="outline" @click="autoLayout">
-                <LayoutGrid class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Auto Layout</span>
-              </Button>
-            </Tooltip>
-            <Tooltip content="Save (Ctrl+S)" side="bottom">
-              <Button size="icon" @click="saveFlow">
-                <Save class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Save</span>
-              </Button>
-            </Tooltip>
-            <Tooltip content="Run" side="bottom">
-              <Button size="icon" variant="outline" @click="runFlow">
-                <Play class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Run</span>
-              </Button>
-            </Tooltip>
-            <Tooltip content="Status" side="bottom">
-              <Button size="icon" variant="outline" @click="statusFlow">
-                <ListChecks class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Status</span>
-              </Button>
-            </Tooltip>
+            </div>
+          </div>
+        </article>
+
+        <div v-if="!flowProjects.state.projects.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+          No local projects yet. Create one and open the editor window.
+        </div>
+      </div>
+    </section>
+
+    <Overlay :open="createDialogOpen" @close="createDialogOpen = false">
+      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">Create Flow Project</h2>
+        <div class="mt-4 grid gap-3">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">project_id</label>
+            <input
+              v-model="createForm.projectId"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Optional, auto generated if empty"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">flow_id</label>
+            <input
+              v-model="createForm.flowId"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Required"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">name</label>
+            <input
+              v-model="createForm.name"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Optional"
+            />
           </div>
         </div>
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="createDialogOpen = false">Cancel</Button>
+          <Button @click="createProject">Create</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="deployDialogOpen" @close="deployDialogOpen = false">
+      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <h2 class="text-lg font-semibold">Deploy Project</h2>
+        <p class="mt-1 text-sm text-muted-foreground">{{ deployForm.projectName }} · flow_id {{ deployForm.flowId }}</p>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Node ID</label>
+            <input
+              v-model="deployForm.nodeId"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Target node id"
+            />
+          </div>
+          <div class="flex items-end">
+            <Button variant="outline" @click="pickNode('deploy')">Choose from device tree</Button>
+          </div>
+        </div>
+
         <div class="mt-4 grid gap-4 md:grid-cols-3">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Flow ID
-            </label>
-            <input
-              v-model="flowStore.state.flowId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="flow_id (uuid recommended)"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Name
-            </label>
-            <input
-              v-model="flowStore.state.flowName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Optional name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Trigger
-            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Trigger</label>
             <select
-              v-model="flowStore.state.triggerType"
+              v-model="deployForm.trigger.type"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="flowStore.commitHistory()"
             >
               <option value="interval">interval</option>
               <option value="event">event</option>
               <option value="var_changed">var_changed</option>
             </select>
           </div>
-        </div>
-        <div v-if="flowStore.state.triggerType === 'interval'" class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Every (ms)
-            </label>
+
+          <div v-if="deployForm.trigger.type === 'interval'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Every (ms)</label>
             <input
-              v-model.number="flowStore.state.everyMs"
+              v-model.number="deployForm.trigger.everyMs"
               type="number"
               min="1"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="60000"
-              @blur="flowStore.commitHistory()"
             />
-          </div>
-        </div>
-        <div v-else-if="flowStore.state.triggerType === 'event'" class="mt-4 grid gap-4 md:grid-cols-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Mode
-            </label>
-            <select
-              v-model="flowStore.state.eventMode"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="flowStore.commitHistory()"
-            >
-              <option value="publish">publish</option>
-              <option value="received">received</option>
-              <option value="any">any</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Name
-            </label>
-            <input
-              v-model="flowStore.state.eventName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="topicbus publish name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Event Topic
-            </label>
-            <input
-              v-model="flowStore.state.eventTopic"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="topic name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-        <div v-else class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Var Owner
-            </label>
-            <input
-              v-model.number="flowStore.state.varOwner"
-              type="number"
-              min="0"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="0 = any owner"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Var Name
-            </label>
-            <input
-              v-model="flowStore.state.varName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="empty = any name"
-              @blur="flowStore.commitHistory()"
-            />
-          </div>
-        </div>
-
-        <div class="mt-6 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="text-xs text-muted-foreground">
-              Drag nodes to reposition. Drag from a node handle to connect nodes.
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Tooltip content="Add Node" side="bottom">
-                <Button size="icon" variant="outline" @click="openAddNodeDialog">
-                  <Plus class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Add Node</span>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Remove Node (Delete)" side="bottom">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  :disabled="flowStore.state.selectedNodeIndex < 0"
-                  @click="removeNode"
-                >
-                  <Trash2 class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Remove Node</span>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Remove Edge (Delete)" side="bottom">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  :disabled="flowStore.state.selectedEdgeIndex < 0"
-                  @click="removeEdge"
-                >
-                  <Link2Off class="h-4 w-4" aria-hidden="true" />
-                  <span class="sr-only">Remove Edge</span>
-                </Button>
-              </Tooltip>
-            </div>
           </div>
 
-          <FlowCanvas
-            :nodes="flowStore.state.nodes"
-            :edges="flowStore.state.edges"
-            :selected-node-id="selectedNode?.id ?? null"
-            :selected-edge="selectedEdge"
-            :status-nodes="flowStore.state.lastStatus.nodes"
-            @connect="onCanvasConnect"
-            @select-node="onCanvasSelectNode"
-            @select-edge="onCanvasSelectEdge"
-            @node-moved="onCanvasNodeMoved"
-            @clear-selection="onCanvasClear"
-          />
-        </div>
-      </section>
-
-      <section class="space-y-4">
-        <div class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-          <h3 class="text-sm font-semibold">Node Detail</h3>
-          <div v-if="selectedNode" class="mt-4 space-y-3">
+          <template v-else-if="deployForm.trigger.type === 'event'">
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Node ID
-              </label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Mode</label>
+              <select
+                v-model="deployForm.trigger.eventMode"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="publish">publish</option>
+                <option value="received">received</option>
+                <option value="any">any</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Name</label>
               <input
-                v-model="nodeIdDraft"
-                class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                @blur="commitNodeId"
-                @keydown.enter.prevent="commitNodeId"
+                v-model="deployForm.trigger.eventName"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                Node ID must be unique. Renaming updates all connected edges.
-              </p>
-            </div>
-            <div class="grid gap-3 md:grid-cols-2">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Kind
-                </label>
-                <input
-                  value="call"
-                  disabled
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
-                />
-              </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Allow Fail
-                </label>
-                <div class="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    v-model="selectedNode.allowFail"
-                    type="checkbox"
-                    class="h-4 w-4 rounded border"
-                    @change="flowStore.commitHistory()"
-                  />
-                  <span>Continue on error</span>
-                </div>
-              </div>
-            </div>
-            <div class="grid gap-3 md:grid-cols-2">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Retry
-                </label>
-                <input
-                  v-model.number="selectedNode.retry"
-                  type="number"
-                  min="0"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  @blur="flowStore.commitHistory()"
-                />
-              </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Timeout (ms)
-                </label>
-                <input
-                  v-model.number="selectedNode.timeoutMs"
-                  type="number"
-                  min="0"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  @blur="flowStore.commitHistory()"
-                />
-              </div>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Target Node
-                </label>
-                <select
-                  v-model.number="selectedNode.target"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  @change="onCallTargetChanged"
-                >
-                  <option :value="0">Local call (executor node)</option>
-                  <option
-                    v-for="nodeId in capabilityProviderNodesWithCurrent"
-                    :key="`provider-${nodeId}`"
-                    :value="nodeId"
-                  >
-                    {{
-                      capabilityProviderNodes.includes(nodeId)
-                        ? `node ${nodeId}`
-                        : `node ${nodeId} (current, not in cache)`
-                    }}
-                  </option>
-                </select>
-                <input
-                  v-model.number="selectedNode.target"
-                  type="number"
-                  min="0"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="manual target node id (0 = local call)"
-                  @blur="flowStore.commitHistory(); syncSelectedCapabilityByNode()"
-                />
-                <p class="mt-1 text-[11px] text-muted-foreground">
-                  target = 0 means local call on executor node {{ executorNodeForCall || "-" }}.
-                </p>
-              </div>
-              <div class="mt-3 space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
-                <div class="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="flowStore.state.execCapabilitiesLoading"
-                    @click="loadCapabilities"
-                  >
-                    {{ flowStore.state.execCapabilitiesLoading ? "Loading..." : "Refresh Capabilities" }}
-                  </Button>
-                  <span class="text-[11px] text-muted-foreground">
-                    {{
-                      selectedNode.target > 0
-                        ? `filter by target node ${selectedNode.target}`
-                        : `filter by executor node ${executorNodeForCall || "-"}`
-                    }}
-                  </span>
-                </div>
-                <div v-if="capabilitiesForCurrentTarget.length" class="space-y-2">
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Capability
-                  </label>
-                  <select
-                    v-model="selectedCapabilityKey"
-                    class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    @change="applyCapability"
-                  >
-                    <option
-                      v-for="route in capabilitiesForCurrentTarget"
-                      :key="route.key"
-                      :value="route.key"
-                    >
-                      {{ route.label }}
-                    </option>
-                  </select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="!selectedCapabilityKey"
-                    @click="applyCapability"
-                  >
-                    Use Selected Capability
-                  </Button>
-                </div>
-                <p v-else class="text-[11px] text-muted-foreground">
-                  {{
-                    capabilityFilterTarget > 0
-                      ? "No capability found on current target filter. Refresh or adjust target."
-                      : "Executor node is required before querying capabilities."
-                  }}
-                </p>
-              </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Method (manual override)
-                </label>
-                <input
-                  v-model="selectedNode.method"
-                  class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="preferred: pick from capability list"
-                  @blur="flowStore.commitHistory()"
-                />
-              </div>
             </div>
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Args (JSON)
-              </label>
-              <textarea
-                v-model="selectedNode.args"
-                rows="5"
-                class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-                @blur="flowStore.commitHistory()"
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Topic</label>
+              <input
+                v-model="deployForm.trigger.eventTopic"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
-          </div>
-          <div v-else class="mt-3 text-xs text-muted-foreground">
-            Select a node to edit its details.
-          </div>
+          </template>
+
+          <template v-else>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var Owner</label>
+              <input
+                v-model.number="deployForm.trigger.varOwner"
+                type="number"
+                min="0"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var Name</label>
+              <input
+                v-model="deployForm.trigger.varName"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+          </template>
         </div>
 
-        <div class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Status</h3>
-            <span class="text-xs text-muted-foreground">
-              run {{ flowStore.state.lastStatus.runId || "-" }}
-            </span>
-          </div>
-          <p class="mt-2 text-xs text-muted-foreground">
-            {{ flowStore.state.lastStatus.status || "No status yet." }}
-          </p>
-          <div class="mt-4 space-y-2">
-            <div
-              v-for="node in flowStore.state.lastStatus.nodes"
-              :key="`${node.id}-${node.status}`"
-              class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs"
-            >
-              <p class="font-semibold">{{ node.id || "unknown" }} · {{ node.status }}</p>
-              <p class="text-muted-foreground">
-                code {{ node.code }}{{ node.msg ? ` · ${node.msg}` : "" }}
-              </p>
-            </div>
-            <div v-if="!flowStore.state.lastStatus.nodes.length" class="text-xs text-muted-foreground">
-              No node status reports yet.
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-    <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
-      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Add Node</h2>
-        <div class="mt-4 space-y-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Node ID
-            </label>
-            <input
-              v-model="nodeDraft.id"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-        </div>
+        <p class="mt-4 text-xs text-muted-foreground">
+          Deployment only sends <code>flow.set</code>; it does not trigger run. Trigger edits here will be saved back as project default.
+        </p>
+
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
-          <Button @click="saveNode">Add</Button>
+          <Button variant="outline" @click="deployDialogOpen = false">Cancel</Button>
+          <Button @click="deployNow">Deploy</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="nodePickerOpen" @close="nodePickerOpen = false">
+      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Select Node</h2>
+          <Button size="sm" variant="outline" @click="devicesStore.loadRoot">Reload Tree</Button>
+        </div>
+        <div class="mt-4 max-h-[70vh] space-y-2 overflow-y-auto">
+          <article
+            v-for="{ node, depth } in visibleNodes"
+            :key="node.key"
+            class="rounded-xl border border-border/60 bg-background/70 p-3"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2" :style="{ marginLeft: `${depth * 16}px` }">
+                <button
+                  type="button"
+                  class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs"
+                  :disabled="node.duplicate || node.loading"
+                  @click="toggleNode(node)"
+                >
+                  <span v-if="node.loading">…</span>
+                  <span v-else>{{ node.expanded ? "-" : "+" }}</span>
+                </button>
+                <div>
+                  <p class="font-semibold">Node {{ node.nodeId }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    <span v-if="node.duplicate">Duplicate node in current tree path.</span>
+                    <span v-else-if="node.error">{{ node.error }}</span>
+                    <span v-else-if="node.children">children {{ node.children.length }}</span>
+                    <span v-else>not loaded</span>
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" @click="chooseNode(node.nodeId)">Select</Button>
+            </div>
+          </article>
+
+          <div v-if="!visibleNodes.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+            No tree data. Connect and login first, then reload the tree.
+          </div>
         </div>
       </div>
     </Overlay>
