@@ -422,10 +422,7 @@ onUnmounted(() => {
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Flow Project Editor
-          </p>
-          <h1 class="mt-1 text-xl font-semibold">{{ loadedProjectName || "Untitled Project" }}</h1>
+          <h1 class="text-xl font-semibold">{{ loadedProjectName || "Untitled Project" }}</h1>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
