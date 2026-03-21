@@ -205,20 +205,15 @@ onMounted(async () => {
         <article
           v-for="screen in screens"
           :key="screen.id"
-          class="rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm transition hover:border-primary/50"
+          class="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 shadow-sm transition hover:border-primary/50"
         >
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div class="min-w-0 space-y-2">
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="text-base font-semibold">{{ screen.name }}</p>
-                <Badge v-if="screen.isCurrent" variant="outline">Current</Badge>
-              </div>
-              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="secondary">{{ layoutLabel(screen.layoutMode) }}</Badge>
-                <Badge variant="outline">{{ screen.widgetCount }} widgets</Badge>
-                <span>Updated {{ formatTimestamp(screen.updatedAt) }}</span>
-              </div>
-              <p class="text-xs text-muted-foreground">screen_id {{ screen.id }}</p>
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div class="min-w-0 flex flex-wrap items-center gap-2 text-sm lg:flex-1 lg:flex-nowrap">
+              <p class="truncate font-semibold">{{ screen.name }}</p>
+              <Badge v-if="screen.isCurrent" variant="outline">Current</Badge>
+              <Badge variant="secondary">{{ layoutLabel(screen.layoutMode) }}</Badge>
+              <Badge variant="outline">{{ screen.widgetCount }} widgets</Badge>
+              <span class="text-xs text-muted-foreground">{{ formatTimestamp(screen.updatedAt) }}</span>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
