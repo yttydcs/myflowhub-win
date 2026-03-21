@@ -4,9 +4,16 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
-import { useTopicBusStore, type TopicBusEvent } from "@/stores/topicbus"
+import { formatTopicBusTimestamp, useTopicBusStore, type TopicBusChannelItem } from "@/stores/topicbus"
 import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
+
+type TopicBusTab = "overview" | "channels"
+
+const tabs: { id: TopicBusTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "channels", label: "Channels" }
+]
 
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
@@ -14,15 +21,11 @@ const topicbus = useTopicBusStore()
 const toast = useToastStore()
 
 const busy = ref(false)
+const remoteBusy = ref(false)
+const activeTab = ref<TopicBusTab>("overview")
 
 const subForm = reactive({
   text: ""
-})
-
-const publishForm = reactive({
-  topic: "",
-  name: "",
-  payload: ""
 })
 
 const maxEventsInput = ref(String(topicbus.state.maxEvents || 500))
@@ -46,30 +49,66 @@ const connectedTone = computed(() =>
 const selfNodeId = computed(() => sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0)
 const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId || 0)
 
-const filteredEvents = computed(() => {
-  const selected = topicbus.state.selectedTopic
-  if (!selected) return topicbus.state.events
-  return topicbus.state.events.filter((ev) => ev.topic === selected)
+const channelItems = computed(() => topicbus.channelItems())
+
+const eventStatsByTopic = computed(() => {
+  const stats = new Map<string, { count: number; lastTs: number }>()
+  for (const event of topicbus.state.events) {
+    const current = stats.get(event.topic) ?? { count: 0, lastTs: 0 }
+    current.count += 1
+    current.lastTs = Math.max(current.lastTs, Number(event.ts || 0))
+    stats.set(event.topic, current)
+  }
+  return stats
 })
 
-const selectedEventIndex = ref(-1)
-const selectedEvent = computed(
-  () => filteredEvents.value[selectedEventIndex.value] ?? null
-)
+const summaryItems = computed(() => [
+  { label: "Connected", value: connectedLabel.value },
+  { label: "NodeID", value: selfNodeId.value ? String(selfNodeId.value) : "-" },
+  { label: "HubID", value: hubId.value ? String(hubId.value) : "-" },
+  { label: "Local Topics", value: String(topicbus.state.topics.length) },
+  { label: "Remote Active", value: String(topicbus.state.remoteTopics.length) },
+  { label: "Cached Events", value: String(topicbus.state.events.length) },
+  { label: "Last Frame", value: topicbus.state.lastFrameAt || "-" },
+  { label: "Remote Sync", value: topicbus.state.remoteSyncedAt || "-" }
+])
 
-const formatTimestamp = (ts: number) => {
-  if (!ts) return ""
-  const dt = new Date(ts)
-  const pad = (value: number, len = 2) => String(value).padStart(len, "0")
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(
-    dt.getHours()
-  )}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}.${pad(dt.getMilliseconds(), 3)}`
+const tabButtonClass = (tab: TopicBusTab) => [
+  "rounded-full px-4 py-2 text-sm font-semibold transition",
+  activeTab.value === tab
+    ? "bg-primary text-primary-foreground shadow-sm"
+    : "text-muted-foreground hover:bg-muted/70"
+]
+
+const channelStatusText = (item: TopicBusChannelItem) => {
+  if (item.localSaved && item.remoteSubscribed) return "Saved + active"
+  if (item.localSaved) return "Saved locally"
+  if (item.remoteSubscribed) return "Remote only"
+  return "Known topic"
 }
 
-const formatEventLine = (ev: TopicBusEvent) => {
-  const ts = formatTimestamp(ev.ts)
-  if (!ts) return `${ev.topic} | ${ev.name}`
-  return `${ev.topic} | ${ev.name} | ${ts}`
+const channelRowClass = (topic: string) =>
+  topicbus.state.selectedTopic === topic
+    ? "border-primary/50 bg-primary/10"
+    : "border-border/60 bg-background/70 hover:border-primary/40"
+
+const topicEventCount = (topic: string) => eventStatsByTopic.value.get(topic)?.count ?? 0
+
+const topicLastSeen = (topic: string) => {
+  const ts = eventStatsByTopic.value.get(topic)?.lastTs ?? 0
+  return ts ? formatTopicBusTimestamp(ts) : "-"
+}
+
+const selectChannel = (topic: string) => {
+  topicbus.setSelectedTopic(topic)
+}
+
+const clearRemoteView = () => {
+  topicbus.state.remoteTopics = []
+  topicbus.state.remoteSyncedAt = ""
+  if (topicbus.state.selectedTopic && !topicbus.state.topics.includes(topicbus.state.selectedTopic)) {
+    topicbus.setSelectedTopic("")
+  }
 }
 
 const ensureReady = () => {
@@ -92,6 +131,10 @@ const loadHomeDefaults = async () => {
   topicbus.setIdentity(selfNodeId.value, hubId.value)
 }
 
+const syncMaxEventsInput = () => {
+  maxEventsInput.value = String(topicbus.state.maxEvents || 500)
+}
+
 const loadPreferences = async () => {
   try {
     await topicbus.loadPrefs()
@@ -102,8 +145,37 @@ const loadPreferences = async () => {
   }
 }
 
-const syncMaxEventsInput = () => {
-  maxEventsInput.value = String(topicbus.state.maxEvents || 500)
+const syncRemoteTopics = async (silent = false) => {
+  if (!sessionStore.connected || !selfNodeId.value) {
+    clearRemoteView()
+    return
+  }
+  if (remoteBusy.value) return
+  remoteBusy.value = true
+  try {
+    await topicbus.refreshRemoteTopics()
+    if (!silent) {
+      toast.success("Remote subscriptions synced.")
+    }
+  } catch (err) {
+    console.warn(err)
+    if (!silent) {
+      toast.errorOf(err, "Failed to sync remote subscriptions.")
+    }
+  } finally {
+    remoteBusy.value = false
+  }
+}
+
+const restoreAndSync = async () => {
+  if (sessionStore.connected && selfNodeId.value && topicbus.state.topics.length) {
+    try {
+      await topicbus.resubscribe()
+    } catch (err) {
+      console.warn(err)
+    }
+  }
+  await syncRemoteTopics(true)
 }
 
 const applyMaxEvents = async () => {
@@ -136,7 +208,7 @@ const subscribeFromInput = async () => {
     }
     await topicbus.updateTopics(topics, "add")
     if (!sessionStore.connected || !selfNodeId.value) {
-      toast.info("Saved subscription list only; login to send subscribe.")
+      toast.info("Saved topic list only; login to send subscribe.")
       return
     }
     await topicbus.subscribe(topics)
@@ -159,7 +231,7 @@ const unsubscribeFromInput = async () => {
     }
     await topicbus.updateTopics(topics, "remove")
     if (!sessionStore.connected || !selfNodeId.value) {
-      toast.info("Updated list only; login to send unsubscribe.")
+      toast.info("Updated local list only; login to send unsubscribe.")
       return
     }
     await topicbus.unsubscribe(topics)
@@ -172,26 +244,27 @@ const unsubscribeFromInput = async () => {
   }
 }
 
-const unsubscribeSelected = async () => {
+const syncChannelSubscription = async (item: TopicBusChannelItem) => {
   if (busy.value) return
   busy.value = true
   try {
-    if (!topicbus.state.selectedTopic) {
-      throw new Error("Select a topic to unsubscribe.")
+    ensureReady()
+    if (!item.localSaved && !item.remoteSubscribed) {
+      await topicbus.updateTopics([item.topic], "add")
     }
-    const topic = topicbus.state.selectedTopic
-    await topicbus.updateTopics([topic], "remove")
-    topicbus.setSelectedTopic("")
-    selectedEventIndex.value = -1
-    if (!sessionStore.connected || !selfNodeId.value) {
-      toast.info("Updated list only; login to send unsubscribe.")
-      return
+    if (item.remoteSubscribed) {
+      await topicbus.unsubscribe([item.topic])
+      toast.success("Channel unsubscribed.")
+    } else {
+      if (!item.localSaved) {
+        await topicbus.updateTopics([item.topic], "add")
+      }
+      await topicbus.subscribe([item.topic])
+      toast.success("Channel subscribed.")
     }
-    await topicbus.unsubscribe([topic])
-    toast.success("Unsubscribed.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to unsubscribe.")
+    toast.errorOf(err, "Failed to update channel subscription.")
   } finally {
     busy.value = false
   }
@@ -203,7 +276,7 @@ const resubscribeAll = async () => {
   try {
     ensureReady()
     if (!topicbus.state.topics.length) {
-      toast.info("No topics to resubscribe.")
+      toast.info("No saved topics to resubscribe.")
       return
     }
     await topicbus.resubscribe()
@@ -218,36 +291,31 @@ const resubscribeAll = async () => {
 
 const clearEvents = () => {
   topicbus.clearEvents()
-  selectedEventIndex.value = -1
+  toast.success("Cached events cleared.")
 }
 
-const fillSelectedTopic = () => {
-  if (!topicbus.state.selectedTopic) {
-    toast.warn("Select a topic to populate the publish form.")
+const openTopicWindow = (item?: TopicBusChannelItem) => {
+  const base = window.location.href.split("#")[0]
+  const query = new URLSearchParams()
+  if (item?.topic) {
+    query.set("topic", item.topic)
+  } else {
+    query.set("scope", "all")
+  }
+  const targetId = topicbus.state.targetId.trim() || (hubId.value ? String(hubId.value) : "")
+  if (targetId) {
+    query.set("targetId", targetId)
+  }
+  const name = item?.topic
+    ? `topicbus_${encodeURIComponent(item.topic)}_${Date.now()}`
+    : `topicbus_all_${Date.now()}`
+  const url = `${base}#/topicbus-window?${query.toString()}`
+  const win = window.open(url, name, "width=1080,height=760")
+  if (win) {
+    win.focus()
     return
   }
-  publishForm.topic = topicbus.state.selectedTopic
-}
-
-const clearPublishInputs = () => {
-  publishForm.topic = ""
-  publishForm.name = ""
-  publishForm.payload = ""
-}
-
-const publishEvent = async () => {
-  if (busy.value) return
-  busy.value = true
-  try {
-    ensureReady()
-    await topicbus.publish(publishForm.topic, publishForm.name, publishForm.payload)
-    toast.success("Event published.")
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to publish event.")
-  } finally {
-    busy.value = false
-  }
+  toast.warn("TopicBus window was blocked by browser popup policy.")
 }
 
 watch(
@@ -258,25 +326,23 @@ watch(
 )
 
 watch(
-  () => topicbus.state.selectedTopic,
-  () => {
-    selectedEventIndex.value = -1
-  }
-)
-
-watch(filteredEvents, (next) => {
-  if (selectedEventIndex.value >= next.length) {
-    selectedEventIndex.value = -1
-  }
-})
-
-watch(
   () => profileStore.state.current,
   async () => {
     await loadHomeDefaults()
     await loadPreferences()
-    if (sessionStore.connected && selfNodeId.value && topicbus.state.topics.length) {
-      void resubscribeAll()
+    await restoreAndSync()
+  }
+)
+
+watch(
+  () => sessionStore.connected,
+  (connected) => {
+    if (!connected) {
+      clearRemoteView()
+      return
+    }
+    if (sessionStore.auth.loggedIn) {
+      void syncRemoteTopics(true)
     }
   }
 )
@@ -285,8 +351,10 @@ let lastLoggedIn = false
 watch(
   () => sessionStore.auth.loggedIn,
   (loggedIn) => {
-    if (loggedIn && !lastLoggedIn && topicbus.state.topics.length) {
-      void resubscribeAll()
+    if (loggedIn && !lastLoggedIn) {
+      void restoreAndSync()
+    } else if (!loggedIn) {
+      clearRemoteView()
     }
     lastLoggedIn = loggedIn
   }
@@ -295,25 +363,48 @@ watch(
 onMounted(async () => {
   await loadHomeDefaults()
   await loadPreferences()
-  if (sessionStore.connected && selfNodeId.value && topicbus.state.topics.length) {
-    void resubscribeAll()
-  }
+  await restoreAndSync()
 })
 </script>
 
 <template>
-  <section class="grid gap-6">
-    <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+  <section class="space-y-6">
+    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Workspace</p>
+          <h2 class="mt-1 text-lg font-semibold">TopicBus Console</h2>
+          <p class="mt-2 text-sm text-muted-foreground">
+            Keep the main page focused on settings, then open a clean channel window for live receive and send.
+          </p>
+        </div>
+
+        <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            :class="tabButtonClass(tab.id)"
+            :aria-pressed="activeTab === tab.id"
+            @click="activeTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'overview'" class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
                 TopicBus Control
               </p>
-              <h3 class="text-lg font-semibold">Target & Subscriptions</h3>
+              <h3 class="text-lg font-semibold">Identity & Saved Topics</h3>
               <p class="text-sm text-muted-foreground">
-                Subscribe to topics and stream published events.
+                Manage the target node, local topic list, and remote subscription sync.
               </p>
             </div>
             <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
@@ -331,29 +422,42 @@ onMounted(async () => {
               />
             </div>
             <div class="flex flex-col justify-end gap-2">
-              <Button :disabled="busy" @click="resubscribeAll">Resubscribe</Button>
-              <Button variant="outline" :disabled="busy" @click="unsubscribeSelected">
-                Unsubscribe Selected
+              <Button variant="outline" :disabled="busy || remoteBusy" @click="syncRemoteTopics()">
+                {{ remoteBusy ? "Syncing..." : "Sync Remote" }}
               </Button>
+              <Button :disabled="busy" @click="resubscribeAll">Resubscribe</Button>
             </div>
           </div>
 
           <div class="mt-4">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Subscribe / Unsubscribe
+              Saved Topic List
             </label>
             <textarea
               v-model="subForm.text"
               :class="textAreaClass"
-              rows="3"
+              rows="4"
               placeholder="topic.a, topic.b (comma, newline, or semicolon separated)"
             />
             <div class="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" :disabled="busy" @click="subscribeFromInput">Subscribe</Button>
+              <Button size="sm" :disabled="busy" @click="subscribeFromInput">Save + Subscribe</Button>
               <Button size="sm" variant="outline" :disabled="busy" @click="unsubscribeFromInput">
-                Unsubscribe
+                Remove + Unsubscribe
               </Button>
             </div>
+          </div>
+        </section>
+
+        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Cache & Window</p>
+              <h3 class="text-lg font-semibold">Event Cache Settings</h3>
+              <p class="text-sm text-muted-foreground">
+                Channel windows only show messages received after the window opens. Your own publish actions do not echo back.
+              </p>
+            </div>
+            <Badge variant="secondary">Window-first</Badge>
           </div>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
@@ -364,172 +468,146 @@ onMounted(async () => {
               <input v-model="maxEventsInput" :class="inputClass" placeholder="500" />
             </div>
             <div class="flex flex-col justify-end gap-2">
-              <Button variant="outline" :disabled="busy" @click="applyMaxEvents">
-                Apply Limit
-              </Button>
-              <Button variant="ghost" :disabled="busy" @click="clearEvents">Clear Events</Button>
+              <Button variant="outline" :disabled="busy" @click="applyMaxEvents">Apply Limit</Button>
+              <Button variant="ghost" :disabled="busy" @click="clearEvents">Clear Cached</Button>
             </div>
           </div>
 
-          <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <span>NodeID: {{ selfNodeId || "-" }}</span>
-            <span>HubID: {{ hubId || "-" }}</span>
-            <span>Topics: {{ topicbus.state.topics.length }}</span>
+          <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+            <p class="font-medium text-foreground">Recommended workflow</p>
+            <p class="mt-1">
+              Keep this page for setup, then jump to <span class="font-semibold text-foreground">Channels</span> and open
+              a dedicated window for `All` or a specific topic.
+            </p>
           </div>
-        </div>
-
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Publish
-              </p>
-              <h3 class="text-lg font-semibold">Send Topic Events</h3>
-              <p class="text-sm text-muted-foreground">
-                Publish JSON or plain text payloads to any topic.
-              </p>
-            </div>
-            <Badge variant="secondary">Publish</Badge>
-          </div>
-
-          <div class="mt-4 grid gap-4">
-            <div class="grid gap-3 lg:grid-cols-[1fr_auto]">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Topic
-                </label>
-                <input
-                  v-model="publishForm.topic"
-                  :class="inputClass"
-                  placeholder="topic.status"
-                />
-              </div>
-              <div class="flex flex-col justify-end gap-2">
-                <Button size="sm" variant="outline" :disabled="busy" @click="fillSelectedTopic">
-                  Use Selected
-                </Button>
-              </div>
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Name
-              </label>
-              <input v-model="publishForm.name" :class="inputClass" placeholder="event name" />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Payload
-              </label>
-              <textarea
-                v-model="publishForm.payload"
-                :class="textAreaClass"
-                rows="4"
-                placeholder="JSON or plain text"
-              />
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button :disabled="busy" @click="publishEvent">Publish</Button>
-              <Button variant="outline" :disabled="busy" @click="clearPublishInputs">
-                Clear
-              </Button>
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
 
       <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Subscription List
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">Active Topics</h3>
-          <div class="mt-4 space-y-2 text-sm text-muted-foreground">
-            <button
-              class="flex w-full items-center justify-between rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-left text-sm transition hover:border-primary"
-              :class="topicbus.state.selectedTopic ? '' : 'border-primary text-foreground'"
-              @click="topicbus.setSelectedTopic('')"
-            >
-              <span>All</span>
-              <span>{{ topicbus.state.topics.length }}</span>
-            </button>
-            <button
-              v-for="topic in topicbus.state.topics"
-              :key="topic"
-              class="flex w-full items-center justify-between rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-left text-sm transition hover:border-primary"
-              :class="topicbus.state.selectedTopic === topic ? 'border-primary text-foreground' : ''"
-              @click="topicbus.setSelectedTopic(topic)"
-            >
-              <span>{{ topic }}</span>
-            </button>
-            <p v-if="topicbus.state.topics.length === 0">No topics yet.</p>
-          </div>
-        </div>
-
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Snapshot
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">TopicBus Status</h3>
+        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Snapshot</p>
+          <h3 class="mt-2 text-lg font-semibold">Current Status</h3>
           <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Selected Topic</p>
-              <p>{{ topicbus.state.selectedTopic || "All" }}</p>
-            </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Last Frame</p>
-              <p>{{ topicbus.state.lastFrameAt || "-" }}</p>
-            </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Events Cached</p>
-              <p>{{ topicbus.state.events.length }}</p>
+            <div
+              v-for="item in summaryItems"
+              :key="item.label"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2"
+            >
+              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ item.label }}</p>
+              <p class="font-medium text-foreground">{{ item.value }}</p>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Quick Window</p>
+              <h3 class="text-lg font-semibold">Jump Into Live Traffic</h3>
+            </div>
+            <Badge variant="outline">{{ channelItems.length }} channels</Badge>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            <div class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
+              <p class="font-semibold text-foreground">All Channels</p>
+              <p class="mt-1 text-muted-foreground">
+                Aggregate every known channel in one clean receive/send window.
+              </p>
+              <div class="mt-3">
+                <Button size="sm" variant="outline" @click="openTopicWindow()">Open All Window</Button>
+              </div>
+            </div>
+
+            <div v-if="topicbus.state.selectedTopic" class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
+              <p class="font-semibold text-foreground">{{ topicbus.state.selectedTopic }}</p>
+              <p class="mt-1 text-muted-foreground">Open the currently selected channel directly.</p>
+              <div class="mt-3">
+                <Button size="sm" @click="openTopicWindow({ topic: topicbus.state.selectedTopic, localSaved: true, remoteSubscribed: topicbus.state.remoteTopics.includes(topicbus.state.selectedTopic) })">
+                  Open Selected Window
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+    </section>
 
-    <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-      <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+    <section v-else class="space-y-6">
+      <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              Event Stream
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Channels</p>
+            <h3 class="mt-2 text-lg font-semibold">Known Topics</h3>
+            <p class="mt-2 text-sm text-muted-foreground">
+              Each row opens a dedicated window that starts listening from the moment it opens.
             </p>
-            <h3 class="text-lg font-semibold">Publish Events</h3>
           </div>
-          <Badge variant="outline">
-            {{ topicbus.state.selectedTopic || "All" }} · {{ filteredEvents.length }}
-          </Badge>
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{{ topicbus.state.topics.length }} saved</Badge>
+            <Badge variant="secondary">{{ topicbus.state.remoteTopics.length }} remote active</Badge>
+            <Button size="sm" variant="outline" :disabled="remoteBusy" @click="syncRemoteTopics()">
+              {{ remoteBusy ? "Syncing..." : "Refresh Remote" }}
+            </Button>
+          </div>
         </div>
+      </section>
 
-        <div class="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-2 text-sm">
-          <button
-            v-for="(event, index) in filteredEvents"
-            :key="`${event.topic}-${event.name}-${event.ts}-${index}`"
-            class="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-left text-xs transition hover:border-primary"
-            :class="selectedEventIndex === index ? 'border-primary text-foreground' : ''"
-            @click="selectedEventIndex = index"
+      <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+        <div class="space-y-3">
+          <article
+            class="rounded-2xl border px-4 py-4 shadow-sm transition"
+            :class="topicbus.state.selectedTopic ? 'border-border/60 bg-background/70 hover:border-primary/40' : 'border-primary/50 bg-primary/10'"
           >
-            <span class="block truncate">{{ formatEventLine(event) }}</span>
-          </button>
-          <p v-if="filteredEvents.length === 0" class="text-sm text-muted-foreground">
-            No events yet.
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <button type="button" class="min-w-0 text-left" @click="selectChannel('')">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-base font-semibold">All</p>
+                  <Badge variant="secondary">Aggregate</Badge>
+                </div>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  Watch all known channels in a single clean window. Cached events: {{ topicbus.state.events.length }}.
+                </p>
+              </button>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" @click="openTopicWindow()">Open Window</Button>
+              </div>
+            </div>
+          </article>
+
+          <article
+            v-for="item in channelItems"
+            :key="item.topic"
+            class="rounded-2xl border px-4 py-4 shadow-sm transition"
+            :class="channelRowClass(item.topic)"
+          >
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <button type="button" class="min-w-0 text-left" @click="selectChannel(item.topic)">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-base font-semibold">{{ item.topic }}</p>
+                  <Badge v-if="item.localSaved" variant="outline">Saved</Badge>
+                  <Badge v-if="item.remoteSubscribed" variant="secondary">Active</Badge>
+                </div>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  {{ channelStatusText(item) }} · Cached {{ topicEventCount(item.topic) }} · Last seen {{ topicLastSeen(item.topic) }}
+                </p>
+              </button>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" @click="openTopicWindow(item)">Open Window</Button>
+                <Button size="sm" variant="ghost" :disabled="busy" @click="syncChannelSubscription(item)">
+                  {{ item.remoteSubscribed ? "Unsubscribe" : "Subscribe" }}
+                </Button>
+              </div>
+            </div>
+          </article>
+
+          <p v-if="channelItems.length === 0" class="rounded-xl border border-dashed border-border/60 bg-background/60 px-4 py-6 text-sm text-muted-foreground">
+            No known channels yet. Save topics in <span class="font-semibold text-foreground">Overview</span> or sync remote subscriptions first.
           </p>
         </div>
-      </div>
-
-      <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Event Detail
-        </p>
-        <h3 class="mt-2 text-lg font-semibold">Selected Payload</h3>
-        <div class="mt-4 min-h-[320px] rounded-xl border border-border/60 bg-background/70 p-4">
-          <pre class="whitespace-pre-wrap text-xs text-muted-foreground">
-{{ selectedEvent?.dataRaw || "Select an event to inspect the payload." }}
-          </pre>
-        </div>
-      </div>
-    </div>
-
+      </section>
+    </section>
   </section>
 </template>

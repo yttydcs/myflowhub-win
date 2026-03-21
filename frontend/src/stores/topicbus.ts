@@ -28,15 +28,23 @@ export type TopicBusEvent = {
   dataRaw: string
 }
 
+export type TopicBusChannelItem = {
+  topic: string
+  localSaved: boolean
+  remoteSubscribed: boolean
+}
+
 export type TopicBusState = {
   targetId: string
   selfNodeId: number
   defaultTargetId: number
   topics: string[]
+  remoteTopics: string[]
   selectedTopic: string
   maxEvents: number
   events: TopicBusEvent[]
   lastFrameAt: string
+  remoteSyncedAt: string
 }
 
 const defaultMaxEvents = 500
@@ -46,10 +54,12 @@ const state = reactive<TopicBusState>({
   selfNodeId: 0,
   defaultTargetId: 0,
   topics: [],
+  remoteTopics: [],
   selectedTopic: "",
   maxEvents: defaultMaxEvents,
   events: [],
-  lastFrameAt: ""
+  lastFrameAt: "",
+  remoteSyncedAt: ""
 })
 
 const pendingEvents: TopicBusEvent[] = []
@@ -80,6 +90,28 @@ const formatDetail = (input: any): string => {
   }
 }
 
+export const formatTopicBusTimestamp = (ts: number) => {
+  if (!ts) return ""
+  const dt = new Date(ts)
+  const pad = (value: number, len = 2) => String(value).padStart(len, "0")
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(
+    dt.getHours()
+  )}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}.${pad(dt.getMilliseconds(), 3)}`
+}
+
+export const normalizeTopicBusEvent = (evt: any): TopicBusEvent | null => {
+  const topic = String(evt?.topic ?? "").trim()
+  const name = String(evt?.name ?? "").trim()
+  if (!topic || !name) return null
+  const ts = Number(evt?.ts ?? 0)
+  return {
+    topic,
+    name,
+    ts,
+    dataRaw: formatDetail(evt)
+  }
+}
+
 const normalizeTopics = (topics: string[]) => {
   const out: string[] = []
   const seen = new Set<string>()
@@ -106,6 +138,19 @@ const parseTopics = (raw: string) => {
   const trimmed = raw.trim()
   if (!trimmed) return []
   return normalizeTopics(trimmed.split(/[\n,，;；]+/g))
+}
+
+const selectionStillExists = () => {
+  if (!state.selectedTopic) return true
+  if (state.topics.includes(state.selectedTopic)) return true
+  if (state.remoteTopics.includes(state.selectedTopic)) return true
+  return false
+}
+
+const clearSelectionIfMissing = () => {
+  if (!selectionStillExists()) {
+    state.selectedTopic = ""
+  }
 }
 
 const resolveTargetId = () => {
@@ -161,12 +206,22 @@ const pushEvent = (ev: TopicBusEvent) => {
 }
 
 const handleEvent = (evt: any) => {
-  const topic = String(evt?.topic ?? "").trim()
-  const name = String(evt?.name ?? "").trim()
-  if (!topic || !name) return
-  const ts = Number(evt?.ts ?? 0)
-  const dataRaw = formatDetail(evt)
-  pushEvent({ topic, name, ts, dataRaw })
+  const normalized = normalizeTopicBusEvent(evt)
+  if (!normalized) return
+  pushEvent(normalized)
+}
+
+const channelItems = (): TopicBusChannelItem[] => {
+  const localSet = new Set(normalizeTopics(state.topics))
+  const remoteSet = new Set(normalizeTopics(state.remoteTopics))
+  const merged = normalizeTopics([...state.topics, ...state.remoteTopics]).sort((left, right) =>
+    left.localeCompare(right)
+  )
+  return merged.map((topic) => ({
+    topic,
+    localSaved: localSet.has(topic),
+    remoteSubscribed: remoteSet.has(topic)
+  }))
 }
 
 const loadPrefs = async () => {
@@ -175,9 +230,7 @@ const loadPrefs = async () => {
   const maxEvents = Number(prefs?.maxEvents ?? defaultMaxEvents)
   state.topics = topics
   state.maxEvents = maxEvents > 0 ? maxEvents : defaultMaxEvents
-  if (state.selectedTopic && !state.topics.includes(state.selectedTopic)) {
-    state.selectedTopic = ""
-  }
+  clearSelectionIfMissing()
   trimEvents()
 }
 
@@ -191,6 +244,7 @@ const savePrefs = async () => {
     const maxEvents = Number(saved?.maxEvents ?? state.maxEvents)
     state.maxEvents = maxEvents > 0 ? maxEvents : defaultMaxEvents
   }
+  clearSelectionIfMissing()
 }
 
 const setIdentity = (nodeId: number, hubId: number) => {
@@ -202,7 +256,8 @@ const setIdentity = (nodeId: number, hubId: number) => {
 }
 
 const setSelectedTopic = (topic: string) => {
-  state.selectedTopic = topic
+  state.selectedTopic = String(topic ?? "").trim()
+  clearSelectionIfMissing()
 }
 
 const updateTopics = async (topics: string[], mode: "add" | "remove") => {
@@ -213,11 +268,26 @@ const updateTopics = async (topics: string[], mode: "add" | "remove") => {
   } else {
     state.topics = removeTopics(state.topics, normalized)
   }
-  if (state.selectedTopic && !state.topics.includes(state.selectedTopic)) {
-    state.selectedTopic = ""
-  }
+  clearSelectionIfMissing()
   await savePrefs()
   return normalized
+}
+
+const refreshRemoteTopics = async () => {
+  const sourceID = Number(state.selfNodeId || 0)
+  const targetID = Number(resolveTargetId() || 0)
+  if (sourceID <= 0 || targetID <= 0) {
+    state.remoteTopics = []
+    state.remoteSyncedAt = ""
+    clearSelectionIfMissing()
+    return []
+  }
+  const resp = await callTopicBus<any>("ListSubsSimple", sourceID, targetID)
+  const topics = normalizeTopics(Array.isArray(resp?.topics) ? resp.topics : [])
+  state.remoteTopics = topics
+  state.remoteSyncedAt = nowIso()
+  clearSelectionIfMissing()
+  return topics
 }
 
 const subscribe = async (topics: string[]) => {
@@ -229,9 +299,11 @@ const subscribe = async (topics: string[]) => {
   const targetID = resolveTargetId()
   if (normalized.length === 1) {
     await callTopicBus("SubscribeSimple", sourceID, targetID, normalized[0])
-    return
+  } else {
+    await callTopicBus("SubscribeBatchSimple", sourceID, targetID, normalized)
   }
-  await callTopicBus("SubscribeBatchSimple", sourceID, targetID, normalized)
+  state.remoteTopics = mergeTopics(state.remoteTopics, normalized)
+  state.remoteSyncedAt = nowIso()
 }
 
 const unsubscribe = async (topics: string[]) => {
@@ -243,9 +315,12 @@ const unsubscribe = async (topics: string[]) => {
   const targetID = resolveTargetId()
   if (normalized.length === 1) {
     await callTopicBus("UnsubscribeSimple", sourceID, targetID, normalized[0])
-    return
+  } else {
+    await callTopicBus("UnsubscribeBatchSimple", sourceID, targetID, normalized)
   }
-  await callTopicBus("UnsubscribeBatchSimple", sourceID, targetID, normalized)
+  state.remoteTopics = removeTopics(state.remoteTopics, normalized)
+  state.remoteSyncedAt = nowIso()
+  clearSelectionIfMissing()
 }
 
 const resubscribe = async () => {
@@ -255,9 +330,11 @@ const resubscribe = async () => {
   const targetID = resolveTargetId()
   if (normalized.length === 1) {
     await callTopicBus("SubscribeSimple", sourceID, targetID, normalized[0])
-    return
+  } else {
+    await callTopicBus("SubscribeBatchSimple", sourceID, targetID, normalized)
   }
-  await callTopicBus("SubscribeBatchSimple", sourceID, targetID, normalized)
+  state.remoteTopics = mergeTopics(state.remoteTopics, normalized)
+  state.remoteSyncedAt = nowIso()
 }
 
 const publish = async (topic: string, name: string, payloadText: string) => {
@@ -297,10 +374,12 @@ export const useTopicBusStore = () => {
   ensureListeners()
   return {
     state,
+    channelItems,
     clearEvents,
     loadPrefs,
     parseTopics,
     publish,
+    refreshRemoteTopics,
     resubscribe,
     resolveTargetId,
     setIdentity,
