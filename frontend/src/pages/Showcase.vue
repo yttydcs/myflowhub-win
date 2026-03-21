@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
-import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Settings2 } from "lucide-vue-next"
+import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Save, Settings2, Undo2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -1184,16 +1184,30 @@ onBeforeUnmount(() => {
               <span class="sr-only">Refresh Vars</span>
             </Button>
           </Tooltip>
-          <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
-          <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
-          <Button variant="outline" :disabled="busy" @click="openLayoutDialog">
-            <Settings2 class="mr-2 h-4 w-4" />
-            Layout
-          </Button>
-          <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
-            <ExternalLink class="mr-2 h-4 w-4" />
-            Open Viewer
-          </Button>
+          <Tooltip content="Save Draft" side="bottom">
+            <Button size="icon" :disabled="busy || !dirty" @click="saveDraft">
+              <Save class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Save Draft</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Revert Draft" side="bottom">
+            <Button size="icon" variant="outline" :disabled="busy" @click="revertDraft">
+              <Undo2 class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Revert Draft</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Edit Layout" side="bottom">
+            <Button size="icon" variant="outline" :disabled="busy" @click="openLayoutDialog">
+              <Settings2 class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Edit Layout</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Open Viewer" side="bottom">
+            <Button size="icon" variant="outline" :disabled="busy" @click="openShowcaseWindow">
+              <ExternalLink class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Open Viewer</span>
+            </Button>
+          </Tooltip>
           <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
           <Tooltip content="Add Event" side="bottom">
             <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
