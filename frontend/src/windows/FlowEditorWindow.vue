@@ -10,12 +10,15 @@ import { useFlowStore } from "@/stores/flow"
 import { useFlowProjectsStore } from "@/stores/flowProjects"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
+import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
 
 const route = useRoute()
 const flowStore = useFlowStore()
 const projectsStore = useFlowProjectsStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+
+const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 
 const loading = ref(true)
 const loadedProjectId = ref("")
@@ -24,8 +27,10 @@ const saveBusy = ref(false)
 const addNodeOpen = ref(false)
 const methodDialogOpen = ref(false)
 const methodSearch = ref("")
+const queryNodeIdDraft = ref("")
 const nodeIdDraft = ref("")
 const pendingCapabilityKey = ref("")
+const lastCapabilityQueryNode = ref("")
 
 const nodeDraft = reactive({
   id: ""
@@ -34,6 +39,8 @@ const nodeDraft = reactive({
 const selectedNode = computed(() => flowStore.state.nodes[flowStore.state.selectedNodeIndex] ?? null)
 const selectedEdge = computed(() => flowStore.state.edges[flowStore.state.selectedEdgeIndex] ?? null)
 const nodeDetailOpen = computed(() => Boolean(selectedNode.value))
+const selfNodeId = computed(() => Number(sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0))
+const hubId = computed(() => Number(sessionStore.auth.hubId || fallbackIdentity.hubId || 0))
 
 const canUndo = computed(() => flowStore.state.historyIndex > 0)
 const canRedo = computed(
@@ -62,6 +69,11 @@ const selectedTargetLabel = computed(() => {
     return `Current executor node ${effectiveExecutorNode.value}`
   }
   return "Current executor"
+})
+const capabilityQueryNodeLabel = computed(() => {
+  const raw = queryNodeIdDraft.value.trim()
+  if (raw) return raw
+  return effectiveExecutorNode.value > 0 ? String(effectiveExecutorNode.value) : "-"
 })
 const capabilityOptions = computed(() => {
   const executorNode = effectiveExecutorNode.value
@@ -107,6 +119,30 @@ const closeNodeDetail = () => {
   flowStore.clearSelection()
 }
 
+const loadHomeDefaults = async () => {
+  try {
+    const state = await LoadHomeState()
+    fallbackIdentity.nodeId = Number(state?.nodeId ?? 0)
+    fallbackIdentity.hubId = Number(state?.hubId ?? 0)
+  } catch (err) {
+    console.warn(err)
+  }
+  flowStore.setIdentity(selfNodeId.value, hubId.value)
+}
+
+const syncQueryNodeDraft = () => {
+  const node = selectedNode.value
+  if (node && node.target > 0) {
+    queryNodeIdDraft.value = String(Math.trunc(node.target))
+    return
+  }
+  if (effectiveExecutorNode.value > 0) {
+    queryNodeIdDraft.value = String(effectiveExecutorNode.value)
+    return
+  }
+  queryNodeIdDraft.value = ""
+}
+
 const syncPendingCapability = () => {
   pendingCapabilityKey.value = selectedCapabilityKey.value
 }
@@ -117,7 +153,9 @@ const closeMethodDialog = () => {
 
 const refreshMethodCapabilities = async () => {
   try {
-    await flowStore.queryExecCapabilities()
+    const queryNodeId = queryNodeIdDraft.value.trim()
+    await flowStore.queryExecCapabilities(undefined, queryNodeId)
+    lastCapabilityQueryNode.value = queryNodeId || String(effectiveExecutorNode.value || "")
     if (!flowStore.state.execCapabilities.some((route) => route.key === pendingCapabilityKey.value)) {
       syncPendingCapability()
     }
@@ -131,8 +169,12 @@ const openMethodDialog = async () => {
   if (!selectedNode.value) return
   methodSearch.value = selectedNode.value.method.trim()
   syncPendingCapability()
+  syncQueryNodeDraft()
   methodDialogOpen.value = true
-  if (!flowStore.state.execCapabilities.length) {
+  if (
+    !flowStore.state.execCapabilities.length ||
+    lastCapabilityQueryNode.value !== (queryNodeIdDraft.value.trim() || String(effectiveExecutorNode.value || ""))
+  ) {
     await refreshMethodCapabilities()
   }
 }
@@ -318,9 +360,12 @@ const onKeyDown = (event: KeyboardEvent) => {
 }
 
 watch(
-  () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
+  () => [selfNodeId.value, hubId.value],
   ([nodeId, hubId]) => {
     flowStore.setIdentity(Number(nodeId), Number(hubId))
+    if (!methodDialogOpen.value) {
+      syncQueryNodeDraft()
+    }
   },
   { immediate: true }
 )
@@ -332,6 +377,7 @@ watch(
     if (!methodDialogOpen.value) {
       methodSearch.value = selectedNode.value?.method?.trim() ?? ""
       syncPendingCapability()
+      syncQueryNodeDraft()
     }
   },
   { immediate: true }
@@ -364,7 +410,7 @@ watch(
 )
 
 onMounted(() => {
-  void loadProject().catch(() => {})
+  void loadHomeDefaults().then(() => loadProject())
   window.addEventListener("keydown", onKeyDown)
 })
 
@@ -624,13 +670,30 @@ onUnmounted(() => {
               Executor {{ effectiveExecutorNode || "-" }}
             </span>
             <span class="rounded-full border border-border/60 px-3 py-1">
+              Query Node {{ capabilityQueryNodeLabel }}
+            </span>
+            <span class="rounded-full border border-border/60 px-3 py-1">
               {{ selectedTargetLabel }}
             </span>
           </div>
         </div>
 
         <div class="mt-5 flex flex-wrap items-end gap-3">
-          <div class="min-w-[240px] flex-1">
+          <div class="min-w-[200px] max-w-[240px] flex-1">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Query Node ID
+            </label>
+            <input
+              v-model="queryNodeIdDraft"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              inputmode="numeric"
+              placeholder="Current executor"
+            />
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              Used only for capability lookup. It will not be written back into the call node.
+            </p>
+          </div>
+          <div class="min-w-[240px] flex-[2]">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Filter
             </label>
@@ -656,7 +719,7 @@ onUnmounted(() => {
             {{
               flowStore.state.execCapabilities.length
                 ? "No capability matched the current filter."
-                : "No capability loaded yet. Refresh to query the current executor."
+                : "No capability loaded yet. Refresh to query the selected node."
             }}
           </div>
           <div v-else class="divide-y divide-border/60">
@@ -697,7 +760,7 @@ onUnmounted(() => {
 
         <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p class="text-xs text-muted-foreground">
-            Applying a capability updates the method and hidden call target. Args stay unchanged.
+            Applying a capability updates the method and hidden call target. The query node stays temporary.
           </p>
           <div class="flex gap-2">
             <Button variant="outline" @click="closeMethodDialog">Cancel</Button>
