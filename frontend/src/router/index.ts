@@ -7,10 +7,12 @@ import Flow from "@/pages/Flow.vue"
 import Debug from "@/pages/Debug.vue"
 import Logs from "@/pages/Logs.vue"
 import Presets from "@/pages/Presets.vue"
+import Settings from "@/pages/Settings.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
 import Permissions from "@/pages/Permissions.vue"
 import ShowcaseCenter from "@/pages/ShowcaseCenter.vue"
+import { readStartupRoutePath } from "@/stores/appSettings"
 import FileTasks from "@/windows/FileTasks.vue"
 import FlowEditorWindow from "@/windows/FlowEditorWindow.vue"
 import LogWindow from "@/windows/LogWindow.vue"
@@ -19,7 +21,7 @@ import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
 import TopicBusWindow from "@/windows/TopicBusWindow.vue"
 
 const routes = [
-  { path: "/", redirect: "/home" },
+  { path: "/", redirect: () => readStartupRoutePath() },
   {
     path: "/home",
     name: "home",
@@ -146,6 +148,15 @@ const routes = [
     meta: {
       title: "Permissions",
       subtitle: "Manage authority role/perms policy and runtime snapshot."
+    }
+  },
+  {
+    path: "/settings",
+    name: "settings",
+    component: Settings,
+    meta: {
+      title: "Settings",
+      subtitle: "Manage app defaults, UI preferences, and version information."
     }
   },
   {
