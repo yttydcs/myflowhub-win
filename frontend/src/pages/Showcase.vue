@@ -1174,8 +1174,7 @@ onBeforeUnmount(() => {
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Editor</p>
-          <h1 class="mt-1 text-xl font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h1>
+          <h1 class="text-xl font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h1>
           <div v-if="!screenMissing" class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">{{ currentLayoutLabel }}</Badge>
             <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
