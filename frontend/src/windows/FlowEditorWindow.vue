@@ -21,7 +21,6 @@ const toast = useToastStore()
 const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 
 const loading = ref(true)
-const loadedProjectId = ref("")
 const loadedProjectName = ref("")
 const saveBusy = ref(false)
 const addNodeOpen = ref(false)
@@ -301,7 +300,6 @@ const loadProject = async () => {
     if (!project) {
       throw new Error(`Project not found: ${id}`)
     }
-    loadedProjectId.value = project.projectId
     loadedProjectName.value = project.name || project.flowId
     flowStore.loadGraphDraft(project.graph)
     nodeIdDraft.value = selectedNode.value?.id ?? ""
@@ -428,7 +426,6 @@ onUnmounted(() => {
             Flow Project Editor
           </p>
           <h1 class="mt-1 text-xl font-semibold">{{ loadedProjectName || "Untitled Project" }}</h1>
-          <p class="mt-1 text-xs text-muted-foreground">project_id {{ loadedProjectId || projectId || "-" }}</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -477,9 +474,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <p class="mt-3 text-xs text-muted-foreground">
-        Pure workflow editing only. Trigger and deployment settings stay in the project center.
-      </p>
     </header>
 
     <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
@@ -488,15 +482,6 @@ onUnmounted(() => {
 
     <div v-else class="relative flex-1 min-h-0 overflow-hidden">
       <div class="flex h-full min-h-0 flex-col p-4 transition-[padding] duration-200" :class="nodeDetailOpen ? 'pr-[440px]' : ''">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div class="text-xs text-muted-foreground">
-            Drag nodes to reposition. Drag from node handles to connect. Click a node to open the right-side detail drawer.
-          </div>
-          <div class="text-xs text-muted-foreground">
-            Click blank canvas to close the drawer.
-          </div>
-        </div>
-
         <div class="flex-1 min-h-0">
           <FlowCanvas
             :nodes="flowStore.state.nodes"
