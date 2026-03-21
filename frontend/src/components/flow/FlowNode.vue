@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { Handle, Position } from "@vue-flow/core"
+import { Handle, Position, type NodeProps } from "@vue-flow/core"
 
 type FlowNodeStatus = {
   status?: string
@@ -8,14 +8,12 @@ type FlowNodeStatus = {
   msg?: string
 }
 
-const props = defineProps<{
-  id: string
-  data?: {
-    label?: string
-    status?: FlowNodeStatus
-  }
-  selected?: boolean
-}>()
+type FlowNodeData = {
+  label?: string
+  status?: FlowNodeStatus
+}
+
+const props = defineProps<NodeProps<FlowNodeData>>()
 
 const label = computed(() => props.data?.label?.trim() || props.id)
 const status = computed(() => props.data?.status?.status?.trim() || "")
@@ -45,12 +43,14 @@ const statusTone = computed(() => {
   >
     <Handle
       type="target"
-      :position="Position.Left"
+      :position="props.targetPosition ?? Position.Left"
+      :connectable="props.connectable"
       class="!-left-2.5 !h-4 !w-4 !border-2 !border-sky-700 !bg-sky-400 shadow-sm"
     />
     <Handle
       type="source"
-      :position="Position.Right"
+      :position="props.sourcePosition ?? Position.Right"
+      :connectable="props.connectable"
       class="!-right-2.5 !h-4 !w-4 !border-2 !border-emerald-700 !bg-emerald-400 shadow-sm"
     />
 
