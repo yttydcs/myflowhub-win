@@ -1151,9 +1151,6 @@ onBeforeUnmount(() => {
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Editor</p>
         <h3 class="mt-2 text-lg font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h3>
-        <p class="mt-2 text-xs text-muted-foreground">
-          screen_id {{ requestedScreenId || showcase.currentScreen()?.id || "-" }} · Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }}
-        </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
@@ -1197,102 +1194,53 @@ onBeforeUnmount(() => {
         </Tooltip>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-[0.32fr_0.68fr]">
-        <div class="space-y-4">
-          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-            <div class="flex items-center justify-between gap-3">
-              <h4 class="text-sm font-semibold">Screen</h4>
-              <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
-            </div>
-            <div class="mt-5 space-y-4">
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Screen Name</label>
-                <input v-model="screenNameDraft" :class="inputClass" />
-              </div>
-              <div class="grid gap-2 text-xs text-muted-foreground">
-                <p>Last Saved {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</p>
-                <p>Last Var Frame {{ formatTimestamp(showcase.state.lastFrameAt || "") }}</p>
-              </div>
-            </div>
+      <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Screen Name</label>
+            <input v-model="screenNameDraft" :class="inputClass" />
           </div>
-
-          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-2">
-                <ListChecks class="h-4 w-4 text-muted-foreground" />
-                <h4 class="text-sm font-semibold">Widget Outline</h4>
-              </div>
-              <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }}</Badge>
-            </div>
-            <div class="mt-4 space-y-2">
-              <button
-                v-for="widget in showcase.currentScreen()?.widgets || []"
-                :key="widget.id"
-                type="button"
-                class="flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3 text-left transition hover:border-primary/60"
-                @click="openEditWidget(widget)"
-              >
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-semibold">{{ safeTitle(widget) }}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">{{ widget.kind === "topic_button" ? "Event button" : "Variable widget" }}</p>
-                </div>
-                <Badge variant="secondary">span {{ widget.layout?.colSpan ?? 1 }}</Badge>
-              </button>
-              <div
-                v-if="(showcase.currentScreen()?.widgets || []).length === 0"
-                class="rounded-xl border border-dashed border-border/60 p-4 text-sm text-muted-foreground"
-              >
-                No widgets yet. Add an event button or variable widget to start building this screen.
-              </div>
-            </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
+            <span>Saved {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</span>
           </div>
         </div>
 
-        <div class="space-y-4">
-          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Layout</p>
-                <h4 class="mt-2 text-lg font-semibold">Preview & Controls</h4>
-                <p class="mt-2 text-xs text-muted-foreground">
-                  Edit the structure in this window, test runtime behavior directly, and click Save only when the draft is ready.
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <Badge v-if="dirty" variant="outline">Draft has unsaved changes</Badge>
-              </div>
-            </div>
-
-          <div class="mt-5 grid gap-4 sm:grid-cols-4">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Layout Mode
-              </label>
-              <select v-model="layoutForm.mode" :class="inputClass">
-                <option value="columns">columns</option>
-                <option value="canvas_percent">canvas_percent</option>
-              </select>
-            </div>
-            <div v-if="layoutForm.mode === 'columns'">
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Max Columns
-              </label>
-              <input v-model="layoutForm.maxColumns" :class="inputClass" />
-            </div>
-            <div v-if="layoutForm.mode === 'columns'">
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Min Column Width (px)
-              </label>
-              <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
-            </div>
-            <div class="flex items-end">
-              <Button size="sm" :disabled="busy" @click="saveScreenLayout">Apply Layout</Button>
-            </div>
+        <div class="mt-5 grid gap-4 sm:grid-cols-4">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Layout Mode
+            </label>
+            <select v-model="layoutForm.mode" :class="inputClass">
+              <option value="columns">columns</option>
+              <option value="canvas_percent">canvas_percent</option>
+            </select>
           </div>
-          <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-3 text-xs text-muted-foreground">
-            Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
-          </p>
+          <div v-if="layoutForm.mode === 'columns'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Max Columns
+            </label>
+            <input v-model="layoutForm.maxColumns" :class="inputClass" />
+          </div>
+          <div v-if="layoutForm.mode === 'columns'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Min Column Width (px)
+            </label>
+            <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
+          </div>
+          <div class="flex items-end">
+            <Button size="sm" :disabled="busy" @click="saveScreenLayout">Apply Layout</Button>
+          </div>
         </div>
+
+        <p class="mt-4 text-xs text-muted-foreground">
+          Edit directly in the preview. Use right click to edit or remove widgets.
+        </p>
+        <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-2 text-xs text-muted-foreground">
+          Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
+        </p>
+
+        <div class="mt-6">
 
         <div v-if="!isCanvasMode" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
           <div
@@ -1370,7 +1318,7 @@ onBeforeUnmount(() => {
 
           <div
             v-if="(showcase.currentScreen()?.widgets || []).length === 0"
-            class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+            class="rounded-2xl border bg-background/70 p-6 text-card-foreground shadow-sm"
             :style="{ gridColumn: '1 / -1' }"
           >
             <p class="text-sm text-muted-foreground">No widgets yet.</p>
@@ -1380,7 +1328,7 @@ onBeforeUnmount(() => {
         <div
           v-else
           ref="widgetsGridRef"
-          class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-card/90 p-2 text-card-foreground shadow-sm"
+          class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-background/70 p-2 text-card-foreground shadow-sm"
         >
           <div ref="canvasSurfaceRef" class="relative" :style="canvasSurfaceStyle">
             <div
