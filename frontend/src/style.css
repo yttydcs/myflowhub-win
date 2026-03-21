@@ -25,6 +25,20 @@
   --input: 27 20% 85%;
   --ring: 205 70% 32%;
   --radius: 0.85rem;
+  --app-shell-sidebar-px: 1.25rem;
+  --app-shell-sidebar-pt: 2rem;
+  --app-shell-sidebar-pb: 1.5rem;
+  --app-shell-header-px: 1.5rem;
+  --app-shell-header-py: 1rem;
+  --app-shell-main-px: 1.5rem;
+  --app-shell-main-py: 2rem;
+  --app-shell-window-px: 1.5rem;
+  --app-shell-window-py: 1.5rem;
+  --app-shell-section-gap: 1.5rem;
+  --app-nav-item-px: 0.75rem;
+  --app-nav-item-py: 0.625rem;
+  --app-panel-pad: 1.5rem;
+  --app-panel-gap: 1.5rem;
 }
 
 .dark {
@@ -90,4 +104,35 @@
 
 .animate-float-slow {
   animation: float 18s ease-in-out infinite;
+}
+
+:root[data-ui-density="compact"] {
+  --app-shell-sidebar-px: 1rem;
+  --app-shell-sidebar-pt: 1.5rem;
+  --app-shell-sidebar-pb: 1rem;
+  --app-shell-header-px: 1rem;
+  --app-shell-header-py: 0.85rem;
+  --app-shell-main-px: 1rem;
+  --app-shell-main-py: 1.25rem;
+  --app-shell-window-px: 1rem;
+  --app-shell-window-py: 1rem;
+  --app-shell-section-gap: 1rem;
+  --app-nav-item-px: 0.625rem;
+  --app-nav-item-py: 0.5rem;
+  --app-panel-pad: 1rem;
+  --app-panel-gap: 1rem;
+}
+
+:root[data-ui-motion="reduce"] *,
+:root[data-ui-motion="reduce"] *::before,
+:root[data-ui-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+:root[data-ui-motion="reduce"] .animate-float,
+:root[data-ui-motion="reduce"] .animate-float-slow {
+  animation: none !important;
 }

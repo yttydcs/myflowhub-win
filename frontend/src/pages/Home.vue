@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useAppSettingsStore } from "@/stores/appSettings"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -32,11 +33,12 @@ type HomeState = {
 }
 
 const profileStore = useProfileStore()
+const appSettings = useAppSettingsStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 
-const defaultAddr = "127.0.0.1:9000"
-const addr = ref(defaultAddr)
+const hardcodedDefaultAddr = "127.0.0.1:9000"
+const addr = ref(hardcodedDefaultAddr)
 const home = reactive<HomeState>({
   deviceId: "",
   autoConnect: false,
@@ -55,6 +57,13 @@ const statusTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
 const loginLabel = computed(() => (home.nodeId ? "Login" : "Register"))
+const panelStyle = { padding: "var(--app-panel-pad)" }
+const settingsAutoConnectLabel = computed(() =>
+  appSettings.state.settings.autoConnect ? "Auto-connect enabled by default" : "Auto-connect disabled by default"
+)
+const settingsAutoLoginLabel = computed(() =>
+  appSettings.state.settings.autoLogin ? "Auto-login enabled by default" : "Auto-login disabled by default"
+)
 
 const formatId = (value: number) => (value > 0 ? String(value) : "-")
 
@@ -125,8 +134,32 @@ const refreshConnectionSnapshot = async () => {
   }
 }
 
+const applySettingsDefaults = () => {
+  const settings = appSettings.state.settings
+  addr.value = settings.defaultAddr || hardcodedDefaultAddr
+  if (!home.deviceId) {
+    home.deviceId = settings.defaultDeviceId
+    sessionStore.auth.deviceId = home.deviceId
+  }
+}
+
+const loadPageState = async () => {
+  await loadHomeState()
+  try {
+    await appSettings.load()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load app settings.")
+  }
+  applySettingsDefaults()
+  await refreshConnectionSnapshot()
+  if (appSettings.state.settings.autoConnect && !sessionStore.connected && !connecting.value) {
+    void connect()
+  }
+}
+
 const connect = async () => {
-  const target = addr.value.trim() || defaultAddr
+  const target = addr.value.trim() || appSettings.state.settings.defaultAddr || hardcodedDefaultAddr
   if (connecting.value) return
   connecting.value = true
   try {
@@ -229,29 +262,9 @@ const clearAuth = async () => {
 }
 
 watch(
-  () => home.autoConnect,
-  (value) => {
-    void persistHomeState({ autoConnect: value })
-    if (value && !sessionStore.connected && !connecting.value) {
-      void connect()
-    }
-  }
-)
-
-watch(
-  () => home.autoLogin,
-  (value) => {
-    void persistHomeState({ autoLogin: value })
-    if (value && sessionStore.connected && !authBusy.value) {
-      void loginOrRegister()
-    }
-  }
-)
-
-watch(
-  () => sessionStore.connected,
-  (connected) => {
-    if (connected && home.autoLogin && !authBusy.value) {
+  () => [sessionStore.connected, appSettings.state.settings.autoLogin],
+  ([connected, autoLogin]) => {
+    if (connected && autoLogin && !authBusy.value) {
       void loginOrRegister()
     }
     if (!connected) {
@@ -270,20 +283,12 @@ watch(
 watch(
   () => profileStore.state.current,
   async () => {
-    await loadHomeState()
-    await refreshConnectionSnapshot()
-    if (home.autoConnect && !sessionStore.connected && !connecting.value) {
-      void connect()
-    }
+    await loadPageState()
   }
 )
 
 onMounted(async () => {
-  await loadHomeState()
-  await refreshConnectionSnapshot()
-  if (home.autoConnect && !sessionStore.connected && !connecting.value) {
-    void connect()
-  }
+  await loadPageState()
 })
 </script>
 
@@ -291,7 +296,7 @@ onMounted(async () => {
   <section class="grid gap-6">
     <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
       <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
@@ -329,21 +334,20 @@ onMounted(async () => {
           </div>
 
           <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <label class="flex items-center gap-2">
-              <input
-                v-model="home.autoConnect"
-                type="checkbox"
-                class="h-4 w-4 rounded border border-input accent-primary"
-              />
-              Auto-connect on launch
-            </label>
+            <span class="rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-semibold">
+              {{ settingsAutoConnectLabel }}
+            </span>
+            <span class="text-xs">
+              Default startup behavior is managed in
+              <a href="#/settings" class="font-semibold text-primary hover:underline">Settings</a>.
+            </span>
             <span v-if="sessionStore.lastError" class="text-rose-600">
               {{ sessionStore.lastError }}
             </span>
           </div>
         </div>
 
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
@@ -368,7 +372,6 @@ onMounted(async () => {
                 v-model="home.deviceId"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 placeholder="device-001"
-                @blur="persistHomeState({ deviceId: home.deviceId })"
               />
             </div>
             <div class="flex flex-col justify-end gap-2">
@@ -380,14 +383,12 @@ onMounted(async () => {
           </div>
 
           <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <label class="flex items-center gap-2">
-              <input
-                v-model="home.autoLogin"
-                type="checkbox"
-                class="h-4 w-4 rounded border border-input accent-primary"
-              />
-              Auto-login after connect
-            </label>
+            <span class="rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-semibold">
+              {{ settingsAutoLoginLabel }}
+            </span>
+            <span class="text-xs">
+              Default device ID: <span class="font-semibold text-foreground">{{ appSettings.state.settings.defaultDeviceId || "-" }}</span>
+            </span>
             <span v-if="sessionStore.auth.lastAuthMessage" class="text-xs">
               {{ sessionStore.auth.lastAuthMessage }}
             </span>
@@ -396,7 +397,7 @@ onMounted(async () => {
       </div>
 
       <div class="space-y-6">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             Identity Snapshot
           </p>
@@ -417,7 +418,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             Session Notes
           </p>

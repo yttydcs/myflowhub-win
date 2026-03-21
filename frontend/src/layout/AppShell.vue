@@ -11,6 +11,7 @@ import {
   ListChecks,
   Network,
   Rss,
+  Settings2,
   Server,
   Share2,
   ShieldCheck
@@ -19,6 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import ToastHost from "@/components/ToastHost.vue"
+import { useAppSettingsStore } from "@/stores/appSettings"
 import { useFileStore } from "@/stores/file"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -36,6 +38,7 @@ type NavItem = {
 const route = useRoute()
 
 const fileStore = useFileStore()
+const appSettings = useAppSettingsStore()
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
@@ -46,13 +49,34 @@ const isFullBleedWindow = computed(() => route.meta.windowMode === "full-bleed")
 const windowMainClass = computed(() =>
   isFullBleedWindow.value
     ? "relative h-screen overflow-hidden p-0"
-    : "relative min-h-screen overflow-y-auto px-6 py-6"
+    : "relative min-h-screen overflow-y-auto"
 )
 const windowViewClass = computed(() =>
   isFullBleedWindow.value
     ? "h-full animate-in fade-in slide-in-from-bottom-2 duration-500"
     : "animate-in fade-in slide-in-from-bottom-2 duration-500"
 )
+const windowMainStyle = computed(() =>
+  isFullBleedWindow.value
+    ? undefined
+    : { padding: "var(--app-shell-window-py) var(--app-shell-window-px)" }
+)
+const sidebarStyle = {
+  paddingLeft: "var(--app-shell-sidebar-px)",
+  paddingRight: "var(--app-shell-sidebar-px)",
+  paddingTop: "var(--app-shell-sidebar-pt)",
+  paddingBottom: "var(--app-shell-sidebar-pb)"
+}
+const shellMainStyle = {
+  padding: "var(--app-shell-main-py) var(--app-shell-main-px)",
+  gap: "var(--app-shell-section-gap)"
+}
+const headerStyle = {
+  padding: "var(--app-shell-header-py) var(--app-shell-header-px)"
+}
+const navItemStyle = {
+  padding: "var(--app-nav-item-py) var(--app-nav-item-px)"
+}
 
 let varpoolStorageEpoch = 0
 const loadVarPoolStorage = async () => {
@@ -90,6 +114,21 @@ const restoreVarPoolSubs = async () => {
     console.warn(err)
   }
 }
+
+watch(
+  () => profileStore.state.current,
+  () => {
+    void (async () => {
+      try {
+        await appSettings.load()
+      } catch (err) {
+        console.warn(err)
+        toast.errorOf(err, "Failed to load app settings.")
+      }
+    })()
+  },
+  { immediate: true }
+)
 
 watch(
   () => profileStore.state.current,
@@ -156,6 +195,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/local-hub",
         icon: Server,
         tone: "bg-emerald-500/15 text-emerald-700"
+      },
+      {
+        label: "Settings",
+        description: "Defaults, UI, and about",
+        to: "/settings",
+        icon: Settings2,
+        tone: "bg-slate-500/15 text-slate-700"
       }
     ]
   },
@@ -299,7 +345,7 @@ const selectProfile = async (name: string) => {
           />
         </div>
 
-        <main :class="windowMainClass">
+        <main :class="windowMainClass" :style="windowMainStyle">
           <RouterView v-slot="{ Component }">
             <component
               :is="Component"
@@ -375,6 +421,7 @@ const selectProfile = async (name: string) => {
       <div class="relative grid h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside
           class="hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-5 pb-6 pt-8 shadow-sm backdrop-blur lg:flex"
+          :style="sidebarStyle"
         >
           <div class="flex items-center gap-3">
             <div
@@ -418,6 +465,7 @@ const selectProfile = async (name: string) => {
                         ? 'border-primary/40 bg-primary/10 text-foreground shadow-sm'
                         : 'border-transparent hover:border-border/60 hover:bg-muted/70'
                     ]"
+                    :style="navItemStyle"
                   >
                     <div
                       :class="[
@@ -439,7 +487,7 @@ const selectProfile = async (name: string) => {
         </aside>
 
         <div class="flex h-screen flex-col overflow-hidden">
-          <header class="flex-none border-b border-border/60 bg-background/85 px-6 py-4 backdrop-blur">
+          <header class="flex-none border-b border-border/60 bg-background/85 backdrop-blur" :style="headerStyle">
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-3">
                 <div class="flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs font-semibold text-foreground shadow-sm">
@@ -516,7 +564,7 @@ const selectProfile = async (name: string) => {
 
           </header>
 
-          <main class="flex-1 space-y-6 overflow-y-auto px-6 py-8">
+          <main class="flex flex-1 flex-col overflow-y-auto" :style="shellMainStyle">
             <section v-if="showModuleCard" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
               <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
