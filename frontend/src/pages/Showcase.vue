@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
-import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss } from "lucide-vue-next"
+import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Settings2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -60,14 +60,6 @@ const screenMissing = computed(
 )
 const configSnapshot = () => JSON.stringify(showcase.state.config)
 const dirty = computed(() => Boolean(showcase.state.loaded) && configSnapshot() !== lastSavedSnapshot.value)
-const screenNameDraft = computed({
-  get: () => showcase.currentScreen()?.name ?? "",
-  set: (value: string) => {
-    const screen = showcase.currentScreen()
-    if (!screen) return
-    screen.name = value
-  }
-})
 
 const formatTimestamp = (value: string) => {
   const raw = String(value ?? "").trim()
@@ -665,6 +657,7 @@ const layoutForm = reactive({
   maxColumns: "3",
   minColumnWidth: "360"
 })
+const layoutDialogOpen = ref(false)
 
 const syncLayoutFormFromScreen = () => {
   const screen = showcase.currentScreen()
@@ -672,6 +665,28 @@ const syncLayoutFormFromScreen = () => {
   layoutForm.mode = screen.layout?.mode === "canvas_percent" ? "canvas_percent" : "columns"
   layoutForm.maxColumns = String(screen.layout?.columns?.maxColumns ?? 3)
   layoutForm.minColumnWidth = String(screen.layout?.columns?.minColumnWidth ?? 360)
+}
+
+const currentLayoutLabel = computed(() => (isCanvasMode.value ? "Canvas" : "Columns"))
+const currentLayoutSummary = computed(() => {
+  const screen = showcase.currentScreen()
+  if (!screen) return "-"
+  if (screen.layout.mode === "canvas_percent") {
+    return "Freeform canvas"
+  }
+  const maxColumns = Number(screen.layout?.columns?.maxColumns ?? 3)
+  const minColumnWidth = Number(screen.layout?.columns?.minColumnWidth ?? 360)
+  return `${maxColumns} cols · min ${minColumnWidth}px`
+})
+
+const openLayoutDialog = () => {
+  syncLayoutFormFromScreen()
+  layoutDialogOpen.value = true
+}
+
+const closeLayoutDialog = () => {
+  syncLayoutFormFromScreen()
+  layoutDialogOpen.value = false
 }
 
 const minCanvasWidgetWidthPx = 80
@@ -721,8 +736,8 @@ const initScreenCanvasLayout = (screen: any) => {
 
 const saveScreenLayout = async () => {
   const screen = resolveEditorScreen()
-  if (!screen) return
-  if (busy.value) return
+  if (!screen) return false
+  if (busy.value) return false
   busy.value = true
   try {
     if (layoutForm.mode === "columns") {
@@ -756,12 +771,21 @@ const saveScreenLayout = async () => {
     }
 
     toast.success("Layout updated in draft.")
+    return true
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to update layout draft.")
     syncLayoutFormFromScreen()
+    return false
   } finally {
     busy.value = false
+  }
+}
+
+const applyLayoutDialog = async () => {
+  const updated = await saveScreenLayout()
+  if (updated) {
+    layoutDialogOpen.value = false
   }
 }
 
@@ -1146,27 +1170,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="grid gap-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Editor</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h3>
+  <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
+    <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Editor</p>
+          <h1 class="mt-1 text-xl font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h1>
+          <div v-if="!screenMissing" class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline">{{ currentLayoutLabel }}</Badge>
+            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
+            <span>{{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</span>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
+          <Badge v-if="dirty" variant="outline">Unsaved</Badge>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
-        <Badge v-if="dirty" variant="outline">Unsaved</Badge>
-      </div>
-    </div>
 
-    <div v-if="screenMissing" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-      <h4 class="text-lg font-semibold">Screen not found</h4>
-      <p class="mt-2 text-sm text-muted-foreground">
-        The requested screen does not exist in the current profile. Return to Showcase Center and pick another screen.
-      </p>
-    </div>
-
-    <template v-else>
-      <div class="flex flex-wrap items-center gap-2">
+      <div v-if="!screenMissing" class="mt-4 flex flex-wrap items-center gap-2">
         <Tooltip content="Refresh Vars" side="bottom">
           <Button size="icon" :disabled="busy" @click="refreshVars">
             <RefreshCw class="h-4 w-4" aria-hidden="true" />
@@ -1175,6 +1197,10 @@ onBeforeUnmount(() => {
         </Tooltip>
         <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
         <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
+        <Button variant="outline" :disabled="busy" @click="openLayoutDialog">
+          <Settings2 class="mr-2 h-4 w-4" />
+          Layout
+        </Button>
         <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
           <ExternalLink class="mr-2 h-4 w-4" />
           Open Viewer
@@ -1193,159 +1219,64 @@ onBeforeUnmount(() => {
           </Button>
         </Tooltip>
       </div>
+    </header>
 
-      <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+    <div class="flex-1 min-h-0 p-4">
+      <div
+        v-if="screenMissing"
+        class="flex h-full min-h-0 items-center justify-center rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+      >
+        <div>
+          <h4 class="text-lg font-semibold">Screen not found</h4>
+          <p class="mt-2 text-sm text-muted-foreground">
+            The requested screen does not exist in the current profile. Return to Showcase Center and pick another screen.
+          </p>
+        </div>
+      </div>
+
+      <div v-else class="flex h-full min-h-0 flex-col rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Screen Name</label>
-            <input v-model="screenNameDraft" :class="inputClass" />
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Editing Surface</p>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Edit directly in the preview. Use right click to edit or remove widgets.
+            </p>
+            <p v-if="isCanvasMode" class="mt-1 text-xs text-muted-foreground">
+              Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
+            </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
-            <span>Saved {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</span>
-          </div>
-        </div>
-
-        <div class="mt-5 grid gap-4 sm:grid-cols-4">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Layout Mode
-            </label>
-            <select v-model="layoutForm.mode" :class="inputClass">
-              <option value="columns">columns</option>
-              <option value="canvas_percent">canvas_percent</option>
-            </select>
-          </div>
-          <div v-if="layoutForm.mode === 'columns'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Max Columns
-            </label>
-            <input v-model="layoutForm.maxColumns" :class="inputClass" />
-          </div>
-          <div v-if="layoutForm.mode === 'columns'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Min Column Width (px)
-            </label>
-            <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
-          </div>
-          <div class="flex items-end">
-            <Button size="sm" :disabled="busy" @click="saveScreenLayout">Apply Layout</Button>
+          <div class="text-right text-xs text-muted-foreground">
+            <p class="font-semibold uppercase tracking-[0.2em] text-foreground">Layout</p>
+            <p class="mt-1">{{ currentLayoutSummary }}</p>
           </div>
         </div>
 
-        <p class="mt-4 text-xs text-muted-foreground">
-          Edit directly in the preview. Use right click to edit or remove widgets.
-        </p>
-        <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-2 text-xs text-muted-foreground">
-          Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
-        </p>
-
-        <div class="mt-6">
-
-        <div v-if="!isCanvasMode" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
+        <div class="mt-4 flex-1 min-h-0">
           <div
-            v-for="widget in showcase.currentScreen()?.widgets || []"
-            :key="widget.id"
-            class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
-            :class="dragState.overId === widget.id ? 'ring-2 ring-primary/40' : ''"
-            :style="widgetCardStyle(widget)"
-            @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
-            @dragover.prevent="onDragOver(widget.id)"
-            @drop.prevent="onDrop(widget.id)"
+            v-if="!isCanvasMode"
+            ref="widgetsGridRef"
+            class="grid h-full auto-rows-max content-start overflow-hidden"
+            :style="widgetsGridStyle"
           >
-            <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-              <div class="flex min-w-0 items-center gap-3">
-                <button
-                  type="button"
-                  class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                  draggable="true"
-                  title="Drag to reorder"
-                  @dragstart="onDragStart(widget.id, $event)"
-                  @dragend="onDragEnd"
-                >
-                  <GripVertical class="h-4 w-4" />
-                </button>
-
-                <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-                  {{ safeTitle(widget) }}
-                </h5>
-              </div>
-
-              <div class="min-w-0">
-                <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-                  <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                    Send
-                  </Button>
-                </div>
-
-                <div v-else-if="widget.kind === 'var' && widget.var">
-                  <div
-                    v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                    class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                    :title="displayValueText(widget)"
-                  >
-                    {{ displayValueText(widget) }}
-                  </div>
-
-                  <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                    <input
-                      type="checkbox"
-                      class="h-4 w-4 rounded"
-                      :checked="isVarOn(widget)"
-                      :disabled="busy || !sessionStore.connected || !selfNodeId"
-                      @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                    />
-                  </div>
-
-                  <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                    <input
-                      class="min-w-[min(180px,100%)] flex-1"
-                      type="range"
-                      :min="widget.var.slider.min"
-                      :max="widget.var.slider.max"
-                      :step="widget.var.slider.step"
-                      :value="showcase.sliderValue(widget)"
-                      :disabled="busy || !sessionStore.connected || !selfNodeId"
-                      @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                      @change="showcase.sliderCommit(widget)"
-                    />
-                    <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-if="(showcase.currentScreen()?.widgets || []).length === 0"
-            class="rounded-2xl border bg-background/70 p-6 text-card-foreground shadow-sm"
-            :style="{ gridColumn: '1 / -1' }"
-          >
-            <p class="text-sm text-muted-foreground">No widgets yet.</p>
-          </div>
-        </div>
-
-        <div
-          v-else
-          ref="widgetsGridRef"
-          class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-background/70 p-2 text-card-foreground shadow-sm"
-        >
-          <div ref="canvasSurfaceRef" class="relative" :style="canvasSurfaceStyle">
             <div
               v-for="widget in showcase.currentScreen()?.widgets || []"
               :key="widget.id"
-              class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
-              :class="canvasEdit.active && canvasEdit.widgetId === widget.id ? 'ring-2 ring-primary/40' : ''"
-              :style="canvasWidgetStyle(widget)"
+              class="overflow-hidden rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm"
+              :class="dragState.overId === widget.id ? 'ring-2 ring-primary/40' : ''"
+              :style="widgetCardStyle(widget)"
               @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
+              @dragover.prevent="onDragOver(widget.id)"
+              @drop.prevent="onDrop(widget.id)"
             >
-              <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+              <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
                 <div class="flex min-w-0 items-center gap-3">
                   <button
                     type="button"
-                    class="inline-flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                    title="Drag to move"
-                    @pointerdown.stop.prevent="startCanvasEdit(widget, 'move', $event)"
+                    class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                    draggable="true"
+                    title="Drag to reorder"
+                    @dragstart="onDragStart(widget.id, $event)"
+                    @dragend="onDragEnd"
                   >
                     <GripVertical class="h-4 w-4" />
                   </button>
@@ -1398,26 +1329,110 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-
-              <button
-                type="button"
-                class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
-                title="Resize"
-                @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
-              />
             </div>
 
             <div
               v-if="(showcase.currentScreen()?.widgets || []).length === 0"
-              class="absolute inset-0 flex items-center justify-center"
+              class="rounded-2xl border bg-background/70 p-6 text-card-foreground shadow-sm"
+              :style="{ gridColumn: '1 / -1' }"
             >
               <p class="text-sm text-muted-foreground">No widgets yet.</p>
             </div>
           </div>
-        </div>
+
+          <div
+            v-else
+            ref="widgetsGridRef"
+            class="relative flex h-full min-h-[320px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-background/70 p-2 text-card-foreground shadow-sm"
+          >
+            <div ref="canvasSurfaceRef" class="relative" :style="canvasSurfaceStyle">
+              <div
+                v-for="widget in showcase.currentScreen()?.widgets || []"
+                :key="widget.id"
+                class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+                :class="canvasEdit.active && canvasEdit.widgetId === widget.id ? 'ring-2 ring-primary/40' : ''"
+                :style="canvasWidgetStyle(widget)"
+                @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
+              >
+                <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+                  <div class="flex min-w-0 items-center gap-3">
+                    <button
+                      type="button"
+                      class="inline-flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                      title="Drag to move"
+                      @pointerdown.stop.prevent="startCanvasEdit(widget, 'move', $event)"
+                    >
+                      <GripVertical class="h-4 w-4" />
+                    </button>
+
+                    <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
+                      {{ safeTitle(widget) }}
+                    </h5>
+                  </div>
+
+                  <div class="min-w-0">
+                    <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
+                      <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
+                        Send
+                      </Button>
+                    </div>
+
+                    <div v-else-if="widget.kind === 'var' && widget.var">
+                      <div
+                        v-if="showcase.resolveEffectiveMode(widget) === 'display'"
+                        class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
+                        :title="displayValueText(widget)"
+                      >
+                        {{ displayValueText(widget) }}
+                      </div>
+
+                      <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4 rounded"
+                          :checked="isVarOn(widget)"
+                          :disabled="busy || !sessionStore.connected || !selfNodeId"
+                          @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
+                        />
+                      </div>
+
+                      <div v-else class="flex flex-wrap items-center justify-end gap-3">
+                        <input
+                          class="min-w-[min(180px,100%)] flex-1"
+                          type="range"
+                          :min="widget.var.slider.min"
+                          :max="widget.var.slider.max"
+                          :step="widget.var.slider.step"
+                          :value="showcase.sliderValue(widget)"
+                          :disabled="busy || !sessionStore.connected || !selfNodeId"
+                          @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
+                          @change="showcase.sliderCommit(widget)"
+                        />
+                        <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
+                  title="Resize"
+                  @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
+                />
+              </div>
+
+              <div
+                v-if="(showcase.currentScreen()?.widgets || []).length === 0"
+                class="absolute inset-0 flex items-center justify-center"
+              >
+                <p class="text-sm text-muted-foreground">No widgets yet.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </template>
+    </div>
 
     <Teleport to="body">
       <div
@@ -1481,6 +1496,52 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </Teleport>
+
+    <Overlay :open="layoutDialogOpen" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeLayoutDialog">
+      <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Layout</p>
+            <h3 class="mt-2 text-lg font-semibold">Edit Layout</h3>
+            <p class="mt-2 text-sm text-muted-foreground">
+              Keep layout settings out of the main editor surface. Apply changes only when you are ready.
+            </p>
+          </div>
+          <Badge variant="secondary">{{ currentLayoutLabel }}</Badge>
+        </div>
+
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Layout Mode</label>
+            <select v-model="layoutForm.mode" :class="inputClass">
+              <option value="columns">columns</option>
+              <option value="canvas_percent">canvas_percent</option>
+            </select>
+          </div>
+
+          <div v-if="layoutForm.mode === 'columns'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Max Columns</label>
+            <input v-model="layoutForm.maxColumns" :class="inputClass" />
+          </div>
+
+          <div v-if="layoutForm.mode === 'columns'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Min Column Width (px)
+            </label>
+            <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
+          </div>
+        </div>
+
+        <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-4 text-xs text-muted-foreground">
+          Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.
+        </p>
+
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" :disabled="busy" @click="closeLayoutDialog">Cancel</Button>
+          <Button :disabled="busy" @click="applyLayoutDialog">Apply Layout</Button>
+        </div>
+      </div>
+    </Overlay>
 
     <Overlay :open="widgetDialog.open" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeWidgetDialog">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
