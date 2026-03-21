@@ -487,7 +487,7 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="relative flex-1 min-h-0 overflow-hidden">
-      <div class="flex h-full min-h-0 flex-col p-4">
+      <div class="flex h-full min-h-0 flex-col p-4 transition-[padding] duration-200" :class="nodeDetailOpen ? 'pr-[440px]' : ''">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div class="text-xs text-muted-foreground">
             Drag nodes to reposition. Drag from node handles to connect. Click a node to open the right-side detail drawer.
@@ -513,17 +513,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <Overlay
-        :open="nodeDetailOpen"
-        overlayClass="bg-slate-950/45 p-0 items-stretch justify-end"
-        zIndexClass="z-30"
-        closeOnBackdrop
-        @close="closeNodeDetail"
-      >
+      <div v-if="nodeDetailOpen" class="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full justify-end p-0">
         <aside
           v-if="selectedNode"
-          class="h-full w-full max-w-[420px] border-l border-border/70 bg-card shadow-2xl"
-          @click.stop
+          class="pointer-events-auto h-full w-full max-w-[420px] border-l border-border/70 bg-card shadow-2xl"
         >
           <div class="flex h-full flex-col">
             <div class="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
@@ -645,7 +638,7 @@ onUnmounted(() => {
             </div>
           </div>
         </aside>
-      </Overlay>
+      </div>
     </div>
 
     <Overlay
