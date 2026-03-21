@@ -289,6 +289,19 @@ const ensureIdentity = () => {
   return { sourceID: state.selfNodeId, hubID: state.hubId }
 }
 
+const normalizeCallTarget = (providerNode: number) => {
+  const normalizedProvider = Number.isFinite(providerNode) && providerNode > 0 ? Math.trunc(providerNode) : 0
+  if (normalizedProvider <= 0) {
+    return 0
+  }
+  try {
+    const executorNode = resolveTargetNode()
+    return normalizedProvider === executorNode ? 0 : normalizedProvider
+  } catch {
+    return normalizedProvider
+  }
+}
+
 const mapSummary = (input: any): FlowSummary => ({
   flowId: String(input?.flow_id ?? input?.flowId ?? ""),
   name: String(input?.name ?? ""),
@@ -976,9 +989,13 @@ const applyCallCapability = (key: string) => {
     throw new Error("Capability not found in current list.")
   }
   selected.method = route.method
-  selected.target = route.providerNode
+  selected.target = normalizeCallTarget(route.providerNode)
+  if (!String(selected.args ?? "").trim()) {
+    selected.args = "{}"
+  }
   commitHistory()
-  state.message = `Capability applied: ${route.method} @ node ${route.providerNode}.`
+  const targetLabel = selected.target > 0 ? `node ${selected.target}` : "current executor"
+  state.message = `Capability applied: ${route.method} @ ${targetLabel}.`
 }
 
 const handleSetResp = (data: any) => {
@@ -1059,6 +1076,7 @@ export const useFlowStore = () => {
     loadGraphDraft,
     exportPayload,
     exportGraphDraft,
+    normalizeCallTarget,
     queryExecCapabilities,
     applyCallCapability,
     applyExecCapability: applyCallCapability,
