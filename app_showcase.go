@@ -31,10 +31,11 @@ type ShowcaseConfig struct {
 }
 
 type ShowcaseScreen struct {
-	ID      string               `json:"id"`
-	Name    string               `json:"name"`
-	Layout  ShowcaseScreenLayout `json:"layout,omitempty"`
-	Widgets []ShowcaseWidget     `json:"widgets,omitempty"`
+	ID        string               `json:"id"`
+	Name      string               `json:"name"`
+	UpdatedAt string               `json:"updatedAt,omitempty"`
+	Layout    ShowcaseScreenLayout `json:"layout,omitempty"`
+	Widgets   []ShowcaseWidget     `json:"widgets,omitempty"`
 }
 
 type ShowcaseScreenLayout struct {
@@ -193,6 +194,7 @@ func normalizeShowcaseScreen(screen ShowcaseScreen) ShowcaseScreen {
 	if screen.Name == "" {
 		screen.Name = "Screen"
 	}
+	screen.UpdatedAt = normalizeShowcaseUpdatedAt(screen.UpdatedAt)
 
 	screen.Layout = normalizeShowcaseScreenLayout(screen.Layout)
 
@@ -215,6 +217,22 @@ func normalizeShowcaseScreen(screen ShowcaseScreen) ShowcaseScreen {
 	}
 	screen.Widgets = widgets
 	return screen
+}
+
+func normalizeShowcaseUpdatedAt(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Now().UTC().Format(time.RFC3339Nano)
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, value)
+	}
+	if err != nil {
+		return time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	return parsed.UTC().Format(time.RFC3339Nano)
 }
 
 func normalizeShowcaseWidget(widget ShowcaseWidget) (ShowcaseWidget, bool) {

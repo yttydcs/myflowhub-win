@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
-import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-vue-next"
+import { useRoute } from "vue-router"
+import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -23,8 +24,10 @@ const sessionStore = useSessionStore()
 const varpool = useVarPoolStore()
 const showcase = useShowcaseStore()
 const toast = useToastStore()
+const route = useRoute()
 
 const busy = ref(false)
+const lastSavedSnapshot = ref("")
 
 const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 const selfNodeId = computed(() => sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0)
@@ -51,11 +54,66 @@ const loadHomeDefaults = async () => {
   showcase.setIdentity(selfNodeId.value, hubId.value)
 }
 
+const requestedScreenId = computed(() => String(route.query.screenId ?? "").trim())
+const screenMissing = computed(
+  () => Boolean(showcase.state.loaded) && Boolean(requestedScreenId.value) && !showcase.screenById(requestedScreenId.value)
+)
+const configSnapshot = () => JSON.stringify(showcase.state.config)
+const dirty = computed(() => Boolean(showcase.state.loaded) && configSnapshot() !== lastSavedSnapshot.value)
+const screenNameDraft = computed({
+  get: () => showcase.currentScreen()?.name ?? "",
+  set: (value: string) => {
+    const screen = showcase.currentScreen()
+    if (!screen) return
+    screen.name = value
+  }
+})
+
+const formatTimestamp = (value: string) => {
+  const raw = String(value ?? "").trim()
+  if (!raw) return "-"
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) return raw
+  return new Date(parsed).toLocaleString()
+}
+
+const markSavedSnapshot = () => {
+  lastSavedSnapshot.value = configSnapshot()
+}
+
+const resolveEditorScreen = () => {
+  const requested = requestedScreenId.value
+  if (requested) {
+    const screen = showcase.screenById(requested)
+    if (!screen) return null
+    showcase.state.config.currentScreenId = screen.id
+    return screen
+  }
+  return showcase.currentScreen()
+}
+
+const syncDraftSubscriptions = async () => {
+  await showcase.leave()
+  await showcase.enterScreen(resolveEditorScreen())
+}
+
+const loadEditorDraft = async (options?: { resetSnapshot?: boolean }) => {
+  await loadHomeDefaults()
+  await showcase.load()
+  const screen = resolveEditorScreen()
+  syncLayoutFormFromScreen()
+  await syncDraftSubscriptions()
+  if (options?.resetSnapshot !== false) {
+    markSavedSnapshot()
+  }
+  return screen
+}
+
 const refreshVars = async () => {
   if (busy.value) return
   busy.value = true
   try {
-    await showcase.enter()
+    await syncDraftSubscriptions()
     toast.success("Refreshed.")
   } catch (err) {
     console.warn(err)
@@ -65,55 +123,56 @@ const refreshVars = async () => {
   }
 }
 
-const promptCreateScreen = async () => {
-  const name = window.prompt("New screen name")
-  if (!name) return
+const saveDraft = async () => {
+  const screen = resolveEditorScreen()
+  if (!screen) {
+    toast.error("Screen not found.")
+    return
+  }
+  const name = screen.name.trim()
+  if (!name) {
+    toast.error("Screen name is required.")
+    return
+  }
   if (busy.value) return
   busy.value = true
   try {
-    await showcase.createScreen(name)
-    toast.success("Screen created.")
+    screen.name = name
+    await showcase.saveScreenDraft(screen.id, screen)
+    resolveEditorScreen()
+    syncLayoutFormFromScreen()
+    markSavedSnapshot()
+    await syncDraftSubscriptions()
+    toast.success("Saved.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to create screen.")
+    toast.errorOf(err, "Failed to save screen.")
   } finally {
     busy.value = false
   }
 }
 
-const promptRenameScreen = async () => {
-  const screen = showcase.currentScreen()
-  if (!screen) return
-  const name = window.prompt("Rename screen", screen.name)
-  if (!name) return
+const revertDraft = async () => {
+  if (dirty.value && !window.confirm("Discard unsaved changes and reload the saved screen?")) {
+    return
+  }
   if (busy.value) return
   busy.value = true
   try {
-    await showcase.renameScreen(screen.id, name)
-    toast.success("Screen renamed.")
+    await loadEditorDraft()
+    toast.success("Reverted.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to rename screen.")
+    toast.errorOf(err, "Failed to reload saved screen.")
   } finally {
     busy.value = false
   }
 }
 
-const deleteCurrentScreen = async () => {
-  const screen = showcase.currentScreen()
-  if (!screen) return
-  if (!window.confirm(`Delete screen '${screen.name}'?`)) return
-  if (busy.value) return
-  busy.value = true
-  try {
-    await showcase.deleteScreen(screen.id)
-    toast.success("Screen deleted.")
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to delete screen.")
-  } finally {
-    busy.value = false
-  }
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ""
 }
 
 const widgetDialog = reactive({
@@ -332,6 +391,20 @@ const parseFloatStrict = (raw: string, field: string) => {
   return parsed
 }
 
+const makeDraftID = (prefix: string) => {
+  const uuid = (globalThis as any)?.crypto?.randomUUID?.()
+  if (uuid) return `${prefix}-${String(uuid)}`
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const requireCurrentScreen = () => {
+  const screen = resolveEditorScreen()
+  if (!screen) {
+    throw new Error("Screen not found.")
+  }
+  return screen
+}
+
 const resolveVarTargetID = (fallback?: number) => {
   const parsedFallback =
     Number.isFinite(fallback) && Number(fallback) > 0 ? Math.floor(Number(fallback)) : 0
@@ -346,7 +419,7 @@ const submitWidgetDialog = async () => {
   busy.value = true
   try {
     const title = widgetDialog.title.trim()
-    const screen = showcase.currentScreen()
+    const screen = requireCurrentScreen()
     const maxColumns = screen?.layout?.columns?.maxColumns ?? 12
     const colSpan = parseIntInRange(widgetDialog.colSpan, "Column Span", 1, Math.max(1, maxColumns))
 
@@ -356,17 +429,26 @@ const submitWidgetDialog = async () => {
       const name = widgetDialog.eventName.trim()
       const payloadText = widgetDialog.payloadText ?? ""
       if (widgetDialog.mode === "create") {
-        await showcase.addTopicButton({ title, targetId, colSpan, topic, name, payloadText })
+        screen.widgets.push({
+          id: makeDraftID("wgt"),
+          kind: "topic_button",
+          title,
+          targetId,
+          layout:
+            screen.layout.mode === "canvas_percent"
+              ? { colSpan, canvasPercent: { xPct: 0, yPct: 0, wPct: 50, hPct: 10 } }
+              : { colSpan },
+          topicButton: { topic, name, payloadText }
+        })
       } else {
-        const widget = screen?.widgets.find((w) => w.id === widgetDialog.widgetId)
+        const widget = screen.widgets.find((w) => w.id === widgetDialog.widgetId)
         if (!widget || widget.kind !== "topic_button") return
         widget.title = title
         widget.targetId = targetId
         widget.layout.colSpan = colSpan
         widget.topicButton = { topic, name, payloadText }
-        await showcase.save()
       }
-      toast.success("Saved.")
+      toast.success("Draft updated.")
       closeWidgetDialog()
       return
     }
@@ -392,20 +474,27 @@ const submitWidgetDialog = async () => {
 
     if (widgetDialog.mode === "create") {
       const targetId = resolveVarTargetID()
-      await showcase.addVarWidget({
+      screen.widgets.push({
+        id: makeDraftID("wgt"),
+        kind: "var",
         title,
         targetId,
-        colSpan,
-        ownerId,
-        name: varName,
-        mode,
-        visibility,
-        type,
-        slider: { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs },
-        switch: switchSetting
+        layout:
+          screen.layout.mode === "canvas_percent"
+            ? { colSpan, canvasPercent: { xPct: 0, yPct: 0, wPct: 50, hPct: 10 } }
+            : { colSpan },
+        var: {
+          ownerId,
+          name: varName,
+          mode,
+          visibility,
+          type,
+          slider: { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs },
+          switch: switchSetting
+        }
       })
     } else {
-      const widget = screen?.widgets.find((w) => w.id === widgetDialog.widgetId)
+      const widget = screen.widgets.find((w) => w.id === widgetDialog.widgetId)
       if (!widget || widget.kind !== "var" || !widget.var) return
       widget.title = title
       widget.targetId = resolveVarTargetID(widget.targetId)
@@ -417,11 +506,9 @@ const submitWidgetDialog = async () => {
       widget.var.type = type
       widget.var.slider = { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs }
       widget.var.switch = switchSetting
-      await showcase.save()
-      await showcase.leave()
-      await showcase.enter()
     }
-    toast.success("Saved.")
+    await syncDraftSubscriptions()
+    toast.success("Draft updated.")
     closeWidgetDialog()
   } catch (err) {
     console.warn(err)
@@ -436,7 +523,9 @@ const removeWidget = async (widget: ShowcaseWidget) => {
   if (busy.value) return
   busy.value = true
   try {
-    await showcase.removeWidget(widget.id)
+    const screen = requireCurrentScreen()
+    screen.widgets = screen.widgets.filter((item) => item.id !== widget.id)
+    await syncDraftSubscriptions()
     toast.success("Widget removed.")
   } catch (err) {
     console.warn(err)
@@ -557,8 +646,11 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
 }
 
 const openShowcaseWindow = () => {
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen) return
+  if (dirty.value) {
+    toast.info("Viewer opens the last saved version. Save the draft first if you want the latest edits there.")
+  }
   const base = window.location.href.split("#")[0]
   const url = `${base}#/showcase-window?screenId=${encodeURIComponent(screen.id)}`
   const name = `showcase_${screen.id}_${Date.now()}`
@@ -628,7 +720,7 @@ const initScreenCanvasLayout = (screen: any) => {
 }
 
 const saveScreenLayout = async () => {
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen) return
   if (busy.value) return
   busy.value = true
@@ -663,11 +755,10 @@ const saveScreenLayout = async () => {
       }
     }
 
-    await showcase.save()
-    toast.success("Layout saved.")
+    toast.success("Layout updated in draft.")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save layout.")
+    toast.errorOf(err, "Failed to update layout draft.")
     syncLayoutFormFromScreen()
   } finally {
     busy.value = false
@@ -784,7 +875,7 @@ const onDrop = async (widgetId: string) => {
   if (!fromId || fromId === widgetId) return
   if (busy.value) return
 
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen) return
   const widgets = screen.widgets
   const fromIndex = widgets.findIndex((w) => w.id === fromId)
@@ -797,17 +888,7 @@ const onDrop = async (widgetId: string) => {
   next.splice(insertAt, 0, moved)
   screen.widgets = next
 
-  busy.value = true
-  try {
-    await showcase.save()
-    toast.success("Reordered.")
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to reorder widgets.")
-    await showcase.load()
-  } finally {
-    busy.value = false
-  }
+  toast.success("Draft reordered.")
 }
 
 const canvasSurfaceRef = ref<HTMLElement | null>(null)
@@ -868,7 +949,7 @@ const canvasMinPct = () => {
 const startCanvasEdit = (widget: ShowcaseWidget, mode: CanvasEditMode, event: PointerEvent) => {
   if (!isCanvasMode.value) return
   if (busy.value) return
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen || screen.layout.mode !== "canvas_percent") return
   const idx = screen.widgets.findIndex((w) => w.id === widget.id)
   if (idx < 0) return
@@ -914,23 +995,11 @@ const endCanvasEdit = async (save: boolean) => {
   canvasEdit.changed = false
 
   if (!shouldSave) return
-  if (busy.value) return
-
-  busy.value = true
-  try {
-    await showcase.save()
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to save canvas layout.")
-    await showcase.load()
-  } finally {
-    busy.value = false
-  }
 }
 
 const onCanvasPointerMove = (event: PointerEvent) => {
   if (!canvasEdit.active) return
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen || screen.layout.mode !== "canvas_percent") return
   let widget = screen.widgets[canvasEdit.widgetIndex]
   if (!widget || widget.id !== canvasEdit.widgetId) {
@@ -976,11 +1045,10 @@ const onCanvasPointerCancel = () => {
 }
 
 const reorderWidgetZOrder = async (widgetId: string, direction: "front" | "back") => {
-  const screen = showcase.currentScreen()
+  const screen = resolveEditorScreen()
   if (!screen) return
   const idx = screen.widgets.findIndex((w) => w.id === widgetId)
   if (idx < 0) return
-  if (busy.value) return
 
   const next = screen.widgets.slice()
   const [moved] = next.splice(idx, 1)
@@ -991,17 +1059,7 @@ const reorderWidgetZOrder = async (widgetId: string, direction: "front" | "back"
     next.unshift(moved)
   }
   screen.widgets = next
-
-  busy.value = true
-  try {
-    await showcase.save()
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, "Failed to reorder widgets.")
-    await showcase.load()
-  } finally {
-    busy.value = false
-  }
+  toast.success("Draft reordered.")
 }
 
 watch(
@@ -1014,11 +1072,7 @@ watch(
 watch(
   () => profileStore.state.current,
   async () => {
-    await showcase.leave()
-    await loadHomeDefaults()
-    await showcase.load()
-    syncLayoutFormFromScreen()
-    await showcase.enter()
+    await loadEditorDraft()
   }
 )
 
@@ -1030,9 +1084,12 @@ watch(
 )
 
 watch(
-  () => showcase.state.config.currentScreenId,
-  () => {
-    syncLayoutFormFromScreen()
+  () => requestedScreenId.value,
+  async () => {
+    if (dirty.value && !window.confirm("Discard unsaved changes and switch to another screen?")) {
+      return
+    }
+    await loadEditorDraft()
   }
 )
 
@@ -1060,11 +1117,9 @@ watch(
 )
 
 onMounted(async () => {
-  await loadHomeDefaults()
+  showcase.setConfigReloadEnabled(false)
   try {
-    await showcase.load()
-    syncLayoutFormFromScreen()
-    await showcase.enter()
+    await loadEditorDraft()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, "Failed to load showcase config.")
@@ -1073,6 +1128,7 @@ onMounted(async () => {
   setupWidgetsGridObserver()
 
   window.addEventListener("keydown", onGlobalKeydown)
+  window.addEventListener("beforeunload", onBeforeUnload)
   window.addEventListener("resize", closeWidgetContextMenu)
   window.addEventListener("scroll", closeWidgetContextMenu, true)
 })
@@ -1080,9 +1136,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   detachCanvasListeners()
   window.removeEventListener("keydown", onGlobalKeydown)
+  window.removeEventListener("beforeunload", onBeforeUnload)
   window.removeEventListener("resize", closeWidgetContextMenu)
   window.removeEventListener("scroll", closeWidgetContextMenu, true)
   widgetsGridObserver?.disconnect()
+  showcase.setConfigReloadEnabled(true)
   void showcase.leave()
 })
 </script>
@@ -1091,13 +1149,26 @@ onBeforeUnmount(() => {
   <section class="grid gap-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase</p>
-        <h3 class="mt-2 text-lg font-semibold">Screens & Widgets</h3>
+        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Editor</p>
+        <h3 class="mt-2 text-lg font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h3>
+        <p class="mt-2 text-xs text-muted-foreground">
+          screen_id {{ requestedScreenId || showcase.currentScreen()?.id || "-" }} · Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }}
+        </p>
       </div>
-      <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
+      <div class="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
+        <Badge v-if="dirty" variant="outline">Unsaved</Badge>
+      </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2">
+    <div v-if="screenMissing" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+      <h4 class="text-lg font-semibold">Screen not found</h4>
+      <p class="mt-2 text-sm text-muted-foreground">
+        The requested screen does not exist in the current profile. Return to Showcase Center and pick another screen.
+      </p>
+    </div>
+
+    <template v-else>
       <div class="flex flex-wrap items-center gap-2">
         <Tooltip content="Refresh Vars" side="bottom">
           <Button size="icon" :disabled="busy" @click="refreshVars">
@@ -1105,27 +1176,13 @@ onBeforeUnmount(() => {
             <span class="sr-only">Refresh Vars</span>
           </Button>
         </Tooltip>
-        <Tooltip content="New Screen" side="bottom">
-          <Button size="icon" variant="outline" :disabled="busy" @click="promptCreateScreen">
-            <Plus class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">New Screen</span>
-          </Button>
-        </Tooltip>
-        <Tooltip content="Rename Screen" side="bottom">
-          <Button size="icon" variant="outline" :disabled="busy" @click="promptRenameScreen">
-            <Pencil class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Rename Screen</span>
-          </Button>
-        </Tooltip>
-        <Tooltip content="Delete Screen" side="bottom">
-          <Button size="icon" variant="outline" :disabled="busy" @click="deleteCurrentScreen">
-            <Trash2 class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Delete Screen</span>
-          </Button>
-        </Tooltip>
-      </div>
-      <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-      <div class="flex flex-wrap items-center gap-2">
+        <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
+        <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
+        <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
+          <ExternalLink class="mr-2 h-4 w-4" />
+          Open Viewer
+        </Button>
+        <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
         <Tooltip content="Add Event" side="bottom">
           <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
             <Rss class="h-4 w-4" aria-hidden="true" />
@@ -1139,46 +1196,72 @@ onBeforeUnmount(() => {
           </Button>
         </Tooltip>
       </div>
-    </div>
 
-    <div class="grid gap-6 lg:grid-cols-[0.35fr_0.65fr]">
-      <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h4 class="text-sm font-semibold">Screens</h4>
-          <Badge variant="outline">{{ showcase.state.config.screens.length }}</Badge>
-        </div>
-        <div class="mt-4 space-y-2">
-          <button
-            v-for="screen in showcase.state.config.screens"
-            :key="screen.id"
-            type="button"
-            class="flex w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-left text-sm transition hover:border-primary"
-            :class="showcase.state.config.currentScreenId === screen.id ? 'border-primary text-foreground' : 'text-muted-foreground'"
-            @click="showcase.selectScreen(screen.id)"
-          >
-            <span class="truncate font-semibold">{{ screen.name }}</span>
-            <span class="text-xs">{{ screen.widgets.length }}</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="space-y-4">
-        <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Current</p>
-              <h4 class="mt-2 text-lg font-semibold">{{ showcase.currentScreen()?.name || "Screen" }}</h4>
-              <p class="mt-2 text-xs text-muted-foreground">
-                Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }} · LastVar={{ showcase.state.lastFrameAt || "-" }}
-              </p>
+      <div class="grid gap-6 lg:grid-cols-[0.32fr_0.68fr]">
+        <div class="space-y-4">
+          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+            <div class="flex items-center justify-between gap-3">
+              <h4 class="text-sm font-semibold">Screen</h4>
+              <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
-                <ExternalLink class="mr-2 h-4 w-4" />
-                Open Window
-              </Button>
+            <div class="mt-5 space-y-4">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Screen Name</label>
+                <input v-model="screenNameDraft" :class="inputClass" />
+              </div>
+              <div class="grid gap-2 text-xs text-muted-foreground">
+                <p>Last Saved {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</p>
+                <p>Last Var Frame {{ formatTimestamp(showcase.state.lastFrameAt || "") }}</p>
+              </div>
             </div>
           </div>
+
+          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <ListChecks class="h-4 w-4 text-muted-foreground" />
+                <h4 class="text-sm font-semibold">Widget Outline</h4>
+              </div>
+              <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }}</Badge>
+            </div>
+            <div class="mt-4 space-y-2">
+              <button
+                v-for="widget in showcase.currentScreen()?.widgets || []"
+                :key="widget.id"
+                type="button"
+                class="flex w-full items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3 text-left transition hover:border-primary/60"
+                @click="openEditWidget(widget)"
+              >
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold">{{ safeTitle(widget) }}</p>
+                  <p class="mt-1 text-xs text-muted-foreground">{{ widget.kind === "topic_button" ? "Event button" : "Variable widget" }}</p>
+                </div>
+                <Badge variant="secondary">span {{ widget.layout?.colSpan ?? 1 }}</Badge>
+              </button>
+              <div
+                v-if="(showcase.currentScreen()?.widgets || []).length === 0"
+                class="rounded-xl border border-dashed border-border/60 p-4 text-sm text-muted-foreground"
+              >
+                No widgets yet. Add an event button or variable widget to start building this screen.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Layout</p>
+                <h4 class="mt-2 text-lg font-semibold">Preview & Controls</h4>
+                <p class="mt-2 text-xs text-muted-foreground">
+                  Edit the structure in this window, test runtime behavior directly, and click Save only when the draft is ready.
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge v-if="dirty" variant="outline">Draft has unsaved changes</Badge>
+              </div>
+            </div>
 
           <div class="mt-5 grid gap-4 sm:grid-cols-4">
             <div>
@@ -1203,7 +1286,7 @@ onBeforeUnmount(() => {
               <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
             </div>
             <div class="flex items-end">
-              <Button size="sm" :disabled="busy" @click="saveScreenLayout">Save Layout</Button>
+              <Button size="sm" :disabled="busy" @click="saveScreenLayout">Apply Layout</Button>
             </div>
           </div>
           <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-3 text-xs text-muted-foreground">
@@ -1384,8 +1467,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </template>
 
     <Teleport to="body">
       <div
