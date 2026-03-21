@@ -498,38 +498,6 @@ onMounted(async () => {
             </div>
           </div>
         </section>
-
-        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Quick Window</p>
-              <h3 class="text-lg font-semibold">Jump Into Live Traffic</h3>
-            </div>
-            <Badge variant="outline">{{ channelItems.length }} channels</Badge>
-          </div>
-
-          <div class="mt-4 space-y-3">
-            <div class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
-              <p class="font-semibold text-foreground">All Channels</p>
-              <p class="mt-1 text-muted-foreground">
-                Aggregate every known channel in one clean receive/send window.
-              </p>
-              <div class="mt-3">
-                <Button size="sm" variant="outline" @click="openTopicWindow()">Open All Window</Button>
-              </div>
-            </div>
-
-            <div v-if="topicbus.state.selectedTopic" class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
-              <p class="font-semibold text-foreground">{{ topicbus.state.selectedTopic }}</p>
-              <p class="mt-1 text-muted-foreground">Open the currently selected channel directly.</p>
-              <div class="mt-3">
-                <Button size="sm" @click="openTopicWindow({ topic: topicbus.state.selectedTopic, localSaved: true, remoteSubscribed: topicbus.state.remoteTopics.includes(topicbus.state.selectedTopic) })">
-                  Open Selected Window
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
     </section>
 
