@@ -42,7 +42,7 @@ const toast = useToastStore()
 const varpool = useVarPoolStore()
 
 const isWindowLayout = computed(() => route.meta.layout === "window")
-const isFullBleedWindow = computed(() => route.name === "flowEditorWindow")
+const isFullBleedWindow = computed(() => route.meta.windowMode === "full-bleed")
 const windowMainClass = computed(() =>
   isFullBleedWindow.value
     ? "relative h-screen overflow-hidden p-0"

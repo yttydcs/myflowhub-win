@@ -106,7 +106,8 @@ const routes = [
     component: FlowEditorWindow,
     meta: {
       title: "Flow Editor",
-      layout: "window"
+      layout: "window",
+      windowMode: "full-bleed"
     }
   },
   {
@@ -169,7 +170,8 @@ const routes = [
     component: ShowcaseEditorWindow,
     meta: {
       title: "Showcase Editor",
-      layout: "window"
+      layout: "window",
+      windowMode: "full-bleed"
     }
   }
 ]
