@@ -47,6 +47,8 @@ export type FlowPayload = {
   }
 }
 
+export type FlowGraphDraft = FlowPayload["graph"]
+
 export type FlowStatusNode = {
   id: string
   status: string
@@ -852,6 +854,20 @@ const handleGetResp = (data: any) => {
   applyFlowPayload(data, "Flow loaded.", true)
 }
 
+const applyGraphDraft = (graphSource: any, successMessage: string) => {
+  const graph = graphSource && typeof graphSource === "object" && "graph" in graphSource ? graphSource.graph : graphSource
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
+  state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
+  state.edges = edges.map(mapEdge)
+  state.selectedNodeIndex = -1
+  state.selectedEdgeIndex = -1
+  state.execCapabilities = []
+  state.execCapabilitiesLoading = false
+  state.message = successMessage
+  resetHistory()
+}
+
 const applyFlowPayload = (data: any, successMessage: string, refreshStatus: boolean) => {
   state.flowId = String(data?.flow_id ?? data?.flowId ?? "").trim()
   state.flowName = String(data?.name ?? "").trim()
@@ -875,17 +891,7 @@ const applyFlowPayload = (data: any, successMessage: string, refreshStatus: bool
   const varOwner = Number(trigger?.var_owner ?? trigger?.varOwner ?? 0)
   state.varOwner = Number.isFinite(varOwner) && varOwner > 0 ? Math.trunc(varOwner) : 0
   state.varName = String(trigger?.var_name ?? trigger?.varName ?? "").trim()
-  const graph = data?.graph ?? {}
-  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
-  const edges = Array.isArray(graph?.edges) ? graph.edges : []
-  state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
-  state.edges = edges.map(mapEdge)
-  state.selectedNodeIndex = -1
-  state.selectedEdgeIndex = -1
-  state.execCapabilities = []
-  state.execCapabilitiesLoading = false
-  state.message = successMessage
-  resetHistory()
+  applyGraphDraft(data?.graph ?? {}, successMessage)
   if (refreshStatus && state.selfNodeId && state.hubId) {
     void statusFlow("").catch(() => {})
   }
@@ -908,6 +914,10 @@ const loadFromPayload = (data: any) => {
   )
 }
 
+const loadGraphDraft = (graph: any) => {
+  applyGraphDraft(graph ?? {}, "Draft loaded.")
+}
+
 const exportPayload = (): FlowPayload => {
   const flowID = state.flowId.trim()
   if (!flowID) {
@@ -920,6 +930,8 @@ const exportPayload = (): FlowPayload => {
     graph: buildGraph()
   }
 }
+
+const exportGraphDraft = (): FlowGraphDraft => buildGraph()
 
 const queryExecCapabilities = async (methodFilter?: string) => {
   const { sourceID } = ensureIdentity()
@@ -942,10 +954,10 @@ const queryExecCapabilities = async (methodFilter?: string) => {
       state.message = msg || "Capability query failed."
       return
     }
-    const routes = Array.isArray(data?.routes) ? data.routes : []
+    const routes: any[] = Array.isArray(data?.routes) ? data.routes : []
     state.execCapabilities = routes
       .map(mapExecCapabilityRoute)
-      .filter((route) => route.providerNode > 0 && route.method.length > 0)
+      .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
     state.message = state.execCapabilities.length
       ? `Capability list updated (${state.execCapabilities.length}).`
       : "No capability matched."
@@ -1044,7 +1056,9 @@ export const useFlowStore = () => {
     runFlow,
     saveFlow,
     loadFromPayload,
+    loadGraphDraft,
     exportPayload,
+    exportGraphDraft,
     queryExecCapabilities,
     applyCallCapability,
     applyExecCapability: applyCallCapability,

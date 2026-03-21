@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, markRaw } from "vue"
 import { VueFlow, type Connection, type EdgeMouseEvent, type NodeDragEvent, type NodeMouseEvent } from "@vue-flow/core"
 import { Background } from "@vue-flow/background"
 import { Controls } from "@vue-flow/controls"
@@ -106,12 +106,12 @@ const onNodeDragStop = (payload: NodeDragEvent) => {
 }
 
 const nodeTypes = {
-  flowNode: FlowNode
+  flowNode: markRaw(FlowNode) as any
 }
 </script>
 
 <template>
-  <div class="h-[560px] w-full overflow-hidden rounded-xl border border-border/60 bg-background/60">
+  <div class="h-full min-h-0 w-full overflow-hidden rounded-xl border border-border/60 bg-background/60">
     <VueFlow
       :nodes="canvasNodes"
       :edges="canvasEdges"

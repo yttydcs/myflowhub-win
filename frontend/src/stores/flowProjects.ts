@@ -32,6 +32,7 @@ const newReqId = () => {
 }
 
 const nowIso = () => new Date().toISOString()
+const flowIDAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 export type FlowTriggerDraft = {
   type: "interval" | "event" | "var_changed"
@@ -190,11 +191,11 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
 }
 
 const normalizeGraph = (input: any) => {
-  const nodes = Array.isArray(input?.nodes) ? input.nodes : []
-  const edges = Array.isArray(input?.edges) ? input.edges : []
+  const nodes: any[] = Array.isArray(input?.nodes) ? input.nodes : []
+  const edges: any[] = Array.isArray(input?.edges) ? input.edges : []
   return {
-    nodes: nodes.map((node) => ({ ...(node || {}) })),
-    edges: edges.map((edge) => ({ ...(edge || {}) }))
+    nodes: nodes.map((node: any) => ({ ...(node || {}) })),
+    edges: edges.map((edge: any) => ({ ...(edge || {}) }))
   }
 }
 
@@ -203,6 +204,51 @@ const makeProjectID = () => {
     return crypto.randomUUID().toLowerCase()
   }
   return `prj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+const randomToken = (length: number) => {
+  const size = Math.max(1, Math.trunc(length))
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const bytes = new Uint8Array(size)
+    crypto.getRandomValues(bytes)
+    return Array.from(bytes, (value) => flowIDAlphabet[value % flowIDAlphabet.length]).join("")
+  }
+
+  let out = ""
+  while (out.length < size) {
+    out += Math.random().toString(36).slice(2)
+  }
+  return out.slice(0, size)
+}
+
+const flowIDTaken = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
+  const trimmedFlowID = String(flowId ?? "").trim()
+  const trimmedProjectID = String(excludeProjectId ?? "").trim()
+  if (!trimmedFlowID) return false
+  return projects.some(
+    (item) => item.flowId === trimmedFlowID && (!trimmedProjectID || item.projectId !== trimmedProjectID)
+  )
+}
+
+const ensureUniqueFlowID = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
+  const trimmedFlowID = String(flowId ?? "").trim()
+  if (!trimmedFlowID) {
+    throw new Error("Flow ID is required.")
+  }
+  if (flowIDTaken(projects, trimmedFlowID, excludeProjectId)) {
+    throw new Error("Flow ID already exists in local projects.")
+  }
+  return trimmedFlowID
+}
+
+const makeFlowID = (projects: FlowProjectRecord[]) => {
+  for (let i = 0; i < 64; i += 1) {
+    const candidate = `fl_${randomToken(12)}`
+    if (!flowIDTaken(projects, candidate)) {
+      return candidate
+    }
+  }
+  return `fl_${randomToken(6)}${Date.now().toString(36).padStart(6, "0").slice(-6)}`
 }
 
 const normalizeProject = (input: any): FlowProjectRecord | null => {
@@ -288,16 +334,14 @@ const loadProjectsSnapshot = async () => {
   return normalizeProjects(resp?.projects)
 }
 
-const createProject = async (input: { projectId?: string; flowId: string; name?: string }) => {
-  const flowId = String(input?.flowId ?? "").trim()
-  if (!flowId) {
-    throw new Error("Flow ID is required.")
-  }
+const createProject = async (input: { projectId?: string; flowId?: string; name?: string }) => {
   const latest = await loadProjectsSnapshot()
   const projectId = String(input?.projectId ?? "").trim() || makeProjectID()
   if (latest.some((item) => item.projectId === projectId)) {
     throw new Error("Project ID already exists.")
   }
+  const requestedFlowID = String(input?.flowId ?? "").trim()
+  const flowId = requestedFlowID ? ensureUniqueFlowID(latest, requestedFlowID) : makeFlowID(latest)
   const project: FlowProjectRecord = {
     projectId,
     flowId,
@@ -309,6 +353,50 @@ const createProject = async (input: { projectId?: string; flowId: string; name?:
   state.projects = [project, ...latest]
   await saveProjects()
   return project
+}
+
+const updateProjectMeta = async (input: { projectId: string; flowId: string; name?: string }) => {
+  const trimmedProjectID = String(input?.projectId ?? "").trim()
+  if (!trimmedProjectID) {
+    throw new Error("project_id is required")
+  }
+  const latest = await loadProjectsSnapshot()
+  const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
+  if (idx < 0) {
+    throw new Error("project not found")
+  }
+
+  const next: FlowProjectRecord = {
+    ...latest[idx],
+    flowId: ensureUniqueFlowID(latest, input.flowId, trimmedProjectID),
+    name: String(input?.name ?? "").trim(),
+    updatedAt: nowIso()
+  }
+  latest.splice(idx, 1, next)
+  state.projects = latest
+  await saveProjects()
+  return next
+}
+
+const saveProjectGraph = async (projectId: string, graph: any) => {
+  const trimmedProjectID = String(projectId ?? "").trim()
+  if (!trimmedProjectID) {
+    throw new Error("project_id is required")
+  }
+  const latest = await loadProjectsSnapshot()
+  const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
+  if (idx < 0) {
+    throw new Error("project not found")
+  }
+  const next: FlowProjectRecord = {
+    ...latest[idx],
+    graph: normalizeGraph(graph),
+    updatedAt: nowIso()
+  }
+  latest.splice(idx, 1, next)
+  state.projects = latest
+  await saveProjects()
+  return next
 }
 
 const deleteProject = async (projectId: string) => {
@@ -344,7 +432,7 @@ const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
   const current = latest[idx]
   const next: FlowProjectRecord = {
     ...current,
-    flowId: normalizedPayloadFlowID,
+    flowId: ensureUniqueFlowID(latest, normalizedPayloadFlowID, trimmedProjectID),
     name: String(payload?.name ?? "").trim(),
     trigger: normalizeTriggerDraft(payload?.trigger ?? {}),
     graph: normalizeGraph(payload?.graph ?? {}),
@@ -444,9 +532,10 @@ const loadDeployments = async (nodeIdInput: string | number) => {
       throw new Error(String(listResp?.msg ?? "Flow list failed."))
     }
 
-    const summaries = (Array.isArray(listResp?.flows) ? listResp.flows : [])
-      .map((item) => mapSummary(item))
-      .filter((item) => item.flowId)
+    const flowItems: FlowSummaryWire[] = Array.isArray(listResp?.flows) ? listResp.flows : []
+    const summaries: ReturnType<typeof mapSummary>[] = flowItems.map((item: FlowSummaryWire) => mapSummary(item)).filter(
+      (item: ReturnType<typeof mapSummary>) => item.flowId.length > 0
+    )
 
     const deployments = await mapWithConcurrency(summaries, 6, async (summary) => {
       let trigger: Record<string, any> | null = null
@@ -512,8 +601,9 @@ const deployProject = async (input: {
   if (listCode !== 1) {
     throw new Error(String(listResp?.msg ?? "Flow list failed."))
   }
-  const flowExists = (Array.isArray(listResp?.flows) ? listResp.flows : [])
-    .map((item) => String(item?.flow_id ?? item?.flowId ?? "").trim())
+  const existingFlows: FlowSummaryWire[] = Array.isArray(listResp?.flows) ? listResp.flows : []
+  const flowExists = existingFlows
+    .map((item: FlowSummaryWire) => String(item?.flow_id ?? item?.flowId ?? "").trim())
     .includes(project.flowId)
 
   if (flowExists && !input.overwrite) {
@@ -577,6 +667,8 @@ export const useFlowProjectsStore = () => {
     createProject,
     deleteProject,
     getProjectByID,
+    updateProjectMeta,
+    saveProjectGraph,
     saveProjectPayload,
     openEditorWindow,
     loadDeployments,
