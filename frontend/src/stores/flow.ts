@@ -279,6 +279,24 @@ const resolveTargetNode = () => {
   return parsed
 }
 
+const resolveCapabilityQueryNode = (queryNodeId?: string | number) => {
+  if (queryNodeId === undefined || queryNodeId === null) {
+    return resolveTargetNode()
+  }
+  const raw = String(queryNodeId).trim()
+  if (!raw) {
+    return resolveTargetNode()
+  }
+  if (!/^\d+$/.test(raw)) {
+    throw new Error("Query node ID must be a positive number.")
+  }
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error("Query node ID must be a positive number.")
+  }
+  return Math.trunc(parsed)
+}
+
 const ensureIdentity = () => {
   if (!state.selfNodeId) {
     throw new Error("Login required to send Flow requests.")
@@ -946,9 +964,9 @@ const exportPayload = (): FlowPayload => {
 
 const exportGraphDraft = (): FlowGraphDraft => buildGraph()
 
-const queryExecCapabilities = async (methodFilter?: string) => {
+const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string | number) => {
   const { sourceID } = ensureIdentity()
-  const executorNode = resolveTargetNode()
+  const executorNode = resolveCapabilityQueryNode(queryNodeId)
   const method = String(methodFilter ?? "").trim()
   const req = {
     req_id: newReqId(),
@@ -972,8 +990,8 @@ const queryExecCapabilities = async (methodFilter?: string) => {
       .map(mapExecCapabilityRoute)
       .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
     state.message = state.execCapabilities.length
-      ? `Capability list updated (${state.execCapabilities.length}).`
-      : "No capability matched."
+      ? `Capability list updated from node ${executorNode} (${state.execCapabilities.length}).`
+      : `No capability matched on node ${executorNode}.`
   } finally {
     state.execCapabilitiesLoading = false
   }
