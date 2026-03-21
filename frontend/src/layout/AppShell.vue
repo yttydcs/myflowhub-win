@@ -9,6 +9,7 @@ import {
   Home as HomeIcon,
   LayoutDashboard,
   ListChecks,
+  Menu,
   Network,
   Rss,
   Server,
@@ -112,21 +113,6 @@ watch(
 const statusDotClass = computed(() => {
   if (sessionStore.connected) return "bg-emerald-500"
   return "bg-rose-500"
-})
-
-const statusLabel = computed(() => {
-  if (sessionStore.connected) return "Connected"
-  return "Disconnected"
-})
-
-const connectionDetail = computed(() => {
-  if (sessionStore.connected) {
-    return sessionStore.addr ? `Connected to ${sessionStore.addr}` : "Connected"
-  }
-  if (sessionStore.lastError) {
-    return `Last error: ${sessionStore.lastError}`
-  }
-  return "Awaiting session handshake."
 })
 
 const headerStatusText = computed(() => {
@@ -273,6 +259,52 @@ const createProfile = async () => {
 }
 
 const profileMenuOpen = ref(false)
+const sidebarCollapsed = ref(false)
+
+const sidebarGridClass = computed(() =>
+  sidebarCollapsed.value
+    ? "relative grid h-screen grid-cols-1 lg:grid-cols-[96px_minmax(0,1fr)]"
+    : "relative grid h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]"
+)
+const sidebarAsideClass = computed(() =>
+  sidebarCollapsed.value
+    ? "hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-3 pb-6 pt-6 shadow-sm backdrop-blur lg:flex"
+    : "hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-5 pb-6 pt-8 shadow-sm backdrop-blur lg:flex"
+)
+const sidebarHeaderClass = computed(() =>
+  sidebarCollapsed.value ? "flex flex-col items-center gap-3" : "flex items-center justify-between gap-3"
+)
+const sidebarBrandClass = computed(() =>
+  sidebarCollapsed.value ? "flex flex-col items-center gap-2" : "flex items-center gap-3"
+)
+const sidebarBrandMarkClass = computed(() =>
+  sidebarCollapsed.value
+    ? "flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-xs font-semibold text-primary-foreground shadow-sm"
+    : "flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm"
+)
+const sidebarToggleLabel = computed(() =>
+  sidebarCollapsed.value ? "Expand sidebar" : "Collapse sidebar"
+)
+const sidebarNavClass = computed(() =>
+  sidebarCollapsed.value ? "mt-6 flex-1 space-y-4 overflow-y-auto" : "mt-6 flex-1 space-y-6 overflow-y-auto pr-1"
+)
+const sidebarGroupClass = computed(() => (sidebarCollapsed.value ? "space-y-2" : "space-y-3"))
+const sidebarNavListClass = computed(() => (sidebarCollapsed.value ? "space-y-3" : "space-y-2"))
+const sidebarNavItemBaseClass = computed(() =>
+  sidebarCollapsed.value
+    ? "group flex items-center justify-center rounded-xl border px-0 py-2.5 transition"
+    : "group flex items-center gap-3 rounded-xl border px-3 py-2.5 transition"
+)
+const sidebarNavIconClass = computed(() =>
+  sidebarCollapsed.value
+    ? "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+    : "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+)
+
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
 const toggleProfileMenu = () => {
   profileMenuOpen.value = !profileMenuOpen.value
 }
@@ -372,65 +404,65 @@ const selectProfile = async (name: string) => {
         </div>
       </Overlay>
 
-      <div class="relative grid h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside
-          class="hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-5 pb-6 pt-8 shadow-sm backdrop-blur lg:flex"
-        >
-          <div class="flex items-center gap-3">
-            <div
-              class="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm"
+      <div :class="sidebarGridClass">
+        <aside :class="sidebarAsideClass">
+          <div :class="sidebarHeaderClass">
+            <Button
+              as="button"
+              type="button"
+              size="icon"
+              variant="ghost"
+              :class="sidebarCollapsed ? 'self-center' : 'self-start'"
+              :aria-label="sidebarToggleLabel"
+              :title="sidebarToggleLabel"
+              @click="toggleSidebar"
             >
-              MH
-            </div>
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                MyFlowHub
-              </p>
-              <h1 class="text-lg font-semibold">Tool Console</h1>
-            </div>
-          </div>
-
-          <div class="mt-6 rounded-2xl border bg-card/80 p-4 text-card-foreground shadow-sm">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Session
-              </span>
-              <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                <span :class="['h-2 w-2 rounded-full', statusDotClass]" />
-                <span>{{ statusLabel }}</span>
+              <Menu class="h-5 w-5" aria-hidden="true" />
+              <span class="sr-only">{{ sidebarToggleLabel }}</span>
+            </Button>
+            <div :class="sidebarBrandClass">
+              <div :class="sidebarBrandMarkClass">MH</div>
+              <div v-if="!sidebarCollapsed">
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                  MyFlowHub
+                </p>
+                <h1 class="text-lg font-semibold">Tool Console</h1>
               </div>
             </div>
-            <p class="mt-2 text-sm font-medium">Console ready</p>
-            <p class="text-xs text-muted-foreground">{{ connectionDetail }}</p>
           </div>
 
-          <nav class="mt-6 flex-1 space-y-6 overflow-y-auto pr-1">
-            <div v-for="group in navGroups" :key="group.title" class="space-y-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+          <nav :class="sidebarNavClass">
+            <div v-for="group in navGroups" :key="group.title" :class="sidebarGroupClass">
+              <p
+                v-if="!sidebarCollapsed"
+                class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground"
+              >
                 {{ group.title }}
               </p>
-              <div class="space-y-2">
+              <div :class="sidebarNavListClass">
                 <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" v-slot="{ isActive }">
                   <div
                     :class="[
-                      'group flex items-center gap-3 rounded-xl border px-3 py-2.5 transition',
+                      sidebarNavItemBaseClass,
                       isActive
                         ? 'border-primary/40 bg-primary/10 text-foreground shadow-sm'
                         : 'border-transparent hover:border-border/60 hover:bg-muted/70'
                     ]"
+                    :title="sidebarCollapsed ? item.label : undefined"
                   >
                     <div
                       :class="[
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                        sidebarNavIconClass,
                         isActive ? 'bg-primary text-primary-foreground' : item.tone
                       ]"
                     >
                       <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
                     </div>
-                    <div>
+                    <div v-if="!sidebarCollapsed">
                       <p class="text-sm font-medium">{{ item.label }}</p>
                       <p class="text-xs text-muted-foreground">{{ item.description }}</p>
                     </div>
+                    <span v-else class="sr-only">{{ item.label }}</span>
                   </div>
                 </RouterLink>
               </div>
