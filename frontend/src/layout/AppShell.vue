@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { Tooltip } from "@/components/ui/tooltip"
 import ToastHost from "@/components/ToastHost.vue"
 import { useAppSettingsStore } from "@/stores/appSettings"
 import { useFileStore } from "@/stores/file"
@@ -66,7 +67,8 @@ const sidebarStyle = {
   paddingLeft: "var(--app-shell-sidebar-px)",
   paddingRight: "var(--app-shell-sidebar-px)",
   paddingTop: "var(--app-shell-sidebar-pt)",
-  paddingBottom: "var(--app-shell-sidebar-pb)"
+  paddingBottom: "var(--app-shell-sidebar-pb)",
+  scrollbarGutter: "stable"
 }
 const shellMainStyle = {
   padding: "var(--app-shell-main-py) var(--app-shell-main-px)",
@@ -77,6 +79,9 @@ const headerStyle = {
 }
 const navItemStyle = {
   padding: "var(--app-nav-item-py) var(--app-nav-item-px)"
+}
+const collapsedNavItemStyle = {
+  padding: "var(--app-nav-item-py)"
 }
 
 let varpoolStorageEpoch = 0
@@ -314,11 +319,8 @@ const sidebarGridClass = computed(() =>
 )
 const sidebarAsideClass = computed(() =>
   sidebarCollapsed.value
-    ? "hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-3 pb-6 pt-6 shadow-sm backdrop-blur lg:flex"
-    : "hidden h-screen flex-col overflow-hidden border-r border-border/60 bg-background/80 px-5 pb-6 pt-8 shadow-sm backdrop-blur lg:flex"
-)
-const sidebarHeaderClass = computed(() =>
-  sidebarCollapsed.value ? "flex flex-col items-center gap-3" : "flex items-center justify-between gap-3"
+    ? "hidden h-screen overflow-x-hidden overflow-y-auto border-r border-border/60 bg-background/80 px-3 pb-6 pt-6 shadow-sm backdrop-blur lg:flex lg:flex-col"
+    : "hidden h-screen overflow-x-hidden overflow-y-auto border-r border-border/60 bg-background/80 px-5 pb-6 pt-8 shadow-sm backdrop-blur lg:flex lg:flex-col"
 )
 const sidebarBrandClass = computed(() =>
   sidebarCollapsed.value ? "flex flex-col items-center gap-2" : "flex items-center gap-3"
@@ -332,13 +334,13 @@ const sidebarToggleLabel = computed(() =>
   sidebarCollapsed.value ? "Expand sidebar" : "Collapse sidebar"
 )
 const sidebarNavClass = computed(() =>
-  sidebarCollapsed.value ? "mt-6 flex-1 space-y-4 overflow-y-auto" : "mt-6 flex-1 space-y-6 overflow-y-auto pr-1"
+  sidebarCollapsed.value ? "mt-6 space-y-4" : "mt-6 space-y-6"
 )
 const sidebarGroupClass = computed(() => (sidebarCollapsed.value ? "space-y-2" : "space-y-3"))
 const sidebarNavListClass = computed(() => (sidebarCollapsed.value ? "space-y-3" : "space-y-2"))
 const sidebarNavItemBaseClass = computed(() =>
   sidebarCollapsed.value
-    ? "group flex items-center justify-center rounded-xl border px-0 py-2.5 transition"
+    ? "group flex items-center justify-center rounded-xl border transition"
     : "group flex items-center gap-3 rounded-xl border px-3 py-2.5 transition"
 )
 const sidebarNavIconClass = computed(() =>
@@ -346,6 +348,22 @@ const sidebarNavIconClass = computed(() =>
     ? "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
     : "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
 )
+const navItemStateClass = (isActive: boolean) => {
+  if (isActive) {
+    return sidebarCollapsed.value
+      ? "border-transparent bg-transparent text-primary shadow-none"
+      : "border-primary/40 bg-primary/10 text-foreground shadow-sm"
+  }
+  return sidebarCollapsed.value
+    ? "border-transparent text-muted-foreground hover:bg-muted/60"
+    : "border-transparent hover:border-border/60 hover:bg-muted/70"
+}
+const navItemIconToneClass = (isActive: boolean, item: NavItem) => {
+  if (isActive) {
+    return sidebarCollapsed.value ? "bg-primary/15 text-primary" : "bg-primary text-primary-foreground"
+  }
+  return item.tone
+}
 
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -452,28 +470,13 @@ const selectProfile = async (name: string) => {
 
       <div :class="sidebarGridClass">
         <aside :class="sidebarAsideClass" :style="sidebarStyle">
-          <div :class="sidebarHeaderClass">
-            <Button
-              as="button"
-              type="button"
-              size="icon"
-              variant="ghost"
-              :class="sidebarCollapsed ? 'self-center' : 'self-start'"
-              :aria-label="sidebarToggleLabel"
-              :title="sidebarToggleLabel"
-              @click="toggleSidebar"
-            >
-              <Menu class="h-5 w-5" aria-hidden="true" />
-              <span class="sr-only">{{ sidebarToggleLabel }}</span>
-            </Button>
-            <div :class="sidebarBrandClass">
-              <div :class="sidebarBrandMarkClass">MH</div>
-              <div v-if="!sidebarCollapsed">
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                  MyFlowHub
-                </p>
-                <h1 class="text-lg font-semibold">Tool Console</h1>
-              </div>
+          <div :class="sidebarBrandClass">
+            <div :class="sidebarBrandMarkClass">MH</div>
+            <div v-if="!sidebarCollapsed">
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                MyFlowHub
+              </p>
+              <h1 class="text-lg font-semibold">Tool Console</h1>
             </div>
           </div>
 
@@ -487,29 +490,39 @@ const selectProfile = async (name: string) => {
               </p>
               <div :class="sidebarNavListClass">
                 <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" v-slot="{ isActive }">
+                  <Tooltip v-if="sidebarCollapsed" :content="item.label" side="right">
+                    <div
+                      :class="[sidebarNavItemBaseClass, navItemStateClass(isActive)]"
+                      :style="collapsedNavItemStyle"
+                    >
+                      <div
+                        :class="[
+                          sidebarNavIconClass,
+                          navItemIconToneClass(isActive, item)
+                        ]"
+                      >
+                        <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <span class="sr-only">{{ item.label }}</span>
+                    </div>
+                  </Tooltip>
                   <div
-                    :class="[
-                      sidebarNavItemBaseClass,
-                      isActive
-                        ? 'border-primary/40 bg-primary/10 text-foreground shadow-sm'
-                        : 'border-transparent hover:border-border/60 hover:bg-muted/70'
-                    ]"
-                    :title="sidebarCollapsed ? item.label : undefined"
+                    v-else
+                    :class="[sidebarNavItemBaseClass, navItemStateClass(isActive)]"
                     :style="navItemStyle"
                   >
                     <div
                       :class="[
                         sidebarNavIconClass,
-                        isActive ? 'bg-primary text-primary-foreground' : item.tone
+                        navItemIconToneClass(isActive, item)
                       ]"
                     >
                       <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
                     </div>
-                    <div v-if="!sidebarCollapsed">
+                    <div>
                       <p class="text-sm font-medium">{{ item.label }}</p>
                       <p class="text-xs text-muted-foreground">{{ item.description }}</p>
                     </div>
-                    <span v-else class="sr-only">{{ item.label }}</span>
                   </div>
                 </RouterLink>
               </div>
@@ -521,6 +534,19 @@ const selectProfile = async (name: string) => {
           <header class="flex-none border-b border-border/60 bg-background/85 backdrop-blur" :style="headerStyle">
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-3">
+                <Button
+                  as="button"
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  class="hidden lg:inline-flex"
+                  :aria-label="sidebarToggleLabel"
+                  :title="sidebarToggleLabel"
+                  @click="toggleSidebar"
+                >
+                  <Menu class="h-5 w-5" aria-hidden="true" />
+                  <span class="sr-only">{{ sidebarToggleLabel }}</span>
+                </Button>
                 <div class="flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs font-semibold text-foreground shadow-sm">
                   <span :class="['h-2 w-2 rounded-full', statusDotClass]" />
                   <span class="text-xs font-semibold text-muted-foreground">
