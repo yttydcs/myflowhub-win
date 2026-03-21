@@ -213,110 +213,42 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 class="text-lg font-semibold">{{ screenName }}</h1>
-        <p class="mt-2 text-xs text-muted-foreground">
-          ScreenId={{ requestedScreenIdRaw || "-" }} · Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }}
-        </p>
-      </div>
-      <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
-    </div>
-
-    <div v-if="!showcase.state.loaded" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-      <h2 class="text-base font-semibold">Loading...</h2>
-      <p class="mt-2 text-sm text-muted-foreground">
-        Loading Showcase config.
-      </p>
-    </div>
-
-    <div v-else-if="screenMissing" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-      <h2 class="text-base font-semibold">Screen not found</h2>
-      <p class="mt-2 text-sm text-muted-foreground">
-        The requested screen does not exist in the current Showcase config.
-      </p>
-    </div>
-
-    <div v-else-if="screen?.layout?.mode === 'columns'" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
-      <div
-        v-for="widget in screen?.widgets || []"
-        :key="widget.id"
-        class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
-        :style="widgetCardStyle(widget)"
-      >
-        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-          <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-            {{ safeTitle(widget) }}
-          </h5>
-
-          <div class="min-w-0">
-            <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-              <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                Send
-              </Button>
-            </div>
-
-            <div v-else-if="widget.kind === 'var' && widget.var">
-              <div
-                v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                :title="displayValueText(widget)"
-              >
-                {{ displayValueText(widget) }}
-              </div>
-
-              <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 rounded"
-                  :checked="isVarOn(widget)"
-                  :disabled="busy || !sessionStore.connected || !selfNodeId"
-                  @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                />
-              </div>
-
-              <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                <input
-                  class="min-w-[min(180px,100%)] flex-1"
-                  type="range"
-                  :min="widget.var.slider.min"
-                  :max="widget.var.slider.max"
-                  :step="widget.var.slider.step"
-                  :value="showcase.sliderValue(widget)"
-                  :disabled="busy || !sessionStore.connected || !selfNodeId"
-                  @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                  @change="showcase.sliderCommit(widget)"
-                />
-                <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-              </div>
-            </div>
-          </div>
+  <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
+    <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <h1 class="min-w-0 truncate text-lg font-semibold">{{ screenName }}</h1>
+          <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
+          <span class="text-xs text-muted-foreground">
+            ScreenId={{ requestedScreenIdRaw || "-" }} · Self={{ selfNodeId || "-" }} · Hub={{ hubId || "-" }}
+          </span>
         </div>
       </div>
+    </header>
 
-      <div
-        v-if="(screen?.widgets || []).length === 0"
-        class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
-        :style="{ gridColumn: '1 / -1' }"
-      >
-        <p class="text-sm text-muted-foreground">No widgets yet.</p>
+    <div class="flex-1 min-h-0 p-4">
+      <div v-if="!showcase.state.loaded" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <h2 class="text-base font-semibold">Loading...</h2>
+        <p class="mt-2 text-sm text-muted-foreground">
+          Loading Showcase config.
+        </p>
       </div>
-    </div>
 
-    <div
-      v-else
-      ref="widgetsGridRef"
-      class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-card/90 p-2 text-card-foreground shadow-sm"
-    >
-      <div class="relative" :style="canvasSurfaceStyle">
+      <div v-else-if="screenMissing" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <h2 class="text-base font-semibold">Screen not found</h2>
+        <p class="mt-2 text-sm text-muted-foreground">
+          The requested screen does not exist in the current Showcase config.
+        </p>
+      </div>
+
+      <div v-else-if="screen?.layout?.mode === 'columns'" ref="widgetsGridRef" class="grid" :style="widgetsGridStyle">
         <div
           v-for="widget in screen?.widgets || []"
           :key="widget.id"
-          class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
-          :style="canvasWidgetStyle(widget)"
+          class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+          :style="widgetCardStyle(widget)"
         >
-          <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
             <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
               {{ safeTitle(widget) }}
             </h5>
@@ -368,9 +300,81 @@ onBeforeUnmount(() => {
 
         <div
           v-if="(screen?.widgets || []).length === 0"
-          class="absolute inset-0 flex items-center justify-center"
+          class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
+          :style="{ gridColumn: '1 / -1' }"
         >
           <p class="text-sm text-muted-foreground">No widgets yet.</p>
+        </div>
+      </div>
+
+      <div
+        v-else
+        ref="widgetsGridRef"
+        class="relative flex h-[min(70vh,720px)] min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl border bg-card/90 p-2 text-card-foreground shadow-sm"
+      >
+        <div class="relative" :style="canvasSurfaceStyle">
+          <div
+            v-for="widget in screen?.widgets || []"
+            :key="widget.id"
+            class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+            :style="canvasWidgetStyle(widget)"
+          >
+            <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
+              <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
+                {{ safeTitle(widget) }}
+              </h5>
+
+              <div class="min-w-0">
+                <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
+                  <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
+                    Send
+                  </Button>
+                </div>
+
+                <div v-else-if="widget.kind === 'var' && widget.var">
+                  <div
+                    v-if="showcase.resolveEffectiveMode(widget) === 'display'"
+                    class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
+                    :title="displayValueText(widget)"
+                  >
+                    {{ displayValueText(widget) }}
+                  </div>
+
+                  <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded"
+                      :checked="isVarOn(widget)"
+                      :disabled="busy || !sessionStore.connected || !selfNodeId"
+                      @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </div>
+
+                  <div v-else class="flex flex-wrap items-center justify-end gap-3">
+                    <input
+                      class="min-w-[min(180px,100%)] flex-1"
+                      type="range"
+                      :min="widget.var.slider.min"
+                      :max="widget.var.slider.max"
+                      :step="widget.var.slider.step"
+                      :value="showcase.sliderValue(widget)"
+                      :disabled="busy || !sessionStore.connected || !selfNodeId"
+                      @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
+                      @change="showcase.sliderCommit(widget)"
+                    />
+                    <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="(screen?.widgets || []).length === 0"
+            class="absolute inset-0 flex items-center justify-center"
+          >
+            <p class="text-sm text-muted-foreground">No widgets yet.</p>
+          </div>
         </div>
       </div>
     </div>

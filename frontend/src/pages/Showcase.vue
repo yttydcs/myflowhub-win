@@ -668,17 +668,6 @@ const syncLayoutFormFromScreen = () => {
 }
 
 const currentLayoutLabel = computed(() => (isCanvasMode.value ? "Canvas" : "Columns"))
-const currentLayoutSummary = computed(() => {
-  const screen = showcase.currentScreen()
-  if (!screen) return "-"
-  if (screen.layout.mode === "canvas_percent") {
-    return "Freeform canvas"
-  }
-  const maxColumns = Number(screen.layout?.columns?.maxColumns ?? 3)
-  const minColumnWidth = Number(screen.layout?.columns?.minColumnWidth ?? 360)
-  return `${maxColumns} cols · min ${minColumnWidth}px`
-})
-
 const openLayoutDialog = () => {
   syncLayoutFormFromScreen()
   layoutDialogOpen.value = true
@@ -1172,51 +1161,53 @@ onBeforeUnmount(() => {
 <template>
   <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-xl font-semibold">{{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}</h1>
-          <div v-if="!screenMissing" class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">{{ currentLayoutLabel }}</Badge>
-            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
-            <span>{{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}</span>
-          </div>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <h1 class="min-w-0 truncate text-xl font-semibold">
+            {{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}
+          </h1>
           <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
           <Badge v-if="dirty" variant="outline">Unsaved</Badge>
+          <template v-if="!screenMissing">
+            <Badge variant="outline">{{ currentLayoutLabel }}</Badge>
+            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
+            <span class="text-xs text-muted-foreground">
+              {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}
+            </span>
+          </template>
         </div>
-      </div>
 
-      <div v-if="!screenMissing" class="mt-4 flex flex-wrap items-center gap-2">
-        <Tooltip content="Refresh Vars" side="bottom">
-          <Button size="icon" :disabled="busy" @click="refreshVars">
-            <RefreshCw class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Refresh Vars</span>
+        <div v-if="!screenMissing" class="flex flex-wrap items-center justify-end gap-2">
+          <Tooltip content="Refresh Vars" side="bottom">
+            <Button size="icon" :disabled="busy" @click="refreshVars">
+              <RefreshCw class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Refresh Vars</span>
+            </Button>
+          </Tooltip>
+          <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
+          <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
+          <Button variant="outline" :disabled="busy" @click="openLayoutDialog">
+            <Settings2 class="mr-2 h-4 w-4" />
+            Layout
           </Button>
-        </Tooltip>
-        <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
-        <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
-        <Button variant="outline" :disabled="busy" @click="openLayoutDialog">
-          <Settings2 class="mr-2 h-4 w-4" />
-          Layout
-        </Button>
-        <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
-          <ExternalLink class="mr-2 h-4 w-4" />
-          Open Viewer
-        </Button>
-        <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-        <Tooltip content="Add Event" side="bottom">
-          <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
-            <Rss class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Add Event</span>
+          <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
+            <ExternalLink class="mr-2 h-4 w-4" />
+            Open Viewer
           </Button>
-        </Tooltip>
-        <Tooltip content="Add Var" side="bottom">
-          <Button size="icon" variant="outline" :disabled="busy" @click="openCreateWidget('var')">
-            <Database class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Add Var</span>
-          </Button>
-        </Tooltip>
+          <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
+          <Tooltip content="Add Event" side="bottom">
+            <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
+              <Rss class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Add Event</span>
+            </Button>
+          </Tooltip>
+          <Tooltip content="Add Var" side="bottom">
+            <Button size="icon" variant="outline" :disabled="busy" @click="openCreateWidget('var')">
+              <Database class="h-4 w-4" aria-hidden="true" />
+              <span class="sr-only">Add Var</span>
+            </Button>
+          </Tooltip>
+        </div>
       </div>
     </header>
 
@@ -1234,23 +1225,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else class="flex h-full min-h-0 flex-col rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Editing Surface</p>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Edit directly in the preview. Use right click to edit or remove widgets.
-            </p>
-            <p v-if="isCanvasMode" class="mt-1 text-xs text-muted-foreground">
-              Canvas mode: drag the handle to move, use the bottom-right handle to resize, and right-click for z-order.
-            </p>
-          </div>
-          <div class="text-right text-xs text-muted-foreground">
-            <p class="font-semibold uppercase tracking-[0.2em] text-foreground">Layout</p>
-            <p class="mt-1">{{ currentLayoutSummary }}</p>
-          </div>
-        </div>
-
-        <div class="mt-4 flex-1 min-h-0">
+        <div class="flex-1 min-h-0">
           <div
             v-if="!isCanvasMode"
             ref="widgetsGridRef"
