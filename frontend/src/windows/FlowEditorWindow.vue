@@ -22,7 +22,10 @@ const loadedProjectId = ref("")
 const loadedProjectName = ref("")
 const saveBusy = ref(false)
 const addNodeOpen = ref(false)
+const methodDialogOpen = ref(false)
+const methodSearch = ref("")
 const nodeIdDraft = ref("")
+const pendingCapabilityKey = ref("")
 
 const nodeDraft = reactive({
   id: ""
@@ -38,9 +41,118 @@ const canRedo = computed(
 )
 
 const projectId = computed(() => String(route.query.projectId ?? "").trim())
+const effectiveExecutorNode = computed(() => {
+  const rawTarget = String(flowStore.state.targetId ?? "").trim()
+  if (rawTarget) {
+    const parsed = Number.parseInt(rawTarget, 10)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.trunc(parsed)
+    }
+  }
+  const hubId = Number(sessionStore.auth.hubId || flowStore.state.hubId || 0)
+  return Number.isFinite(hubId) && hubId > 0 ? Math.trunc(hubId) : 0
+})
+const selectedTargetLabel = computed(() => {
+  const node = selectedNode.value
+  if (!node) return "No target selected."
+  if (node.target > 0) {
+    return `Remote provider node ${node.target}`
+  }
+  if (effectiveExecutorNode.value > 0) {
+    return `Current executor node ${effectiveExecutorNode.value}`
+  }
+  return "Current executor"
+})
+const capabilityOptions = computed(() => {
+  const executorNode = effectiveExecutorNode.value
+  return [...flowStore.state.execCapabilities].sort((left, right) => {
+    const leftScore = left.providerNode === executorNode ? 0 : 1
+    const rightScore = right.providerNode === executorNode ? 0 : 1
+    if (leftScore !== rightScore) {
+      return leftScore - rightScore
+    }
+    if (left.method !== right.method) {
+      return left.method.localeCompare(right.method)
+    }
+    if (left.providerNode !== right.providerNode) {
+      return left.providerNode - right.providerNode
+    }
+    return left.viaNode - right.viaNode
+  })
+})
+const filteredCapabilities = computed(() => {
+  const query = methodSearch.value.trim().toLowerCase()
+  if (!query) {
+    return capabilityOptions.value
+  }
+  return capabilityOptions.value.filter((route) => {
+    const haystack = `${route.method} ${route.providerNode} ${route.viaNode} ${route.version}`.toLowerCase()
+    return haystack.includes(query)
+  })
+})
+const selectedCapabilityKey = computed(() => {
+  const node = selectedNode.value
+  if (!node) return ""
+  const method = node.method.trim()
+  if (!method) return ""
+  const expectedProvider = node.target > 0 ? Math.trunc(node.target) : effectiveExecutorNode.value
+  if (!expectedProvider) return ""
+  const matched = capabilityOptions.value.find(
+    (route) => route.method === method && route.providerNode === expectedProvider
+  )
+  return matched?.key ?? ""
+})
 
 const closeNodeDetail = () => {
   flowStore.clearSelection()
+}
+
+const syncPendingCapability = () => {
+  pendingCapabilityKey.value = selectedCapabilityKey.value
+}
+
+const closeMethodDialog = () => {
+  methodDialogOpen.value = false
+}
+
+const refreshMethodCapabilities = async () => {
+  try {
+    await flowStore.queryExecCapabilities()
+    if (!flowStore.state.execCapabilities.some((route) => route.key === pendingCapabilityKey.value)) {
+      syncPendingCapability()
+    }
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to load method capabilities.")
+  }
+}
+
+const openMethodDialog = async () => {
+  if (!selectedNode.value) return
+  methodSearch.value = selectedNode.value.method.trim()
+  syncPendingCapability()
+  methodDialogOpen.value = true
+  if (!flowStore.state.execCapabilities.length) {
+    await refreshMethodCapabilities()
+  }
+}
+
+const selectCapability = (key: string) => {
+  pendingCapabilityKey.value = key
+}
+
+const applyCapabilitySelection = () => {
+  if (!pendingCapabilityKey.value) {
+    toast.warn("Please select a method.")
+    return
+  }
+  try {
+    flowStore.applyCallCapability(pendingCapabilityKey.value)
+    methodDialogOpen.value = false
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, "Failed to apply method capability.")
+  }
 }
 
 const commitNodeId = () => {
@@ -168,7 +280,7 @@ const isEditableTarget = (target: EventTarget | null) => {
 }
 
 const onKeyDown = (event: KeyboardEvent) => {
-  if (addNodeOpen.value) return
+  if (addNodeOpen.value || methodDialogOpen.value) return
 
   const key = event.key || ""
   const lower = key.toLowerCase()
@@ -215,10 +327,23 @@ watch(
 
 watch(
   () => selectedNode.value?.id ?? "",
-  (id) => {
-    nodeIdDraft.value = id
+  () => {
+    nodeIdDraft.value = selectedNode.value?.id ?? ""
+    if (!methodDialogOpen.value) {
+      methodSearch.value = selectedNode.value?.method?.trim() ?? ""
+      syncPendingCapability()
+    }
   },
   { immediate: true }
+)
+
+watch(
+  () => nodeDetailOpen.value,
+  (open) => {
+    if (!open) {
+      methodDialogOpen.value = false
+    }
+  }
 )
 
 watch(
@@ -344,14 +469,14 @@ onUnmounted(() => {
 
       <Overlay
         :open="nodeDetailOpen"
-        overlayClass="bg-black/20 p-0 items-stretch justify-end"
+        overlayClass="bg-slate-950/45 p-0 items-stretch justify-end"
         zIndexClass="z-30"
         closeOnBackdrop
         @close="closeNodeDetail"
       >
         <aside
           v-if="selectedNode"
-          class="h-full w-full max-w-[420px] border-l border-border/70 bg-card/96 shadow-2xl"
+          class="h-full w-full max-w-[420px] border-l border-border/70 bg-card shadow-2xl"
           @click.stop
         >
           <div class="flex h-full flex-col">
@@ -439,32 +564,24 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Target Node
-                    </label>
-                    <input
-                      v-model.number="selectedNode.target"
-                      type="number"
-                      min="0"
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      placeholder="0 = local call"
-                      @blur="flowStore.commitHistory()"
-                    />
+                <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Call Method
+                      </p>
+                      <p class="mt-2 break-all text-sm font-semibold">
+                        {{ selectedNode.method || "No method selected." }}
+                      </p>
+                      <p class="mt-1 text-xs text-muted-foreground">
+                        {{ selectedTargetLabel }}
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" @click="openMethodDialog">Select Method</Button>
                   </div>
-
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Method
-                    </label>
-                    <input
-                      v-model="selectedNode.method"
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      placeholder="method name"
-                      @blur="flowStore.commitHistory()"
-                    />
-                  </div>
+                  <p class="mt-3 text-[11px] text-muted-foreground">
+                    Use the method dialog to choose a registered capability. The editor will keep method and target aligned.
+                  </p>
                 </div>
 
                 <div>
@@ -484,6 +601,111 @@ onUnmounted(() => {
         </aside>
       </Overlay>
     </div>
+
+    <Overlay
+      :open="methodDialogOpen"
+      overlayClass="bg-slate-950/60 p-4"
+      zIndexClass="z-40"
+      closeOnBackdrop
+      @close="closeMethodDialog"
+    >
+      <div class="flex max-h-[80vh] w-full max-w-4xl flex-col rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Call Method</p>
+            <h2 class="mt-1 text-lg font-semibold">Select Capability</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Pick a registered capability and the editor will keep method and target aligned.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span class="rounded-full border border-border/60 px-3 py-1">
+              Executor {{ effectiveExecutorNode || "-" }}
+            </span>
+            <span class="rounded-full border border-border/60 px-3 py-1">
+              {{ selectedTargetLabel }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-5 flex flex-wrap items-end gap-3">
+          <div class="min-w-[240px] flex-1">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Filter
+            </label>
+            <input
+              v-model="methodSearch"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="Search method / provider / version"
+            />
+          </div>
+          <Button variant="outline" :disabled="flowStore.state.execCapabilitiesLoading" @click="refreshMethodCapabilities">
+            {{ flowStore.state.execCapabilitiesLoading ? "Refreshing..." : "Refresh Capabilities" }}
+          </Button>
+        </div>
+
+        <div class="mt-5 flex-1 overflow-y-auto rounded-xl border border-border/70 bg-background/80">
+          <div
+            v-if="flowStore.state.execCapabilitiesLoading && !flowStore.state.execCapabilities.length"
+            class="px-4 py-10 text-center text-sm text-muted-foreground"
+          >
+            Loading capability list...
+          </div>
+          <div v-else-if="!filteredCapabilities.length" class="px-4 py-10 text-center text-sm text-muted-foreground">
+            {{
+              flowStore.state.execCapabilities.length
+                ? "No capability matched the current filter."
+                : "No capability loaded yet. Refresh to query the current executor."
+            }}
+          </div>
+          <div v-else class="divide-y divide-border/60">
+            <button
+              v-for="route in filteredCapabilities"
+              :key="route.key"
+              type="button"
+              class="flex w-full items-start justify-between gap-4 px-4 py-4 text-left transition hover:bg-muted/50"
+              :class="pendingCapabilityKey === route.key ? 'bg-muted/70' : ''"
+              @click="selectCapability(route.key)"
+            >
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="break-all text-sm font-semibold">{{ route.method }}</p>
+                  <span class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ route.providerNode === effectiveExecutorNode ? "Self" : "Remote" }}
+                  </span>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  Provider {{ route.providerNode }}
+                  <span v-if="route.viaNode > 0"> via {{ route.viaNode }}</span>
+                  <span v-if="route.version"> · {{ route.version }}</span>
+                </p>
+              </div>
+              <span
+                class="shrink-0 rounded-full border px-3 py-1 text-xs"
+                :class="
+                  pendingCapabilityKey === route.key
+                    ? 'border-primary text-primary'
+                    : 'border-border/70 text-muted-foreground'
+                "
+              >
+                {{ pendingCapabilityKey === route.key ? "Selected" : "Choose" }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-xs text-muted-foreground">
+            Applying a capability updates the method and hidden call target. Args stay unchanged.
+          </p>
+          <div class="flex gap-2">
+            <Button variant="outline" @click="closeMethodDialog">Cancel</Button>
+            <Button :disabled="!pendingCapabilityKey" @click="applyCapabilitySelection">Apply Method</Button>
+          </div>
+        </div>
+      </div>
+    </Overlay>
 
     <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
