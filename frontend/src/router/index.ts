@@ -16,6 +16,7 @@ import FlowEditorWindow from "@/windows/FlowEditorWindow.vue"
 import LogWindow from "@/windows/LogWindow.vue"
 import ShowcaseEditorWindow from "@/windows/ShowcaseEditorWindow.vue"
 import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
+import TopicBusWindow from "@/windows/TopicBusWindow.vue"
 
 const routes = [
   { path: "/", redirect: "/home" },
@@ -62,6 +63,16 @@ const routes = [
     meta: {
       title: "TopicBus",
       subtitle: "Publish, subscribe, and replay topic events."
+    }
+  },
+  {
+    path: "/topicbus-window",
+    name: "topicbusWindow",
+    component: TopicBusWindow,
+    meta: {
+      title: "TopicBus Window",
+      layout: "window",
+      windowMode: "full-bleed"
     }
   },
   {
