@@ -51,10 +51,22 @@ const requestedTopic = computed(() => String(route.query.topic ?? "").trim())
 const requestedScope = computed(() => String(route.query.scope ?? "").trim().toLowerCase())
 const isAllWindow = computed(() => requestedScope.value === "all" || !requestedTopic.value)
 const windowTitle = computed(() => (isAllWindow.value ? "All Channels" : requestedTopic.value || fallbackTitle))
+const windowModeLabel = computed(() => (isAllWindow.value ? "Aggregate Window" : "Channel Window"))
+const resolvedTopicLabel = computed(() => (isAllWindow.value ? "All known topics" : requestedTopic.value || "-"))
+const resolvedTargetLabel = computed(() => topicbus.state.targetId.trim() || (hubId.value ? String(hubId.value) : "-"))
+const receivePanelPercent = computed(() => `${Math.round(splitRatio.value * 100)}%`)
 
 const localEvents = ref<TopicBusEvent[]>([])
 const selectedEventIndex = ref(-1)
 const selectedEvent = computed(() => localEvents.value[selectedEventIndex.value] ?? null)
+const infoItems = computed(() => [
+  { label: "Topic", value: resolvedTopicLabel.value },
+  { label: "Self", value: selfNodeId.value ? String(selfNodeId.value) : "-" },
+  { label: "Target", value: resolvedTargetLabel.value },
+  { label: "Events", value: String(localEvents.value.length) },
+  { label: "Cache", value: String(topicbus.state.maxEvents) },
+  { label: "Receive", value: receivePanelPercent.value }
+])
 
 const splitRatio = ref(0.62)
 const resizeState = reactive({
@@ -312,156 +324,198 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col gap-4 p-4">
-    <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-3">
+  <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
+    <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            TopicBus Window
-          </p>
-          <h1 class="mt-2 text-lg font-semibold">{{ windowTitle }}</h1>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">TopicBus Window</p>
+          <h1 class="mt-1 text-xl font-semibold">{{ windowTitle }}</h1>
           <p class="mt-2 text-sm text-muted-foreground">
-            {{ isAllWindow ? "Listening for every known topic from this moment onward." : "Listening only for the selected topic from this moment onward." }}
+            {{ isAllWindow ? "Watch every known topic from the moment this window opens." : "Focus on one topic with a dedicated receive and send workspace." }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Self {{ selfNodeId || "-" }}</Badge>
-          <Badge variant="outline">Target {{ topicbus.state.targetId || hubId || "-" }}</Badge>
+          <Badge variant="outline">{{ windowModeLabel }}</Badge>
           <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
         </div>
       </div>
+    </header>
 
-      <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        <span>Events in window: {{ localEvents.length }}</span>
-        <span>Cache limit: {{ topicbus.state.maxEvents }}</span>
-        <span>Your own publish action will not echo back here.</span>
-      </div>
-    </section>
+    <div class="flex-1 min-h-0 overflow-hidden">
+      <div class="grid h-full min-h-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section
+          ref="splitHostRef"
+          class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border bg-card/90 p-3 text-card-foreground shadow-sm"
+          :class="resizeState.active ? 'select-none' : ''"
+        >
+          <section class="min-h-0 shrink-0" :style="panelBasisStyle">
+            <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Receive</p>
+                  <h2 class="text-sm font-semibold">Live Event Stream</h2>
+                  <p class="mt-1 text-xs text-muted-foreground">New events only. Select one item to inspect it from the side panel.</p>
+                </div>
+                <Badge variant="outline">{{ localEvents.length }} events</Badge>
+              </div>
 
-    <section
-      ref="splitHostRef"
-      class="flex min-h-0 flex-1 flex-col rounded-2xl border bg-card/90 p-3 text-card-foreground shadow-sm"
-    >
-      <section class="min-h-0 shrink-0" :style="panelBasisStyle">
-        <div class="flex h-full min-h-0 flex-col rounded-xl border border-border/60 bg-background/70">
-          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Receive</p>
-              <h2 class="text-sm font-semibold">Live Event Stream</h2>
+              <div ref="eventListRef" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                <button
+                  v-for="(event, index) in localEvents"
+                  :key="`${event.topic}-${event.name}-${event.ts}-${index}`"
+                  type="button"
+                  class="w-full rounded-xl border border-border/60 bg-card/90 px-4 py-3 text-left transition hover:border-primary/40"
+                  :class="selectedEventIndex === index ? 'border-primary/50 bg-primary/10' : ''"
+                  @click="selectedEventIndex = index"
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{{ event.topic }}</Badge>
+                    <span class="text-sm font-semibold text-foreground">{{ event.name }}</span>
+                    <span class="text-xs text-muted-foreground">{{ formatTopicBusTimestamp(event.ts) || "-" }}</span>
+                  </div>
+                  <p class="mt-2 text-xs text-muted-foreground">
+                    {{ previewPayload(event.dataRaw) }}
+                  </p>
+                </button>
+
+                <div
+                  v-if="localEvents.length === 0"
+                  class="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-background/60 px-6 text-center text-sm text-muted-foreground"
+                >
+                  Waiting for new TopicBus events in this window.
+                </div>
+              </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" @click="scrollToLatest">Scroll to Latest</Button>
-              <Button size="sm" variant="ghost" @click="clearLocalEvents">Clear</Button>
-            </div>
+          </section>
+
+          <div
+            class="group my-2 flex h-3 shrink-0 cursor-row-resize items-center justify-center rounded-full bg-muted/60 transition hover:bg-muted"
+            @pointerdown="startResize"
+          >
+            <div class="h-1 w-16 rounded-full bg-border/80 transition group-hover:bg-primary/40" />
           </div>
 
-          <div ref="eventListRef" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            <button
-              v-for="(event, index) in localEvents"
-              :key="`${event.topic}-${event.name}-${event.ts}-${index}`"
-              type="button"
-              class="w-full rounded-xl border border-border/60 bg-card/90 px-4 py-3 text-left transition hover:border-primary/40"
-              :class="selectedEventIndex === index ? 'border-primary/50 bg-primary/10' : ''"
-              @click="selectedEventIndex = index"
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{{ event.topic }}</Badge>
-                <span class="text-sm font-semibold text-foreground">{{ event.name }}</span>
-                <span class="text-xs text-muted-foreground">{{ formatTopicBusTimestamp(event.ts) || "-" }}</span>
+          <section class="min-h-0 flex-1">
+            <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
+              <div class="border-b border-border/60 px-4 py-3">
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Send</p>
+                <h2 class="text-sm font-semibold">Publish Event</h2>
               </div>
-              <pre
-                v-if="selectedEventIndex === index"
-                class="mt-3 whitespace-pre-wrap break-all rounded-lg border border-border/60 bg-background/80 p-3 text-xs text-muted-foreground"
+
+              <div class="min-h-0 flex-1 overflow-y-auto p-4">
+                <div class="grid gap-4">
+                  <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                    <div>
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Target Node ID
+                      </label>
+                      <input
+                        v-model="topicbus.state.targetId"
+                        :class="inputClass"
+                        :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Topic
+                      </label>
+                      <input
+                        v-model="sendForm.topic"
+                        :class="inputClass"
+                        :placeholder="isAllWindow ? 'topic.status' : ''"
+                        :readonly="!isAllWindow"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Name
+                    </label>
+                    <input v-model="sendForm.name" :class="inputClass" placeholder="event name" />
+                  </div>
+
+                  <div class="min-h-0">
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      Payload
+                    </label>
+                    <textarea
+                      v-model="sendForm.payload"
+                      :class="textAreaClass"
+                      rows="6"
+                      placeholder="JSON or plain text"
+                    />
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-xs text-muted-foreground">
+                      {{ isAllWindow ? "Choose a topic before sending from the aggregate window." : "Topic is locked to this channel for safer publishing." }}
+                    </p>
+                    <Button :disabled="busy" @click="publishEvent">Publish</Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="flex min-h-0 min-w-0 flex-col gap-4 xl:overflow-hidden">
+          <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Other Info</p>
+            <h2 class="mt-2 text-lg font-semibold">Window Snapshot</h2>
+
+            <div class="mt-4 grid gap-3">
+              <div
+                v-for="item in infoItems"
+                :key="item.label"
+                class="rounded-xl border border-border/60 bg-background/70 px-3 py-2"
               >
-{{ event.dataRaw }}
-              </pre>
-              <p v-else class="mt-2 text-xs text-muted-foreground">
-                {{ previewPayload(event.dataRaw) }}
+                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ item.label }}</p>
+                <p class="mt-1 text-sm font-medium text-foreground">{{ item.value }}</p>
+              </div>
+            </div>
+
+            <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge v-if="selectedEvent" variant="outline">{{ selectedEvent.topic }}</Badge>
+                <span class="text-xs text-muted-foreground">
+                  {{ selectedEvent ? formatTopicBusTimestamp(selectedEvent.ts) || "-" : "No event selected" }}
+                </span>
+              </div>
+              <p class="mt-2 text-sm font-semibold text-foreground">
+                {{ selectedEvent ? selectedEvent.name : "Selected Event" }}
               </p>
-            </button>
-
-            <div
-              v-if="localEvents.length === 0"
-              class="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-background/60 px-6 text-center text-sm text-muted-foreground"
-            >
-              Waiting for new TopicBus events in this window.
+              <pre
+                v-if="selectedEvent"
+                class="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border/60 bg-card/90 p-3 text-xs text-muted-foreground"
+              >
+{{ selectedEvent.dataRaw }}
+              </pre>
+              <p v-else class="mt-2 text-sm text-muted-foreground">
+                Select one event from the receive list to inspect its full payload here.
+              </p>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
 
-      <div
-        class="group my-2 flex h-3 shrink-0 cursor-row-resize items-center justify-center rounded-full bg-muted/60 transition hover:bg-muted"
-        @pointerdown="startResize"
-      >
-        <div class="h-1 w-16 rounded-full bg-border/80 transition group-hover:bg-primary/40" />
+          <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Control Buttons</p>
+            <h2 class="mt-2 text-lg font-semibold">Window Actions</h2>
+            <p class="mt-2 text-sm text-muted-foreground">
+              Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.
+            </p>
+
+            <div class="mt-4 grid gap-3">
+              <Button variant="outline" class="justify-start" @click="scrollToLatest">Scroll to Latest</Button>
+              <Button variant="outline" class="justify-start" @click="clearLocalEvents">Clear Receive List</Button>
+              <Button variant="outline" class="justify-start" @click="clearComposer">Reset Draft</Button>
+            </div>
+
+            <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+              Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.
+            </div>
+          </section>
+        </aside>
       </div>
-
-      <section class="min-h-0 flex-1">
-        <div class="flex h-full min-h-0 flex-col rounded-xl border border-border/60 bg-background/70">
-          <div class="border-b border-border/60 px-4 py-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Send</p>
-            <h2 class="text-sm font-semibold">Publish Event</h2>
-          </div>
-
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
-            <div class="grid gap-4">
-              <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
-                <div>
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Target Node ID
-                  </label>
-                  <input
-                    v-model="topicbus.state.targetId"
-                    :class="inputClass"
-                    :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
-                  />
-                </div>
-                <div>
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Topic
-                  </label>
-                  <input
-                    v-model="sendForm.topic"
-                    :class="inputClass"
-                    :placeholder="isAllWindow ? 'topic.status' : ''"
-                    :readonly="!isAllWindow"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Name
-                </label>
-                <input v-model="sendForm.name" :class="inputClass" placeholder="event name" />
-              </div>
-
-              <div class="min-h-0">
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Payload
-                </label>
-                <textarea
-                  v-model="sendForm.payload"
-                  :class="textAreaClass"
-                  rows="6"
-                  placeholder="JSON or plain text"
-                />
-              </div>
-
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <p class="text-xs text-muted-foreground">
-                  {{ isAllWindow ? "Choose a topic before sending from the aggregate window." : "Topic is locked to this channel for safer publishing." }}
-                </p>
-                <div class="flex flex-wrap gap-2">
-                  <Button variant="outline" :disabled="busy" @click="clearComposer">Clear</Button>
-                  <Button :disabled="busy" @click="publishEvent">Publish</Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </section>
+    </div>
   </section>
 </template>
