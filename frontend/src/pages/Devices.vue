@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -391,20 +392,20 @@ onMounted(async () => {
 
     <Overlay :open="nodeInfoOpen" closeOnBackdrop @close="closeNodeInfo">
       <div class="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("Device") }}
-            </p>
-            <h2 class="mt-1 text-lg font-semibold">{{ t("Node {nodeId}", { nodeId: nodeInfoNodeId }) }}</h2>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" :disabled="nodeInfoLoading" @click="refreshNodeInfo">
-              {{ t("Reload") }}
-            </Button>
-            <Button size="sm" variant="outline" @click="closeNodeInfo">{{ t("Close") }}</Button>
-          </div>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Node {nodeId}', { nodeId: nodeInfoNodeId })"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" :disabled="nodeInfoLoading" @click="refreshNodeInfo">
+                {{ t("Reload") }}
+              </Button>
+              <Button size="sm" variant="outline" @click="closeNodeInfo">{{ t("Close") }}</Button>
+            </div>
+          </template>
+        </CardHeader>
 
         <div class="mt-4">
           <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">{{ t("Loading…") }}</div>
@@ -434,27 +435,25 @@ onMounted(async () => {
 
     <Overlay :open="configOpen" closeOnBackdrop @close="closeConfig">
       <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("Config") }}
-            </p>
-            <h2 class="mt-1 text-lg font-semibold">
-              {{ t("Node {nodeId}", { nodeId: mgmtStore.state.selectedNodeId || "-" }) }}
-            </h2>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="!mgmtStore.state.selectedNodeId"
-              @click="refreshConfig"
-            >
-              {{ t("Refresh") }}
-            </Button>
-            <Button size="sm" variant="outline" @click="closeConfig">{{ t("Close") }}</Button>
-          </div>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Node {nodeId}', { nodeId: mgmtStore.state.selectedNodeId || '-' })"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="!mgmtStore.state.selectedNodeId"
+                @click="refreshConfig"
+              >
+                {{ t("Refresh") }}
+              </Button>
+              <Button size="sm" variant="outline" @click="closeConfig">{{ t("Close") }}</Button>
+            </div>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 max-h-[65vh] space-y-2 overflow-y-auto">
           <div

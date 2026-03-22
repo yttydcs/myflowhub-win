@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { LayoutGrid, Link2Off, Plus, Redo2, Save, Trash2, Undo2, X } from "lucide-vue-next"
+import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -507,14 +508,14 @@ onUnmounted(() => {
         >
           <div class="flex h-full flex-col">
             <div class="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Node Detail") }}</p>
-                <h2 class="mt-1 text-lg font-semibold">{{ selectedNode.id }}</h2>
-              </div>
-              <Button size="icon" variant="ghost" @click="closeNodeDetail">
-                <X class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">{{ t("Close") }}</span>
-              </Button>
+              <CardHeader class="w-full items-start" :title="selectedNode.id" title-class="text-lg">
+                <template #actions>
+                  <Button size="icon" variant="ghost" @click="closeNodeDetail">
+                    <X class="h-4 w-4" aria-hidden="true" />
+                    <span class="sr-only">{{ t("Close") }}</span>
+                  </Button>
+                </template>
+              </CardHeader>
             </div>
 
             <div class="flex-1 overflow-y-auto px-5 py-4">
@@ -636,27 +637,26 @@ onUnmounted(() => {
       @close="closeMethodDialog"
     >
       <div class="flex max-h-[80vh] w-full max-w-4xl flex-col rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Call Method") }}</p>
-            <h2 class="mt-1 text-lg font-semibold">{{ t("Select Capability") }}</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              {{ t("Pick a registered capability and the editor will keep method and target aligned.") }}
-            </p>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span class="rounded-full border border-border/60 px-3 py-1">
-              {{ t("Executor {nodeId}", { nodeId: effectiveExecutorNode || "-" }) }}
-            </span>
-            <span class="rounded-full border border-border/60 px-3 py-1">
-              {{ t("Query Node {nodeId}", { nodeId: capabilityQueryNodeLabel }) }}
-            </span>
-            <span class="rounded-full border border-border/60 px-3 py-1">
-              {{ selectedTargetLabel }}
-            </span>
-          </div>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Select Capability')"
+          :description="t('Pick a registered capability and the editor will keep method and target aligned.')"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span class="rounded-full border border-border/60 px-3 py-1">
+                {{ t("Executor {nodeId}", { nodeId: effectiveExecutorNode || "-" }) }}
+              </span>
+              <span class="rounded-full border border-border/60 px-3 py-1">
+                {{ t("Query Node {nodeId}", { nodeId: capabilityQueryNodeLabel }) }}
+              </span>
+              <span class="rounded-full border border-border/60 px-3 py-1">
+                {{ selectedTargetLabel }}
+              </span>
+            </div>
+          </template>
+        </CardHeader>
 
         <div class="mt-5 flex flex-wrap items-end gap-3">
           <div class="min-w-[200px] max-w-[240px] flex-1">

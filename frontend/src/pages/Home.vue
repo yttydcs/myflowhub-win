@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
@@ -315,18 +316,17 @@ onMounted(async () => {
     <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("Connection") }}
-              </p>
-              <h3 class="text-lg font-semibold">{{ t("Target Session") }}</h3>
-              <p class="text-sm text-muted-foreground">
-                {{ t("Connect to hub nodes and keep the console in sync.") }}
-              </p>
-            </div>
-            <Badge :class="statusTone">{{ statusLabel }}</Badge>
-          </div>
+          <CardHeader
+            class="items-center"
+            :title="t('Target Session')"
+            :description="t('Connect to hub nodes and keep the console in sync.')"
+            title-tag="h3"
+            title-class="text-lg"
+          >
+            <template #actions>
+              <Badge :class="statusTone">{{ statusLabel }}</Badge>
+            </template>
+          </CardHeader>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
@@ -366,20 +366,19 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("Authentication") }}
-              </p>
-              <h3 class="text-lg font-semibold">{{ t("Device Identity") }}</h3>
-              <p class="text-sm text-muted-foreground">
-                {{ t("Register once, then sign in with your saved node ID.") }}
-              </p>
-            </div>
-            <Badge variant="secondary">
-              {{ sessionStore.auth.loggedIn ? t("Logged In") : t("Not Logged In") }}
-            </Badge>
-          </div>
+          <CardHeader
+            class="items-center"
+            :title="t('Device Identity')"
+            :description="t('Register once, then sign in with your saved node ID.')"
+            title-tag="h3"
+            title-class="text-lg"
+          >
+            <template #actions>
+              <Badge variant="secondary">
+                {{ sessionStore.auth.loggedIn ? t("Logged In") : t("Not Logged In") }}
+              </Badge>
+            </template>
+          </CardHeader>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
@@ -417,10 +416,7 @@ onMounted(async () => {
 
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Identity Snapshot") }}
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">{{ t("Current Credentials") }}</h3>
+          <CardHeader :title="t('Current Credentials')" title-tag="h3" title-class="text-lg" />
           <div class="mt-4 grid gap-3 text-sm">
             <div class="rounded-xl border border-border/60 bg-background/70 p-3">
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Node ID") }}</p>
@@ -438,10 +434,7 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Session Notes") }}
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">{{ t("Live Status") }}</h3>
+          <CardHeader :title="t('Live Status')" title-tag="h3" title-class="text-lg" />
           <div class="mt-4 space-y-3 text-sm text-muted-foreground">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Profile") }}</p>

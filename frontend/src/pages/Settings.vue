@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { type AppLocale, t } from "@/i18n"
@@ -178,43 +179,37 @@ watch(
 <template>
   <section class="grid gap-6">
     <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("App Settings") }}
-          </p>
-          <h3 class="mt-1 text-xl font-semibold">
-            {{ t("Defaults, interface, language, and build information") }}
-          </h3>
-          <p class="mt-2 max-w-2xl text-sm text-muted-foreground">
-            {{
-              t(
-                "Connection defaults and UI preferences are stored per profile. Language is global for the whole application. Save applies changes immediately and updates startup behavior for the next launch."
-              )
-            }}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{{ t("Profile: {profile}", { profile: profileStore.state.current }) }}</Badge>
-          <Badge variant="muted">{{ dirty ? t("Unsaved changes") : t("Saved") }}</Badge>
-        </div>
-      </div>
+      <CardHeader
+        class="lg:items-center"
+        :title="t('Defaults, interface, language, and build information')"
+        :description="
+          t(
+            'Connection defaults and UI preferences are stored per profile. Language is global for the whole application. Save applies changes immediately and updates startup behavior for the next launch.'
+          )
+        "
+        title-tag="h3"
+        title-class="text-xl"
+        description-class="max-w-2xl"
+      >
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{{ t("Profile: {profile}", { profile: profileStore.state.current }) }}</Badge>
+            <Badge variant="muted">{{ dirty ? t("Unsaved changes") : t("Saved") }}</Badge>
+          </div>
+        </template>
+      </CardHeader>
     </div>
 
     <div class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("Startup Defaults") }}
-              </p>
-              <h3 class="mt-1 text-lg font-semibold">{{ t("Connection and identity") }}</h3>
-            </div>
-            <Badge :variant="draft.autoConnect || draft.autoLogin ? 'secondary' : 'muted'">
-              {{ draft.autoConnect || draft.autoLogin ? t("Automation enabled") : t("Manual startup") }}
-            </Badge>
-          </div>
+          <CardHeader class="items-center" :title="t('Connection and identity')" title-tag="h3" title-class="text-lg">
+            <template #actions>
+              <Badge :variant="draft.autoConnect || draft.autoLogin ? 'secondary' : 'muted'">
+                {{ draft.autoConnect || draft.autoLogin ? t("Automation enabled") : t("Manual startup") }}
+              </Badge>
+            </template>
+          </CardHeader>
 
           <div class="mt-5 grid gap-4">
             <div>
@@ -270,10 +265,7 @@ watch(
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Interface") }}
-          </p>
-          <h3 class="mt-1 text-lg font-semibold">{{ t("Launch and visual rhythm") }}</h3>
+          <CardHeader :title="t('Launch and visual rhythm')" title-tag="h3" title-class="text-lg" />
 
           <div class="mt-5 grid gap-4">
             <div>
@@ -327,10 +319,7 @@ watch(
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Other") }}
-          </p>
-          <h3 class="mt-1 text-lg font-semibold">{{ t("Language and regional behavior") }}</h3>
+          <CardHeader :title="t('Language and regional behavior')" title-tag="h3" title-class="text-lg" />
 
           <div class="mt-5 grid gap-4">
             <div>
@@ -360,18 +349,17 @@ watch(
 
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("TopicBus") }}
-              </p>
-              <h3 class="mt-1 text-lg font-semibold">{{ t("TopicBus Settings") }}</h3>
-              <p class="mt-2 text-sm text-muted-foreground">
-                {{ t("TopicBus windows only show events received after they open. Your own publish actions do not echo back.") }}
-              </p>
-            </div>
-            <Badge variant="secondary">{{ t("Target {id}", { id: topicbus.state.targetId || t("Hub NodeID") }) }}</Badge>
-          </div>
+          <CardHeader
+            class="items-center"
+            :title="t('TopicBus Settings')"
+            :description="t('TopicBus windows only show events received after they open. Your own publish actions do not echo back.')"
+            title-tag="h3"
+            title-class="text-lg"
+          >
+            <template #actions>
+              <Badge variant="secondary">{{ t("Target {id}", { id: topicbus.state.targetId || t("Hub NodeID") }) }}</Badge>
+            </template>
+          </CardHeader>
 
           <div class="mt-5 grid gap-4 md:grid-cols-2">
             <div>
@@ -409,13 +397,12 @@ watch(
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("About") }}
-          </p>
-          <h3 class="mt-1 text-lg font-semibold">{{ appSettings.state.about.appName }}</h3>
-          <p class="mt-2 text-sm text-muted-foreground">
-            {{ t("Build metadata and local paths for troubleshooting, release validation, and handoff.") }}
-          </p>
+          <CardHeader
+            :title="appSettings.state.about.appName"
+            :description="t('Build metadata and local paths for troubleshooting, release validation, and handoff.')"
+            title-tag="h3"
+            title-class="text-lg"
+          />
 
           <div class="mt-5 grid gap-3 sm:grid-cols-2">
             <div

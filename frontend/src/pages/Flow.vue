@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { PencilLine, Plus, RefreshCw, Rocket, Settings2, Trash2 } from "lucide-vue-next"
+import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -379,16 +380,14 @@ onMounted(async () => {
     </PageHero>
 
     <section v-if="activeTab === 'projects'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Local") }}</p>
-          <h2 class="mt-1 text-lg font-semibold">{{ t("Flow Projects") }}</h2>
-        </div>
-        <Button @click="openCreateDialog">
-          <Plus class="mr-2 h-4 w-4" />
-          {{ t("New Project") }}
-        </Button>
-      </div>
+      <CardHeader class="items-center" :title="t('Flow Projects')" title-class="text-lg">
+        <template #actions>
+          <Button @click="openCreateDialog">
+            <Plus class="mr-2 h-4 w-4" />
+            {{ t("New Project") }}
+          </Button>
+        </template>
+      </CardHeader>
 
       <div class="mt-4 space-y-2">
         <article
@@ -432,27 +431,25 @@ onMounted(async () => {
     </section>
 
     <section v-else class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Runtime") }}</p>
-          <h2 class="mt-1 text-lg font-semibold">{{ t("Current Deployments") }}</h2>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Node") }}</span>
-            <input
-              v-model="currentDeployNodeId"
-              class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-              :placeholder="t('Node ID')"
-            />
+      <CardHeader class="items-center" :title="t('Current Deployments')" title-class="text-lg">
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
+              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Node") }}</span>
+              <input
+                v-model="currentDeployNodeId"
+                class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                :placeholder="t('Node ID')"
+              />
+            </div>
+            <Button size="sm" variant="outline" @click="pickNode('deployments')">{{ t("Select node") }}</Button>
+            <Button size="sm" :disabled="flowProjects.state.deploymentsLoading" @click="reloadDeployments">
+              <RefreshCw class="mr-2 h-4 w-4" />
+              {{ t("Refresh") }}
+            </Button>
           </div>
-          <Button size="sm" variant="outline" @click="pickNode('deployments')">{{ t("Select node") }}</Button>
-          <Button size="sm" :disabled="flowProjects.state.deploymentsLoading" @click="reloadDeployments">
-            <RefreshCw class="mr-2 h-4 w-4" />
-            {{ t("Refresh") }}
-          </Button>
-        </div>
-      </div>
+        </template>
+      </CardHeader>
 
       <div class="mt-4 space-y-2">
         <article

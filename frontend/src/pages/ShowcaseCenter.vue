@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Copy, ExternalLink, PencilLine, Plus, Trash2 } from "lucide-vue-next"
+import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -198,12 +199,7 @@ onMounted(async () => {
     </PageHero>
 
     <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Library") }}</p>
-          <h2 class="mt-1 text-lg font-semibold">{{ t("Screens") }}</h2>
-        </div>
-      </div>
+      <CardHeader class="items-center" :title="t('Screens')" title-class="text-lg" />
 
       <div class="mt-5 space-y-3">
         <article

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Save, Settings2, Undo2 } from "lucide-vue-next"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -1497,16 +1498,17 @@ onBeforeUnmount(() => {
 
     <Overlay :open="layoutDialogOpen" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeLayoutDialog">
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Showcase Layout") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Edit Layout") }}</h3>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {{ t("Keep layout settings out of the main editor surface. Apply changes only when you are ready.") }}
-            </p>
-          </div>
-          <Badge variant="secondary">{{ currentLayoutLabel }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Edit Layout')"
+          :description="t('Keep layout settings out of the main editor surface. Apply changes only when you are ready.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ currentLayoutLabel }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
@@ -1543,17 +1545,16 @@ onBeforeUnmount(() => {
 
     <Overlay :open="widgetDialog.open" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeWidgetDialog">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ widgetDialog.kind === "topic_button" ? t("TopicBus") : t("VarStore") }}
-            </p>
-            <h3 class="mt-2 text-lg font-semibold">
-              {{ widgetDialog.mode === "create" ? t("Add Widget") : t("Edit Widget") }}
-            </h3>
-          </div>
-          <Badge variant="secondary">{{ widgetKindLabel(widgetDialog.kind) }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="widgetDialog.mode === 'create' ? t('Add Widget') : t('Edit Widget')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ widgetKindLabel(widgetDialog.kind) }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-5 grid gap-4">
           <div class="grid gap-4" :class="widgetDialog.kind === 'topic_button' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
@@ -1711,14 +1712,18 @@ onBeforeUnmount(() => {
       @close="closeVarQuickPickDialog"
     >
       <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarStore") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Pick Variable") }}</h3>
-            <p class="mt-1 text-xs text-muted-foreground">{{ t("Data source: current subscribed variables and mine.") }}</p>
-          </div>
-          <Badge variant="secondary">{{ filteredVarQuickPickItems.length }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Pick Variable')"
+          :description="t('Data source: current subscribed variables and mine.')"
+          title-tag="h3"
+          title-class="text-lg"
+          description-class="text-xs"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ filteredVarQuickPickItems.length }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input

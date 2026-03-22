@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -360,13 +361,11 @@ onMounted(async () => {
 
     <section v-if="activeTab === 'overview'" class="space-y-6">
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Snapshot") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Current Status") }}</h3>
-          </div>
-          <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
-        </div>
+        <CardHeader class="items-center" :title="t('Current Status')" title-tag="h3" title-class="text-lg">
+          <template #actions>
+            <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
           <div
@@ -387,20 +386,21 @@ onMounted(async () => {
 
     <section v-else class="space-y-6">
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Channels") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Saved Topics & Subscriptions") }}</h3>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {{ t("Manage saved topics, remote subscriptions, and dedicated windows from one list.") }}
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{{ t("Target {id}", { id: resolvedTargetLabel }) }}</Badge>
-            <Badge variant="outline">{{ t("{count} saved", { count: topicbus.state.topics.length }) }}</Badge>
-            <Badge variant="secondary">{{ t("{count} remote active", { count: topicbus.state.remoteTopics.length }) }}</Badge>
-          </div>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Saved Topics & Subscriptions')"
+          :description="t('Manage saved topics, remote subscriptions, and dedicated windows from one list.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <div class="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{{ t("Target {id}", { id: resolvedTargetLabel }) }}</Badge>
+              <Badge variant="outline">{{ t("{count} saved", { count: topicbus.state.topics.length }) }}</Badge>
+              <Badge variant="secondary">{{ t("{count} remote active", { count: topicbus.state.remoteTopics.length }) }}</Badge>
+            </div>
+          </template>
+        </CardHeader>
 
         <div class="mt-5">
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -429,16 +429,17 @@ onMounted(async () => {
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Known Topics") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Known Topics") }}</h3>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {{ t("Each row opens a dedicated window that starts listening from the moment it opens.") }}
-            </p>
-          </div>
-          <Badge variant="outline">{{ t("{count} channels", { count: channelItems.length + 1 }) }}</Badge>
-        </div>
+        <CardHeader
+          class="items-center"
+          :title="t('Known Topics')"
+          :description="t('Each row opens a dedicated window that starts listening from the moment it opens.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="outline">{{ t("{count} channels", { count: channelItems.length + 1 }) }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-5 space-y-3">
           <article

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import PageHero from "@/components/PageHero.vue"
@@ -497,18 +498,17 @@ onMounted(async () => {
 
     <section v-if="activeTab === 'control'" class="space-y-4">
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("VarPool Control") }}
-            </p>
-            <h3 class="text-lg font-semibold">{{ t("Target & Identity") }}</h3>
-            <p class="text-sm text-muted-foreground">
-              {{ t("Use your logged-in node to list variables and manage watch targets.") }}
-            </p>
-          </div>
-          <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
-        </div>
+        <CardHeader
+          class="items-center"
+          :title="t('Target & Identity')"
+          :description="t('Use your logged-in node to list variables and manage watch targets.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 space-y-4">
           <div>
@@ -530,8 +530,7 @@ onMounted(async () => {
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Snapshot") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("VarPool Status") }}</h3>
+        <CardHeader :title="t('VarPool Status')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
           <div
             v-for="item in summaryItems"
@@ -545,15 +544,11 @@ onMounted(async () => {
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("Subscriptions") }}
-            </p>
-            <h3 class="text-lg font-semibold">{{ t("Active List") }}</h3>
-          </div>
-          <Badge variant="outline">{{ t("{count} active", { count: subscribedEntries.length }) }}</Badge>
-        </div>
+        <CardHeader class="items-center" :title="t('Active List')" title-tag="h3" title-class="text-lg">
+          <template #actions>
+            <Badge variant="outline">{{ t("{count} active", { count: subscribedEntries.length }) }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 space-y-3">
           <div
@@ -577,18 +572,16 @@ onMounted(async () => {
     </section>
 
     <section v-if="activeTab === 'mine'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Mine") }}</p>
-          <h3 class="mt-1 text-lg font-semibold">{{ t("My Variables") }}</h3>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{{ t("Updated: {time}", { time: varpool.state.lastFrameAt || "-" }) }}</Badge>
-          <Button size="sm" variant="outline" :disabled="busy" @click="openAddMineDialog">
-            {{ t("Add Variable") }}
-          </Button>
-        </div>
-      </div>
+      <CardHeader class="items-center" :title="t('My Variables')" title-tag="h3" title-class="text-lg">
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{{ t("Updated: {time}", { time: varpool.state.lastFrameAt || "-" }) }}</Badge>
+            <Button size="sm" variant="outline" :disabled="busy" @click="openAddMineDialog">
+              {{ t("Add Variable") }}
+            </Button>
+          </div>
+        </template>
+      </CardHeader>
 
       <div class="mt-4 space-y-3">
         <article
@@ -631,17 +624,15 @@ onMounted(async () => {
     </section>
 
     <section v-if="activeTab === 'watch'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Watch") }}</p>
-          <h3 class="mt-1 text-lg font-semibold">{{ t("Watched Variables") }}</h3>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">{{ t("Node Vars") }}</Button>
-          <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">{{ t("Add Watch") }}</Button>
-          <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">{{ t("Reload Saved") }}</Button>
-        </div>
-      </div>
+      <CardHeader class="items-center" :title="t('Watched Variables')" title-tag="h3" title-class="text-lg">
+        <template #actions>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">{{ t("Node Vars") }}</Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">{{ t("Add Watch") }}</Button>
+            <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">{{ t("Reload Saved") }}</Button>
+          </div>
+        </template>
+      </CardHeader>
 
       <div class="mt-4 space-y-3">
         <article
@@ -697,18 +688,17 @@ onMounted(async () => {
       @close="closeAddMineDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("VarPool Add") }}
-            </p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Create Variable") }}</h3>
-            <p class="text-sm text-muted-foreground">
-              {{ t("Owner defaults to your current NodeID.") }}
-            </p>
-          </div>
-          <Badge variant="secondary">{{ t("New") }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Create Variable')"
+          :description="t('Owner defaults to your current NodeID.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ t("New") }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 grid gap-4">
           <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
@@ -760,18 +750,17 @@ onMounted(async () => {
       @close="closeAddWatchDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("VarPool Watch") }}
-            </p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Add Watch") }}</h3>
-            <p class="text-sm text-muted-foreground">
-              {{ t("Track variables owned by another node.") }}
-            </p>
-          </div>
-          <Badge variant="secondary">{{ t("Watch") }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Add Watch')"
+          :description="t('Track variables owned by another node.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ t("Watch") }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 grid gap-4">
           <div>
@@ -802,18 +791,17 @@ onMounted(async () => {
       @close="closeEditDialog"
     >
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ t("VarPool Edit") }}
-            </p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Update Variable") }}</h3>
-            <p class="text-sm text-muted-foreground">
-              {{ t("Visibility may not apply to other node owners.") }}
-            </p>
-          </div>
-          <Badge variant="secondary">{{ t("Edit") }}</Badge>
-        </div>
+        <CardHeader
+          class="items-start"
+          :title="t('Update Variable')"
+          :description="t('Visibility may not apply to other node owners.')"
+          title-tag="h3"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ t("Edit") }}</Badge>
+          </template>
+        </CardHeader>
 
         <div class="mt-4 grid gap-4">
           <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">

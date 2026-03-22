@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { usePresetsStore } from "@/stores/presets"
@@ -753,20 +754,19 @@ onMounted(async () => {
     <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("Stress Test") }}
-              </p>
-              <h3 class="text-lg font-semibold">{{ t("Topic Stress Sender") }}</h3>
-              <p class="text-sm text-muted-foreground">
-                {{ t("Publish high-rate topic events to validate throughput.") }}
-              </p>
-            </div>
-            <span class="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-              {{ senderStatus.active ? t("Active") : t("Idle") }}
-            </span>
-          </div>
+          <CardHeader
+            class="items-center"
+            :title="t('Topic Stress Sender')"
+            :description="t('Publish high-rate topic events to validate throughput.')"
+            title-tag="h3"
+            title-class="text-lg"
+          >
+            <template #actions>
+              <span class="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+                {{ senderStatus.active ? t("Active") : t("Idle") }}
+              </span>
+            </template>
+          </CardHeader>
 
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div>
@@ -843,20 +843,19 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("Stress Test") }}
-              </p>
-              <h3 class="text-lg font-semibold">{{ t("Topic Stress Receiver") }}</h3>
-              <p class="text-sm text-muted-foreground">
-                {{ t("Subscribe and validate incoming events for loss or corruption.") }}
-              </p>
-            </div>
-            <span class="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-              {{ receiverStatus.active ? t("Active") : t("Idle") }}
-            </span>
-          </div>
+          <CardHeader
+            class="items-center"
+            :title="t('Topic Stress Receiver')"
+            :description="t('Subscribe and validate incoming events for loss or corruption.')"
+            title-tag="h3"
+            title-class="text-lg"
+          >
+            <template #actions>
+              <span class="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+                {{ receiverStatus.active ? t("Active") : t("Idle") }}
+              </span>
+            </template>
+          </CardHeader>
 
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div>
@@ -948,10 +947,7 @@ onMounted(async () => {
 
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Session") }}
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">{{ t("Identity Snapshot") }}</h3>
+          <CardHeader :title="t('Identity Snapshot')" title-tag="h3" title-class="text-lg" />
           <div class="mt-4 space-y-3 text-sm text-muted-foreground">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Connection") }}</p>
@@ -980,10 +976,7 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Preset Notes") }}
-          </p>
-          <h3 class="mt-2 text-lg font-semibold">{{ t("Defaults & Tips") }}</h3>
+          <CardHeader :title="t('Defaults & Tips')" title-tag="h3" title-class="text-lg" />
           <div class="mt-4 space-y-3 text-sm text-muted-foreground">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Default Target") }}</p>
@@ -1003,8 +996,7 @@ onMounted(async () => {
 
     <div class="grid gap-6 lg:grid-cols-2">
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Management") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Node Echo") }}</h3>
+        <CardHeader :title="t('Node Echo')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1025,8 +1017,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Auth") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Register Device") }}</h3>
+        <CardHeader :title="t('Register Device')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1047,8 +1038,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Auth") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Login Device") }}</h3>
+        <CardHeader :title="t('Login Device')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1075,8 +1065,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarPool") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Set Variable") }}</h3>
+        <CardHeader :title="t('Set Variable')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div class="grid gap-3 sm:grid-cols-2">
             <div>
@@ -1127,8 +1116,7 @@ onMounted(async () => {
         </div>
       </div>
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarPool") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Get / Revoke") }}</h3>
+        <CardHeader :title="t('Get / Revoke')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div class="grid gap-3 sm:grid-cols-2">
             <div>
@@ -1160,8 +1148,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarPool") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Subscribe") }}</h3>
+        <CardHeader :title="t('Subscribe')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div class="grid gap-3 sm:grid-cols-2">
             <div>
@@ -1193,8 +1180,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("TopicBus") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Publish Event") }}</h3>
+        <CardHeader :title="t('Publish Event')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1227,8 +1213,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("TopicBus") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Subscribe") }}</h3>
+        <CardHeader :title="t('Subscribe')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1251,8 +1236,7 @@ onMounted(async () => {
         </div>
       </div>
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Flow") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Flow Commands") }}</h3>
+        <CardHeader :title="t('Flow Commands')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div class="grid gap-3 sm:grid-cols-2">
             <div>
@@ -1290,8 +1274,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Management") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("Config & Nodes") }}</h3>
+        <CardHeader :title="t('Config & Nodes')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1330,8 +1313,7 @@ onMounted(async () => {
       </div>
 
       <div class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("File") }}</p>
-        <h3 class="mt-2 text-lg font-semibold">{{ t("List & Read") }}</h3>
+        <CardHeader :title="t('List & Read')" title-tag="h3" title-class="text-lg" />
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
+import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
@@ -343,14 +344,17 @@ onBeforeUnmount(() => {
           <section class="min-h-0 shrink-0" :style="panelBasisStyle">
             <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
               <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
-                <div>
-                  <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Receive") }}</p>
-                  <h2 class="text-sm font-semibold">{{ t("Live Event Stream") }}</h2>
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {{ t("New events only. Select one item to inspect it from the side panel.") }}
-                  </p>
-                </div>
-                <Badge variant="outline">{{ t("{count} events", { count: localEvents.length }) }}</Badge>
+                <CardHeader
+                  class="w-full items-center"
+                  :title="t('Live Event Stream')"
+                  :description="t('New events only. Select one item to inspect it from the side panel.')"
+                  title-class="text-sm"
+                  description-class="text-xs"
+                >
+                  <template #actions>
+                    <Badge variant="outline">{{ t("{count} events", { count: localEvents.length }) }}</Badge>
+                  </template>
+                </CardHeader>
               </div>
 
               <div ref="eventListRef" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
@@ -392,8 +396,7 @@ onBeforeUnmount(() => {
           <section class="min-h-0 flex-1">
             <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
               <div class="border-b border-border/60 px-4 py-3">
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Send") }}</p>
-                <h2 class="text-sm font-semibold">{{ t("Publish Event") }}</h2>
+                <CardHeader :title="t('Publish Event')" title-class="text-sm" />
               </div>
 
               <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -447,8 +450,7 @@ onBeforeUnmount(() => {
 
         <aside class="flex min-h-0 min-w-0 flex-col gap-4 xl:overflow-hidden">
           <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Other Info") }}</p>
-            <h2 class="mt-2 text-lg font-semibold">{{ t("Window Snapshot") }}</h2>
+            <CardHeader :title="t('Window Snapshot')" title-class="text-lg" />
 
             <div class="mt-4 grid gap-3">
               <div
@@ -484,11 +486,11 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Control Buttons") }}</p>
-            <h2 class="mt-2 text-lg font-semibold">{{ t("Window Actions") }}</h2>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {{ t("Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.") }}
-            </p>
+            <CardHeader
+              :title="t('Window Actions')"
+              :description="t('Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.')"
+              title-class="text-lg"
+            />
 
             <div class="mt-4 grid gap-3">
               <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
