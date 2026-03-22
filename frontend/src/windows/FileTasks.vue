@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { useFileStore } from "@/stores/file"
@@ -82,17 +83,13 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <div class="flex items-center justify-between gap-4">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          {{ t("Transfers") }}
-        </p>
-        <h1 class="text-2xl font-semibold">{{ t("File Tasks") }}</h1>
-      </div>
-      <div class="text-xs text-muted-foreground">
-        {{ t("{count} active records", { count: tasks.length }) }}
-      </div>
-    </div>
+    <CardHeader class="items-center" :title="t('File Tasks')" title-tag="h1" title-class="text-2xl">
+      <template #actions>
+        <div class="text-xs text-muted-foreground">
+          {{ t("{count} active records", { count: tasks.length }) }}
+        </div>
+      </template>
+    </CardHeader>
 
     <div v-if="!tasks.length" class="rounded-2xl border bg-card/90 p-6 text-muted-foreground">
       {{ t("No transfers yet. Start a download or offer to see tasks here.") }}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue"
+import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"
 import { useI18n } from "@/i18n"
@@ -52,15 +53,11 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-4 p-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          {{ t("Log Window") }}
-        </p>
-        <h1 class="text-lg font-semibold">{{ t("Live Log Stream") }}</h1>
-      </div>
-      <Button size="sm" variant="outline" @click="scrollToBottom">{{ t("Scroll to Bottom") }}</Button>
-    </div>
+    <CardHeader class="items-center" :title="t('Live Log Stream')" title-tag="h1" title-class="text-lg">
+      <template #actions>
+        <Button size="sm" variant="outline" @click="scrollToBottom">{{ t("Scroll to Bottom") }}</Button>
+      </template>
+    </CardHeader>
 
     <div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
       <label class="flex items-center gap-2">
