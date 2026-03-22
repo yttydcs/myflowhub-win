@@ -19,6 +19,7 @@ export type DevicesMode = "direct" | "subtree"
 export type DeviceTreeNode = {
   key: string
   nodeId: number
+  displayName: string
   hasChildrenHint: boolean
   duplicate: boolean
   expanded: boolean
@@ -30,6 +31,8 @@ export type DeviceTreeNode = {
 type NodeWire = {
   node_id?: number
   nodeId?: number
+  display_name?: string
+  displayName?: string
   has_children?: boolean
   hasChildren?: boolean
 }
@@ -42,6 +45,7 @@ type ListNodesWire = {
 
 type NodeInfo = {
   nodeId: number
+  displayName: string
   hasChildren: boolean
 }
 
@@ -104,11 +108,14 @@ const ensureIdentity = () => {
   return { sourceID, hubID }
 }
 
+const normalizeDisplayName = (value: unknown) => String(value ?? "").trim()
+
 const normalizeNodes = (resp: ListNodesWire): NodeInfo[] => {
   const nodes = Array.isArray(resp?.nodes) ? resp.nodes : []
   return nodes
     .map((node) => ({
       nodeId: Number(node?.node_id ?? node?.nodeId ?? 0),
+      displayName: normalizeDisplayName(node?.display_name ?? node?.displayName),
       hasChildren: Boolean(node?.has_children ?? node?.hasChildren ?? false)
     }))
     .filter((node) => node.nodeId > 0)
@@ -136,6 +143,15 @@ const registerNode = (node: DeviceTreeNode) => {
   nodeIndex.set(node.key, node)
 }
 
+const applySelfInfo = (node: DeviceTreeNode, infos: NodeInfo[]) => {
+  const self = infos.find((info) => info.nodeId === node.nodeId)
+  if (!self) return
+  node.hasChildrenHint = Boolean(self.hasChildren)
+  if (self.displayName) {
+    node.displayName = self.displayName
+  }
+}
+
 const buildChildNodes = (parentKey: string, children: NodeInfo[], selfNodeId: number) => {
   const list: DeviceTreeNode[] = []
   for (const child of children) {
@@ -147,6 +163,7 @@ const buildChildNodes = (parentKey: string, children: NodeInfo[], selfNodeId: nu
     const node = reactive<DeviceTreeNode>({
       key: makeChildKey(parentKey, child.nodeId),
       nodeId: child.nodeId,
+      displayName: child.displayName,
       hasChildrenHint: Boolean(child.hasChildren),
       duplicate,
       expanded: false,
@@ -170,7 +187,9 @@ const loadChildren = async (node: DeviceTreeNode, sourceID: number, myEpoch: num
   try {
     const resp = await callMgmt<ListNodesWire>("ListNodesSimple", sourceID, node.nodeId)
     if (epoch !== myEpoch) return
-    const children = normalizeNodes(resp).filter((info) => info.nodeId !== node.nodeId)
+    const infos = normalizeNodes(resp)
+    applySelfInfo(node, infos)
+    const children = infos.filter((info) => info.nodeId !== node.nodeId)
     node.children = buildChildNodes(node.key, children, node.nodeId)
     node.loading = false
   } catch (err) {
@@ -202,6 +221,7 @@ const loadRoot = async () => {
   const root = reactive<DeviceTreeNode>({
     key: `root:${rootID}`,
     nodeId: rootID,
+    displayName: "",
     hasChildrenHint: true,
     duplicate: false,
     expanded: true,
@@ -219,7 +239,9 @@ const loadRoot = async () => {
         ? await callMgmt<ListNodesWire>("ListSubtreeSimple", sourceID, rootID)
         : await callMgmt<ListNodesWire>("ListNodesSimple", sourceID, rootID)
     if (epoch !== myEpoch) return
-    const children = normalizeNodes(resp).filter((info) => info.nodeId !== rootID)
+    const infos = normalizeNodes(resp)
+    applySelfInfo(root, infos)
+    const children = infos.filter((info) => info.nodeId !== rootID)
     root.children = buildChildNodes(root.key, children, rootID)
     root.hasChildrenHint = root.children.length > 0
     root.loading = false
@@ -273,9 +295,21 @@ const retry = async (key: string) => {
   await loadChildren(node, sourceID, epoch, true)
 }
 
+const getDisplayName = (nodeId: number) => {
+  const wanted = Number(nodeId || 0)
+  if (!wanted) return ""
+  for (const node of nodeIndex.values()) {
+    if (node.nodeId === wanted && node.displayName) {
+      return node.displayName
+    }
+  }
+  return ""
+}
+
 export const useDevicesStore = () => {
   return {
     state,
+    getDisplayName,
     loadRoot,
     toggle,
     retry,
