@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { PencilLine, Plus, RefreshCw, Rocket, Settings2, Trash2 } from "lucide-vue-next"
+import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -346,13 +347,8 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Workspace") }}</p>
-          <h2 class="mt-1 text-lg font-semibold">{{ t("Flow Project Center") }}</h2>
-        </div>
-
+    <PageHero>
+      <template #actions>
         <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
           <button
             type="button"
@@ -379,8 +375,8 @@ onMounted(async () => {
             {{ t("Current Deployments") }}
           </button>
         </div>
-      </div>
-    </section>
+      </template>
+    </PageHero>
 
     <section v-if="activeTab === 'projects'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">

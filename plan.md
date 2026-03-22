@@ -1,512 +1,239 @@
-# Win 设置页分组与 i18n Workflow Plan
+# Win 页面头部简化 Workflow Plan
+
+## 项目目标与当前状态
+
+- 目标：收敛 Win 主页面顶部的引导型头部卡片，去掉顶部小标题，只保留一个主标题和一行提示文案，降低重复感。
+- 当前状态：
+  - 独占分支已创建：`fix/win-single-hero-title`
+  - 独占 worktree 已创建：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+  - 已完成需求分析与架构设计，确认本轮只调整主页面首屏头部卡片，不改功能子卡片、弹窗和运行时 window 标题栏。
+  - 通过 `$docs-governor` 检查发现当前仓库 `docs/` 为旧结构，需先补齐标准索引后再归档本次变更。
 
 ## Workflow 信息
 
 - 仓库：`MyFlowHub-Win`
-- 分支：`feat/win-settings-i18n`
+- 分支：`fix/win-single-hero-title`
 - Base：`main`
-- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
 - 当前阶段：`4 归档变更`
-- 状态：`T1 ~ T6 已完成，Code Review 通过，待用户确认是否结束本次 workflow`
+- 计划文档：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
 
-## 当前状态
+## 文档治理与影响检查
 
-- 已完成独占分支与独占 worktree 创建。
-- 已完成的实现结果：
-  - `T1`：`app_settings.go` / `app_settings_test.go` 已新增全局语言设置模型、默认值、白名单校验与读写 API
-  - `T2`：`frontend/src/i18n/**`、`frontend/src/stores/language.ts`、`frontend/src/main.ts` 已接入轻量 i18n 内核与启动语言镜像
-  - `T3`：`frontend/src/layout/AppShell.vue` 已新增 `Other` 分组，`Settings` 已下沉到侧边栏底部
-  - `T4`：`frontend/src/pages/Settings.vue` 已新增语言设置项，并与全局语言设置 API 联动
-  - `T5`：已完成全站前端页面 / 组件 / window / store 的首批 i18n 迁移，覆盖 `Session / Operations / Signals / Flow / File / Showcase / Settings`
-  - `T6`：已完成 `GOWORK=off go test ./... -count=1`、`frontend/npm run build`、Code Review 与归档
-- 当前残余风险：
-  - 尚未执行桌面运行态的人工 UI 冒烟，仅完成构建、测试与静态核对
-  - `vite` 构建仍有既有 chunk-size warning，不影响本次功能正确性
+- 使用 `$docs-governor` 的结论：
+  - 本次内容属于 workflow 执行与完成记录，计划落点为根 `plan.md`，归档落点为 `docs/change/2026-03-22_win-page-hero-simplify.md`
+  - 当前仓缺少规范化 `docs/README.md`、`docs/requirements/`、`docs/specs/`、`docs/plan/`、`docs/lessons/` 索引，需本次补齐
+- Requirements impact：`none`
+- Specs impact：`none`
+- Related requirements：`none（本次为用户直接提出的视觉简化请求，当前仓尚无对应稳定 requirements 文档）`
+- Related specs：`none（未变更技术契约、接口或数据结构）`
+- 计划归档路径：`docs/change/2026-03-22_win-page-hero-simplify.md`
+- Lessons 路径：`none（暂不预期形成可复用事故/教训文档）`
 
-## 1. 需求分析
+## 需求分析摘要
 
-### 目标
+- 目标：
+  - 将主页面首屏头部从“顶部小标题 + 主标题 + 提示语”收敛为“单一主标题 + 一行提示语”
+  - 允许适度收敛主标题文案，使名称更短、更像页面主名称
+- 范围：
+  - 必须做：主页面头部卡片样式收敛；保留右侧现有操作区、状态徽标、tab 切换
+  - 可选：微调主标题文字
+  - 不做：内部业务卡片、弹窗标题、viewer/editor window 顶栏
+- 验收标准：
+  - 目标页面头部不再出现顶部小标题
+  - 目标页面仍保留一个主标题和一行提示文案
+  - 右侧按钮、badge、tab 布局正常
+  - `frontend` 构建通过
 
-- 调整 Win 设置页与导航结构：
-  - 将 `Settings` 导航入口移动到侧边栏最底部
-  - 新增 `Other` 分组
-  - 在设置页中新增语言选项
-- 为 Win 前端建立可持续扩展的 i18n 基础能力
+## 架构设计摘要
 
-### 范围
+- 采用方案：新增一个轻量可复用的页面头部组件，由页面传入标题、提示语和右侧操作区 slot
+- 选型理由：
+  - 统一骨架，避免同类模板散落在多个页面
+  - 将文案与右侧 actions 解耦，后续页面复用成本更低
+  - 只改展示层，不触碰业务状态与 API
+- 备选方案：
+  - 逐页直接内联修改
+  - 不采用原因：短期快，但重复模板仍会继续扩散
 
-- 必须做（已确认）
-  - `Settings` 导航入口调整到最底部
-  - 新增 `Other` 分组
-  - 在设置页新增语言选项
-  - 进行 i18n 相关整体改造
-- 可选
-  - 待澄清
-- 不做
-  - 待澄清
+## 可执行任务清单
 
-### 使用场景
+- [x] `T1` 创建可复用页面头部组件
+- [x] `T2` 迁移主页面头部到统一组件
+- [x] `T3` 调整标题与提示文案
+- [x] `T4` 验证构建并执行 Code Review
+- [x] `T5` 归档变更并更新索引
 
-- 用户希望在设置页中切换界面语言
-- 用户希望设置页导航位置更稳定，固定在导航底部
-- 后续新增页面时可以继续沿用统一的多语言文案机制
+## 任务详情
 
-### 功能需求
+### `T1` 创建可复用页面头部组件
 
-- 侧边栏桌面端与移动端导航中，`Settings` 显示在最底部
-- 设置页新增 `Other` 分组，并包含语言设置项
-- 保存后语言设置按约定生效
-- 前端文案改造为可通过 i18n 机制切换
+- Owner：`主Agent`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+- Plan 路径：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
+- 目标：新增统一的主页面头部组件，支持主标题、提示语、右侧 slot
+- 涉及模块 / 文件：
+  - `frontend/src/components/PageHero.vue`
+- Write set：
+  - `frontend/src/components/PageHero.vue`
+- 关键上下文引用：
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/pages/ShowcaseCenter.vue`
+  - `frontend/src/pages/TopicBus.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/pages/ModuleStub.vue`
+- 依赖：无
+- 验收条件：
+  - 组件可渲染单一主标题和一行提示
+  - 可通过 slot 保留右侧操作区
+  - 响应式布局下不破坏现有按钮区换行
+- 测试点：
+  - `npm run build`
+- 回滚点：
+  - 删除新组件并恢复各页面原模板
+- 风险与注意事项：
+  - 仅做结构抽取，不在组件内耦合业务 store 或路由状态
 
-### 非功能需求
+### `T2` 迁移主页面头部到统一组件
 
-- i18n 方案要尽量低耦合，避免后续每个页面重复造轮子
-- 初次启动与语言切换的体验应可控，避免闪烁和大面积回归
-- 保持当前风格，不做额外视觉体系重构
+- Owner：`主Agent`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+- Plan 路径：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
+- 目标：将主页面首屏头部改为统一组件，去掉顶部小标题
+- 涉及模块 / 文件：
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/pages/ShowcaseCenter.vue`
+  - `frontend/src/pages/TopicBus.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/pages/ModuleStub.vue`
+- Write set：
+  - 上述页面文件
+- 关键上下文引用：
+  - `frontend/src/router/index.ts`
+- 依赖：
+  - `T1`
+- 验收条件：
+  - 页面首屏头部只保留一个主标题和一行提示
+  - 原 badge、按钮、tab 切换仍在头部右侧工作
+- 测试点：
+  - 检查模板编译
+  - 代码核对各页面 slot 保持原交互元素
+- 回滚点：
+  - 按页面恢复旧模板
+- 风险与注意事项：
+  - 只改首屏头部，不触碰内部业务区块
 
-### 输入输出
+### `T3` 调整标题与提示文案
 
-- 输入：
-  - 用户选择的语言
-  - 用户现有设置项
-- 输出：
-  - 保存后的设置快照
-  - 已应用的界面语言
+- Owner：`主Agent`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+- Plan 路径：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
+- 目标：在不改业务语义的前提下，收敛大标题文案，让其更短、更稳定
+- 涉及模块 / 文件：
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/pages/ShowcaseCenter.vue`
+  - `frontend/src/pages/TopicBus.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/pages/ModuleStub.vue`
+- Write set：
+  - 上述页面文件
+- 依赖：
+  - `T2`
+- 验收条件：
+  - 每个页面保留一行提示文案
+  - 大标题文字更简洁，但不影响页面识别
+- 测试点：
+  - 人工核对文案与页面职责一致
+- 回滚点：
+  - 恢复原文案
+- 风险与注意事项：
+  - 文案只做轻量收敛，不引入新的业务名词
 
-### 边界异常
+### `T4` 验证构建并执行 Code Review
 
-- 待澄清语言枚举、缺失翻译回退策略、语言切换生效时机
+- Owner：`主Agent`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+- Plan 路径：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
+- 目标：完成本轮实现验证和强制 Code Review
+- 涉及模块 / 文件：
+  - `frontend/**`
+  - `plan.md`
+- Write set：
+  - 无新增实现写集，允许只补充必要文档状态
+- 依赖：
+  - `T1`
+  - `T2`
+  - `T3`
+- 验收条件：
+  - 构建通过
+  - Review 逐项给出通过/不通过结论
+- 测试点：
+  - `npm run build`
+- 回滚点：
+  - 按任务回退对应页面头部改动
+- 风险与注意事项：
+  - 若构建失败，回到 `3.2` 修正后再 Review
 
-### 验收标准
+### `T5` 归档变更并更新索引
 
-- 待澄清 i18n 覆盖范围与首批支持语言后补充
+- Owner：`主Agent`
+- Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title`
+- Plan 路径：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-single-hero-title\plan.md`
+- 目标：生成 `docs/change` 归档并更新本仓 docs 索引
+- 涉及模块 / 文件：
+  - `docs/README.md`
+  - `docs/change/README.md`
+  - `docs/change/2026-03-22_win-page-hero-simplify.md`
+- Write set：
+  - 上述文档文件
+- 依赖：
+  - `T4`
+- 验收条件：
+  - 存在变更归档文档
+  - 已记录 requirement/spec impact
+  - docs 索引可导航到本次归档
+- 测试点：
+  - 人工核对索引链接与文档字段完整性
+- 回滚点：
+  - 删除本次新增归档并恢复索引到改动前状态
+- 风险与注意事项：
+  - 归档前必须再次显式执行 `$docs-governor` 检查
 
-### 风险
+## 并行性评估
 
-- 当前全站文案大量硬编码，若“整体支持 i18n”范围过大，会显著扩大改造面
-- 若语言设置纳入 profile-scoped 设置，需要确认是否符合用户预期
+- 结论：本轮不使用子Agent
+- 原因：
+  - 目标页面头部改造共享同一个新组件，文件写集高度耦合
+  - 当前执行策略要求显式用户授权后才可委派子Agent，本轮未获得该授权
 
-### 阶段结论
+## 回归与验证步骤
 
-- 阻塞：`否`
-- 已确认：
-  - 首批语言：`简体中文 + English`
-  - 覆盖范围：`MyFlowHub-Win` 整个现有前端页面
-  - 语言设置作用域：`全局应用级`
+1. 在 `frontend/` 目录执行 `npm run build`
+2. 核对目标页面模板中不再存在顶部小标题
+3. 核对右侧操作区、tab、badge 仍保留并正常渲染
+4. 完成强制 Code Review 后进入 `4`
 
-## 问题清单
+## 当前结果
 
- - 无
-
-## 2. 架构设计
-
-### 总体方案（采用）
-
-- 采用“轻量自建 i18n 内核 + 全局语言设置 API + 全站文案迁移”的方案。
-- 保留现有 profile-scoped `AppSettingsState` 用于连接默认值和 UI 偏好。
-- 新增独立 `GlobalPreferencesState`，仅管理全局应用级语言，不随 profile 切换。
-- 前端新增 `i18n` 模块与 `language` store：
-  - `i18n/messages.ts` 维护 `zh-CN` / `en` 字典
-  - `i18n/index.ts` 提供 `t()`、参数插值、回退逻辑、locale state
-  - `stores/language.ts` 负责加载 / 保存全局语言设置，并在启动前应用
-- `Settings` 页新增 `Other` 分组，语言项放在其中。
-- `AppShell` 导航新增 `Other` 分组，并把 `Settings` 移动到最后一组、最后一个入口。
-
-### 选型理由 / 备选对比
-
-- 方案 A：引入 `vue-i18n`
-  - 优点：生态成熟，复数/格式化能力完善
-  - 缺点：当前仓库没有该依赖；本次以静态 UI 文案为主，引入额外依赖和接线成本偏高
-- 方案 B：自建轻量 i18n 层
-  - 优点：改造面可控、无新增运行时依赖、适合当前 hash-router + store 结构
-  - 缺点：高级能力需要后续自行扩展
-- 采用方案 B。
-
-### 模块职责
-
-- `app_settings.go`
-  - 保持现有 profile-scoped 设置能力
-  - 新增全局语言读取 / 保存 API
-  - 对语言枚举做白名单校验与默认值回退
-- `internal/storage/store.go`
-  - 继续通过 `SetRaw/GetRaw` 持久化全局应用级语言 key
-- `frontend/src/i18n/messages.ts`
-  - 定义全部前端页面所需的中英文消息表
-- `frontend/src/i18n/index.ts`
-  - 定义 locale 类型、默认语言、字典查找、参数插值、缺失回退
-  - 暴露响应式 `locale`、`setLocale`、`t`
-- `frontend/src/stores/language.ts`
-  - 调用 Go API 读写全局语言设置
-  - 将语言镜像到 `localStorage`，用于启动前预应用
-- `frontend/src/main.ts`
-  - 在挂载前应用启动语言
-  - 将 i18n 运行时注入 Vue
-- `frontend/src/router/index.ts`
-  - 将路由 `meta.title/subtitle` 改为 key，运行时翻译
-- `frontend/src/layout/AppShell.vue`
-  - 导航组改造为可翻译 key
-  - `Settings` 放到底部 `Other` 分组
-  - 页面标题/副标题、profile 菜单等接入 i18n
-- `frontend/src/pages/**/*.vue` / `frontend/src/components/**/*.vue` / `frontend/src/stores/**/*.ts`
-  - 将现有硬编码用户可见文案迁移为 `t(...)`
-- `frontend/src/pages/Settings.vue`
-  - 重组为 `Startup Defaults / Interface / About / Other`
-  - `Other` 中新增语言选项
-
-### 数据 / 调用流
-
-- App 启动：
-  - `main.ts` 先从 `localStorage` 读取语言镜像并设置 `locale`
-  - 再应用现有 UI 偏好镜像，最后挂载 Vue
-- 语言加载：
-  - `language` store 调用 Go 全局 API 获取真实语言
-  - 若与启动镜像不同，以后端值覆盖并同步镜像
-- 语言切换：
-  - `Settings` 页面修改语言 -> 点击保存
-  - 前端先保存 profile-scoped 设置，再保存全局语言
-  - 保存成功后更新 `locale`、写入 `localStorage`、整个界面即时切换
-- 导航显示：
-  - `AppShell` 通过 key -> `t()` 生成分组名、标签、描述
-- 页面文案：
-  - 各页面 / 组件 / toast 统一通过 `t()` 获取文案
-
-### 接口草案
-
-- Go
-  - `GlobalPreferencesState() (GlobalPreferencesState, error)`
-  - `SaveGlobalPreferencesState(state GlobalPreferencesState) (GlobalPreferencesState, error)`
-- 前端
-  - `useLanguageStore().load()`
-  - `useLanguageStore().save(locale)`
-  - `t(key, params?)`
-  - `applyStartupLocale()`
-
-### 错误与安全
-
-- Go 侧对全局语言仅允许 `zh-CN` / `en`
-- 存储未初始化返回显式错误
-- 前端缺失 key 时回退到英文，再回退到 key 文本，避免空白 UI
-- 语言保存失败时不切换运行时 locale，避免界面状态与持久化状态不一致
-
-### 性能与测试策略
-
-- 性能：
-  - 词典静态内存对象，不在渲染期做异步加载
-  - 启动镜像避免首屏先英文再中文的闪烁
-  - `t()` 保持 O(depth) 的轻量 key 查找
-- 测试：
-  - Go：新增全局语言默认值、保存、非法值回退测试
-  - Frontend：执行 `npm run build`
-  - 集成：执行 `go test ./...`
-  - UI：如环境允许，使用 `chrome-devtools` 冒烟验证语言切换和导航顺序
-
-### 可扩展性设计点
-
-- 词典按 key 分层命名，后续新增语言仅补消息表
-- 语言设置与 profile 设置分离，避免跨 profile 干扰
-- 路由 meta 使用 key 而不是最终文案，避免再改 router 结构时重复翻译接线
-
-### 阶段结论
-
-- 阻塞：`否`
-
-## 3.1 计划拆分
-
-### 项目目标与当前状态
-
-- 目标：完成 Win 全站 i18n 基础设施，支持 `简体中文 + English`，并调整 Settings / 导航结构。
-- 当前状态：需求、架构、计划、编码、Review 与归档已完成，待用户确认是否结束本次 workflow。
-
-### 可执行任务清单（Checklist）
-
-- [x] `T1` Go：新增全局语言设置模型与 API
-- [x] `T2` Frontend Infra：新增 i18n 内核与语言 store，并接入启动流程
-- [x] `T3` Shell / Router：导航重排、Settings 置底、路由元信息改为可翻译 key
-- [x] `T4` Settings：新增 `Other` 分组与语言选项，保存时联动全局语言
-- [x] `T5` Full Frontend Migration：迁移全站现有前端页面 / 组件 / store 用户可见文案
-- [x] `T6` Verification：测试、构建、Review、归档
-
-### 任务明细
-
-- `T1`
-  - 标题：Go 全局语言设置 API
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - 新增全局语言设置结构体与读写 API
-    - 使用非 profile-scoped key 持久化语言
-    - 完成默认值、校验、测试
-  - 涉及模块 / 文件：
-    - `app_settings.go`
-    - `app_settings_test.go`
-  - 验收条件：
-    - API 可返回 `zh-CN/en`
-    - 非法值会被回退
-    - 不影响现有 profile-scoped 设置
-  - 测试点：
-    - 默认值
-    - 保存合法值
-    - 非法值回退
-  - 回滚点：
-    - 回退全局语言 API 与测试
-
-- `T2`
-  - 标题：前端 i18n 内核与语言 store
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - 新增消息表、翻译函数、响应式 locale
-    - 新增语言 store，接入启动镜像与全局 API
-  - 涉及模块 / 文件：
-    - `frontend/src/i18n/**`
-    - `frontend/src/stores/language.ts`
-    - `frontend/src/main.ts`
-  - 验收条件：
-    - 启动时可预应用语言
-    - 保存后可即时切换文案
-  - 测试点：
-    - 启动镜像
-    - 缺失 key 回退
-  - 回滚点：
-    - 回退 i18n / language store / main 接线
-
-- `T3`
-  - 标题：Shell 与 Router i18n 化及导航结构调整
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - `Settings` 移到导航最底部
-    - 新增 `Other` 分组
-    - 路由 meta 改为 translation key
-  - 涉及模块 / 文件：
-    - `frontend/src/layout/AppShell.vue`
-    - `frontend/src/router/index.ts`
-  - 验收条件：
-    - 桌面 / 移动导航顺序正确
-    - 标题副标题可随语言切换
-  - 测试点：
-    - 导航排序
-    - 设置项高亮
-  - 回滚点：
-    - 回退 shell / router 改动
-
-- `T4`
-  - 标题：Settings 页面结构调整与语言设置
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - 新增 `Other` 分组
-    - 增加语言下拉项
-    - 保存时同时处理 profile 设置与全局语言设置
-  - 涉及模块 / 文件：
-    - `frontend/src/pages/Settings.vue`
-    - `frontend/src/stores/appSettings.ts`
-    - `frontend/src/stores/language.ts`
-  - 验收条件：
-    - 语言项可编辑、保存、恢复默认
-    - 其它设置语义不回归
-  - 测试点：
-    - 保存语言后即时切换
-    - 切 profile 时语言保持不变
-  - 回滚点：
-    - 回退 settings 页面与语言接线
-
-- `T5`
-  - 标题：全站前端文案迁移
-  - Owner：`主Agent（集成） + 子Agent（并行子任务）`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - 迁移整个现有前端页面的用户可见文案到 i18n key
-  - 涉及模块 / 文件：
-    - `frontend/src/pages/**`
-    - `frontend/src/components/**`
-    - `frontend/src/stores/**`
-    - `frontend/src/layout/**`
-  - 验收条件：
-    - 英文与中文两套文案完整可切换
-    - 无明显裸露 key / 空白文案
-  - 测试点：
-    - 关键页面切换语言
-    - Toast / 对话 / 按钮文案切换
-  - 回滚点：
-    - 回退消息表和文案迁移
-  - 风险与注意事项：
-    - 改动面大，需分批核对，避免遗漏字符串
-  - 子任务拆分：
-    - `T5-A`
-      - 标题：会话与运维页面迁移
-      - Owner：`子Agent 019d113f-60e0-76a1-acec-0f6416b52664`
-      - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-      - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-      - Write set：
-        - `frontend/src/pages/Home.vue`
-        - `frontend/src/pages/Devices.vue`
-        - `frontend/src/pages/LocalHub.vue`
-        - `frontend/src/pages/Debug.vue`
-        - `frontend/src/pages/Logs.vue`
-        - `frontend/src/pages/Permissions.vue`
-        - `frontend/src/pages/Presets.vue`
-        - `frontend/src/i18n/messages/session.ts`
-        - `frontend/src/i18n/messages/operations.ts`
-      - 当前结果：`已完成，子Agent已交付 Home / LocalHub / Permissions / Presets 与消息表收口，主Agent补齐剩余项并复核通过`
-      - 验收条件：
-        - 上述页面不出现裸露英文 key
-        - `operations.ts` 补齐对应 `zh-CN` 文案
-      - 测试点：
-        - 页面标题、按钮、toast、错误提示语言可切换
-      - 回滚点：
-        - 回退上述页面及消息表
-    - `T5-B`
-      - 标题：信号台页面迁移
-      - Owner：`子Agent 019d113f-75ad-7612-9eca-08ef89c78d91`
-      - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-      - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-      - Write set：
-        - `frontend/src/pages/TopicBus.vue`
-        - `frontend/src/pages/VarPool.vue`
-        - `frontend/src/i18n/messages/signals.ts`
-      - 当前结果：`已完成，子Agent已交付 TopicBus / VarPool / signals.ts，主Agent复核通过`
-      - 验收条件：
-        - 页面主流程文案支持中英切换
-      - 测试点：
-        - tab、按钮、toast、空态、错误提示可切换
-      - 回滚点：
-        - 回退上述页面及消息表
-- `T5-C`
-  - 标题：剩余自动化、文件、展示台、窗口与 stores 迁移集成
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 当前结果：`已完成，主Agent完成 File / ModuleStub / windows / stores 收口并统一集成`
-  - Write set：
-        - `frontend/src/pages/File.vue`
-        - `frontend/src/pages/ModuleStub.vue`
-        - `frontend/src/components/file/OfferNodeTreePicker.vue`
-        - `frontend/src/components/logs/LogItem.vue`
-        - `frontend/src/components/ToastHost.vue`
-        - `frontend/src/components/varpool/NodeVarsDialog.vue`
-        - `frontend/src/windows/FileTasks.vue`
-        - `frontend/src/windows/LogWindow.vue`
-        - `frontend/src/windows/TopicBusWindow.vue`
-        - `frontend/src/stores/file.ts`
-        - `frontend/src/stores/logs.ts`
-        - `frontend/src/stores/management.ts`
-        - `frontend/src/stores/presets.ts`
-        - `frontend/src/stores/profile.ts`
-        - `frontend/src/stores/topicbus.ts`
-        - `frontend/src/stores/varpool.ts`
-        - `frontend/src/i18n/messages/file.ts`
-        - `frontend/src/i18n/messages/stores.ts`
-      - 验收条件：
-        - 剩余页面 / 组件 / window / store 用户可见文案可切换
-        - 各消息表不再为空
-      - 测试点：
-        - 窗口标题、对话框、提示信息、占位符、toast 切换正常
-      - 回滚点：
-        - 回退上述迁移文件
-    - `T5-C1`
-      - 标题：展示台页面与窗口迁移
-      - Owner：`子Agent 019d1154-e13b-7321-b4f5-04b3bf422904 + 主Agent集成`
-      - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-      - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-      - 当前结果：`已完成，子Agent完成 Showcase 页面 / store / 消息表迁移，主Agent复核并集成`
-      - Write set：
-        - `frontend/src/pages/Showcase.vue`
-        - `frontend/src/pages/ShowcaseCenter.vue`
-        - `frontend/src/windows/ShowcaseWindow.vue`
-        - `frontend/src/windows/ShowcaseEditorWindow.vue`
-        - `frontend/src/stores/showcase.ts`
-        - `frontend/src/i18n/messages/showcase.ts`
-      - 验收条件：
-        - 展示台中心页、编辑器、展示窗口文案支持中英切换
-      - 测试点：
-        - screen 创建 / 复制 / 删除 / 打开窗口相关按钮与 toast
-      - 回滚点：
-        - 回退展示台相关页面、窗口、store、消息表
-    - `T5-C2`
-      - 标题：流程页面与编辑器迁移
-      - Owner：`主Agent（集成收口）`
-      - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-      - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-      - 当前结果：`已完成，主Agent补齐 Flow / FlowEditor / FlowNode / flow stores / automation.ts 的剩余 i18n 与消息等级链路`
-      - Write set：
-        - `frontend/src/pages/Flow.vue`
-        - `frontend/src/components/flow/FlowCanvas.vue`
-        - `frontend/src/components/flow/FlowNode.vue`
-        - `frontend/src/windows/FlowEditorWindow.vue`
-        - `frontend/src/stores/flow.ts`
-        - `frontend/src/stores/flowProjects.ts`
-        - `frontend/src/i18n/messages/automation.ts`
-      - 验收条件：
-        - 流程编辑主页面与独立窗口文案支持中英切换
-      - 测试点：
-        - 项目列表、节点面板、编辑器按钮、错误提示、toast 切换
-      - 回滚点：
-        - 回退流程页面、组件、window、store、消息表
-    - `T5-C3`
-      - 标题：预设页与 operations 消息表收口
-      - Owner：`子Agent 019d113f-60e0-76a1-acec-0f6416b52664 + 主Agent集成`
-      - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-      - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-      - 当前结果：`已完成，子Agent完成 placeholder 与消息表收口，主Agent统一复核`
-      - Write set：
-        - `frontend/src/pages/Presets.vue`
-        - `frontend/src/stores/devices.ts`
-        - `frontend/src/i18n/messages/operations.ts`
-      - 验收条件：
-        - Presets 页面主要表单、按钮、toast、错误提示支持中英切换
-        - operations.ts 补齐 Devices / Permissions / Presets 相关 zh-CN 文案
-      - 测试点：
-        - 压测、认证、VarPool、TopicBus、Flow、Management、File 预设区块文案可切换
-      - 回滚点：
-        - 回退 Presets / devices store / operations 消息表
-
-- `T6`
-  - 标题：验证、Review 与归档
-  - Owner：`主Agent`
-  - Worktree：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n`
-  - Plan：`D:\project\MyFlowHub3\worktrees\MyFlowHub-Win-settings-i18n\plan.md`
-  - 目标：
-    - 执行测试 / 构建 / 冒烟
-    - 完成 Code Review
-    - 生成 `docs/change`
-  - 涉及模块 / 文件：
-    - 测试输出
-    - `docs/change/YYYY-MM-DD_*.md`
-  - 验收条件：
-    - 测试通过
-    - Review 通过
-    - 归档完整
-  - 执行结果：
-    - `GOWORK=off go test ./... -count=1`：通过（2026-03-22）
-    - `frontend/npm run build`：通过（2026-03-22，存在既有 chunk-size warning）
-    - `3.3 Code Review`：通过
-    - `4 归档变更`：已写入 `docs/change/2026-03-22_win-settings-i18n.md`
-
-### 依赖关系
-
-- `T2` 依赖 `T1`
-- `T3` 依赖 `T2`
-- `T4` 依赖 `T1`、`T2`
-- `T5` 依赖 `T2`
-- `T6` 依赖 `T1` ~ `T5`
-
-### 并行性评估
-
-- 已获得用户明确授权使用子Agent。
-- 并行拆分结论：
-  - `T5-A` 与 `T5-B` 写集不重叠，可并行执行
-  - `T5-C` 与 `T5-A` 在 `Presets.vue`、`operations.ts` 上存在潜在冲突，因此由主Agent统一收口
-  - `T6` 中的 Code Review 可在编码完成后进一步拆分为子Agent辅助审查，但最终结论仍由主Agent负责
-
-### 阶段结论
-
-- 计划已确认并执行完成
-- 阻塞：`否`
-- 已完成 `3.1`、`3.2`、`3.3`、`4`
-- 待用户确认：`是否结束本次 workflow？`
+- 已完成 `T1` ~ `T5`
+- 已新增 `frontend/src/components/PageHero.vue`，并接入：
+  - `frontend/src/pages/Flow.vue`
+  - `frontend/src/pages/ShowcaseCenter.vue`
+  - `frontend/src/pages/TopicBus.vue`
+  - `frontend/src/pages/VarPool.vue`
+  - `frontend/src/pages/ModuleStub.vue`
+- 已补齐受治理的 docs 索引：
+  - `docs/README.md`
+  - `docs/requirements/README.md`
+  - `docs/specs/README.md`
+  - `docs/plan/README.md`
+  - `docs/change/README.md`
+  - `docs/lessons/README.md`
+- 验证结果：
+  - `npm ci`：通过
+  - `npm run build`：失败，原因为仓内既有 `wailsjs/go/main/App` 缺失，非本次改动引入
+  - SFC 解析：`PageHero.vue` 与 5 个接入页面均通过
+  - 旧头部文案检索：目标页面已无 `Workspace / Flow Project Center / TopicBus Console / VarPool Control Center / Tool Console`
+- 残余风险：
+  - 尚未完成带 Wails 绑定的全量前端构建
+  - 未执行桌面运行态人工 UI 冒烟
