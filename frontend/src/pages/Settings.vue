@@ -12,11 +12,13 @@ import {
 } from "@/stores/appSettings"
 import { languageOptions, useLanguageStore } from "@/stores/language"
 import { useProfileStore } from "@/stores/profile"
+import { useTopicBusStore } from "@/stores/topicbus"
 import { useToastStore } from "@/stores/toast"
 
 const appSettings = useAppSettingsStore()
 const languageStore = useLanguageStore()
 const profileStore = useProfileStore()
+const topicbus = useTopicBusStore()
 const toast = useToastStore()
 
 const panelStyle = { padding: "var(--app-panel-pad)" }
@@ -31,19 +33,27 @@ const draft = reactive<AppSettingsState>({
   reduceMotion: false
 })
 const languageDraft = ref<AppLocale>("en")
+const topicbusBusy = ref(false)
+const topicbusMaxEventsInput = ref("500")
 
 const syncDraft = () => {
   Object.assign(draft, normalizeAppSettings(appSettings.state.settings))
   languageDraft.value = languageStore.state.preferences.language
 }
 
+const syncTopicBusDraft = () => {
+  topicbusMaxEventsInput.value = String(topicbus.state.maxEvents || 500)
+}
+
 const loadPage = async () => {
   await Promise.all([
     appSettings.load(),
     appSettings.loadAbout(),
-    languageStore.state.loaded ? Promise.resolve(languageStore.state.preferences) : languageStore.load()
+    languageStore.state.loaded ? Promise.resolve(languageStore.state.preferences) : languageStore.load(),
+    topicbus.loadPrefs()
   ])
   syncDraft()
+  syncTopicBusDraft()
 }
 
 const settingsDirty = computed(
@@ -106,6 +116,31 @@ const resetSettings = async () => {
     syncDraft()
     toast.errorOf(err, t("Failed to restore defaults."))
   }
+}
+
+const applyTopicBusMaxEvents = async () => {
+  if (topicbusBusy.value) return
+  topicbusBusy.value = true
+  try {
+    const raw = topicbusMaxEventsInput.value.trim()
+    const parsed = Number.parseInt(raw || String(topicbus.state.maxEvents || 500), 10)
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      throw new Error(t("Max events must be a positive number."))
+    }
+    await topicbus.setMaxEvents(parsed)
+    syncTopicBusDraft()
+    toast.success(t("TopicBus max events updated."))
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to update TopicBus max events."))
+  } finally {
+    topicbusBusy.value = false
+  }
+}
+
+const clearTopicBusEvents = () => {
+  topicbus.clearEvents()
+  toast.success(t("TopicBus cached events cleared."))
 }
 
 watch(
@@ -308,6 +343,41 @@ watch(
       </div>
 
       <div class="space-y-6">
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                {{ t("TopicBus") }}
+              </p>
+              <h3 class="mt-1 text-lg font-semibold">{{ t("Event Cache Settings") }}</h3>
+              <p class="mt-2 text-sm text-muted-foreground">
+                {{ t("TopicBus windows only show events received after they open. Your own publish actions do not echo back.") }}
+              </p>
+            </div>
+            <Badge variant="secondary">{{ t("Max Events") }} · {{ topicbus.state.maxEvents }}</Badge>
+          </div>
+
+          <div class="mt-5 grid gap-4">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Max Events") }}
+              </label>
+              <input
+                v-model="topicbusMaxEventsInput"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                :placeholder="t('500')"
+              />
+            </div>
+          </div>
+
+          <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" :disabled="topicbusBusy" @click="clearTopicBusEvents">
+              {{ t("Clear Cached") }}
+            </Button>
+            <Button :disabled="topicbusBusy" @click="applyTopicBusMaxEvents">{{ t("Apply Limit") }}</Button>
+          </div>
+        </div>
+
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             {{ t("About") }}
