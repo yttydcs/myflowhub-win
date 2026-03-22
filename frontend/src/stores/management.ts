@@ -22,6 +22,8 @@ export type MgmtConfigEntry = {
   value: string
 }
 
+const syntheticConfigKeys = ["node.display_name"] as const
+
 type MgmtNodeWire = {
   node_id: number
   has_children?: boolean
@@ -123,6 +125,26 @@ const applyConfigResp = (resp: MgmtConfigResp, fallbackKey: string) => {
   }
 }
 
+const buildConfigEntries = (keys: unknown[]) => {
+  const entries: MgmtConfigEntry[] = []
+  const seen = new Set<string>()
+  const pushEntry = (rawKey: unknown) => {
+    const key = String(rawKey ?? "").trim()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    entries.push({ key, value: "" })
+  }
+
+  for (const key of syntheticConfigKeys) {
+    pushEntry(key)
+  }
+  for (const key of keys) {
+    pushEntry(key)
+  }
+
+  return entries
+}
+
 const listNodes = async () => {
   const { sourceID } = ensureIdentity()
   const targetID = resolveTargetNode()
@@ -151,10 +173,7 @@ const loadConfigKeys = async (sourceID: number, nodeId: number) => {
   const resp = await callMgmt<MgmtConfigListResp>("ConfigListSimple", sourceID, nodeId)
   if (state.selectedNodeId !== nodeId) return
   const keys = Array.isArray(resp?.keys) ? resp.keys : []
-  state.configEntries = keys
-    .map((key) => String(key ?? "").trim())
-    .filter((key) => key)
-    .map((key) => ({ key, value: "" }))
+  state.configEntries = buildConfigEntries(keys)
   if (!state.selfNodeId) {
     return
   }
