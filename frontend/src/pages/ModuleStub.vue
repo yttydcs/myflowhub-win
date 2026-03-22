@@ -1,37 +1,21 @@
 <script setup lang="ts">
-import { computed } from "vue"
-import { useRoute } from "vue-router"
+import PageHero from "@/components/PageHero.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 
-const route = useRoute()
 const { t } = useI18n()
-const title = computed(() => t((route.meta.title as string) ?? "Module"))
-const subtitle = computed(
-  () =>
-    t((route.meta.subtitle as string) ?? "This module is ready for UI build-out and service wiring.")
-)
 </script>
 
 <template>
   <section class="grid gap-6">
-    <div class="rounded-2xl border bg-card/80 p-6 text-card-foreground shadow-sm backdrop-blur">
-      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div class="space-y-1">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            {{ t("Tool Console") }}
-          </p>
-          <h2 class="text-2xl font-semibold">{{ title }}</h2>
-          <p class="text-sm text-muted-foreground">
-            {{ subtitle }}
-          </p>
-        </div>
+    <PageHero surface-class="bg-card/80 backdrop-blur">
+      <template #actions>
         <div class="flex flex-wrap gap-2">
           <Button size="sm">{{ t("Primary Action") }}</Button>
           <Button variant="outline" size="sm">{{ t("Secondary") }}</Button>
         </div>
-      </div>
-    </div>
+      </template>
+    </PageHero>
 
     <div class="grid gap-4 lg:grid-cols-2">
       <div class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">

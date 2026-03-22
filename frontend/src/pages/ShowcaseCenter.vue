@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Copy, ExternalLink, PencilLine, Plus, Trash2 } from "lucide-vue-next"
+import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -179,15 +180,12 @@ onMounted(async () => {
 
 <template>
   <section class="space-y-6">
-    <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Workspace") }}</p>
-          <h1 class="mt-2 text-2xl font-semibold">{{ t("Showcase Center") }}</h1>
-          <p class="mt-2 max-w-2xl text-sm text-muted-foreground">
-            {{ t("Browse reusable screens, open a dedicated editor window, or launch a clean viewer window for runtime display.") }}
-          </p>
-        </div>
+    <PageHero
+      :description="
+        t('Browse reusable screens, open a dedicated editor window, or launch a clean viewer window for runtime display.')
+      "
+    >
+      <template #actions>
         <div class="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{{ t("{count} screens", { count: screens.length }) }}</Badge>
           <Badge variant="secondary">{{ t("Last Sync {time}", { time: formatTimestamp(showcase.state.lastLoadedAt) }) }}</Badge>
@@ -196,8 +194,8 @@ onMounted(async () => {
             {{ t("New Blank") }}
           </Button>
         </div>
-      </div>
-    </section>
+      </template>
+    </PageHero>
 
     <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
