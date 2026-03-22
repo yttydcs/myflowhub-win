@@ -71,6 +71,14 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"] {
+    @apply cursor-pointer select-none;
+  }
 }
 
 .app-surface {
