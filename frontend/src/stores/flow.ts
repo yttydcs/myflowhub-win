@@ -20,15 +20,32 @@ export type FlowSummary = {
   lastStatus: string
 }
 
+export type FlowNodeKind = "call" | "compose"
+export type FlowSpecEditorMode = "form" | "json"
+export type FlowBindingSourceKind = "node_result" | "trigger" | "flow_meta" | "run_meta" | ""
+
+export type FlowInputBindingDraft = {
+  to: string
+  sourceKind: FlowBindingSourceKind
+  nodeId: string
+  path: string
+  field: string
+  required: boolean
+}
+
 export type FlowNodeDraft = {
   id: string
-  kind: "call" | ""
+  kind: FlowNodeKind
   allowFail: boolean
   retry: number
   timeoutMs: number
   method: string
   target: number
-  args: string
+  argsTemplate: string
+  composeTemplate: string
+  inputs: FlowInputBindingDraft[]
+  specEditorMode: FlowSpecEditorMode
+  specJson: string
   x: number
   y: number
 }
@@ -226,7 +243,11 @@ const takeSnapshot = (): FlowDraftSnapshot => ({
     timeoutMs: node.timeoutMs,
     method: node.method,
     target: node.target,
-    args: node.args,
+    argsTemplate: node.argsTemplate,
+    composeTemplate: node.composeTemplate,
+    inputs: node.inputs.map((binding) => ({ ...binding })),
+    specEditorMode: node.specEditorMode,
+    specJson: node.specJson,
     x: node.x,
     y: node.y
   })),
@@ -256,7 +277,10 @@ const applySnapshot = (snapshot: FlowDraftSnapshot) => {
   state.eventTopic = snapshot.eventTopic
   state.varOwner = snapshot.varOwner
   state.varName = snapshot.varName
-  state.nodes = snapshot.nodes.map((node) => ({ ...node }))
+  state.nodes = snapshot.nodes.map((node) => ({
+    ...node,
+    inputs: node.inputs.map((binding) => ({ ...binding }))
+  }))
   state.edges = snapshot.edges.map((edge) => ({ ...edge }))
   state.selectedNodeIndex =
     snapshot.selectedNodeIndex >= 0 && snapshot.selectedNodeIndex < state.nodes.length
@@ -383,16 +407,43 @@ const mapSummary = (input: any): FlowSummary => ({
   lastStatus: String(input?.last_status ?? input?.lastStatus ?? "")
 })
 
-const parseArgsText = (args: any) => {
-  if (args === undefined || args === null) return "{}"
+const formatJSONText = (value: any, fallback: any = {}) => {
+  const source = value === undefined ? fallback : value
   try {
-    return JSON.stringify(args, null, 2)
+    return JSON.stringify(source ?? fallback, null, 2)
   } catch {
-    return "{}"
+    return JSON.stringify(fallback, null, 2)
   }
 }
 
-const parseSpec = (spec: any) => {
+const normalizeNodeKind = (raw: any): FlowNodeKind => {
+  const normalized = String(raw ?? "").trim().toLowerCase()
+  return normalized === "compose" ? "compose" : "call"
+}
+
+const normalizeBindingSourceKind = (raw: any): FlowBindingSourceKind => {
+  const normalized = String(raw ?? "").trim().toLowerCase()
+  switch (normalized) {
+    case "node_result":
+    case "trigger":
+    case "flow_meta":
+    case "run_meta":
+      return normalized
+    default:
+      return ""
+  }
+}
+
+const defaultInputBinding = (): FlowInputBindingDraft => ({
+  to: "",
+  sourceKind: "node_result",
+  nodeId: "",
+  path: "",
+  field: "",
+  required: false
+})
+
+const normalizeSpecObject = (spec: any) => {
   let parsed = spec
   if (typeof spec === "string") {
     try {
@@ -401,19 +452,55 @@ const parseSpec = (spec: any) => {
       parsed = {}
     }
   }
-  if (!parsed || typeof parsed !== "object") {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     parsed = {}
   }
-  const method = String((parsed as any)?.method ?? "")
-  const target = Number((parsed as any)?.target ?? 0)
-  const argsText = parseArgsText((parsed as any)?.args)
-  const ui = (parsed as any)?._ui
+  return parsed as Record<string, any>
+}
+
+const parseInputBindings = (raw: any): FlowInputBindingDraft[] => {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw.map((binding) => {
+    const source = binding?.source ?? {}
+    return {
+      to: String(binding?.to ?? "").trim(),
+      sourceKind: normalizeBindingSourceKind(source?.kind),
+      nodeId: String(source?.node_id ?? "").trim(),
+      path: String(source?.path ?? "").trim(),
+      field: String(source?.field ?? "").trim(),
+      required: Boolean(binding?.required ?? false)
+    }
+  })
+}
+
+const parseSpecDraft = (kind: FlowNodeKind, spec: any) => {
+  const parsed = normalizeSpecObject(spec)
+  const ui = parsed?._ui ?? {}
   const x = Number(ui?.x)
   const y = Number(ui?.y)
+  if (kind === "compose") {
+    return {
+      method: "",
+      target: 0,
+      argsTemplate: "{}",
+      composeTemplate: formatJSONText(parsed?.template, {}),
+      inputs: parseInputBindings(parsed?.inputs),
+      specJson: formatJSONText(parsed, {}),
+      x: Number.isFinite(x) ? x : undefined,
+      y: Number.isFinite(y) ? y : undefined
+    }
+  }
+  const method = String(parsed?.method ?? "")
+  const target = Number(parsed?.target ?? 0)
   return {
     method,
     target,
-    argsText,
+    argsTemplate: formatJSONText(parsed?.args_template ?? parsed?.args, {}),
+    composeTemplate: "{}",
+    inputs: parseInputBindings(parsed?.inputs),
+    specJson: formatJSONText(parsed, {}),
     x: Number.isFinite(x) ? x : undefined,
     y: Number.isFinite(y) ? y : undefined
   }
@@ -425,9 +512,30 @@ const defaultNodePosition = (index: number) => {
   return { x: col * 240, y: row * 160 }
 }
 
+const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNodeDraft => {
+  const pos = defaultNodePosition(index)
+  return {
+    id,
+    kind,
+    allowFail: false,
+    retry: 1,
+    timeoutMs: 3000,
+    method: "",
+    target: 0,
+    argsTemplate: "{}",
+    composeTemplate: "{}",
+    inputs: [],
+    specEditorMode: "form",
+    specJson: formatJSONText(kind === "compose" ? { template: {} } : { method: "", args_template: {} }, {}),
+    x: pos.x,
+    y: pos.y
+  }
+}
+
 const mapNode = (input: any, index: number): FlowNodeDraft => {
   const sourceKind = String(input?.kind ?? "").toLowerCase()
-  const { method, target, argsText, x, y } = parseSpec(input?.spec)
+  const kind = normalizeNodeKind(sourceKind)
+  const { method, target, argsTemplate, composeTemplate, inputs, specJson, x, y } = parseSpecDraft(kind, input?.spec)
   let mappedTarget = Number.isFinite(target) ? Number(target) : 0
   if (mappedTarget < 0) mappedTarget = 0
   if (sourceKind === "local") {
@@ -436,13 +544,17 @@ const mapNode = (input: any, index: number): FlowNodeDraft => {
   const pos = defaultNodePosition(index)
   return {
     id: String(input?.id ?? "").trim(),
-    kind: "call",
+    kind,
     allowFail: Boolean(input?.allow_fail ?? input?.allowFail ?? false),
     retry: Number(input?.retry ?? 1),
     timeoutMs: Number(input?.timeout_ms ?? input?.timeoutMs ?? 3000),
     method,
     target: mappedTarget,
-    args: argsText,
+    argsTemplate,
+    composeTemplate,
+    inputs,
+    specEditorMode: "form",
+    specJson,
     x: Number.isFinite(x) ? Number(x) : pos.x,
     y: Number.isFinite(y) ? Number(y) : pos.y
   }
@@ -502,7 +614,7 @@ const suggestNodeId = (prefix = "n") => {
   return `${normalizedPrefix}${Date.now().toString(36)}`
 }
 
-const addNode = (id: string) => {
+const addNode = (id: string, kind: FlowNodeKind = "call") => {
   const trimmed = id.trim()
   if (!trimmed) {
     throw new Error(t("Node ID is required."))
@@ -510,19 +622,7 @@ const addNode = (id: string) => {
   if (state.nodes.find((node) => node.id.trim() === trimmed)) {
     throw new Error(t("Node ID must be unique."))
   }
-  const pos = defaultNodePosition(state.nodes.length)
-  const node: FlowNodeDraft = {
-    id: trimmed,
-    kind: "call",
-    allowFail: false,
-    retry: 1,
-    timeoutMs: 3000,
-    method: "",
-    target: 0,
-    args: "{}",
-    x: pos.x,
-    y: pos.y
-  }
+  const node = createNodeDraft(trimmed, kind, state.nodes.length)
   state.nodes.push(node)
   state.selectedNodeIndex = state.nodes.length - 1
   state.selectedEdgeIndex = -1
@@ -589,6 +689,123 @@ const buildAdjacency = (edges: FlowEdge[]) => {
   return next
 }
 
+const buildParents = (edges: FlowEdge[]) => {
+  const parents = new Map<string, string[]>()
+  for (const edge of edges) {
+    const from = edge.from.trim()
+    const to = edge.to.trim()
+    if (!from || !to) continue
+    const list = parents.get(to)
+    if (list) {
+      list.push(from)
+    } else {
+      parents.set(to, [from])
+    }
+  }
+  return parents
+}
+
+const collectNodeIds = () => {
+  const seen = new Set<string>()
+  const ids: string[] = []
+  for (const node of state.nodes) {
+    const id = node.id.trim()
+    if (!id) {
+      throw new Error(t("Node ID is required."))
+    }
+    if (seen.has(id)) {
+      throw new Error(t("Node ID must be unique."))
+    }
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
+}
+
+const buildTopology = (nodeIds: string[], edges: FlowEdge[]) => {
+  const idSet = new Set(nodeIds)
+  const nodeOrder = new Map<string, number>()
+  for (const [idx, id] of nodeIds.entries()) {
+    nodeOrder.set(id, idx)
+  }
+
+  const indegree = new Map<string, number>()
+  const next = new Map<string, string[]>()
+  const parents = new Map<string, string[]>()
+  for (const id of nodeIds) {
+    indegree.set(id, 0)
+    next.set(id, [])
+    parents.set(id, [])
+  }
+
+  for (const edge of edges) {
+    const from = edge.from.trim()
+    const to = edge.to.trim()
+    if (!from || !to || from === to) {
+      throw new Error(t("Edge endpoints are invalid."))
+    }
+    if (!idSet.has(from) || !idSet.has(to)) {
+      throw new Error(t("Edge references unknown nodes."))
+    }
+    next.get(from)?.push(to)
+    parents.get(to)?.push(from)
+    indegree.set(to, (indegree.get(to) ?? 0) + 1)
+  }
+
+  const queue: string[] = []
+  const level = new Map<string, number>()
+  for (const id of nodeIds) {
+    if ((indegree.get(id) ?? 0) === 0) {
+      queue.push(id)
+      level.set(id, 0)
+    }
+  }
+  queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
+
+  const order: string[] = []
+  while (queue.length) {
+    const current = queue.shift()
+    if (!current) continue
+    order.push(current)
+    const depth = level.get(current) ?? 0
+    for (const child of next.get(current) ?? []) {
+      level.set(child, Math.max(level.get(child) ?? 0, depth + 1))
+      const left = (indegree.get(child) ?? 0) - 1
+      indegree.set(child, left)
+      if (left === 0) {
+        queue.push(child)
+        queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
+      }
+    }
+  }
+
+  if (order.length !== nodeIds.length) {
+    throw new Error(t("Flow graph must be a DAG (cycle detected)."))
+  }
+
+  return { order, next, parents, level }
+}
+
+const buildAncestorMap = (order: string[], parents: Map<string, string[]>) => {
+  const ancestors = new Map<string, Set<string>>()
+  for (const id of order) {
+    ancestors.set(id, new Set<string>())
+  }
+  for (const id of order) {
+    const own = ancestors.get(id) ?? new Set<string>()
+    for (const parentId of parents.get(id) ?? []) {
+      own.add(parentId)
+      const parentAncestors = ancestors.get(parentId)
+      if (!parentAncestors) continue
+      for (const ancestorId of parentAncestors) {
+        own.add(ancestorId)
+      }
+    }
+    ancestors.set(id, own)
+  }
+  return ancestors
+}
+
 const isReachable = (start: string, goal: string, next: Map<string, string[]>) => {
   const queue: string[] = [start]
   const visited = new Set<string>()
@@ -604,6 +821,180 @@ const isReachable = (start: string, goal: string, next: Map<string, string[]>) =
     }
   }
   return false
+}
+
+const decodeJSONPointerToken = (token: string) => {
+  if (!token.includes("~")) {
+    return token
+  }
+  let out = ""
+  for (let i = 0; i < token.length; i += 1) {
+    const ch = token[i]
+    if (ch !== "~") {
+      out += ch
+      continue
+    }
+    const next = token[i + 1]
+    if (next === "0") {
+      out += "~"
+      i += 1
+      continue
+    }
+    if (next === "1") {
+      out += "/"
+      i += 1
+      continue
+    }
+    throw new Error(t("JSON Pointer contains an invalid escape sequence."))
+  }
+  return out
+}
+
+const validateJSONPointer = (pointer: string, errorMessage: string) => {
+  const trimmed = String(pointer ?? "").trim()
+  if (!trimmed) {
+    return
+  }
+  if (!trimmed.startsWith("/")) {
+    throw new Error(errorMessage)
+  }
+  for (const part of trimmed.slice(1).split("/")) {
+    decodeJSONPointerToken(part)
+  }
+}
+
+const parseJSONText = (raw: string, errorMessage: string) => {
+  try {
+    return JSON.parse(raw.trim() || "{}")
+  } catch {
+    throw new Error(errorMessage)
+  }
+}
+
+const tryParseJSONText = (raw: string, fallback: any = {}) => {
+  try {
+    return JSON.parse(String(raw ?? "").trim() || JSON.stringify(fallback))
+  } catch {
+    return fallback
+  }
+}
+
+const isBindingBlank = (binding: FlowInputBindingDraft) =>
+  !binding.to.trim() &&
+  !binding.sourceKind &&
+  !binding.nodeId.trim() &&
+  !binding.path.trim() &&
+  !binding.field.trim() &&
+  !binding.required
+
+const buildInputBindings = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  const allowedAncestors = ancestors.get(node.id.trim()) ?? new Set<string>()
+  const out: Array<Record<string, any>> = []
+  for (const [index, binding] of node.inputs.entries()) {
+    if (isBindingBlank(binding)) {
+      continue
+    }
+    const rowNo = index + 1
+    const to = binding.to.trim()
+    if (!to) {
+      throw new Error(t("Node {nodeId} binding row {rowNo}: destination pointer is required.", { nodeId, rowNo }))
+    }
+    validateJSONPointer(
+      to,
+      t("Node {nodeId} binding row {rowNo}: destination pointer must be a valid JSON Pointer.", { nodeId, rowNo })
+    )
+    const sourceKind = binding.sourceKind
+    let source: Record<string, any>
+    switch (sourceKind) {
+      case "node_result": {
+        const sourceNodeId = binding.nodeId.trim()
+        if (!sourceNodeId) {
+          throw new Error(t("Node {nodeId} binding row {rowNo}: source node is required.", { nodeId, rowNo }))
+        }
+        if (!allowedAncestors.has(sourceNodeId)) {
+          throw new Error(t("Node {nodeId} binding row {rowNo}: source node must be an ancestor.", { nodeId, rowNo }))
+        }
+        validateJSONPointer(
+          binding.path,
+          t("Node {nodeId} binding row {rowNo}: result path must be a valid JSON Pointer.", { nodeId, rowNo })
+        )
+        source = { kind: "node_result", node_id: sourceNodeId }
+        if (binding.path.trim()) {
+          source.path = binding.path.trim()
+        }
+        break
+      }
+      case "trigger":
+        validateJSONPointer(
+          binding.path,
+          t("Node {nodeId} binding row {rowNo}: trigger path must be a valid JSON Pointer.", { nodeId, rowNo })
+        )
+        source = { kind: "trigger" }
+        if (binding.path.trim()) {
+          source.path = binding.path.trim()
+        }
+        break
+      case "flow_meta":
+        if (binding.field.trim() !== "flow_id") {
+          throw new Error(t("Node {nodeId} binding row {rowNo}: flow meta field must be flow_id.", { nodeId, rowNo }))
+        }
+        source = { kind: "flow_meta", field: "flow_id" }
+        break
+      case "run_meta":
+        if (binding.field.trim() !== "run_id") {
+          throw new Error(t("Node {nodeId} binding row {rowNo}: run meta field must be run_id.", { nodeId, rowNo }))
+        }
+        source = { kind: "run_meta", field: "run_id" }
+        break
+      default:
+        throw new Error(t("Node {nodeId} binding row {rowNo}: source kind is required.", { nodeId, rowNo }))
+    }
+    out.push({
+      to,
+      source,
+      required: Boolean(binding.required)
+    })
+  }
+  return out
+}
+
+const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
+  const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+  const looseInputs = node.inputs.filter((binding) => !isBindingBlank(binding)).map((binding) => {
+    const sourceKind = binding.sourceKind || "node_result"
+    const source: Record<string, any> = { kind: sourceKind }
+    if (sourceKind === "node_result") {
+      if (binding.nodeId.trim()) source.node_id = binding.nodeId.trim()
+      if (binding.path.trim()) source.path = binding.path.trim()
+    } else if (sourceKind === "trigger") {
+      if (binding.path.trim()) source.path = binding.path.trim()
+    } else if (sourceKind === "flow_meta" || sourceKind === "run_meta") {
+      if (binding.field.trim()) source.field = binding.field.trim()
+    }
+    return {
+      to: binding.to.trim(),
+      source,
+      required: Boolean(binding.required)
+    }
+  })
+
+  if (node.kind === "compose") {
+    return {
+      template: tryParseJSONText(node.composeTemplate, {}),
+      ...(looseInputs.length ? { inputs: looseInputs } : {}),
+      _ui: ui
+    }
+  }
+
+  const target = Number(node.target || 0)
+  return {
+    ...(Number.isFinite(target) && target > 0 ? { target: Math.trunc(target) } : {}),
+    method: node.method.trim(),
+    args_template: tryParseJSONText(node.argsTemplate, {}),
+    ...(looseInputs.length ? { inputs: looseInputs } : {}),
+    _ui: ui
+  }
 }
 
 const addEdge = (from: string, to: string) => {
@@ -644,65 +1035,16 @@ const autoLayoutTB = () => {
     throw new Error(t("No nodes to layout."))
   }
 
-  const ids = state.nodes.map((node) => node.id.trim()).filter(Boolean)
-  const idSet = new Set(ids)
+  const ids = collectNodeIds()
   const nodeOrder = new Map<string, number>()
   for (const [idx, id] of ids.entries()) {
     nodeOrder.set(id, idx)
   }
-
-  const indegree = new Map<string, number>()
-  const next = new Map<string, string[]>()
-  for (const id of ids) {
-    indegree.set(id, 0)
-    next.set(id, [])
-  }
-
-  for (const edge of state.edges) {
-    const from = edge.from.trim()
-    const to = edge.to.trim()
-    if (!from || !to) continue
-    if (!idSet.has(from) || !idSet.has(to)) {
-      throw new Error(t("Flow graph contains invalid edge endpoints."))
-    }
-    next.get(from)?.push(to)
-    indegree.set(to, (indegree.get(to) ?? 0) + 1)
-  }
-
-  const level = new Map<string, number>()
-  const queue: string[] = []
-  for (const id of ids) {
-    if ((indegree.get(id) ?? 0) === 0) {
-      queue.push(id)
-      level.set(id, 0)
-    }
-  }
-  queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
-
-  const topo: string[] = []
-  while (queue.length) {
-    const cur = queue.shift()
-    if (!cur) continue
-    topo.push(cur)
-    const base = level.get(cur) ?? 0
-    for (const child of next.get(cur) ?? []) {
-      level.set(child, Math.max(level.get(child) ?? 0, base + 1))
-      const left = (indegree.get(child) ?? 0) - 1
-      indegree.set(child, left)
-      if (left === 0) {
-        queue.push(child)
-        queue.sort((a, b) => (nodeOrder.get(a) ?? 0) - (nodeOrder.get(b) ?? 0))
-      }
-    }
-  }
-
-  if (topo.length !== ids.length) {
-    throw new Error(t("Auto layout requires a DAG (cycle detected)."))
-  }
+  const topology = buildTopology(ids, state.edges)
 
   const groups = new Map<number, string[]>()
-  for (const id of topo) {
-    const depth = level.get(id) ?? 0
+  for (const id of topology.order) {
+    const depth = topology.level.get(id) ?? 0
     const list = groups.get(depth)
     if (list) {
       list.push(id)
@@ -736,69 +1078,218 @@ const autoLayoutTB = () => {
   commitHistory()
 }
 
-const buildSpec = (node: FlowNodeDraft) => {
-  const method = node.method.trim()
-  if (!method) {
-    throw new Error(t("Node {nodeId} requires a method.", { nodeId: node.id || t("Unnamed") }))
-  }
-  let parsedArgs: any = {}
-  const rawArgs = node.args?.trim() || "{}"
-  try {
-    parsedArgs = JSON.parse(rawArgs)
-  } catch {
-    throw new Error(t("Node {nodeId} args must be valid JSON.", { nodeId: node.id || t("Unnamed") }))
-  }
-  const target = Number(node.target || 0)
-  if (Number.isFinite(target) && target > 0) {
+const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+  const inputs = buildInputBindings(node, ancestors)
+  if (node.kind === "compose") {
     return {
-      target: Math.trunc(target),
-      method,
-      args: parsedArgs,
-      _ui: { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+      template: parseJSONText(
+        node.composeTemplate,
+        t("Node {nodeId} template must be valid JSON.", { nodeId })
+      ),
+      ...(inputs.length ? { inputs } : {}),
+      _ui: ui
     }
   }
-  return {
-    method,
-    args: parsedArgs,
-    _ui: { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+
+  const method = node.method.trim()
+  if (!method) {
+    throw new Error(t("Node {nodeId} requires a method.", { nodeId }))
   }
+  const target = Number(node.target || 0)
+  if (!Number.isFinite(target) || target < 0) {
+    throw new Error(t("Node {nodeId} target must be a non-negative number.", { nodeId }))
+  }
+  return {
+    ...(target > 0 ? { target: Math.trunc(target) } : {}),
+    method,
+    args_template: parseJSONText(
+      node.argsTemplate,
+      t("Node {nodeId} args template must be valid JSON.", { nodeId })
+    ),
+    ...(inputs.length ? { inputs } : {}),
+    _ui: ui
+  }
+}
+
+const parseSpecJsonObject = (node: FlowNodeDraft) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  let parsed: any
+  try {
+    parsed = JSON.parse(node.specJson.trim() || "{}")
+  } catch {
+    throw new Error(t("Node {nodeId} advanced spec must be valid JSON.", { nodeId }))
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(t("Node {nodeId} advanced spec must be a JSON object.", { nodeId }))
+  }
+  return parsed as Record<string, any>
+}
+
+const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  const parsed = parseSpecJsonObject(node)
+  const inputs = buildInputBindings(
+    {
+      ...node,
+      inputs: parseInputBindings(parsed.inputs)
+    },
+    ancestors
+  )
+  const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+
+  if (node.kind === "compose") {
+    if (!("template" in parsed)) {
+      throw new Error(t("Node {nodeId} compose spec requires template.", { nodeId }))
+    }
+    return {
+      ...parsed,
+      ...(inputs.length ? { inputs } : {}),
+      ...(inputs.length ? {} : { inputs: undefined }),
+      _ui: ui
+    }
+  }
+
+  const method = String(parsed.method ?? "").trim()
+  if (!method) {
+    throw new Error(t("Node {nodeId} requires a method.", { nodeId }))
+  }
+  const target = Number(parsed.target ?? 0)
+  if (!Number.isFinite(target) || target < 0) {
+    throw new Error(t("Node {nodeId} target must be a non-negative number.", { nodeId }))
+  }
+  const normalizedSpec: Record<string, any> = { ...parsed, method, _ui: ui }
+  if (target > 0) {
+    normalizedSpec.target = Math.trunc(target)
+  } else {
+    delete normalizedSpec.target
+  }
+  if (!("args_template" in normalizedSpec) && "args" in normalizedSpec) {
+    normalizedSpec.args_template = normalizedSpec.args
+    delete normalizedSpec.args
+  }
+  if (!("args_template" in normalizedSpec)) {
+    normalizedSpec.args_template = {}
+  }
+  if (inputs.length) {
+    normalizedSpec.inputs = inputs
+  } else {
+    delete normalizedSpec.inputs
+  }
+  return normalizedSpec
+}
+
+const buildSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) =>
+  node.specEditorMode === "json" ? buildAdvancedSpec(node, ancestors) : buildFormSpec(node, ancestors)
+
+const listAncestorNodeIds = (nodeId: string) => {
+  const trimmed = nodeId.trim()
+  if (!trimmed) return []
+  try {
+    const ids = collectNodeIds()
+    const topology = buildTopology(ids, state.edges)
+    const ancestors = buildAncestorMap(topology.order, topology.parents)
+    const allowed = ancestors.get(trimmed) ?? new Set<string>()
+    return state.nodes.map((node) => node.id.trim()).filter((id) => allowed.has(id))
+  } catch {
+    return []
+  }
+}
+
+const getNodeValidation = (nodeId: string) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node) return []
+  try {
+    const ids = collectNodeIds()
+    const topology = buildTopology(ids, state.edges)
+    const ancestors = buildAncestorMap(topology.order, topology.parents)
+    buildSpec(node, ancestors)
+    return []
+  } catch (err) {
+    return [String((err as Error)?.message ?? err ?? t("Unknown validation error."))]
+  }
+}
+
+const createInputBinding = () => defaultInputBinding()
+
+const setNodeKind = (nodeId: string, kind: FlowNodeKind) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node) {
+    throw new Error(t("Node does not exist."))
+  }
+  if (node.kind === kind) {
+    return false
+  }
+  if (kind === "compose") {
+    node.composeTemplate = node.composeTemplate.trim() || node.argsTemplate.trim() || "{}"
+    node.method = ""
+    node.target = 0
+  } else {
+    node.argsTemplate = node.argsTemplate.trim() || node.composeTemplate.trim() || "{}"
+  }
+  node.kind = kind
+  node.specEditorMode = "form"
+  node.specJson = formatJSONText(buildLooseSpecFromNode(node), {})
+  commitHistory()
+  return true
+}
+
+const setNodeSpecEditorMode = (nodeId: string, mode: FlowSpecEditorMode) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node) {
+    throw new Error(t("Node does not exist."))
+  }
+  if (node.specEditorMode === mode) {
+    return false
+  }
+  if (mode === "json") {
+    node.specJson = formatJSONText(buildLooseSpecFromNode(node), {})
+    node.specEditorMode = "json"
+    commitHistory()
+    return true
+  }
+
+  const ids = collectNodeIds()
+  const topology = buildTopology(ids, state.edges)
+  const ancestors = buildAncestorMap(topology.order, topology.parents)
+  const normalizedSpec = buildAdvancedSpec(node, ancestors)
+  const next = parseSpecDraft(node.kind, normalizedSpec)
+  node.method = next.method
+  node.target = Number.isFinite(next.target) && next.target > 0 ? Math.trunc(next.target) : 0
+  node.argsTemplate = next.argsTemplate
+  node.composeTemplate = next.composeTemplate
+  node.inputs = next.inputs.map((binding) => ({ ...binding }))
+  node.specJson = formatJSONText(normalizedSpec, {})
+  node.specEditorMode = "form"
+  commitHistory()
+  return true
 }
 
 const buildGraph = () => {
   if (!state.nodes.length) {
     throw new Error(t("At least one node is required."))
   }
-  const seen = new Set<string>()
+  const ids = collectNodeIds()
+  const edges = state.edges.map((edge) => ({
+    from: edge.from.trim(),
+    to: edge.to.trim()
+  }))
+  const topology = buildTopology(ids, edges)
+  const ancestors = buildAncestorMap(topology.order, topology.parents)
+
   const nodes = state.nodes.map((node) => {
     const id = node.id.trim()
-    if (!id) {
-      throw new Error(t("Node ID is required."))
-    }
-    if (seen.has(id)) {
-      throw new Error(t("Node ID must be unique."))
-    }
-    seen.add(id)
-    const spec = buildSpec(node)
     return {
       id,
-      kind: "call",
+      kind: node.kind,
       allow_fail: Boolean(node.allowFail),
       retry: Number(node.retry ?? 1),
       timeout_ms: Number(node.timeoutMs ?? 3000),
-      spec
+      spec: buildSpec(node, ancestors)
     }
   })
-  const edges = state.edges.map((edge) => {
-    const from = edge.from.trim()
-    const to = edge.to.trim()
-    if (!from || !to || from === to) {
-      throw new Error(t("Edge endpoints are invalid."))
-    }
-    if (!seen.has(from) || !seen.has(to)) {
-      throw new Error(t("Edge references unknown nodes."))
-    }
-    return { from, to }
-  })
+
   return { nodes, edges }
 }
 
@@ -1069,8 +1560,25 @@ const applyCallCapability = (key: string) => {
   }
   selected.method = route.method
   selected.target = normalizeCallTarget(route.providerNode)
-  if (!String(selected.args ?? "").trim()) {
-    selected.args = "{}"
+  if (!String(selected.argsTemplate ?? "").trim()) {
+    selected.argsTemplate = "{}"
+  }
+  if (selected.specEditorMode === "json") {
+    try {
+      const parsed = parseSpecJsonObject(selected)
+      parsed.method = route.method
+      if (selected.target > 0) {
+        parsed.target = selected.target
+      } else {
+        delete parsed.target
+      }
+      if (!("args_template" in parsed) && !("args" in parsed)) {
+        parsed.args_template = tryParseJSONText(selected.argsTemplate, {})
+      }
+      selected.specJson = formatJSONText(parsed, {})
+    } catch {
+      selected.specJson = formatJSONText(buildLooseSpecFromNode(selected), {})
+    }
   }
   commitHistory()
   const targetLabel = selected.target > 0 ? t("Node {nodeId}", { nodeId: selected.target }) : t("Current executor")
@@ -1159,10 +1667,15 @@ export const useFlowStore = () => {
     loadGraphDraft,
     exportPayload,
     exportGraphDraft,
+    createInputBinding,
+    getNodeValidation,
+    listAncestorNodeIds,
     normalizeCallTarget,
     queryExecCapabilities,
     applyCallCapability,
     applyExecCapability: applyCallCapability,
+    setNodeKind,
+    setNodeSpecEditorMode,
     undo,
     selectEdgeByEndpoints: (from: string, to: string) => {
       const fromId = from.trim()

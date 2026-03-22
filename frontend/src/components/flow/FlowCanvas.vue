@@ -50,7 +50,12 @@ const canvasNodes = computed(() =>
     .map((node) => ({
       id: node.id,
       position: { x: Number(node.x || 0), y: Number(node.y || 0) },
-      data: { label: node.id, status: statusByNodeId.value.get(node.id) },
+      data: {
+        label: node.id,
+        kind: node.kind,
+        meta: node.kind === "call" ? node.method.trim() || "call" : "compose",
+        status: statusByNodeId.value.get(node.id)
+      },
       type: "flowNode",
       draggable: true,
       connectable: true,
