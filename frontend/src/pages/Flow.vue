@@ -397,10 +397,9 @@ onMounted(async () => {
         >
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="space-y-1">
-              <p class="font-semibold">{{ project.name || project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">{{ t("Flow ID") }}: {{ project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">{{ t("Project ID") }}: {{ project.projectId }}</p>
-              <p class="text-xs text-muted-foreground">{{ t("updated: {time}", { time: project.updatedAt }) }}</p>
+              <p class="text-sm text-muted-foreground">
+                {{ project.name || t("Untitled Project") }} {{ t("updated: {time}", { time: project.updatedAt }) }}
+              </p>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">

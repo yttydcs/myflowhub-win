@@ -25,6 +25,7 @@
 
 - 最新归档：
   - [2026-03-22_win-button-pointer.md](2026-03-22_win-button-pointer.md)
+  - [2026-03-22_flow-list-row-simplify.md](2026-03-22_flow-list-row-simplify.md)
   - [2026-03-22_win-card-header-simplify.md](2026-03-22_win-card-header-simplify.md)
   - [2026-03-22_win-page-hero-simplify.md](2026-03-22_win-page-hero-simplify.md)
   - [2026-03-22_win-settings-i18n.md](2026-03-22_win-settings-i18n.md)
