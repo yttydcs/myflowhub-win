@@ -4,6 +4,7 @@ import { PencilLine, Plus, RefreshCw, Rocket, Settings2, Trash2 } from "lucide-v
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { useI18n } from "@/i18n"
 import type { DeviceTreeNode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
 import { useFlowProjectsStore, type FlowTriggerDraft } from "@/stores/flowProjects"
@@ -16,6 +17,7 @@ const devicesStore = useDevicesStore()
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const activeTab = ref<"projects" | "deployments">("projects")
 const currentDeployNodeId = ref("")
@@ -77,7 +79,7 @@ const loadProjects = async () => {
     await flowProjects.loadProjects()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load local flow projects.")
+    toast.errorOf(err, t("Failed to load local flow projects."))
   }
 }
 
@@ -90,6 +92,22 @@ const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
   varOwner: trigger.varOwner,
   varName: trigger.varName
 })
+
+const triggerTypeOptions = computed(() => [
+  { value: "interval" as const, label: t("Interval") },
+  { value: "event" as const, label: t("Event") },
+  { value: "var_changed" as const, label: t("Variable Changed") }
+])
+
+const eventModeOptions = computed(() => [
+  { value: "publish" as const, label: t("Publish") },
+  { value: "received" as const, label: t("Received") },
+  { value: "any" as const, label: t("Any") }
+])
+
+const deploymentStatusLabel = (status: string) => flowProjects.describeDeploymentStatus(status || "idle")
+const deploymentTriggerLabel = (item: { trigger: Record<string, any> | null; everyMs: number }) =>
+  flowProjects.describeTrigger(item.trigger, item.everyMs)
 
 const ensureDeploymentsLoaded = async (options?: { force?: boolean }) => {
   if (activeTab.value !== "deployments") return
@@ -108,7 +126,7 @@ const setActiveTab = async (tab: "projects" | "deployments") => {
       await ensureDeploymentsLoaded()
     } catch (err) {
       console.warn(err)
-      toast.errorOf(err, "Failed to load current deployments.")
+      toast.errorOf(err, t("Failed to load current deployments."))
     }
   }
 }
@@ -124,17 +142,17 @@ const createProject = async () => {
       name: createForm.name
     })
     createDialogOpen.value = false
-    toast.success("Project created.")
+    toast.success(t("Project created."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to create project.")
+    toast.errorOf(err, t("Failed to create project."))
   }
 }
 
 const openMetaDialog = (projectId: string) => {
   const project = flowProjects.getProjectByID(projectId)
   if (!project) {
-    toast.error("Project not found.")
+    toast.error(t("Project not found."))
     return
   }
   metaForm.projectId = project.projectId
@@ -151,22 +169,22 @@ const saveMeta = async () => {
       flowId: metaForm.flowId
     })
     metaDialogOpen.value = false
-    toast.success("Project metadata saved.")
+    toast.success(t("Project metadata saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save project metadata.")
+    toast.errorOf(err, t("Failed to save project metadata."))
   }
 }
 
 const deleteProject = async (projectId: string) => {
-  const ok = window.confirm(`Delete local project '${projectId}'? This does not delete remote deployment.`)
+  const ok = window.confirm(t("Delete local project '{projectId}'? This does not delete remote deployment.", { projectId }))
   if (!ok) return
   try {
     await flowProjects.deleteProject(projectId)
-    toast.success("Project deleted.")
+    toast.success(t("Project deleted."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to delete local project.")
+    toast.errorOf(err, t("Failed to delete local project."))
   }
 }
 
@@ -174,18 +192,18 @@ const openEditor = (projectId: string) => {
   try {
     const opened = flowProjects.openEditorWindow(projectId)
     if (!opened) {
-      toast.warn("Editor window was blocked by browser popup policy.")
+      toast.warn(t("Editor window was blocked by browser popup policy."))
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to open editor window.")
+    toast.errorOf(err, t("Failed to open editor window."))
   }
 }
 
 const openDeployDialog = (projectId: string) => {
   const project = flowProjects.getProjectByID(projectId)
   if (!project) {
-    toast.error("Project not found.")
+    toast.error(t("Project not found."))
     return
   }
   deployForm.projectId = project.projectId
@@ -205,7 +223,7 @@ const pickNode = async (target: "deploy" | "deployments") => {
     await devicesStore.loadRoot()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load device tree.")
+    toast.errorOf(err, t("Failed to load device tree."))
   }
   nodePickerOpen.value = true
 }
@@ -222,7 +240,7 @@ const chooseNode = async (nodeId: number) => {
       await reloadDeployments()
     } catch (err) {
       console.warn(err)
-      toast.errorOf(err, "Failed to load current deployments.")
+      toast.errorOf(err, t("Failed to load current deployments."))
     }
   }
 }
@@ -232,7 +250,7 @@ const toggleNode = async (node: DeviceTreeNode) => {
     await devicesStore.toggle(node.key)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to expand node.")
+    toast.errorOf(err, t("Failed to expand node."))
   }
 }
 
@@ -241,7 +259,7 @@ const reloadDeployments = async () => {
     await flowProjects.loadDeployments(currentDeployNodeId.value)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load current deployments.")
+    toast.errorOf(err, t("Failed to load current deployments."))
   }
 }
 
@@ -255,7 +273,10 @@ const deployNow = async () => {
     })
     if (first.overwriteRequired) {
       const confirmed = window.confirm(
-        `Flow '${deployForm.flowId}' already exists on node ${deployForm.nodeId}. Overwrite deployment?`
+        t("Flow '{flowId}' already exists on node {nodeId}. Overwrite deployment?", {
+          flowId: deployForm.flowId,
+          nodeId: deployForm.nodeId
+        })
       )
       if (!confirmed) return
       await flowProjects.deployProject({
@@ -266,27 +287,27 @@ const deployNow = async () => {
       })
     }
     deployDialogOpen.value = false
-    toast.success("Deployment saved to target node.")
+    toast.success(t("Deployment saved to target node."))
     currentDeployNodeId.value = deployForm.nodeId
     activeTab.value = "deployments"
     await reloadDeployments()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to deploy project.")
+    toast.errorOf(err, t("Failed to deploy project."))
   }
 }
 
 const deleteDeployment = async (flowId: string) => {
   const nodeId = currentDeployNodeId.value
-  const ok = window.confirm(`Delete deployment '${flowId}' from node ${nodeId}?`)
+  const ok = window.confirm(t("Delete deployment '{flowId}' from node {nodeId}?", { flowId, nodeId }))
   if (!ok) return
   try {
     await flowProjects.deleteDeployment(nodeId, flowId)
-    toast.success("Deployment deleted.")
+    toast.success(t("Deployment deleted."))
     await reloadDeployments()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to delete deployment.")
+    toast.errorOf(err, t("Failed to delete deployment."))
   }
 }
 
@@ -328,8 +349,8 @@ onMounted(async () => {
     <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Workspace</p>
-          <h2 class="mt-1 text-lg font-semibold">Flow Project Center</h2>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Workspace") }}</p>
+          <h2 class="mt-1 text-lg font-semibold">{{ t("Flow Project Center") }}</h2>
         </div>
 
         <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
@@ -343,7 +364,7 @@ onMounted(async () => {
             ]"
             @click="setActiveTab('projects')"
           >
-            Local Projects
+            {{ t("Local Projects") }}
           </button>
           <button
             type="button"
@@ -355,7 +376,7 @@ onMounted(async () => {
             ]"
             @click="setActiveTab('deployments')"
           >
-            Current Deployments
+            {{ t("Current Deployments") }}
           </button>
         </div>
       </div>
@@ -364,12 +385,12 @@ onMounted(async () => {
     <section v-if="activeTab === 'projects'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Local</p>
-          <h2 class="mt-1 text-lg font-semibold">Flow Projects</h2>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Local") }}</p>
+          <h2 class="mt-1 text-lg font-semibold">{{ t("Flow Projects") }}</h2>
         </div>
         <Button @click="openCreateDialog">
           <Plus class="mr-2 h-4 w-4" />
-          New Project
+          {{ t("New Project") }}
         </Button>
       </div>
 
@@ -382,34 +403,34 @@ onMounted(async () => {
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="space-y-1">
               <p class="font-semibold">{{ project.name || project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">flow_id: {{ project.flowId }}</p>
-              <p class="text-xs text-muted-foreground">project_id: {{ project.projectId }}</p>
-              <p class="text-xs text-muted-foreground">updated: {{ project.updatedAt }}</p>
+              <p class="text-xs text-muted-foreground">{{ t("Flow ID") }}: {{ project.flowId }}</p>
+              <p class="text-xs text-muted-foreground">{{ t("Project ID") }}: {{ project.projectId }}</p>
+              <p class="text-xs text-muted-foreground">{{ t("updated: {time}", { time: project.updatedAt }) }}</p>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" @click="openMetaDialog(project.projectId)">
                 <Settings2 class="mr-1 h-4 w-4" />
-                Meta
+                {{ t("Meta") }}
               </Button>
               <Button size="sm" variant="outline" @click="openEditor(project.projectId)">
                 <PencilLine class="mr-1 h-4 w-4" />
-                Edit
+                {{ t("Edit") }}
               </Button>
               <Button size="sm" @click="openDeployDialog(project.projectId)">
                 <Rocket class="mr-1 h-4 w-4" />
-                Deploy
+                {{ t("Deploy") }}
               </Button>
               <Button size="sm" variant="outline" @click="deleteProject(project.projectId)">
                 <Trash2 class="mr-1 h-4 w-4" />
-                Delete
+                {{ t("Delete") }}
               </Button>
             </div>
           </div>
         </article>
 
         <div v-if="!flowProjects.state.projects.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-          No local projects yet. Create one and open the editor window.
+          {{ t("No local projects yet. Create one and open the editor window.") }}
         </div>
       </div>
     </section>
@@ -417,22 +438,22 @@ onMounted(async () => {
     <section v-else class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Runtime</p>
-          <h2 class="mt-1 text-lg font-semibold">Current Deployments</h2>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Runtime") }}</p>
+          <h2 class="mt-1 text-lg font-semibold">{{ t("Current Deployments") }}</h2>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Node</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Node") }}</span>
             <input
               v-model="currentDeployNodeId"
               class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-              placeholder="Node ID"
+              :placeholder="t('Node ID')"
             />
           </div>
-          <Button size="sm" variant="outline" @click="pickNode('deployments')">Select node</Button>
+          <Button size="sm" variant="outline" @click="pickNode('deployments')">{{ t("Select node") }}</Button>
           <Button size="sm" :disabled="flowProjects.state.deploymentsLoading" @click="reloadDeployments">
             <RefreshCw class="mr-2 h-4 w-4" />
-            Refresh
+            {{ t("Refresh") }}
           </Button>
         </div>
       </div>
@@ -446,57 +467,57 @@ onMounted(async () => {
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p class="font-semibold">{{ item.name || item.flowId }}</p>
-              <p class="text-xs text-muted-foreground">flow_id: {{ item.flowId }}</p>
+              <p class="text-xs text-muted-foreground">{{ t("Flow ID") }}: {{ item.flowId }}</p>
             </div>
             <div class="flex items-center gap-2">
-              <Badge variant="secondary">{{ item.lastStatus || "idle" }}</Badge>
+              <Badge variant="secondary">{{ deploymentStatusLabel(item.lastStatus) }}</Badge>
               <Button size="sm" variant="outline" @click="deleteDeployment(item.flowId)">
                 <Trash2 class="mr-1 h-4 w-4" />
-                Delete
+                {{ t("Delete") }}
               </Button>
             </div>
           </div>
           <div class="mt-2 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-            <p><span class="font-semibold text-foreground">Trigger:</span> {{ item.triggerLabel }}</p>
-            <p><span class="font-semibold text-foreground">last_run_id:</span> {{ item.lastRunId || "-" }}</p>
+            <p><span class="font-semibold text-foreground">{{ t("Trigger:") }}</span> {{ deploymentTriggerLabel(item) }}</p>
+            <p><span class="font-semibold text-foreground">{{ t("Last run ID") }}:</span> {{ item.lastRunId || "-" }}</p>
           </div>
         </article>
 
         <div v-if="!flowProjects.state.deployments.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-          No deployments found for this node.
+          {{ t("No deployments found for this node.") }}
         </div>
       </div>
     </section>
 
     <Overlay :open="createDialogOpen" @close="createDialogOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Create Flow Project</h2>
+        <h2 class="text-lg font-semibold">{{ t("Create Flow Project") }}</h2>
         <div class="mt-4 grid gap-3">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">name</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
             <input
               v-model="createForm.name"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Optional"
+              :placeholder="t('Optional')"
             />
           </div>
         </div>
         <p class="mt-4 text-xs text-muted-foreground">
-          A unique local project id and a default random <code>flow_id</code> will be generated automatically. You can change metadata later from the project list.
+          {{ t("A unique local project id and a default random flow_id will be generated automatically. You can change metadata later from the project list.") }}
         </p>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="createDialogOpen = false">Cancel</Button>
-          <Button @click="createProject">Create</Button>
+          <Button variant="outline" @click="createDialogOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="createProject">{{ t("Create") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="metaDialogOpen" @close="metaDialogOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Project Metadata</h2>
+        <h2 class="text-lg font-semibold">{{ t("Project Metadata") }}</h2>
         <div class="mt-4 grid gap-4">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">project_id</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Project ID") }}</label>
             <input
               :value="metaForm.projectId"
               disabled
@@ -504,66 +525,66 @@ onMounted(async () => {
             />
           </div>
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">name</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
             <input
               v-model="metaForm.projectName"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Optional"
+              :placeholder="t('Optional')"
             />
           </div>
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">flow_id</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Flow ID") }}</label>
             <input
               v-model="metaForm.flowId"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Required"
+              :placeholder="t('Required')"
             />
           </div>
         </div>
         <p class="mt-4 text-xs text-muted-foreground">
-          <code>flow_id</code> must stay unique among local projects because it is the deployment identity used on target nodes.
+          {{ t("flow_id must stay unique among local projects because it is the deployment identity used on target nodes.") }}
         </p>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="metaDialogOpen = false">Cancel</Button>
-          <Button @click="saveMeta">Save</Button>
+          <Button variant="outline" @click="metaDialogOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="saveMeta">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="deployDialogOpen" @close="deployDialogOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Deploy Project</h2>
-        <p class="mt-1 text-sm text-muted-foreground">{{ deployForm.projectName }} · flow_id {{ deployForm.flowId }}</p>
+        <h2 class="text-lg font-semibold">{{ t("Deploy Project") }}</h2>
+        <p class="mt-1 text-sm text-muted-foreground">{{ deployForm.projectName }} · {{ t("Flow ID") }} {{ deployForm.flowId }}</p>
 
         <div class="mt-4 grid gap-4 md:grid-cols-2">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Node ID</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Node ID") }}</label>
             <input
               v-model="deployForm.nodeId"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Target node id"
+              :placeholder="t('Target node id')"
             />
           </div>
           <div class="flex items-end">
-            <Button variant="outline" @click="pickNode('deploy')">Select node</Button>
+            <Button variant="outline" @click="pickNode('deploy')">{{ t("Select node") }}</Button>
           </div>
         </div>
 
         <div class="mt-4 grid gap-4 md:grid-cols-3">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Trigger</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Trigger") }}</label>
             <select
               v-model="deployForm.trigger.type"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="interval">interval</option>
-              <option value="event">event</option>
-              <option value="var_changed">var_changed</option>
+              <option v-for="option in triggerTypeOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
             </select>
           </div>
 
           <div v-if="deployForm.trigger.type === 'interval'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Every (ms)</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Every (ms)") }}</label>
             <input
               v-model.number="deployForm.trigger.everyMs"
               type="number"
@@ -574,25 +595,25 @@ onMounted(async () => {
 
           <template v-else-if="deployForm.trigger.type === 'event'">
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Mode</label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Mode") }}</label>
               <select
                 v-model="deployForm.trigger.eventMode"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="publish">publish</option>
-                <option value="received">received</option>
-                <option value="any">any</option>
+                <option v-for="option in eventModeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
               </select>
             </div>
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Name</label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Name") }}</label>
               <input
                 v-model="deployForm.trigger.eventName"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Event Topic</label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Topic") }}</label>
               <input
                 v-model="deployForm.trigger.eventTopic"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -602,7 +623,7 @@ onMounted(async () => {
 
           <template v-else>
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var Owner</label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Owner") }}</label>
               <input
                 v-model.number="deployForm.trigger.varOwner"
                 type="number"
@@ -611,7 +632,7 @@ onMounted(async () => {
               />
             </div>
             <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Var Name</label>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Name") }}</label>
               <input
                 v-model="deployForm.trigger.varName"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -621,12 +642,12 @@ onMounted(async () => {
         </div>
 
         <p class="mt-4 text-xs text-muted-foreground">
-          Deployment only sends <code>flow.set</code>; it does not trigger run. Trigger edits here will be saved back as project default.
+          {{ t("Deployment only sends flow.set; it does not trigger run. Trigger edits here will be saved back as project default.") }}
         </p>
 
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="deployDialogOpen = false">Cancel</Button>
-          <Button @click="deployNow">Deploy</Button>
+          <Button variant="outline" @click="deployDialogOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="deployNow">{{ t("Deploy") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -634,8 +655,8 @@ onMounted(async () => {
     <Overlay :open="nodePickerOpen" @close="nodePickerOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-lg font-semibold">Select node</h2>
-          <Button size="sm" variant="outline" @click="devicesStore.loadRoot">Reload Tree</Button>
+          <h2 class="text-lg font-semibold">{{ t("Select node") }}</h2>
+          <Button size="sm" variant="outline" @click="devicesStore.loadRoot">{{ t("Reload Tree") }}</Button>
         </div>
         <div class="mt-4 max-h-[70vh] space-y-2 overflow-y-auto">
           <article
@@ -655,21 +676,21 @@ onMounted(async () => {
                   <span v-else>{{ node.expanded ? "-" : "+" }}</span>
                 </button>
                 <div>
-                  <p class="font-semibold">Node {{ node.nodeId }}</p>
+                  <p class="font-semibold">{{ t("Node {nodeId}", { nodeId: node.nodeId }) }}</p>
                   <p class="text-xs text-muted-foreground">
-                    <span v-if="node.duplicate">Duplicate node in current tree path.</span>
+                    <span v-if="node.duplicate">{{ t("Duplicate node in current tree path.") }}</span>
                     <span v-else-if="node.error">{{ node.error }}</span>
-                    <span v-else-if="node.children">children {{ node.children.length }}</span>
-                    <span v-else>not loaded</span>
+                    <span v-else-if="node.children">{{ t("children {count}", { count: node.children.length }) }}</span>
+                    <span v-else>{{ t("not loaded") }}</span>
                   </p>
                 </div>
               </div>
-              <Button size="sm" @click="chooseNode(node.nodeId)">Select</Button>
+              <Button size="sm" @click="chooseNode(node.nodeId)">{{ t("Select") }}</Button>
             </div>
           </article>
 
           <div v-if="!visibleNodes.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-            No tree data. Connect and login first, then reload the tree.
+            {{ t("No tree data. Connect and login first, then reload the tree.") }}
           </div>
         </div>
       </div>

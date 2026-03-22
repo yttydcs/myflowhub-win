@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 
 type WailsBinding = (...args: any[]) => Promise<any>
@@ -6,7 +7,7 @@ const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.management?.ManagementService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Management binding '${method}' unavailable`)
+    throw new Error(t("Management binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -69,23 +70,23 @@ const resolveTargetNode = () => {
   const raw = state.targetId.trim()
   if (!raw) {
     if (!state.hubId) {
-      throw new Error("Target node is required.")
+      throw new Error(t("Target node is required."))
     }
     return state.hubId
   }
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Target node must be a positive number.")
+    throw new Error(t("Target node must be a positive number."))
   }
   return parsed
 }
 
 const ensureIdentity = () => {
   if (!state.selfNodeId) {
-    throw new Error("Login required to send Management requests.")
+    throw new Error(t("Login required to send Management requests."))
   }
   if (!state.hubId) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
   return { sourceID: state.selfNodeId, hubID: state.hubId }
 }
@@ -173,7 +174,7 @@ const selectNode = async (nodeId: number) => {
 
 const refreshConfig = async () => {
   if (!state.selectedNodeId) {
-    throw new Error("Select a node to load config.")
+    throw new Error(t("Select a node to load config."))
   }
   const { sourceID } = ensureIdentity()
   const nodeId = state.selectedNodeId
@@ -183,10 +184,10 @@ const refreshConfig = async () => {
 const setConfig = async (key: string, value: string) => {
   const trimmed = key.trim()
   if (!trimmed) {
-    throw new Error("Config key is required.")
+    throw new Error(t("Config key is required."))
   }
   if (!state.selectedNodeId) {
-    throw new Error("Select a node to update config.")
+    throw new Error(t("Select a node to update config."))
   }
   const { sourceID } = ensureIdentity()
   const nodeId = state.selectedNodeId

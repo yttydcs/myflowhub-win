@@ -4,6 +4,7 @@ import { useRoute } from "vue-router"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { formatTopicBusTimestamp, normalizeTopicBusEvent, useTopicBusStore, type TopicBusEvent } from "@/stores/topicbus"
@@ -15,6 +16,7 @@ const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const topicbus = useTopicBusStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const busy = ref(false)
 const eventListRef = ref<HTMLElement | null>(null)
@@ -31,7 +33,7 @@ const sendForm = reactive({
   payload: ""
 })
 
-const fallbackTitle = "TopicBus"
+const fallbackTitle = computed(() => t("TopicBus"))
 
 const inputClass =
   "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -39,7 +41,7 @@ const inputClass =
 const textAreaClass =
   "mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
-const connectedLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectedLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const connectedTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
@@ -50,7 +52,7 @@ const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId |
 const requestedTopic = computed(() => String(route.query.topic ?? "").trim())
 const requestedScope = computed(() => String(route.query.scope ?? "").trim().toLowerCase())
 const isAllWindow = computed(() => requestedScope.value === "all" || !requestedTopic.value)
-const windowTitle = computed(() => (isAllWindow.value ? "All Channels" : requestedTopic.value || fallbackTitle))
+const windowTitle = computed(() => (isAllWindow.value ? t("All Channels") : requestedTopic.value || fallbackTitle.value))
 
 const localEvents = ref<TopicBusEvent[]>([])
 const selectedEventIndex = ref(-1)
@@ -73,7 +75,7 @@ const acceptsEvent = (event: TopicBusEvent) => {
 
 const previewPayload = (raw: string) => {
   const compact = String(raw ?? "").replace(/\s+/g, " ").trim()
-  if (!compact) return "No payload."
+  if (!compact) return t("No payload.")
   if (compact.length <= 180) return compact
   return `${compact.slice(0, 180)}...`
 }
@@ -99,10 +101,10 @@ const syncTopicDraft = () => {
 
 const ensureReady = () => {
   if (!sessionStore.connected) {
-    throw new Error("Connect to a session before sending TopicBus requests.")
+    throw new Error(t("Connect to a session before sending TopicBus requests."))
   }
   if (!selfNodeId.value) {
-    throw new Error("Login to a node before using TopicBus operations.")
+    throw new Error(t("Login to a node before using TopicBus operations."))
   }
 }
 
@@ -248,10 +250,10 @@ const publishEvent = async () => {
     await topicbus.publish(topic, sendForm.name, sendForm.payload)
     sendForm.name = ""
     sendForm.payload = ""
-    toast.success("Event published. This window will not echo your own message.")
+    toast.success(t("Event published. This window will not echo your own message."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to publish event.")
+    toast.errorOf(err, t("Failed to publish event."))
   } finally {
     busy.value = false
   }
@@ -295,7 +297,7 @@ onMounted(async () => {
     await loadHomeDefaults()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to initialize TopicBus window.")
+    toast.errorOf(err, t("Failed to initialize TopicBus window."))
   }
   attachTopicBusListener()
 })
@@ -317,24 +319,28 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            TopicBus Window
+            {{ t("TopicBus Window") }}
           </p>
           <h1 class="mt-2 text-lg font-semibold">{{ windowTitle }}</h1>
           <p class="mt-2 text-sm text-muted-foreground">
-            {{ isAllWindow ? "Listening for every known topic from this moment onward." : "Listening only for the selected topic from this moment onward." }}
+            {{
+              isAllWindow
+                ? t("Listening for every known topic from this moment onward.")
+                : t("Listening only for the selected topic from this moment onward.")
+            }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Self {{ selfNodeId || "-" }}</Badge>
-          <Badge variant="outline">Target {{ topicbus.state.targetId || hubId || "-" }}</Badge>
+          <Badge variant="outline">{{ t("Self {id}", { id: selfNodeId || "-" }) }}</Badge>
+          <Badge variant="outline">{{ t("Target {id}", { id: topicbus.state.targetId || hubId || "-" }) }}</Badge>
           <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
         </div>
       </div>
 
       <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        <span>Events in window: {{ localEvents.length }}</span>
-        <span>Cache limit: {{ topicbus.state.maxEvents }}</span>
-        <span>Your own publish action will not echo back here.</span>
+        <span>{{ t("Events in window: {count}", { count: localEvents.length }) }}</span>
+        <span>{{ t("Cache limit: {count}", { count: topicbus.state.maxEvents }) }}</span>
+        <span>{{ t("Your own publish action will not echo back here.") }}</span>
       </div>
     </section>
 
@@ -346,12 +352,12 @@ onBeforeUnmount(() => {
         <div class="flex h-full min-h-0 flex-col rounded-xl border border-border/60 bg-background/70">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Receive</p>
-              <h2 class="text-sm font-semibold">Live Event Stream</h2>
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Receive") }}</p>
+              <h2 class="text-sm font-semibold">{{ t("Live Event Stream") }}</h2>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" @click="scrollToLatest">Scroll to Latest</Button>
-              <Button size="sm" variant="ghost" @click="clearLocalEvents">Clear</Button>
+              <Button size="sm" variant="outline" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
+              <Button size="sm" variant="ghost" @click="clearLocalEvents">{{ t("Clear") }}</Button>
             </div>
           </div>
 
@@ -384,7 +390,7 @@ onBeforeUnmount(() => {
               v-if="localEvents.length === 0"
               class="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-background/60 px-6 text-center text-sm text-muted-foreground"
             >
-              Waiting for new TopicBus events in this window.
+              {{ t("Waiting for new TopicBus events in this window.") }}
             </div>
           </div>
         </div>
@@ -400,8 +406,8 @@ onBeforeUnmount(() => {
       <section class="min-h-0 flex-1">
         <div class="flex h-full min-h-0 flex-col rounded-xl border border-border/60 bg-background/70">
           <div class="border-b border-border/60 px-4 py-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Send</p>
-            <h2 class="text-sm font-semibold">Publish Event</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Send") }}</p>
+            <h2 class="text-sm font-semibold">{{ t("Publish Event") }}</h2>
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -409,22 +415,22 @@ onBeforeUnmount(() => {
               <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
                 <div>
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Target Node ID
+                    {{ t("Target Node ID") }}
                   </label>
                   <input
                     v-model="topicbus.state.targetId"
                     :class="inputClass"
-                    :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
+                    :placeholder="hubId ? String(hubId) : t('Hub NodeID')"
                   />
                 </div>
                 <div>
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Topic
+                    {{ t("Topic") }}
                   </label>
                   <input
                     v-model="sendForm.topic"
                     :class="inputClass"
-                    :placeholder="isAllWindow ? 'topic.status' : ''"
+                    :placeholder="isAllWindow ? t('topic.status') : ''"
                     :readonly="!isAllWindow"
                   />
                 </div>
@@ -432,30 +438,34 @@ onBeforeUnmount(() => {
 
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Name
+                  {{ t("Name") }}
                 </label>
-                <input v-model="sendForm.name" :class="inputClass" placeholder="event name" />
+                <input v-model="sendForm.name" :class="inputClass" :placeholder="t('event name')" />
               </div>
 
               <div class="min-h-0">
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Payload
+                  {{ t("Payload") }}
                 </label>
                 <textarea
                   v-model="sendForm.payload"
                   :class="textAreaClass"
                   rows="6"
-                  placeholder="JSON or plain text"
+                  :placeholder="t('JSON or plain text')"
                 />
               </div>
 
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <p class="text-xs text-muted-foreground">
-                  {{ isAllWindow ? "Choose a topic before sending from the aggregate window." : "Topic is locked to this channel for safer publishing." }}
+                  {{
+                    isAllWindow
+                      ? t("Choose a topic before sending from the aggregate window.")
+                      : t("Topic is locked to this channel for safer publishing.")
+                  }}
                 </p>
                 <div class="flex flex-wrap gap-2">
-                  <Button variant="outline" :disabled="busy" @click="clearComposer">Clear</Button>
-                  <Button :disabled="busy" @click="publishEvent">Publish</Button>
+                  <Button variant="outline" :disabled="busy" @click="clearComposer">{{ t("Clear") }}</Button>
+                  <Button :disabled="busy" @click="publishEvent">{{ t("Publish") }}</Button>
                 </div>
               </div>
             </div>

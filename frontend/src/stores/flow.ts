@@ -1,4 +1,5 @@
 import { reactive } from "vue"
+import { t } from "@/i18n"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -6,7 +7,7 @@ const callFlow = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.flow?.FlowService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Flow binding '${method}' unavailable`)
+    throw new Error(t("Flow binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -63,6 +64,52 @@ export type FlowStatus = {
   nodes: FlowStatusNode[]
 }
 
+export type FlowMessageLevel = "" | "success" | "error" | "info"
+
+export const flowStatusLabelKey = (status: string) => {
+  const normalized = String(status ?? "").trim().toLowerCase()
+  switch (normalized) {
+    case "succeeded":
+      return "Succeeded"
+    case "failed":
+      return "Failed"
+    case "running":
+      return "Running"
+    case "queued":
+      return "Queued"
+    case "idle":
+      return "Idle"
+    case "":
+      return "Unknown"
+    default:
+      return String(status ?? "").trim() || "Unknown"
+  }
+}
+
+export const flowTriggerTypeLabelKey = (type: string) => {
+  const normalized = String(type ?? "").trim().toLowerCase()
+  switch (normalized) {
+    case "event":
+      return "Event"
+    case "var_changed":
+      return "Variable Changed"
+    default:
+      return "Interval"
+  }
+}
+
+export const flowEventModeLabelKey = (mode: string) => {
+  const normalized = String(mode ?? "").trim().toLowerCase()
+  switch (normalized) {
+    case "received":
+      return "Received"
+    case "any":
+      return "Any"
+    default:
+      return "Publish"
+  }
+}
+
 export type ExecCapabilityRoute = {
   key: string
   providerNode: number
@@ -111,6 +158,7 @@ type FlowState = {
   execCapabilities: ExecCapabilityRoute[]
   execCapabilitiesLoading: boolean
   message: string
+  messageLevel: FlowMessageLevel
   historyIndex: number
   historyLength: number
 }
@@ -143,6 +191,7 @@ const state = reactive<FlowState>({
   execCapabilities: [],
   execCapabilitiesLoading: false,
   message: "",
+  messageLevel: "",
   historyIndex: 0,
   historyLength: 1
 })
@@ -150,6 +199,12 @@ const state = reactive<FlowState>({
 const MAX_HISTORY = 120
 let draftHistory: FlowDraftSnapshot[] = []
 let draftHistoryIndex = 0
+
+const setMessage = (message: string, level: Exclude<FlowMessageLevel, ""> = "info") => {
+  const trimmed = message.trim()
+  state.message = trimmed
+  state.messageLevel = trimmed ? level : ""
+}
 
 const snapshotToJSON = (snapshot: FlowDraftSnapshot) => JSON.stringify(snapshot)
 
@@ -244,7 +299,7 @@ const undo = () => {
   draftHistoryIndex -= 1
   applySnapshot(draftHistory[draftHistoryIndex])
   updateHistoryState()
-  state.message = "Undo applied."
+  setMessage(t("Undo applied."))
   return true
 }
 
@@ -253,7 +308,7 @@ const redo = () => {
   draftHistoryIndex += 1
   applySnapshot(draftHistory[draftHistoryIndex])
   updateHistoryState()
-  state.message = "Redo applied."
+  setMessage(t("Redo applied."))
   return true
 }
 
@@ -268,13 +323,13 @@ const resolveTargetNode = () => {
   const raw = state.targetId.trim()
   if (!raw) {
     if (!state.hubId) {
-      throw new Error("Target node is required.")
+      throw new Error(t("Target node is required."))
     }
     return state.hubId
   }
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Target node must be a positive number.")
+    throw new Error(t("Target node must be a positive number."))
   }
   return parsed
 }
@@ -288,21 +343,21 @@ const resolveCapabilityQueryNode = (queryNodeId?: string | number) => {
     return resolveTargetNode()
   }
   if (!/^\d+$/.test(raw)) {
-    throw new Error("Query node ID must be a positive number.")
+    throw new Error(t("Query node ID must be a positive number."))
   }
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("Query node ID must be a positive number.")
+    throw new Error(t("Query node ID must be a positive number."))
   }
   return Math.trunc(parsed)
 }
 
 const ensureIdentity = () => {
   if (!state.selfNodeId) {
-    throw new Error("Login required to send Flow requests.")
+    throw new Error(t("Login required to send Flow requests."))
   }
   if (!state.hubId) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
   return { sourceID: state.selfNodeId, hubID: state.hubId }
 }
@@ -450,10 +505,10 @@ const suggestNodeId = (prefix = "n") => {
 const addNode = (id: string) => {
   const trimmed = id.trim()
   if (!trimmed) {
-    throw new Error("Node ID is required.")
+    throw new Error(t("Node ID is required."))
   }
   if (state.nodes.find((node) => node.id.trim() === trimmed)) {
-    throw new Error("Node ID must be unique.")
+    throw new Error(t("Node ID must be unique."))
   }
   const pos = defaultNodePosition(state.nodes.length)
   const node: FlowNodeDraft = {
@@ -478,10 +533,10 @@ const renameNodeId = (oldId: string, newId: string) => {
   const from = oldId.trim()
   const to = newId.trim()
   if (!from) {
-    throw new Error("Old node ID is required.")
+    throw new Error(t("Old node ID is required."))
   }
   if (!to) {
-    throw new Error("Node ID is required.")
+    throw new Error(t("Node ID is required."))
   }
   if (from === to) {
     return false
@@ -489,10 +544,10 @@ const renameNodeId = (oldId: string, newId: string) => {
 
   const node = state.nodes.find((n) => n.id.trim() === from)
   if (!node) {
-    throw new Error("Node does not exist.")
+    throw new Error(t("Node does not exist."))
   }
   if (state.nodes.some((n) => n.id.trim() === to)) {
-    throw new Error("Node ID must be unique.")
+    throw new Error(t("Node ID must be unique."))
   }
 
   node.id = to
@@ -501,7 +556,7 @@ const renameNodeId = (oldId: string, newId: string) => {
     to: edge.to.trim() === from ? to : edge.to
   }))
   commitHistory()
-  state.message = "Node ID updated."
+  setMessage(t("Node ID updated."), "success")
   return true
 }
 
@@ -555,20 +610,20 @@ const addEdge = (from: string, to: string) => {
   const fromId = from.trim()
   const toId = to.trim()
   if (!fromId || !toId || fromId === toId) {
-    throw new Error("Edge endpoints must be different.")
+    throw new Error(t("Edge endpoints must be different."))
   }
   if (!state.nodes.find((node) => node.id.trim() === fromId)) {
-    throw new Error("From node does not exist.")
+    throw new Error(t("From node does not exist."))
   }
   if (!state.nodes.find((node) => node.id.trim() === toId)) {
-    throw new Error("To node does not exist.")
+    throw new Error(t("To node does not exist."))
   }
   if (state.edges.some((edge) => edge.from === fromId && edge.to === toId)) {
-    throw new Error("Edge already exists.")
+    throw new Error(t("Edge already exists."))
   }
   const next = buildAdjacency(state.edges)
   if (isReachable(toId, fromId, next)) {
-    throw new Error("Edge would create a cycle.")
+    throw new Error(t("Edge would create a cycle."))
   }
   state.edges.push({ from: fromId, to: toId })
   state.selectedEdgeIndex = state.edges.length - 1
@@ -586,7 +641,7 @@ const removeSelectedEdge = () => {
 
 const autoLayoutTB = () => {
   if (!state.nodes.length) {
-    throw new Error("No nodes to layout.")
+    throw new Error(t("No nodes to layout."))
   }
 
   const ids = state.nodes.map((node) => node.id.trim()).filter(Boolean)
@@ -608,7 +663,7 @@ const autoLayoutTB = () => {
     const to = edge.to.trim()
     if (!from || !to) continue
     if (!idSet.has(from) || !idSet.has(to)) {
-      throw new Error("Flow graph contains invalid edge endpoints.")
+      throw new Error(t("Flow graph contains invalid edge endpoints."))
     }
     next.get(from)?.push(to)
     indegree.set(to, (indegree.get(to) ?? 0) + 1)
@@ -642,7 +697,7 @@ const autoLayoutTB = () => {
   }
 
   if (topo.length !== ids.length) {
-    throw new Error("Auto layout requires a DAG (cycle detected).")
+    throw new Error(t("Auto layout requires a DAG (cycle detected)."))
   }
 
   const groups = new Map<number, string[]>()
@@ -684,14 +739,14 @@ const autoLayoutTB = () => {
 const buildSpec = (node: FlowNodeDraft) => {
   const method = node.method.trim()
   if (!method) {
-    throw new Error(`Node ${node.id || "<unnamed>"} requires a method.`)
+    throw new Error(t("Node {nodeId} requires a method.", { nodeId: node.id || t("Unnamed") }))
   }
   let parsedArgs: any = {}
   const rawArgs = node.args?.trim() || "{}"
   try {
     parsedArgs = JSON.parse(rawArgs)
   } catch {
-    throw new Error(`Node ${node.id || "<unnamed>"} args must be valid JSON.`)
+    throw new Error(t("Node {nodeId} args must be valid JSON.", { nodeId: node.id || t("Unnamed") }))
   }
   const target = Number(node.target || 0)
   if (Number.isFinite(target) && target > 0) {
@@ -711,16 +766,16 @@ const buildSpec = (node: FlowNodeDraft) => {
 
 const buildGraph = () => {
   if (!state.nodes.length) {
-    throw new Error("At least one node is required.")
+    throw new Error(t("At least one node is required."))
   }
   const seen = new Set<string>()
   const nodes = state.nodes.map((node) => {
     const id = node.id.trim()
     if (!id) {
-      throw new Error("Node ID is required.")
+      throw new Error(t("Node ID is required."))
     }
     if (seen.has(id)) {
-      throw new Error(`Duplicate node ID: ${id}`)
+      throw new Error(t("Node ID must be unique."))
     }
     seen.add(id)
     const spec = buildSpec(node)
@@ -737,10 +792,10 @@ const buildGraph = () => {
     const from = edge.from.trim()
     const to = edge.to.trim()
     if (!from || !to || from === to) {
-      throw new Error("Edge endpoints are invalid.")
+      throw new Error(t("Edge endpoints are invalid."))
     }
     if (!seen.has(from) || !seen.has(to)) {
-      throw new Error("Edge references unknown nodes.")
+      throw new Error(t("Edge references unknown nodes."))
     }
     return { from, to }
   })
@@ -753,7 +808,7 @@ const buildTrigger = () => {
     const eventName = state.eventName.trim()
     const eventTopic = state.eventTopic.trim()
     if (!eventName && !eventTopic) {
-      throw new Error("Event trigger requires event name or event topic.")
+      throw new Error(t("Event trigger requires event name or event topic."))
     }
     return {
       type: "event",
@@ -765,7 +820,7 @@ const buildTrigger = () => {
   if (triggerType === "var_changed") {
     const owner = Number(state.varOwner || 0)
     if (!Number.isFinite(owner) || owner < 0) {
-      throw new Error("Var owner must be a non-negative number.")
+      throw new Error(t("Var owner must be a non-negative number."))
     }
     const varName = state.varName.trim()
     return {
@@ -776,7 +831,7 @@ const buildTrigger = () => {
   }
   const everyMs = Number(state.everyMs)
   if (!everyMs || everyMs <= 0) {
-    throw new Error("EveryMs must be a positive number.")
+    throw new Error(t("EveryMs must be a positive number."))
   }
   return { type: "interval", every_ms: everyMs }
 }
@@ -794,7 +849,7 @@ const getFlow = async (flowId: string) => {
   const executorNode = resolveTargetNode()
   const trimmed = flowId.trim()
   if (!trimmed) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   const req = {
     req_id: newReqId(),
@@ -811,7 +866,7 @@ const saveFlow = async () => {
   const executorNode = resolveTargetNode()
   const flowId = state.flowId.trim()
   if (!flowId) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   const trigger = buildTrigger()
   const graph = buildGraph()
@@ -833,7 +888,7 @@ const runFlow = async () => {
   const executorNode = resolveTargetNode()
   const flowId = state.flowId.trim()
   if (!flowId) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   const req = {
     req_id: newReqId(),
@@ -850,7 +905,7 @@ const statusFlow = async (runId?: string) => {
   const executorNode = resolveTargetNode()
   const flowId = state.flowId.trim()
   if (!flowId) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   const req = {
     req_id: newReqId(),
@@ -867,22 +922,22 @@ const handleListResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
-    state.message = msg || "Flow list failed."
+    setMessage(msg || t("Flow list failed."), "error")
     return
   }
   const flows = Array.isArray(data?.flows) ? data.flows : []
   state.flows = flows.map(mapSummary)
-  state.message = "Flow list updated."
+  setMessage(t("Flow list updated."), "success")
 }
 
 const handleGetResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
-    state.message = msg || "Flow load failed."
+    setMessage(msg || t("Flow load failed."), "error")
     return
   }
-  applyFlowPayload(data, "Flow loaded.", true)
+  applyFlowPayload(data, t("Flow loaded."), true)
 }
 
 const applyGraphDraft = (graphSource: any, successMessage: string) => {
@@ -895,7 +950,7 @@ const applyGraphDraft = (graphSource: any, successMessage: string) => {
   state.selectedEdgeIndex = -1
   state.execCapabilities = []
   state.execCapabilitiesLoading = false
-  state.message = successMessage
+  setMessage(successMessage, "success")
   resetHistory()
 }
 
@@ -931,7 +986,7 @@ const applyFlowPayload = (data: any, successMessage: string, refreshStatus: bool
 const loadFromPayload = (data: any) => {
   const flowID = String(data?.flow_id ?? data?.flowId ?? "").trim()
   if (!flowID) {
-    throw new Error("flow_id is required.")
+    throw new Error(t("Flow ID is required."))
   }
   applyFlowPayload(
     {
@@ -940,19 +995,19 @@ const loadFromPayload = (data: any) => {
       trigger: data?.trigger ?? {},
       graph: data?.graph ?? {}
     },
-    "Draft loaded.",
+    t("Draft loaded."),
     false
   )
 }
 
 const loadGraphDraft = (graph: any) => {
-  applyGraphDraft(graph ?? {}, "Draft loaded.")
+  applyGraphDraft(graph ?? {}, t("Draft loaded."))
 }
 
 const exportPayload = (): FlowPayload => {
   const flowID = state.flowId.trim()
   if (!flowID) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   return {
     flow_id: flowID,
@@ -982,16 +1037,22 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
     const msg = String(data?.msg ?? "")
     if (code !== 1) {
       state.execCapabilities = []
-      state.message = msg || "Capability query failed."
+      setMessage(msg || t("Capability query failed."), "error")
       return
     }
     const routes: any[] = Array.isArray(data?.routes) ? data.routes : []
     state.execCapabilities = routes
       .map(mapExecCapabilityRoute)
       .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
-    state.message = state.execCapabilities.length
-      ? `Capability list updated from node ${executorNode} (${state.execCapabilities.length}).`
-      : `No capability matched on node ${executorNode}.`
+    setMessage(
+      state.execCapabilities.length
+        ? t("Capability list updated from node {nodeId} ({count}).", {
+            nodeId: executorNode,
+            count: state.execCapabilities.length
+          })
+        : t("No capability matched on node {nodeId}.", { nodeId: executorNode }),
+      state.execCapabilities.length ? "success" : "info"
+    )
   } finally {
     state.execCapabilitiesLoading = false
   }
@@ -1000,11 +1061,11 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
 const applyCallCapability = (key: string) => {
   const selected = state.nodes[state.selectedNodeIndex]
   if (!selected || selected.kind !== "call") {
-    throw new Error("Select a call node first.")
+    throw new Error(t("Select a call node first."))
   }
   const route = state.execCapabilities.find((item) => item.key === String(key).trim())
   if (!route) {
-    throw new Error("Capability not found in current list.")
+    throw new Error(t("Capability not found in current list."))
   }
   selected.method = route.method
   selected.target = normalizeCallTarget(route.providerNode)
@@ -1012,18 +1073,18 @@ const applyCallCapability = (key: string) => {
     selected.args = "{}"
   }
   commitHistory()
-  const targetLabel = selected.target > 0 ? `node ${selected.target}` : "current executor"
-  state.message = `Capability applied: ${route.method} @ ${targetLabel}.`
+  const targetLabel = selected.target > 0 ? t("Node {nodeId}", { nodeId: selected.target }) : t("Current executor")
+  setMessage(t("Capability applied: {method} @ {targetLabel}.", { method: route.method, targetLabel }), "success")
 }
 
 const handleSetResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
-    state.message = msg || "Flow save failed."
+    setMessage(msg || t("Flow save failed."), "error")
     return
   }
-  state.message = "Flow saved."
+  setMessage(t("Flow saved."), "success")
   void listFlows().catch(() => {})
 }
 
@@ -1031,12 +1092,12 @@ const handleRunResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
-    state.message = msg || "Flow run failed."
+    setMessage(msg || t("Flow run failed."), "error")
     return
   }
   const runId = String(data?.run_id ?? "")
   state.statusRunId = runId
-  state.message = "Flow run started."
+  setMessage(t("Flow run started."), "success")
   void statusFlow(runId).catch(() => {})
 }
 
@@ -1044,7 +1105,7 @@ const handleStatusResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
-    state.message = msg || "Flow status failed."
+    setMessage(msg || t("Flow status failed."), "error")
     return
   }
   const nodes = Array.isArray(data?.nodes) ? data.nodes : []
@@ -1062,7 +1123,7 @@ const handleStatusResp = (data: any) => {
   if (state.lastStatus.runId) {
     state.statusRunId = state.lastStatus.runId
   }
-  state.message = "Status updated."
+  setMessage(t("Status updated."), "success")
 }
 
 export const useFlowStore = () => {
@@ -1076,6 +1137,10 @@ export const useFlowStore = () => {
     addNode,
     autoLayoutTB,
     commitHistory,
+    clearMessage: () => {
+      state.message = ""
+      state.messageLevel = ""
+    },
     clearSelection: () => {
       state.selectedNodeIndex = -1
       state.selectedEdgeIndex = -1

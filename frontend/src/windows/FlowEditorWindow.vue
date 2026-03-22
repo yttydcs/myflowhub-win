@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
+import { useI18n } from "@/i18n"
 import { useFlowStore } from "@/stores/flow"
 import { useFlowProjectsStore } from "@/stores/flowProjects"
 import { useSessionStore } from "@/stores/session"
@@ -17,6 +18,7 @@ const flowStore = useFlowStore()
 const projectsStore = useFlowProjectsStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 
@@ -60,14 +62,14 @@ const effectiveExecutorNode = computed(() => {
 })
 const selectedTargetLabel = computed(() => {
   const node = selectedNode.value
-  if (!node) return "No target selected."
+  if (!node) return t("No target selected.")
   if (node.target > 0) {
-    return `Remote provider node ${node.target}`
+    return t("Remote provider node {nodeId}", { nodeId: node.target })
   }
   if (effectiveExecutorNode.value > 0) {
-    return `Current executor node ${effectiveExecutorNode.value}`
+    return t("Current executor node {nodeId}", { nodeId: effectiveExecutorNode.value })
   }
-  return "Current executor"
+  return t("Current executor")
 })
 const capabilityQueryNodeLabel = computed(() => {
   const raw = queryNodeIdDraft.value.trim()
@@ -160,7 +162,7 @@ const refreshMethodCapabilities = async () => {
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load method capabilities.")
+    toast.errorOf(err, t("Failed to load method capabilities."))
   }
 }
 
@@ -184,7 +186,7 @@ const selectCapability = (key: string) => {
 
 const applyCapabilitySelection = () => {
   if (!pendingCapabilityKey.value) {
-    toast.warn("Please select a method.")
+    toast.warn(t("Please select a method."))
     return
   }
   try {
@@ -192,7 +194,7 @@ const applyCapabilitySelection = () => {
     methodDialogOpen.value = false
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to apply method capability.")
+    toast.errorOf(err, t("Failed to apply method capability."))
   }
 }
 
@@ -206,7 +208,7 @@ const commitNodeId = () => {
   } catch (err) {
     console.warn(err)
     nodeIdDraft.value = oldId
-    toast.errorOf(err, "Failed to rename node.")
+    toast.errorOf(err, t("Failed to rename node."))
   }
 }
 
@@ -221,7 +223,7 @@ const addNode = () => {
     addNodeOpen.value = false
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to add node.")
+    toast.errorOf(err, t("Failed to add node."))
   }
 }
 
@@ -238,7 +240,7 @@ const onCanvasConnect = (from: string, to: string) => {
     flowStore.addEdge(from, to)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to connect nodes.")
+    toast.errorOf(err, t("Failed to connect nodes."))
   }
 }
 
@@ -264,14 +266,14 @@ const autoLayout = () => {
     flowStore.autoLayoutTB()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to auto layout.")
+    toast.errorOf(err, t("Failed to auto layout."))
   }
 }
 
 const saveProject = async () => {
   const id = projectId.value
   if (!id) {
-    toast.error("projectId is required in query string.")
+    toast.error(t("Project ID is required in the query string."))
     return
   }
   saveBusy.value = true
@@ -279,10 +281,10 @@ const saveProject = async () => {
     const graph = flowStore.exportGraphDraft()
     const saved = await projectsStore.saveProjectGraph(id, graph)
     loadedProjectName.value = saved.name || saved.flowId || id
-    toast.success("Project saved.")
+    toast.success(t("Project saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save project.")
+    toast.errorOf(err, t("Failed to save project."))
   } finally {
     saveBusy.value = false
   }
@@ -294,18 +296,18 @@ const loadProject = async () => {
     await projectsStore.loadProjects()
     const id = projectId.value
     if (!id) {
-      throw new Error("projectId is required in query string.")
+      throw new Error(t("Project ID is required in the query string."))
     }
     const project = projectsStore.getProjectByID(id)
     if (!project) {
-      throw new Error(`Project not found: ${id}`)
+      throw new Error(t("Project not found."))
     }
     loadedProjectName.value = project.name || project.flowId
     flowStore.loadGraphDraft(project.graph)
     nodeIdDraft.value = selectedNode.value?.id ?? ""
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load project.")
+    toast.errorOf(err, t("Failed to load project."))
   } finally {
     loading.value = false
   }
@@ -395,15 +397,18 @@ watch(
   (msg) => {
     const trimmed = msg.trim()
     if (!trimmed) return
-    const lower = trimmed.toLowerCase()
-    if (lower.includes("failed") || lower.includes("error") || lower.includes("invalid")) {
-      toast.error(trimmed)
-    } else if (lower.includes("loaded") || lower.includes("saved") || lower.includes("updated")) {
-      toast.success(trimmed)
-    } else {
-      toast.info(trimmed)
+    switch (flowStore.state.messageLevel) {
+      case "error":
+        toast.error(trimmed)
+        break
+      case "success":
+        toast.success(trimmed)
+        break
+      default:
+        toast.info(trimmed)
+        break
     }
-    flowStore.state.message = ""
+    flowStore.clearMessage()
   }
 )
 
@@ -422,50 +427,50 @@ onUnmounted(() => {
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 class="text-xl font-semibold">{{ loadedProjectName || "Untitled Project" }}</h1>
+          <h1 class="text-xl font-semibold">{{ loadedProjectName || t("Untitled Project") }}</h1>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <Tooltip content="Add Node" side="bottom">
+          <Tooltip :content="t('Add Node')" side="bottom">
             <Button size="icon" variant="outline" @click="openAddNodeDialog">
               <Plus class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Add Node</span>
+              <span class="sr-only">{{ t("Add Node") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Remove Node (Delete)" side="bottom">
+          <Tooltip :content="t('Remove Node (Delete)')" side="bottom">
             <Button size="icon" variant="outline" :disabled="flowStore.state.selectedNodeIndex < 0" @click="removeNode">
               <Trash2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Remove Node</span>
+              <span class="sr-only">{{ t("Remove Node (Delete)") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Remove Edge (Delete)" side="bottom">
+          <Tooltip :content="t('Remove Edge (Delete)')" side="bottom">
             <Button size="icon" variant="outline" :disabled="flowStore.state.selectedEdgeIndex < 0" @click="removeEdge">
               <Link2Off class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Remove Edge</span>
+              <span class="sr-only">{{ t("Remove Edge (Delete)") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Undo (Ctrl+Z)" side="bottom">
+          <Tooltip :content="t('Undo (Ctrl+Z)')" side="bottom">
             <Button size="icon" variant="outline" :disabled="!canUndo" @click="flowStore.undo()">
               <Undo2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Undo</span>
+              <span class="sr-only">{{ t("Undo (Ctrl+Z)") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Redo (Ctrl+Y)" side="bottom">
+          <Tooltip :content="t('Redo (Ctrl+Y)')" side="bottom">
             <Button size="icon" variant="outline" :disabled="!canRedo" @click="flowStore.redo()">
               <Redo2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Redo</span>
+              <span class="sr-only">{{ t("Redo (Ctrl+Y)") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Auto Layout" side="bottom">
+          <Tooltip :content="t('Auto Layout')" side="bottom">
             <Button size="icon" variant="outline" @click="autoLayout">
               <LayoutGrid class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Auto Layout</span>
+              <span class="sr-only">{{ t("Auto Layout") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Save Project (Ctrl+S)" side="bottom">
+          <Tooltip :content="t('Save Project (Ctrl+S)')" side="bottom">
             <Button size="icon" :disabled="saveBusy || loading" @click="saveProject">
               <Save class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Save Project</span>
+              <span class="sr-only">{{ t("Save Project (Ctrl+S)") }}</span>
             </Button>
           </Tooltip>
         </div>
@@ -474,7 +479,7 @@ onUnmounted(() => {
     </header>
 
     <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
-      Loading project...
+      {{ t("Loading project...") }}
     </div>
 
     <div v-else class="relative flex-1 min-h-0 overflow-hidden">
@@ -503,12 +508,12 @@ onUnmounted(() => {
           <div class="flex h-full flex-col">
             <div class="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Node Detail</p>
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Node Detail") }}</p>
                 <h2 class="mt-1 text-lg font-semibold">{{ selectedNode.id }}</h2>
               </div>
               <Button size="icon" variant="ghost" @click="closeNodeDetail">
                 <X class="h-4 w-4" aria-hidden="true" />
-                <span class="sr-only">Close</span>
+                <span class="sr-only">{{ t("Close") }}</span>
               </Button>
             </div>
 
@@ -525,17 +530,17 @@ onUnmounted(() => {
                     @keydown.enter.prevent="commitNodeId"
                   />
                   <p class="mt-1 text-[11px] text-muted-foreground">
-                    Node ID must be unique. Renaming updates all connected edges.
+                    {{ t("Node ID must be unique. Renaming updates all connected edges.") }}
                   </p>
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Kind
+                      {{ t("Kind") }}
                     </label>
                     <input
-                      value="call"
+                      :value="t('Call')"
                       disabled
                       class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
                     />
@@ -543,7 +548,7 @@ onUnmounted(() => {
 
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Allow Fail
+                      {{ t("Allow Fail") }}
                     </label>
                     <div class="mt-2 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
                       <input
@@ -552,7 +557,7 @@ onUnmounted(() => {
                         class="h-4 w-4 rounded border"
                         @change="flowStore.commitHistory()"
                       />
-                      <span class="text-muted-foreground">Continue on error</span>
+                      <span class="text-muted-foreground">{{ t("Continue on error") }}</span>
                     </div>
                   </div>
                 </div>
@@ -560,7 +565,7 @@ onUnmounted(() => {
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Retry
+                      {{ t("Retry") }}
                     </label>
                     <input
                       v-model.number="selectedNode.retry"
@@ -573,7 +578,7 @@ onUnmounted(() => {
 
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Timeout (ms)
+                      {{ t("Timeout (ms)") }}
                     </label>
                     <input
                       v-model.number="selectedNode.timeoutMs"
@@ -589,25 +594,25 @@ onUnmounted(() => {
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Call Method
+                        {{ t("Call Method") }}
                       </p>
                       <p class="mt-2 break-all text-sm font-semibold">
-                        {{ selectedNode.method || "No method selected." }}
+                        {{ selectedNode.method || t("No method selected.") }}
                       </p>
                       <p class="mt-1 text-xs text-muted-foreground">
                         {{ selectedTargetLabel }}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm" @click="openMethodDialog">Select Method</Button>
+                    <Button variant="outline" size="sm" @click="openMethodDialog">{{ t("Select Method") }}</Button>
                   </div>
                   <p class="mt-3 text-[11px] text-muted-foreground">
-                    Use the method dialog to choose a registered capability. The editor will keep method and target aligned.
+                    {{ t("Use the method dialog to choose a registered capability. The editor will keep method and target aligned.") }}
                   </p>
                 </div>
 
                 <div>
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Args (JSON)
+                    {{ t("Args (JSON)") }}
                   </label>
                   <textarea
                     v-model="selectedNode.args"
@@ -633,19 +638,19 @@ onUnmounted(() => {
       <div class="flex max-h-[80vh] w-full max-w-4xl flex-col rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Call Method</p>
-            <h2 class="mt-1 text-lg font-semibold">Select Capability</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Call Method") }}</p>
+            <h2 class="mt-1 text-lg font-semibold">{{ t("Select Capability") }}</h2>
             <p class="mt-1 text-sm text-muted-foreground">
-              Pick a registered capability and the editor will keep method and target aligned.
+              {{ t("Pick a registered capability and the editor will keep method and target aligned.") }}
             </p>
           </div>
 
           <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span class="rounded-full border border-border/60 px-3 py-1">
-              Executor {{ effectiveExecutorNode || "-" }}
+              {{ t("Executor {nodeId}", { nodeId: effectiveExecutorNode || "-" }) }}
             </span>
             <span class="rounded-full border border-border/60 px-3 py-1">
-              Query Node {{ capabilityQueryNodeLabel }}
+              {{ t("Query Node {nodeId}", { nodeId: capabilityQueryNodeLabel }) }}
             </span>
             <span class="rounded-full border border-border/60 px-3 py-1">
               {{ selectedTargetLabel }}
@@ -656,30 +661,30 @@ onUnmounted(() => {
         <div class="mt-5 flex flex-wrap items-end gap-3">
           <div class="min-w-[200px] max-w-[240px] flex-1">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Query Node ID
+              {{ t("Query Node ID") }}
             </label>
             <input
               v-model="queryNodeIdDraft"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               inputmode="numeric"
-              placeholder="Current executor"
+              :placeholder="t('Current executor')"
             />
             <p class="mt-1 text-[11px] text-muted-foreground">
-              Used only for capability lookup. It will not be written back into the call node.
+              {{ t("Used only for capability lookup. It will not be written back into the call node.") }}
             </p>
           </div>
           <div class="min-w-[240px] flex-[2]">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Filter
+              {{ t("Filter") }}
             </label>
             <input
               v-model="methodSearch"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Search method / provider / version"
+              :placeholder="t('Search method / provider / version')"
             />
           </div>
           <Button variant="outline" :disabled="flowStore.state.execCapabilitiesLoading" @click="refreshMethodCapabilities">
-            {{ flowStore.state.execCapabilitiesLoading ? "Refreshing..." : "Refresh Capabilities" }}
+            {{ flowStore.state.execCapabilitiesLoading ? t("Refreshing...") : t("Refresh Capabilities") }}
           </Button>
         </div>
 
@@ -688,13 +693,13 @@ onUnmounted(() => {
             v-if="flowStore.state.execCapabilitiesLoading && !flowStore.state.execCapabilities.length"
             class="px-4 py-10 text-center text-sm text-muted-foreground"
           >
-            Loading capability list...
+            {{ t("Loading capability list...") }}
           </div>
           <div v-else-if="!filteredCapabilities.length" class="px-4 py-10 text-center text-sm text-muted-foreground">
             {{
               flowStore.state.execCapabilities.length
-                ? "No capability matched the current filter."
-                : "No capability loaded yet. Refresh to query the selected node."
+                ? t("No capability matched the current filter.")
+                : t("No capability loaded yet. Refresh to query the selected node.")
             }}
           </div>
           <div v-else class="divide-y divide-border/60">
@@ -710,12 +715,12 @@ onUnmounted(() => {
                 <div class="flex flex-wrap items-center gap-2">
                   <p class="break-all text-sm font-semibold">{{ route.method }}</p>
                   <span class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    {{ route.providerNode === effectiveExecutorNode ? "Self" : "Remote" }}
+                    {{ route.providerNode === effectiveExecutorNode ? t("Self") : t("Remote") }}
                   </span>
                 </div>
                 <p class="mt-1 text-xs text-muted-foreground">
-                  Provider {{ route.providerNode }}
-                  <span v-if="route.viaNode > 0"> via {{ route.viaNode }}</span>
+                  {{ t("Provider {nodeId}", { nodeId: route.providerNode }) }}
+                  <span v-if="route.viaNode > 0"> {{ t("via {nodeId}", { nodeId: route.viaNode }) }}</span>
                   <span v-if="route.version"> · {{ route.version }}</span>
                 </p>
               </div>
@@ -727,7 +732,7 @@ onUnmounted(() => {
                     : 'border-border/70 text-muted-foreground'
                 "
               >
-                {{ pendingCapabilityKey === route.key ? "Selected" : "Choose" }}
+                {{ pendingCapabilityKey === route.key ? t("Selected") : t("Choose") }}
               </span>
             </button>
           </div>
@@ -735,11 +740,11 @@ onUnmounted(() => {
 
         <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p class="text-xs text-muted-foreground">
-            Applying a capability updates the method and hidden call target. The query node stays temporary.
+            {{ t("Applying a capability updates the method and hidden call target. The query node stays temporary.") }}
           </p>
           <div class="flex gap-2">
-            <Button variant="outline" @click="closeMethodDialog">Cancel</Button>
-            <Button :disabled="!pendingCapabilityKey" @click="applyCapabilitySelection">Apply Method</Button>
+            <Button variant="outline" @click="closeMethodDialog">{{ t("Cancel") }}</Button>
+            <Button :disabled="!pendingCapabilityKey" @click="applyCapabilitySelection">{{ t("Apply Method") }}</Button>
           </div>
         </div>
       </div>
@@ -747,11 +752,11 @@ onUnmounted(() => {
 
     <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Add Node</h2>
+        <h2 class="text-lg font-semibold">{{ t("Add Node") }}</h2>
         <div class="mt-4 space-y-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Node ID
+              {{ t("Node ID") }}
             </label>
             <input
               v-model="nodeDraft.id"
@@ -760,8 +765,8 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
-          <Button @click="addNode">Add</Button>
+          <Button variant="outline" @click="addNodeOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="addNode">{{ t("Add") }}</Button>
         </div>
       </div>
     </Overlay>

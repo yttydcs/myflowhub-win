@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
+import { useI18n } from "@/i18n"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -25,6 +26,7 @@ const varpool = useVarPoolStore()
 const showcase = useShowcaseStore()
 const toast = useToastStore()
 const route = useRoute()
+const { t } = useI18n()
 
 const busy = ref(false)
 const lastSavedSnapshot = ref("")
@@ -33,7 +35,7 @@ const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 const selfNodeId = computed(() => sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0)
 const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId || 0)
 
-const connectedLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectedLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const connectedTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
@@ -106,10 +108,10 @@ const refreshVars = async () => {
   busy.value = true
   try {
     await syncDraftSubscriptions()
-    toast.success("Refreshed.")
+    toast.success(t("Refreshed."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to refresh.")
+    toast.errorOf(err, t("Failed to refresh."))
   } finally {
     busy.value = false
   }
@@ -118,12 +120,12 @@ const refreshVars = async () => {
 const saveDraft = async () => {
   const screen = resolveEditorScreen()
   if (!screen) {
-    toast.error("Screen not found.")
+    toast.error(t("Screen not found."))
     return
   }
   const name = screen.name.trim()
   if (!name) {
-    toast.error("Screen name is required.")
+    toast.error(t("Screen name is required."))
     return
   }
   if (busy.value) return
@@ -135,27 +137,27 @@ const saveDraft = async () => {
     syncLayoutFormFromScreen()
     markSavedSnapshot()
     await syncDraftSubscriptions()
-    toast.success("Saved.")
+    toast.success(t("Saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save screen.")
+    toast.errorOf(err, t("Failed to save screen."))
   } finally {
     busy.value = false
   }
 }
 
 const revertDraft = async () => {
-  if (dirty.value && !window.confirm("Discard unsaved changes and reload the saved screen?")) {
+  if (dirty.value && !window.confirm(t("Discard unsaved changes and reload the saved screen?"))) {
     return
   }
   if (busy.value) return
   busy.value = true
   try {
     await loadEditorDraft()
-    toast.success("Reverted.")
+    toast.success(t("Reverted."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to reload saved screen.")
+    toast.errorOf(err, t("Failed to reload saved screen."))
   } finally {
     busy.value = false
   }
@@ -325,15 +327,15 @@ const refreshVarQuickPickMine = async (showSuccess = true) => {
   try {
     varpool.setIdentity(selfNodeId.value, hubId.value)
     if (!selfNodeId.value) {
-      throw new Error("Login to a node before loading mine variables.")
+      throw new Error(t("Login to a node before loading mine variables."))
     }
     await varpool.listMine()
     if (showSuccess) {
-      toast.success("Mine variables refreshed.")
+      toast.success(t("Mine variables refreshed."))
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load mine variables.")
+    toast.errorOf(err, t("Failed to load mine variables."))
   } finally {
     varQuickPickDialog.refreshing = false
   }
@@ -359,27 +361,33 @@ const closeWidgetDialog = () => {
 
 const parsePositiveInt = (raw: string, field: string) => {
   const parsed = Number.parseInt(raw.trim(), 10)
-  if (Number.isNaN(parsed) || parsed <= 0) throw new Error(`${field} must be a positive number.`)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    throw new Error(t("{field} must be a positive number.", { field: t(field) }))
+  }
   return parsed
 }
 
 const parseNonNegativeInt = (raw: string, field: string) => {
   const parsed = Number.parseInt(raw.trim(), 10)
-  if (Number.isNaN(parsed) || parsed < 0) throw new Error(`${field} must be a valid number (>= 0).`)
+  if (Number.isNaN(parsed) || parsed < 0) {
+    throw new Error(t("{field} must be a valid number (>= 0).", { field: t(field) }))
+  }
   return parsed
 }
 
 const parseIntInRange = (raw: string, field: string, min: number, max: number) => {
   const parsed = Number.parseInt(raw.trim(), 10)
   if (Number.isNaN(parsed) || parsed < min || parsed > max) {
-    throw new Error(`${field} must be between ${min} and ${max}.`)
+    throw new Error(t("{field} must be between {min} and {max}.", { field: t(field), min, max }))
   }
   return parsed
 }
 
 const parseFloatStrict = (raw: string, field: string) => {
   const parsed = Number.parseFloat(raw.trim())
-  if (!Number.isFinite(parsed)) throw new Error(`${field} must be a valid number.`)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(t("{field} must be a valid number.", { field: t(field) }))
+  }
   return parsed
 }
 
@@ -392,7 +400,7 @@ const makeDraftID = (prefix: string) => {
 const requireCurrentScreen = () => {
   const screen = resolveEditorScreen()
   if (!screen) {
-    throw new Error("Screen not found.")
+    throw new Error(t("Screen not found."))
   }
   return screen
 }
@@ -403,7 +411,7 @@ const resolveVarTargetID = (fallback?: number) => {
   if (parsedFallback > 0) return parsedFallback
   const hubTarget = Number.isFinite(hubId.value) && Number(hubId.value) > 0 ? Math.floor(Number(hubId.value)) : 0
   if (hubTarget > 0) return hubTarget
-  throw new Error("Hub NodeID is required for variable widgets.")
+  throw new Error(t("Hub NodeID is required for variable widgets."))
 }
 
 const submitWidgetDialog = async () => {
@@ -440,25 +448,27 @@ const submitWidgetDialog = async () => {
         widget.layout.colSpan = colSpan
         widget.topicButton = { topic, name, payloadText }
       }
-      toast.success("Draft updated.")
+      toast.success(t("Draft updated."))
       closeWidgetDialog()
       return
     }
 
     const ownerId = parsePositiveInt(widgetDialog.ownerId, "Owner NodeID")
     const varName = widgetDialog.varName.trim()
-    if (!varName) throw new Error("Variable name is required.")
+    if (!varName) throw new Error(t("Variable name is required."))
     const mode = widgetDialog.varMode
     const visibility = widgetDialog.visibility.trim() || "public"
     const type = widgetDialog.varType.trim() || defaultTypeForMode(mode)
-    if (!type) throw new Error("Variable type is required.")
+    if (!type) throw new Error(t("Variable type is required."))
     const sliderMin = parseFloatStrict(widgetDialog.sliderMin, "Min")
     const sliderMax = parseFloatStrict(widgetDialog.sliderMax, "Max")
     const sliderStep = parseFloatStrict(widgetDialog.sliderStep, "Step")
     const throttleMs = parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle")
     const onValue = widgetDialog.switchOnValue.trim()
     const offValue = widgetDialog.switchOffValue.trim()
-    if (mode === "switch" && (!onValue || !offValue)) throw new Error("Switch on/off values are required.")
+    if (mode === "switch" && (!onValue || !offValue)) {
+      throw new Error(t("Switch on/off values are required."))
+    }
     const switchSetting = {
       onValue: onValue || "true",
       offValue: offValue || "false"
@@ -500,28 +510,28 @@ const submitWidgetDialog = async () => {
       widget.var.switch = switchSetting
     }
     await syncDraftSubscriptions()
-    toast.success("Draft updated.")
+    toast.success(t("Draft updated."))
     closeWidgetDialog()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save widget.")
+    toast.errorOf(err, t("Failed to save widget."))
   } finally {
     busy.value = false
   }
 }
 
 const removeWidget = async (widget: ShowcaseWidget) => {
-  if (!window.confirm("Remove widget?")) return
+  if (!window.confirm(t("Remove widget?"))) return
   if (busy.value) return
   busy.value = true
   try {
     const screen = requireCurrentScreen()
     screen.widgets = screen.widgets.filter((item) => item.id !== widget.id)
     await syncDraftSubscriptions()
-    toast.success("Widget removed.")
+    toast.success(t("Widget removed."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to remove widget.")
+    toast.errorOf(err, t("Failed to remove widget."))
   } finally {
     busy.value = false
   }
@@ -610,13 +620,13 @@ const safeTitle = (widget: ShowcaseWidget) => {
     return `${widget.topicButton.topic} / ${widget.topicButton.name}`
   }
   if (widget.kind === "var" && widget.var) return widget.var.name
-  return "Widget"
+  return t("Widget")
 }
 
 const displayValueText = (widget: ShowcaseWidget) => {
   const raw = showcase.getVarValueText(widget)
   if (raw.trim()) return raw
-  return "No value yet."
+  return t("No value yet.")
 }
 
 const isVarOn = (widget: ShowcaseWidget) => {
@@ -631,7 +641,7 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
     await showcase.publishTopicButton(widget)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to send event.")
+    toast.errorOf(err, t("Failed to send event."))
   } finally {
     busy.value = false
   }
@@ -641,7 +651,7 @@ const openShowcaseWindow = () => {
   const screen = resolveEditorScreen()
   if (!screen) return
   if (dirty.value) {
-    toast.info("Viewer opens the last saved version. Save the draft first if you want the latest edits there.")
+    toast.info(t("Viewer opens the last saved version. Save the draft first if you want the latest edits there."))
   }
   const base = window.location.href.split("#")[0]
   const url = `${base}#/showcase-window?screenId=${encodeURIComponent(screen.id)}`
@@ -667,7 +677,9 @@ const syncLayoutFormFromScreen = () => {
   layoutForm.minColumnWidth = String(screen.layout?.columns?.minColumnWidth ?? 360)
 }
 
-const currentLayoutLabel = computed(() => (isCanvasMode.value ? "Canvas" : "Columns"))
+const currentLayoutLabel = computed(() => (isCanvasMode.value ? t("Canvas") : t("Columns")))
+const screenTitle = computed(() => (screenMissing.value ? t("Missing Screen") : showcase.currentScreen()?.name || t("Screen")))
+const widgetKindLabel = (kind: ShowcaseWidgetKind) => (kind === "topic_button" ? t("Event") : t("Variable"))
 const openLayoutDialog = () => {
   syncLayoutFormFromScreen()
   layoutDialogOpen.value = true
@@ -759,11 +771,11 @@ const saveScreenLayout = async () => {
       }
     }
 
-    toast.success("Layout updated in draft.")
+    toast.success(t("Layout updated in draft."))
     return true
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update layout draft.")
+    toast.errorOf(err, t("Failed to update layout draft."))
     syncLayoutFormFromScreen()
     return false
   } finally {
@@ -901,7 +913,7 @@ const onDrop = async (widgetId: string) => {
   next.splice(insertAt, 0, moved)
   screen.widgets = next
 
-  toast.success("Draft reordered.")
+  toast.success(t("Draft reordered."))
 }
 
 const canvasSurfaceRef = ref<HTMLElement | null>(null)
@@ -1072,7 +1084,7 @@ const reorderWidgetZOrder = async (widgetId: string, direction: "front" | "back"
     next.unshift(moved)
   }
   screen.widgets = next
-  toast.success("Draft reordered.")
+  toast.success(t("Draft reordered."))
 }
 
 watch(
@@ -1099,7 +1111,7 @@ watch(
 watch(
   () => requestedScreenId.value,
   async () => {
-    if (dirty.value && !window.confirm("Discard unsaved changes and switch to another screen?")) {
+    if (dirty.value && !window.confirm(t("Discard unsaved changes and switch to another screen?"))) {
       return
     }
     await loadEditorDraft()
@@ -1135,7 +1147,7 @@ onMounted(async () => {
     await loadEditorDraft()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load showcase config.")
+    toast.errorOf(err, t("Failed to load showcase config."))
   }
 
   setupWidgetsGridObserver()
@@ -1163,14 +1175,12 @@ onBeforeUnmount(() => {
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <h1 class="min-w-0 truncate text-xl font-semibold">
-            {{ screenMissing ? "Missing Screen" : showcase.currentScreen()?.name || "Screen" }}
-          </h1>
+          <h1 class="min-w-0 truncate text-xl font-semibold">{{ screenTitle }}</h1>
           <Badge variant="secondary" :class="connectedTone">{{ connectedLabel }}</Badge>
-          <Badge v-if="dirty" variant="outline">Unsaved</Badge>
+          <Badge v-if="dirty" variant="outline">{{ t("Unsaved") }}</Badge>
           <template v-if="!screenMissing">
             <Badge variant="outline">{{ currentLayoutLabel }}</Badge>
-            <Badge variant="outline">{{ showcase.currentScreen()?.widgets.length || 0 }} widgets</Badge>
+            <Badge variant="outline">{{ t("{count} widgets", { count: showcase.currentScreen()?.widgets.length || 0 }) }}</Badge>
             <span class="text-xs text-muted-foreground">
               {{ formatTimestamp(showcase.currentScreen()?.updatedAt || "") }}
             </span>
@@ -1178,33 +1188,33 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="!screenMissing" class="flex flex-wrap items-center justify-end gap-2">
-          <Tooltip content="Refresh Vars" side="bottom">
+          <Tooltip :content="t('Refresh Vars')" side="bottom">
             <Button size="icon" :disabled="busy" @click="refreshVars">
               <RefreshCw class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Refresh Vars</span>
+              <span class="sr-only">{{ t("Refresh Vars") }}</span>
             </Button>
           </Tooltip>
-          <Button :disabled="busy || !dirty" @click="saveDraft">Save</Button>
-          <Button variant="outline" :disabled="busy" @click="revertDraft">Revert</Button>
+          <Button :disabled="busy || !dirty" @click="saveDraft">{{ t("Save") }}</Button>
+          <Button variant="outline" :disabled="busy" @click="revertDraft">{{ t("Revert") }}</Button>
           <Button variant="outline" :disabled="busy" @click="openLayoutDialog">
             <Settings2 class="mr-2 h-4 w-4" />
-            Layout
+            {{ t("Layout") }}
           </Button>
           <Button size="sm" variant="outline" :disabled="busy" @click="openShowcaseWindow">
             <ExternalLink class="mr-2 h-4 w-4" />
-            Open Viewer
+            {{ t("Open Viewer") }}
           </Button>
           <div class="mx-1 h-6 w-px bg-border/60" aria-hidden="true" />
-          <Tooltip content="Add Event" side="bottom">
+          <Tooltip :content="t('Add Event')" side="bottom">
             <Button size="icon" :disabled="busy" @click="openCreateWidget('topic_button')">
               <Rss class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Add Event</span>
+              <span class="sr-only">{{ t("Add Event") }}</span>
             </Button>
           </Tooltip>
-          <Tooltip content="Add Var" side="bottom">
+          <Tooltip :content="t('Add Variable')" side="bottom">
             <Button size="icon" variant="outline" :disabled="busy" @click="openCreateWidget('var')">
               <Database class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Add Var</span>
+              <span class="sr-only">{{ t("Add Variable") }}</span>
             </Button>
           </Tooltip>
         </div>
@@ -1217,9 +1227,9 @@ onBeforeUnmount(() => {
         class="flex h-full min-h-0 items-center justify-center rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
       >
         <div>
-          <h4 class="text-lg font-semibold">Screen not found</h4>
+          <h4 class="text-lg font-semibold">{{ t("Screen not found") }}</h4>
           <p class="mt-2 text-sm text-muted-foreground">
-            The requested screen does not exist in the current profile. Return to Showcase Center and pick another screen.
+            {{ t("The requested screen does not exist in the current profile. Return to Showcase Center and pick another screen.") }}
           </p>
         </div>
       </div>
@@ -1248,7 +1258,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
                     draggable="true"
-                    title="Drag to reorder"
+                    :title="t('Drag to reorder')"
                     @dragstart="onDragStart(widget.id, $event)"
                     @dragend="onDragEnd"
                   >
@@ -1263,7 +1273,7 @@ onBeforeUnmount(() => {
                 <div class="min-w-0">
                   <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
                     <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                      Send
+                      {{ t("Send") }}
                     </Button>
                   </div>
 
@@ -1310,7 +1320,7 @@ onBeforeUnmount(() => {
               class="rounded-2xl border bg-background/70 p-6 text-card-foreground shadow-sm"
               :style="{ gridColumn: '1 / -1' }"
             >
-              <p class="text-sm text-muted-foreground">No widgets yet.</p>
+              <p class="text-sm text-muted-foreground">{{ t("No widgets yet.") }}</p>
             </div>
           </div>
 
@@ -1333,7 +1343,7 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       class="inline-flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-                      title="Drag to move"
+                      :title="t('Drag to move')"
                       @pointerdown.stop.prevent="startCanvasEdit(widget, 'move', $event)"
                     >
                       <GripVertical class="h-4 w-4" />
@@ -1347,7 +1357,7 @@ onBeforeUnmount(() => {
                   <div class="min-w-0">
                     <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
                       <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                        Send
+                        {{ t("Send") }}
                       </Button>
                     </div>
 
@@ -1391,7 +1401,7 @@ onBeforeUnmount(() => {
                 <button
                   type="button"
                   class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
-                  title="Resize"
+                  :title="t('Resize')"
                   @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
                 />
               </div>
@@ -1400,7 +1410,7 @@ onBeforeUnmount(() => {
                 v-if="(showcase.currentScreen()?.widgets || []).length === 0"
                 class="absolute inset-0 flex items-center justify-center"
               >
-                <p class="text-sm text-muted-foreground">No widgets yet.</p>
+                <p class="text-sm text-muted-foreground">{{ t("No widgets yet.") }}</p>
               </div>
             </div>
           </div>
@@ -1420,7 +1430,7 @@ onBeforeUnmount(() => {
         ref="widgetContextMenuRef"
         class="fixed z-50 w-44 rounded-xl border border-border/60 bg-card/95 p-1 text-sm shadow-xl backdrop-blur"
         role="menu"
-        aria-label="Widget actions"
+        :aria-label="t('Widget actions')"
         :style="{ left: `${widgetContextMenu.x}px`, top: `${widgetContextMenu.y}px` }"
         @pointerdown.stop
         @click.stop
@@ -1433,7 +1443,7 @@ onBeforeUnmount(() => {
           role="menuitem"
           @click="onWidgetContextMenuEdit"
         >
-          Edit
+          {{ t("Edit") }}
         </button>
 
         <template v-if="isCanvasMode">
@@ -1445,7 +1455,7 @@ onBeforeUnmount(() => {
             role="menuitem"
             @click="onWidgetContextMenuBringToFront"
           >
-            Bring to Front
+            {{ t("Bring to Front") }}
           </button>
           <button
             type="button"
@@ -1454,7 +1464,7 @@ onBeforeUnmount(() => {
             role="menuitem"
             @click="onWidgetContextMenuSendToBack"
           >
-            Send to Back
+            {{ t("Send to Back") }}
           </button>
         </template>
 
@@ -1466,7 +1476,7 @@ onBeforeUnmount(() => {
           role="menuitem"
           @click="onWidgetContextMenuRemove"
         >
-          Remove
+          {{ t("Remove") }}
         </button>
       </div>
     </Teleport>
@@ -1475,10 +1485,10 @@ onBeforeUnmount(() => {
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Showcase Layout</p>
-            <h3 class="mt-2 text-lg font-semibold">Edit Layout</h3>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Showcase Layout") }}</p>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Edit Layout") }}</h3>
             <p class="mt-2 text-sm text-muted-foreground">
-              Keep layout settings out of the main editor surface. Apply changes only when you are ready.
+              {{ t("Keep layout settings out of the main editor surface. Apply changes only when you are ready.") }}
             </p>
           </div>
           <Badge variant="secondary">{{ currentLayoutLabel }}</Badge>
@@ -1486,33 +1496,33 @@ onBeforeUnmount(() => {
 
         <div class="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Layout Mode</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Layout Mode") }}</label>
             <select v-model="layoutForm.mode" :class="inputClass">
-              <option value="columns">columns</option>
-              <option value="canvas_percent">canvas_percent</option>
+              <option value="columns">{{ t("Columns") }}</option>
+              <option value="canvas_percent">{{ t("Canvas") }}</option>
             </select>
           </div>
 
           <div v-if="layoutForm.mode === 'columns'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Max Columns</label>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Columns") }}</label>
             <input v-model="layoutForm.maxColumns" :class="inputClass" />
           </div>
 
           <div v-if="layoutForm.mode === 'columns'">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Min Column Width (px)
+              {{ t("Min Column Width (px)") }}
             </label>
             <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
           </div>
         </div>
 
         <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-4 text-xs text-muted-foreground">
-          Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.
+          {{ t("Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.") }}
         </p>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" :disabled="busy" @click="closeLayoutDialog">Cancel</Button>
-          <Button :disabled="busy" @click="applyLayoutDialog">Apply Layout</Button>
+          <Button variant="outline" :disabled="busy" @click="closeLayoutDialog">{{ t("Cancel") }}</Button>
+          <Button :disabled="busy" @click="applyLayoutDialog">{{ t("Apply Layout") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -1522,32 +1532,32 @@ onBeforeUnmount(() => {
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              {{ widgetDialog.kind === "topic_button" ? "TopicBus" : "VarStore" }}
+              {{ widgetDialog.kind === "topic_button" ? t("TopicBus") : t("VarStore") }}
             </p>
             <h3 class="mt-2 text-lg font-semibold">
-              {{ widgetDialog.mode === "create" ? "Add Widget" : "Edit Widget" }}
+              {{ widgetDialog.mode === "create" ? t("Add Widget") : t("Edit Widget") }}
             </h3>
           </div>
-          <Badge variant="secondary">{{ widgetDialog.kind }}</Badge>
+          <Badge variant="secondary">{{ widgetKindLabel(widgetDialog.kind) }}</Badge>
         </div>
 
         <div class="mt-5 grid gap-4">
           <div class="grid gap-4" :class="widgetDialog.kind === 'topic_button' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Title (optional)
+                {{ t("Title (optional)") }}
               </label>
               <input v-model="widgetDialog.title" :class="inputClass" />
             </div>
             <div v-if="widgetDialog.kind === 'topic_button'">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Target ID
+                {{ t("Target ID") }}
               </label>
               <input v-model="widgetDialog.targetId" :class="inputClass" :placeholder="String(selfNodeId || 1)" />
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Column Span
+                {{ t("Column Span") }}
               </label>
               <input v-model="widgetDialog.colSpan" :class="inputClass" />
             </div>
@@ -1556,17 +1566,17 @@ onBeforeUnmount(() => {
           <div v-if="widgetDialog.kind === 'topic_button'" class="grid gap-4">
             <div class="grid gap-4 sm:grid-cols-2">
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Topic</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Topic") }}</label>
                 <input v-model="widgetDialog.topic" :class="inputClass" />
               </div>
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Name</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Name") }}</label>
                 <input v-model="widgetDialog.eventName" :class="inputClass" />
               </div>
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Payload (Auto)
+                {{ t("Payload (Auto)") }}
               </label>
               <textarea v-model="widgetDialog.payloadText" :class="textAreaClass" rows="6" />
             </div>
@@ -1576,19 +1586,19 @@ onBeforeUnmount(() => {
             <div class="grid gap-4 sm:grid-cols-3">
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Owner NodeID
+                  {{ t("Owner NodeID") }}
                 </label>
                 <input v-model="widgetDialog.ownerId" :class="inputClass" :placeholder="String(selfNodeId || '')" />
               </div>
               <div class="sm:col-span-2">
                 <div class="flex items-center justify-between gap-2">
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Variable Name
+                    {{ t("Variable Name") }}
                   </label>
-                  <Tooltip content="Pick from subscribed or mine variables." side="bottom">
+                  <Tooltip :content="t('Pick from subscribed or mine variables.')" side="bottom">
                     <Button size="icon" variant="outline" :disabled="busy" @click="openVarQuickPickDialog">
                       <ListChecks class="h-4 w-4" aria-hidden="true" />
-                      <span class="sr-only">Pick Variable</span>
+                      <span class="sr-only">{{ t("Pick Variable") }}</span>
                     </Button>
                   </Tooltip>
                 </div>
@@ -1598,44 +1608,44 @@ onBeforeUnmount(() => {
 
             <div class="grid gap-4 sm:grid-cols-2">
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Mode</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Mode") }}</label>
                 <select v-model="widgetDialog.varMode" :class="inputClass">
-                  <option value="auto">auto</option>
-                  <option value="display">display</option>
-                  <option value="slider">slider</option>
-                  <option value="switch">switch</option>
+                  <option value="auto">{{ t("Auto") }}</option>
+                  <option value="display">{{ t("Display") }}</option>
+                  <option value="slider">{{ t("Slider") }}</option>
+                  <option value="switch">{{ t("Switch") }}</option>
                 </select>
               </div>
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Visibility</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Visibility") }}</label>
                 <select v-model="widgetDialog.visibility" :class="inputClass">
-                  <option value="public">public</option>
-                  <option value="private">private</option>
+                  <option value="public">{{ t("Public") }}</option>
+                  <option value="private">{{ t("Private") }}</option>
                 </select>
               </div>
             </div>
 
             <div class="grid gap-4 sm:grid-cols-5">
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Min</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Min") }}</label>
                 <input v-model="widgetDialog.sliderMin" :class="inputClass" />
               </div>
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Max</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max") }}</label>
                 <input v-model="widgetDialog.sliderMax" :class="inputClass" />
               </div>
               <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Step</label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Step") }}</label>
                 <input v-model="widgetDialog.sliderStep" :class="inputClass" />
               </div>
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   <Tooltip
-                    content="Unit: milliseconds (ms). Set to 0 to disable throttling (sends on every drag update). This may cause congestion."
+                    :content="t('Unit: milliseconds (ms). Set to 0 to disable throttling (sends on every drag update). This may cause congestion.')"
                     side="bottom"
                   >
                     <span class="inline-flex cursor-help items-center gap-1">
-                      Throttle
+                      {{ t("Throttle") }}
                       <CircleHelp class="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
                   </Tooltip>
@@ -1644,27 +1654,27 @@ onBeforeUnmount(() => {
               </div>
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Type
+                  {{ t("Type") }}
                 </label>
-                <input v-model="widgetDialog.varType" :class="inputClass" placeholder="float64 / bool / string" />
+                <input v-model="widgetDialog.varType" :class="inputClass" :placeholder="t('float64 / bool / string')" />
               </div>
             </div>
 
             <div v-if="widgetDialog.varMode === 'switch'" class="grid gap-4">
               <div class="h-px bg-border/60" />
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Switch Settings
+                {{ t("Switch Settings") }}
               </p>
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    On Value
+                    {{ t("On Value") }}
                   </label>
                   <input v-model="widgetDialog.switchOnValue" :class="inputClass" />
                 </div>
                 <div>
                   <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Off Value
+                    {{ t("Off Value") }}
                   </label>
                   <input v-model="widgetDialog.switchOffValue" :class="inputClass" />
                 </div>
@@ -1674,8 +1684,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" :disabled="busy" @click="closeWidgetDialog">Cancel</Button>
-          <Button :disabled="busy" @click="submitWidgetDialog">Save</Button>
+          <Button variant="outline" :disabled="busy" @click="closeWidgetDialog">{{ t("Cancel") }}</Button>
+          <Button :disabled="busy" @click="submitWidgetDialog">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -1689,9 +1699,9 @@ onBeforeUnmount(() => {
       <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">VarStore</p>
-            <h3 class="mt-2 text-lg font-semibold">Pick Variable</h3>
-            <p class="mt-1 text-xs text-muted-foreground">Data source: current subscribed variables and mine.</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarStore") }}</p>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Pick Variable") }}</h3>
+            <p class="mt-1 text-xs text-muted-foreground">{{ t("Data source: current subscribed variables and mine.") }}</p>
           </div>
           <Badge variant="secondary">{{ filteredVarQuickPickItems.length }}</Badge>
         </div>
@@ -1700,7 +1710,7 @@ onBeforeUnmount(() => {
           <input
             v-model="varQuickPickDialog.query"
             :class="inputClass"
-            placeholder="Filter by variable name or owner node id."
+            :placeholder="t('Filter by variable name or owner node id.')"
           />
           <Button
             variant="outline"
@@ -1709,14 +1719,14 @@ onBeforeUnmount(() => {
             @click="refreshVarQuickPickMine(true)"
           >
             <RefreshCw class="mr-2 h-4 w-4" :class="varQuickPickDialog.refreshing ? 'animate-spin' : ''" />
-            Refresh Mine
+            {{ t("Refresh Mine") }}
           </Button>
         </div>
 
         <div class="mt-5 grid gap-4 md:grid-cols-2">
           <div class="rounded-xl border border-border/60 bg-background/60">
             <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Subscribed</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Subscribed") }}</p>
               <Badge variant="outline">{{ subscribedVarQuickPickItems.length }}</Badge>
             </div>
             <div class="max-h-72 space-y-2 overflow-auto p-3">
@@ -1729,19 +1739,19 @@ onBeforeUnmount(() => {
               >
                 <p class="truncate text-sm font-semibold">{{ item.name }}</p>
                 <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>Owner {{ item.owner }}</span>
-                  <Badge v-if="item.mine" variant="secondary">mine</Badge>
+                  <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
+                  <Badge v-if="item.mine" variant="secondary">{{ t("mine") }}</Badge>
                 </div>
               </button>
               <p v-if="subscribedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-                No subscribed variables.
+                {{ t("No subscribed variables.") }}
               </p>
             </div>
           </div>
 
           <div class="rounded-xl border border-border/60 bg-background/60">
             <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Mine</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Mine") }}</p>
               <Badge variant="outline">{{ mineVarQuickPickItems.length }}</Badge>
             </div>
             <div class="max-h-72 space-y-2 overflow-auto p-3">
@@ -1754,19 +1764,19 @@ onBeforeUnmount(() => {
               >
                 <p class="truncate text-sm font-semibold">{{ item.name }}</p>
                 <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>Owner {{ item.owner }}</span>
-                  <Badge v-if="item.subscribed" variant="secondary">subscribed</Badge>
+                  <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
+                  <Badge v-if="item.subscribed" variant="secondary">{{ t("subscribed") }}</Badge>
                 </div>
               </button>
               <p v-if="mineVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-                No mine variables.
+                {{ t("No mine variables.") }}
               </p>
             </div>
           </div>
         </div>
 
         <div class="mt-6 flex justify-end">
-          <Button variant="outline" @click="closeVarQuickPickDialog">Close</Button>
+          <Button variant="outline" @click="closeVarQuickPickDialog">{{ t("Close") }}</Button>
         </div>
       </div>
     </Overlay>

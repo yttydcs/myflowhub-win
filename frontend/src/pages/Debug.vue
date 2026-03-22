@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 
@@ -10,7 +11,7 @@ const callSession = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.session?.SessionService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Session binding '${method}' unavailable`)
+    throw new Error(t("Session binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -19,13 +20,14 @@ const callDebug = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.debug?.DebugService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Debug binding '${method}' unavailable`)
+    throw new Error(t("Debug binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
 
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const form = reactive({
   addr: "127.0.0.1:9000",
@@ -43,14 +45,18 @@ const form = reactive({
 
 const busy = ref(false)
 
-const connectionLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectionLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 
 const parseUint = (raw: string, field: string) => {
   const trimmed = raw.trim()
   if (!trimmed) return 0
   const parsed = Number.parseInt(trimmed, 10)
   if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error(`${field} must be a non-negative integer.`)
+    throw new Error(
+      t("{field} must be a non-negative integer.", {
+        field: t(field)
+      })
+    )
   }
   return parsed
 }
@@ -61,10 +67,10 @@ const connect = async () => {
   try {
     await callSession("Connect", form.addr)
     await callSession("LoginLegacy", form.nodeName)
-    toast.success("Connected (debug).")
+    toast.success(t("Connected (debug)."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to connect.")
+    toast.errorOf(err, t("Failed to connect."))
   } finally {
     busy.value = false
   }
@@ -73,10 +79,10 @@ const connect = async () => {
 const disconnect = async () => {
   try {
     await callSession("Close")
-    toast.info("Disconnected.")
+    toast.info(t("Disconnected."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to disconnect.")
+    toast.errorOf(err, t("Failed to disconnect."))
   }
 }
 
@@ -92,10 +98,10 @@ const sendFrame = async () => {
       timestamp: parseUint(form.timestamp, "Timestamp")
     }
     await callDebug("Send", frame, form.payload, form.payloadHex)
-    toast.success("Frame sent.")
+    toast.success(t("Frame sent."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to send frame.")
+    toast.errorOf(err, t("Failed to send frame."))
   }
 }
 </script>
@@ -105,16 +111,16 @@ const sendFrame = async () => {
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold">Connection</h2>
+          <h2 class="text-sm font-semibold">{{ t("Connection") }}</h2>
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Session</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Session") }}</span>
             <span class="text-foreground">{{ connectionLabel }}</span>
           </div>
         </div>
         <div class="mt-4 space-y-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Server Address
+              {{ t("Server Address") }}
             </label>
             <input
               v-model="form.addr"
@@ -123,7 +129,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Node Name
+              {{ t("Node Name") }}
             </label>
             <input
               v-model="form.nodeName"
@@ -131,18 +137,18 @@ const sendFrame = async () => {
             />
           </div>
           <div class="flex flex-wrap gap-2">
-            <Button size="sm" :disabled="busy" @click="connect">Connect</Button>
-            <Button size="sm" variant="outline" @click="disconnect">Disconnect</Button>
+            <Button size="sm" :disabled="busy" @click="connect">{{ t("Connect") }}</Button>
+            <Button size="sm" variant="outline" @click="disconnect">{{ t("Disconnect") }}</Button>
           </div>
         </div>
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <h2 class="text-sm font-semibold">Header</h2>
+        <h2 class="text-sm font-semibold">{{ t("Header") }}</h2>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Major
+              {{ t("Major") }}
             </label>
             <input
               v-model="form.major"
@@ -151,7 +157,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              SubProto
+              {{ t("SubProto") }}
             </label>
             <input
               v-model="form.subProto"
@@ -160,7 +166,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Flags
+              {{ t("Flags") }}
             </label>
             <input
               v-model="form.flags"
@@ -169,7 +175,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Source ID
+              {{ t("Source ID") }}
             </label>
             <input
               v-model="form.sourceId"
@@ -178,7 +184,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Target ID
+              {{ t("Target ID") }}
             </label>
             <input
               v-model="form.targetId"
@@ -187,7 +193,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Msg ID (optional)
+              {{ t("Msg ID (optional)") }}
             </label>
             <input
               v-model="form.msgId"
@@ -196,7 +202,7 @@ const sendFrame = async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Timestamp (optional)
+              {{ t("Timestamp (optional)") }}
             </label>
             <input
               v-model="form.timestamp"
@@ -207,20 +213,20 @@ const sendFrame = async () => {
 
         <div class="mt-6">
           <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Payload</h3>
+            <h3 class="text-sm font-semibold">{{ t("Payload") }}</h3>
             <label class="flex items-center gap-2 text-xs text-muted-foreground">
               <input v-model="form.payloadHex" type="checkbox" class="h-4 w-4 rounded border" />
-              Hex payload
+              {{ t("Hex payload") }}
             </label>
           </div>
           <textarea
             v-model="form.payload"
             rows="6"
             class="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            placeholder="Payload text or hex (when Hex payload is enabled)"
+            :placeholder="t('Payload text or hex (when Hex payload is enabled)')"
           />
           <div class="mt-4 flex justify-end">
-            <Button @click="sendFrame">Send Frame</Button>
+            <Button @click="sendFrame">{{ t("Send Frame") }}</Button>
           </div>
         </div>
       </section>

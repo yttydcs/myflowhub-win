@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -38,6 +39,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:modelValue", value: number): void
 }>()
+const { t } = useI18n()
 
 const rootTargetId = ref("")
 const root = ref<OfferTreeNode | null>(null)
@@ -52,23 +54,23 @@ const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.management?.ManagementService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Management binding '${method}' unavailable`)
+    throw new Error(t("Management binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
 
 const toErrorMessage = (err: unknown) => {
-  if (!err) return "Unknown error."
-  if (err instanceof Error) return err.message || "Unknown error."
+  if (!err) return t("Unknown error.")
+  if (err instanceof Error) return err.message || t("Unknown error.")
   return String(err)
 }
 
 const ensureIdentity = () => {
   if (!props.sourceId) {
-    throw new Error("Login required to query devices.")
+    throw new Error(t("Login required to query devices."))
   }
   if (!props.hubId) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
 }
 
@@ -80,7 +82,7 @@ const resolveRootTarget = () => {
   }
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Root node must be a positive number.")
+    throw new Error(t("Root node must be a positive number."))
   }
   return parsed
 }
@@ -179,7 +181,7 @@ const loadRoot = async () => {
     ensureIdentity()
     const rootID = resolveRootTarget()
     if (!rootID) {
-      throw new Error("Root node is required.")
+      throw new Error(t("Root node is required."))
     }
 
     const rootNode = reactive<OfferTreeNode>({
@@ -244,21 +246,21 @@ const isSelectable = (node: OfferTreeNode) => {
 }
 
 const selectionTitle = (node: OfferTreeNode) => {
-  if (isSelectable(node)) return "Select node"
+  if (isSelectable(node)) return t("Select node")
   if (props.excludeNodeId && node.nodeId === Number(props.excludeNodeId)) {
-    return "Local node cannot be selected as remote target."
+    return t("Local node cannot be selected as remote target.")
   }
-  return "Unavailable."
+  return t("Unavailable.")
 }
 
 const nodeHint = (node: OfferTreeNode) => {
-  if (node.duplicate) return "Duplicate in tree: expansion disabled."
-  if (node.error) return `Error: ${node.error}`
-  if (node.loading) return "Loading..."
-  if (node.children && node.children.length === 0) return "No children."
-  if (node.children && node.children.length > 0) return `Children: ${node.children.length}`
-  if (node.hasChildrenHint) return "Children available (not loaded)."
-  return "Leaf node."
+  if (node.duplicate) return t("Duplicate in tree: expansion disabled.")
+  if (node.error) return t("Error: {error}", { error: node.error })
+  if (node.loading) return t("Loading...")
+  if (node.children && node.children.length === 0) return t("No children.")
+  if (node.children && node.children.length > 0) return t("Children: {count}", { count: node.children.length })
+  if (node.hasChildrenHint) return t("Children available (not loaded).")
+  return t("Leaf node.")
 }
 
 const toggleNode = async (node: OfferTreeNode) => {
@@ -316,18 +318,18 @@ watch(
   <div class="rounded-xl border border-border/60 bg-background/50 p-3">
     <div class="flex flex-wrap items-end justify-between gap-2">
       <div class="min-w-0">
-        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Target Node</p>
-        <p class="mt-1 text-xs text-muted-foreground">Select destination from node tree.</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Target Node") }}</p>
+        <p class="mt-1 text-xs text-muted-foreground">{{ t("Select destination from node tree.") }}</p>
       </div>
       <div class="flex items-center gap-2">
         <input
           v-model="rootTargetId"
           class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-          placeholder="Root ID"
+          :placeholder="t('Root ID')"
           @keydown.enter.prevent="loadRoot"
         />
         <Button size="sm" variant="outline" :disabled="rootLoading" @click="loadRoot">
-          {{ rootLoading ? "Loading..." : "Reload" }}
+          {{ rootLoading ? t("Loading...") : t("Reload") }}
         </Button>
       </div>
     </div>
@@ -337,8 +339,8 @@ watch(
     </p>
 
     <div class="mt-3 max-h-56 overflow-y-auto rounded-lg border border-border/60 bg-card/80 p-1">
-      <div v-if="rootLoading && !root" class="px-2 py-6 text-xs text-muted-foreground">Loading tree...</div>
-      <div v-else-if="!root" class="px-2 py-6 text-xs text-muted-foreground">No nodes loaded.</div>
+      <div v-if="rootLoading && !root" class="px-2 py-6 text-xs text-muted-foreground">{{ t("Loading tree...") }}</div>
+      <div v-else-if="!root" class="px-2 py-6 text-xs text-muted-foreground">{{ t("No nodes loaded.") }}</div>
       <div v-else class="space-y-1">
         <div
           v-for="{ node, depth } in visibleNodes"
@@ -366,8 +368,10 @@ watch(
               @click="selectNode(node)"
             >
               <p class="truncate text-sm font-medium">
-                Node {{ node.nodeId }}
-                <span v-if="depth === 0" class="text-xs font-normal text-muted-foreground">(root)</span>
+                {{ t("Node {id}", { id: node.nodeId }) }}
+                <span v-if="depth === 0" class="text-xs font-normal text-muted-foreground">
+                  ({{ t("root") }})
+                </span>
               </p>
               <p class="truncate text-[11px] text-muted-foreground">
                 {{ nodeHint(node) }}
@@ -381,7 +385,7 @@ watch(
               :disabled="node.loading"
               @click.stop="retryNode(node)"
             >
-              Retry
+              {{ t("Retry") }}
             </Button>
           </div>
         </div>

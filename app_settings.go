@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	appSettingsKey = "app.settings"
+	appSettingsKey       = "app.settings"
+	globalPreferencesKey = "app.global_preferences"
 
 	appDefaultAddr = "127.0.0.1:9000"
 
@@ -25,6 +26,9 @@ const (
 
 	buildModeDev     = "dev"
 	buildModeRelease = "release"
+
+	languageEnglish           = "en"
+	languageSimplifiedChinese = "zh-CN"
 )
 
 type AppSettingsState struct {
@@ -50,6 +54,10 @@ type AppAboutState struct {
 	BaseDir      string `json:"baseDir"`
 	SettingsPath string `json:"settingsPath"`
 	KeysPath     string `json:"keysPath"`
+}
+
+type GlobalPreferencesState struct {
+	Language string `json:"language"`
 }
 
 func (a *App) SettingsState() (AppSettingsState, error) {
@@ -136,6 +144,38 @@ func (a *App) AboutState() (AppAboutState, error) {
 	return about, nil
 }
 
+func (a *App) GlobalPreferencesState() (GlobalPreferencesState, error) {
+	if a.store == nil {
+		return GlobalPreferencesState{}, errors.New("storage not initialized")
+	}
+	return loadGlobalPreferencesState(a.store), nil
+}
+
+func (a *App) SaveGlobalPreferencesState(state GlobalPreferencesState) (GlobalPreferencesState, error) {
+	if a.store == nil {
+		return GlobalPreferencesState{}, errors.New("storage not initialized")
+	}
+	normalized := normalizeGlobalPreferencesState(state)
+	if err := validateGlobalPreferencesState(normalized); err != nil {
+		return GlobalPreferencesState{}, err
+	}
+	if err := persistGlobalPreferencesState(a.store, normalized); err != nil {
+		return GlobalPreferencesState{}, err
+	}
+	return a.GlobalPreferencesState()
+}
+
+func (a *App) ResetGlobalPreferencesState() (GlobalPreferencesState, error) {
+	if a.store == nil {
+		return GlobalPreferencesState{}, errors.New("storage not initialized")
+	}
+	state := defaultGlobalPreferencesState()
+	if err := persistGlobalPreferencesState(a.store, state); err != nil {
+		return GlobalPreferencesState{}, err
+	}
+	return a.GlobalPreferencesState()
+}
+
 func defaultAppSettingsState() AppSettingsState {
 	return AppSettingsState{
 		DefaultAddr:      appDefaultAddr,
@@ -145,6 +185,12 @@ func defaultAppSettingsState() AppSettingsState {
 		DefaultStartPage: startPageHome,
 		Density:          densityComfortable,
 		ReduceMotion:     false,
+	}
+}
+
+func defaultGlobalPreferencesState() GlobalPreferencesState {
+	return GlobalPreferencesState{
+		Language: languageEnglish,
 	}
 }
 
@@ -177,12 +223,62 @@ func parseAppSettingsState(raw string) (AppSettingsState, bool) {
 	return state, true
 }
 
+func loadGlobalPreferencesState(store *storagesvc.Store) GlobalPreferencesState {
+	state := defaultGlobalPreferencesState()
+	if store == nil {
+		return state
+	}
+	raw, ok := store.GetRaw(globalPreferencesKey)
+	if !ok {
+		return state
+	}
+	if parsed, ok := parseGlobalPreferencesStateValue(raw); ok {
+		return normalizeGlobalPreferencesState(parsed)
+	}
+	return state
+}
+
+func parseGlobalPreferencesStateValue(raw any) (GlobalPreferencesState, bool) {
+	switch v := raw.(type) {
+	case string:
+		return parseGlobalPreferencesState(v)
+	case []byte:
+		return parseGlobalPreferencesState(string(v))
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return GlobalPreferencesState{}, false
+		}
+		return parseGlobalPreferencesState(string(data))
+	}
+}
+
+func parseGlobalPreferencesState(raw string) (GlobalPreferencesState, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return GlobalPreferencesState{}, false
+	}
+	var state GlobalPreferencesState
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return GlobalPreferencesState{}, false
+	}
+	return state, true
+}
+
 func persistAppSettingsState(store *storagesvc.Store, profile string, state AppSettingsState) error {
 	data, err := json.Marshal(normalizeAppSettingsState(state))
 	if err != nil {
 		return err
 	}
 	return store.SetString(profile, appSettingsKey, string(data))
+}
+
+func persistGlobalPreferencesState(store *storagesvc.Store, state GlobalPreferencesState) error {
+	data, err := json.Marshal(normalizeGlobalPreferencesState(state))
+	if err != nil {
+		return err
+	}
+	return store.SetRaw(globalPreferencesKey, string(data))
 }
 
 func normalizeAppSettingsState(state AppSettingsState) AppSettingsState {
@@ -193,6 +289,11 @@ func normalizeAppSettingsState(state AppSettingsState) AppSettingsState {
 	state.DefaultDeviceID = strings.TrimSpace(state.DefaultDeviceID)
 	state.DefaultStartPage = normalizeStartPage(state.DefaultStartPage)
 	state.Density = normalizeDensity(state.Density)
+	return state
+}
+
+func normalizeGlobalPreferencesState(state GlobalPreferencesState) GlobalPreferencesState {
+	state.Language = normalizeLanguage(state.Language)
 	return state
 }
 
@@ -208,6 +309,13 @@ func validateAppSettingsState(state AppSettingsState) error {
 	}
 	if state.Density != normalizeDensity(state.Density) {
 		return errors.New("density is invalid")
+	}
+	return nil
+}
+
+func validateGlobalPreferencesState(state GlobalPreferencesState) error {
+	if state.Language != normalizeLanguage(state.Language) {
+		return errors.New("language is invalid")
 	}
 	return nil
 }
@@ -235,6 +343,17 @@ func normalizeDensity(value string) string {
 		return densityComfortable
 	default:
 		return densityComfortable
+	}
+}
+
+func normalizeLanguage(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case strings.ToLower(languageSimplifiedChinese):
+		return languageSimplifiedChinese
+	case languageEnglish:
+		return languageEnglish
+	default:
+		return languageEnglish
 	}
 }
 

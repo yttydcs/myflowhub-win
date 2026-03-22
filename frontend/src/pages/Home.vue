@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useAppSettingsStore } from "@/stores/appSettings"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -36,6 +37,7 @@ const profileStore = useProfileStore()
 const appSettings = useAppSettingsStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const hardcodedDefaultAddr = "127.0.0.1:9000"
 const addr = ref(hardcodedDefaultAddr)
@@ -52,17 +54,21 @@ const loading = ref(false)
 const connecting = ref(false)
 const authBusy = ref(false)
 
-const statusLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const statusLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const statusTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
-const loginLabel = computed(() => (home.nodeId ? "Login" : "Register"))
+const loginLabel = computed(() => (home.nodeId ? t("Login") : t("Register")))
 const panelStyle = { padding: "var(--app-panel-pad)" }
 const settingsAutoConnectLabel = computed(() =>
-  appSettings.state.settings.autoConnect ? "Auto-connect enabled by default" : "Auto-connect disabled by default"
+  appSettings.state.settings.autoConnect
+    ? t("Auto-connect enabled by default")
+    : t("Auto-connect disabled by default")
 )
 const settingsAutoLoginLabel = computed(() =>
-  appSettings.state.settings.autoLogin ? "Auto-login enabled by default" : "Auto-login disabled by default"
+  appSettings.state.settings.autoLogin
+    ? t("Auto-login enabled by default")
+    : t("Auto-login disabled by default")
 )
 
 const formatId = (value: number) => (value > 0 ? String(value) : "-")
@@ -93,7 +99,7 @@ const loadHomeState = async () => {
     applyHomeState(state)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load saved Home settings.")
+    toast.errorOf(err, t("Failed to load saved Home settings."))
   } finally {
     loading.value = false
   }
@@ -114,7 +120,7 @@ const persistHomeState = async (patch?: Partial<HomeState>) => {
     applyHomeState(saved)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save Home settings.")
+    toast.errorOf(err, t("Failed to save Home settings."))
   }
 }
 
@@ -149,7 +155,7 @@ const loadPageState = async () => {
     await appSettings.load()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load app settings.")
+    toast.errorOf(err, t("Failed to load app settings."))
   }
   applySettingsDefaults()
   await refreshConnectionSnapshot()
@@ -165,12 +171,12 @@ const connect = async () => {
   try {
     await ConnectSession(target)
     sessionStore.addr = target
-    toast.success("Connected.", target)
+    toast.success(t("Connected."), target)
   } catch (err) {
     const text = String(err ?? "")
     if (!text.includes("已经连接") && !text.toLowerCase().includes("already connected")) {
       console.warn(err)
-      toast.errorOf(err, "Failed to connect to target.")
+      toast.errorOf(err, t("Failed to connect to target."))
     }
   } finally {
     connecting.value = false
@@ -182,10 +188,10 @@ const disconnect = async () => {
   connecting.value = true
   try {
     await CloseSession()
-    toast.info("Disconnected.")
+    toast.info(t("Disconnected."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to disconnect.")
+    toast.errorOf(err, t("Failed to disconnect."))
   } finally {
     connecting.value = false
   }
@@ -195,11 +201,11 @@ const loginOrRegister = async () => {
   if (authBusy.value) return
   const deviceId = home.deviceId.trim()
   if (!deviceId) {
-    toast.warn("Device ID is required.")
+    toast.warn(t("Device ID is required."))
     return
   }
   if (!sessionStore.connected) {
-    toast.warn("Connect before logging in.")
+    toast.warn(t("Connect before logging in."))
     return
   }
   authBusy.value = true
@@ -216,7 +222,7 @@ const loginOrRegister = async () => {
     const authMsg = String(resp?.msg ?? "")
 
     sessionStore.auth.lastAuthAction = isLogin ? "login_resp" : "register_resp"
-    sessionStore.auth.lastAuthMessage = authMsg || "OK"
+    sessionStore.auth.lastAuthMessage = authMsg || t("OK")
     sessionStore.auth.lastAuthAt = nowIso()
     sessionStore.auth.loggedIn = true
     sessionStore.auth.deviceId = deviceId
@@ -232,13 +238,25 @@ const loginOrRegister = async () => {
     })
 
     if (isLogin) {
-      toast.success("Logged in.", `node=${nodeId || home.nodeId} hub=${hubId || home.hubId}`)
+      toast.success(
+        t("Logged in."),
+        t("node={nodeId} hub={hubId}", {
+          nodeId: nodeId || home.nodeId,
+          hubId: hubId || home.hubId
+        })
+      )
     } else {
-      toast.success("Registered.", `node=${nodeId || home.nodeId} hub=${hubId || home.hubId}`)
+      toast.success(
+        t("Registered."),
+        t("node={nodeId} hub={hubId}", {
+          nodeId: nodeId || home.nodeId,
+          hubId: hubId || home.hubId
+        })
+      )
     }
   } catch (err) {
     console.warn(err)
-    const errMsg = (err as Error)?.message || String(err ?? "") || "Login/register failed."
+    const errMsg = (err as Error)?.message || String(err ?? "") || t("Login/register failed.")
     toast.error(errMsg)
     sessionStore.auth.lastAuthAction = home.nodeId ? "login_resp" : "register_resp"
     sessionStore.auth.lastAuthMessage = errMsg
@@ -254,10 +272,10 @@ const clearAuth = async () => {
     const state = await ClearHomeAuth()
     applyHomeState(state)
     sessionStore.auth.loggedIn = false
-    toast.success("Cleared saved auth.")
+    toast.success(t("Cleared saved auth."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to clear local auth state.")
+    toast.errorOf(err, t("Failed to clear local auth state."))
   }
 }
 
@@ -300,11 +318,11 @@ onMounted(async () => {
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Connection
+                {{ t("Connection") }}
               </p>
-              <h3 class="text-lg font-semibold">Target Session</h3>
+              <h3 class="text-lg font-semibold">{{ t("Target Session") }}</h3>
               <p class="text-sm text-muted-foreground">
-                Connect to hub nodes and keep the console in sync.
+                {{ t("Connect to hub nodes and keep the console in sync.") }}
               </p>
             </div>
             <Badge :class="statusTone">{{ statusLabel }}</Badge>
@@ -313,7 +331,7 @@ onMounted(async () => {
           <div class="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Address
+                {{ t("Address") }}
               </label>
               <input
                 v-model="addr"
@@ -322,13 +340,13 @@ onMounted(async () => {
               />
             </div>
             <div class="flex flex-col justify-end gap-2">
-              <Button :disabled="connecting" @click="connect">Connect</Button>
+              <Button :disabled="connecting" @click="connect">{{ t("Connect") }}</Button>
               <Button
                 variant="outline"
                 :disabled="connecting || !sessionStore.connected"
                 @click="disconnect"
               >
-                Disconnect
+                {{ t("Disconnect") }}
               </Button>
             </div>
           </div>
@@ -338,8 +356,8 @@ onMounted(async () => {
               {{ settingsAutoConnectLabel }}
             </span>
             <span class="text-xs">
-              Default startup behavior is managed in
-              <a href="#/settings" class="font-semibold text-primary hover:underline">Settings</a>.
+              {{ t("Default startup behavior is managed in") }}
+              <a href="#/settings" class="font-semibold text-primary hover:underline">{{ t("Settings") }}</a>.
             </span>
             <span v-if="sessionStore.lastError" class="text-rose-600">
               {{ sessionStore.lastError }}
@@ -351,33 +369,33 @@ onMounted(async () => {
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Authentication
+                {{ t("Authentication") }}
               </p>
-              <h3 class="text-lg font-semibold">Device Identity</h3>
+              <h3 class="text-lg font-semibold">{{ t("Device Identity") }}</h3>
               <p class="text-sm text-muted-foreground">
-                Register once, then sign in with your saved node ID.
+                {{ t("Register once, then sign in with your saved node ID.") }}
               </p>
             </div>
             <Badge variant="secondary">
-              {{ sessionStore.auth.loggedIn ? "Logged In" : "Not Logged In" }}
+              {{ sessionStore.auth.loggedIn ? t("Logged In") : t("Not Logged In") }}
             </Badge>
           </div>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Device ID
+                {{ t("Device ID") }}
               </label>
               <input
                 v-model="home.deviceId"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                placeholder="device-001"
+                :placeholder="t('device-001')"
               />
             </div>
             <div class="flex flex-col justify-end gap-2">
               <Button :disabled="authBusy || loading" @click="loginOrRegister">{{ loginLabel }}</Button>
               <Button variant="outline" :disabled="authBusy" @click="clearAuth">
-                Clear Saved Auth
+                {{ t("Clear Saved Auth") }}
               </Button>
             </div>
           </div>
@@ -387,7 +405,8 @@ onMounted(async () => {
               {{ settingsAutoLoginLabel }}
             </span>
             <span class="text-xs">
-              Default device ID: <span class="font-semibold text-foreground">{{ appSettings.state.settings.defaultDeviceId || "-" }}</span>
+              {{ t("Default device ID:") }}
+              <span class="font-semibold text-foreground">{{ appSettings.state.settings.defaultDeviceId || "-" }}</span>
             </span>
             <span v-if="sessionStore.auth.lastAuthMessage" class="text-xs">
               {{ sessionStore.auth.lastAuthMessage }}
@@ -399,20 +418,20 @@ onMounted(async () => {
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Identity Snapshot
+            {{ t("Identity Snapshot") }}
           </p>
-          <h3 class="mt-2 text-lg font-semibold">Current Credentials</h3>
+          <h3 class="mt-2 text-lg font-semibold">{{ t("Current Credentials") }}</h3>
           <div class="mt-4 grid gap-3 text-sm">
             <div class="rounded-xl border border-border/60 bg-background/70 p-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Node ID</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Node ID") }}</p>
               <p class="text-base font-semibold">{{ formatId(home.nodeId) }}</p>
             </div>
             <div class="rounded-xl border border-border/60 bg-background/70 p-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Hub ID</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Hub ID") }}</p>
               <p class="text-base font-semibold">{{ formatId(home.hubId) }}</p>
             </div>
             <div class="rounded-xl border border-border/60 bg-background/70 p-3">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Role</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Role") }}</p>
               <p class="text-base font-semibold">{{ home.role || "-" }}</p>
             </div>
           </div>
@@ -420,24 +439,24 @@ onMounted(async () => {
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Session Notes
+            {{ t("Session Notes") }}
           </p>
-          <h3 class="mt-2 text-lg font-semibold">Live Status</h3>
+          <h3 class="mt-2 text-lg font-semibold">{{ t("Live Status") }}</h3>
           <div class="mt-4 space-y-3 text-sm text-muted-foreground">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Profile</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Profile") }}</p>
               <p class="break-all">{{ profileStore.state.current }}</p>
             </div>
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Keys Path</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Keys Path") }}</p>
               <p class="break-all">{{ profileStore.state.keysPath || "-" }}</p>
             </div>
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Last Auth</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Last Auth") }}</p>
               <p>{{ sessionStore.auth.lastAuthAt || "-" }}</p>
             </div>
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">Last Frame</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ t("Last Frame") }}</p>
               <p>{{ sessionStore.lastFrameAt || "-" }}</p>
             </div>
           </div>

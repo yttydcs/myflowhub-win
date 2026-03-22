@@ -52,6 +52,18 @@ func TestSettingsState_Defaults(t *testing.T) {
 	}
 }
 
+func TestGlobalPreferencesState_Defaults(t *testing.T) {
+	app := newTestAppWithStore(t)
+
+	state, err := app.GlobalPreferencesState()
+	if err != nil {
+		t.Fatalf("GlobalPreferencesState() error = %v", err)
+	}
+	if state.Language != languageEnglish {
+		t.Fatalf("expected language=%q got %q", languageEnglish, state.Language)
+	}
+}
+
 func TestSettingsState_FallsBackToLegacyHomeKeys(t *testing.T) {
 	app := newTestAppWithStore(t)
 	profile := app.store.CurrentProfile()
@@ -118,6 +130,53 @@ func TestSaveSettingsState_NormalizesAndPersists(t *testing.T) {
 	}
 }
 
+func TestSaveGlobalPreferencesState_NormalizesAndPersistsToRawKey(t *testing.T) {
+	app := newTestAppWithStore(t)
+	if err := app.store.SetCurrentProfile("work"); err != nil {
+		t.Fatalf("SetCurrentProfile() error = %v", err)
+	}
+
+	state, err := app.SaveGlobalPreferencesState(GlobalPreferencesState{
+		Language: "  ZH-cn  ",
+	})
+	if err != nil {
+		t.Fatalf("SaveGlobalPreferencesState() error = %v", err)
+	}
+	if state.Language != languageSimplifiedChinese {
+		t.Fatalf("expected normalized language=%q got %q", languageSimplifiedChinese, state.Language)
+	}
+
+	raw, ok := app.store.GetRaw(globalPreferencesKey)
+	if !ok {
+		t.Fatalf("expected raw key %q persisted", globalPreferencesKey)
+	}
+	parsed, ok := parseGlobalPreferencesStateValue(raw)
+	if !ok {
+		t.Fatalf("expected persisted raw value parseable, got %#v", raw)
+	}
+	if parsed.Language != languageSimplifiedChinese {
+		t.Fatalf("expected persisted raw language=%q got %q", languageSimplifiedChinese, parsed.Language)
+	}
+
+	if _, ok := app.store.GetRaw("work." + globalPreferencesKey); ok {
+		t.Fatalf("expected no profile-scoped key for global preferences")
+	}
+}
+
+func TestSaveGlobalPreferencesState_InvalidLanguageFallsBackToDefault(t *testing.T) {
+	app := newTestAppWithStore(t)
+
+	state, err := app.SaveGlobalPreferencesState(GlobalPreferencesState{
+		Language: "fr",
+	})
+	if err != nil {
+		t.Fatalf("SaveGlobalPreferencesState() error = %v", err)
+	}
+	if state.Language != languageEnglish {
+		t.Fatalf("expected invalid language to fall back to %q got %q", languageEnglish, state.Language)
+	}
+}
+
 func TestSaveHomeState_DoesNotMutateSavedSettings(t *testing.T) {
 	app := newTestAppWithStore(t)
 
@@ -180,6 +239,24 @@ func TestResetSettingsState_RestoresDefaults(t *testing.T) {
 		t.Fatalf("ResetSettingsState() error = %v", err)
 	}
 	if state != defaultAppSettingsState() {
+		t.Fatalf("expected defaults after reset got %+v", state)
+	}
+}
+
+func TestResetGlobalPreferencesState_RestoresDefaults(t *testing.T) {
+	app := newTestAppWithStore(t)
+
+	if _, err := app.SaveGlobalPreferencesState(GlobalPreferencesState{
+		Language: languageSimplifiedChinese,
+	}); err != nil {
+		t.Fatalf("SaveGlobalPreferencesState() error = %v", err)
+	}
+
+	state, err := app.ResetGlobalPreferencesState()
+	if err != nil {
+		t.Fatalf("ResetGlobalPreferencesState() error = %v", err)
+	}
+	if state != defaultGlobalPreferencesState() {
 		t.Fatalf("expected defaults after reset got %+v", state)
 	}
 }

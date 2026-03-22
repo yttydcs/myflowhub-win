@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import type { LogLine } from "@/stores/logs"
 import {
   buildPayloadText,
@@ -14,6 +15,7 @@ import {
 const props = defineProps<{
   line: LogLine
 }>()
+const { t } = useI18n()
 
 const expanded = ref(false)
 const hexMode = ref(false)
@@ -33,16 +35,16 @@ const levelLabel = computed(() => (props.line.level || "info").toUpperCase())
 
 const previewPayload = computed(() => {
   const bytes = payloadBytes.value
-  if (!bytes.length) return "payload=empty"
+  if (!bytes.length) return t("payload=empty")
   if (hexMode.value) {
     const previewBytes = bytes.slice(0, 80)
     const hex = bytesToSpacedHex(previewBytes)
     const suffix = bytes.length > previewBytes.length ? "..." : ""
-    return `payload=hex(${hex}${suffix})`
+    return t("payload=hex({value})", { value: `${hex}${suffix}` })
   }
   const { text, truncated } = buildTextPreview(bytes, 160)
   const suffix = props.line.payloadTruncated || truncated ? "..." : ""
-  return `payload=text(${text}${suffix})`
+  return t("payload=text({value})", { value: `${text}${suffix}` })
 })
 
 const previewLine = computed(() => {
@@ -88,15 +90,15 @@ const toggleJson = () => {
           <span class="text-foreground">{{ props.line.message || "-" }}</span>
         </div>
         <div class="text-xs text-muted-foreground">
-          Payload length: {{ payloadLen }}
+          {{ t("Payload length: {count}", { count: payloadLen }) }}
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" @click="toggleHex">
-          {{ hexMode ? "Hex On" : "Hex Off" }}
+          {{ hexMode ? t("Hex On") : t("Hex Off") }}
         </Button>
         <Button size="sm" variant="outline" @click="expanded = !expanded">
-          {{ expanded ? "Collapse" : "Expand" }}
+          {{ expanded ? t("Collapse") : t("Expand") }}
         </Button>
       </div>
     </div>
@@ -108,29 +110,29 @@ const toggleJson = () => {
     <div v-if="expanded" class="mt-4 space-y-3">
       <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" @click="toggleJson">
-          {{ jsonMode ? "Raw" : "Format JSON" }}
+          {{ jsonMode ? t("Raw") : t("Format JSON") }}
         </Button>
         <span v-if="jsonError" class="text-xs text-rose-600">{{ jsonError }}</span>
         <span v-if="props.line.payloadTruncated" class="text-xs text-muted-foreground">
-          Payload truncated
+          {{ t("Payload truncated") }}
         </span>
       </div>
 
       <div class="rounded-xl border border-border/60 bg-background/70 p-3">
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Payload Text
+          {{ t("Payload Text") }}
         </p>
         <pre class="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
-{{ payloadText || "No payload." }}
+{{ payloadText || t("No payload.") }}
         </pre>
       </div>
 
       <div v-if="hexMode" class="rounded-xl border border-border/60 bg-background/70 p-3">
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Payload Hex
+          {{ t("Payload Hex") }}
         </p>
         <pre class="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
-{{ payloadHex || "No payload." }}
+{{ payloadHex || t("No payload.") }}
         </pre>
       </div>
     </div>

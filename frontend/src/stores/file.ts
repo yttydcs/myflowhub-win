@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 
@@ -7,7 +8,7 @@ const callFile = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.file?.FileService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`File binding '${method}' unavailable`)
+    throw new Error(t("File binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -221,7 +222,7 @@ const setIdentity = async (nodeId: number, hubId: number) => {
 
 const requestList = async (nodeId: number, dir: string) => {
   const target = Number(nodeId || 0)
-  if (!target) throw new Error("Node ID required.")
+  if (!target) throw new Error(t("Node ID required."))
   const normalizedDir = normalizeDir(dir)
   state.listing = true
   state.listMessage = ""
@@ -233,14 +234,14 @@ const requestList = async (nodeId: number, dir: string) => {
     state.listing = false
     state.entries = []
     state.selected = null
-    const msg = String(err?.message ?? err ?? "error")
-    state.listMessage = `List failed: ${msg}`
+    const msg = String(err?.message ?? err ?? t("Unknown error."))
+    state.listMessage = t("List failed: {message}", { message: msg })
   }
 }
 
 const requestReadText = async (nodeId: number, dir: string, name: string) => {
   const target = Number(nodeId || 0)
-  if (!target) throw new Error("Node ID required.")
+  if (!target) throw new Error(t("Node ID required."))
   const normalizedDir = normalizeDir(dir)
   const sourceID = state.selfNodeId
   const hubID = state.hubId
@@ -265,23 +266,23 @@ const startOffer = async (consumer: number, sourceDir: string, name: string, rem
     return
   }
   if (normalizedSourceDir !== normalizedRemoteDir) {
-    throw new Error("Backend does not support custom remote dir yet.")
+    throw new Error(t("Backend does not support custom remote dir yet."))
   }
   await callFile("StartOffer", sourceID, hubID, consumer, normalizedSourceDir, name, wantHash)
 }
 
 const createDir = async (targetNodeId: number, dir: string, name: string) => {
   const target = Number(targetNodeId || 0)
-  if (!target) throw new Error("Node ID required.")
+  if (!target) throw new Error(t("Node ID required."))
 
   const normalizedDir = normalizeDir(dir)
   const folderName = String(name ?? "").trim()
-  if (!folderName) throw new Error("Folder name required.")
+  if (!folderName) throw new Error(t("Folder name required."))
   if (folderName === "." || folderName === "..") {
-    throw new Error("Invalid folder name.")
+    throw new Error(t("Invalid folder name."))
   }
   if (/[\\/]/.test(folderName)) {
-    throw new Error("Folder name cannot contain path separators.")
+    throw new Error(t("Folder name cannot contain path separators."))
   }
 
   const sourceID = state.selfNodeId
@@ -341,8 +342,8 @@ const openPreview = async (nodeId: number, dir: string, name: string) => {
   } catch (err: any) {
     state.previewLoading = false
     state.previewText = ""
-    const msg = String(err?.message ?? err ?? "error")
-    state.previewInfo = `Preview failed: ${msg}`
+    const msg = String(err?.message ?? err ?? t("Unknown error."))
+    state.previewInfo = t("Preview failed: {message}", { message: msg })
   }
 }
 
@@ -402,13 +403,17 @@ const ensureListeners = () => {
     state.previewLoading = false
     if (Number(evt?.code ?? 0) !== 1) {
       state.previewText = ""
-      state.previewInfo = `Preview failed: ${String(evt?.msg ?? "error")}`
+      state.previewInfo = t("Preview failed: {message}", {
+        message: String(evt?.msg ?? t("Unknown error."))
+      })
       return
     }
     state.previewText = String(evt?.text ?? "")
     const size = Number(evt?.size ?? 0)
     const truncated = Boolean(evt?.truncated)
-    state.previewInfo = `size=${size}${truncated ? " (truncated)" : ""}`
+    state.previewInfo = truncated
+      ? t("size={size} (truncated)", { size })
+      : t("size={size}", { size })
   })
 
   EventsOn("file.tasks", (evt: any) => {

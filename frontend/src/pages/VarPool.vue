@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import NodeVarsDialog from "@/components/varpool/NodeVarsDialog.vue"
+import { useI18n } from "@/i18n"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useVarPoolStore, type VarPoolKey, type VarPoolValue } from "@/stores/varpool"
@@ -21,6 +22,7 @@ const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const varpool = useVarPoolStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const tabs: { id: VarPoolTab; label: string }[] = [
   { id: "control", label: "Control" },
@@ -74,7 +76,7 @@ const fallbackIdentity = reactive({
 const inputClass =
   "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
-const connectedLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectedLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const connectedTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
@@ -107,15 +109,20 @@ const subscribedEntries = computed(() =>
 )
 
 const summaryItems = computed(() => [
-  { label: "Connected", value: connectedLabel.value },
-  { label: "NodeID", value: selfNodeId.value ? String(selfNodeId.value) : "-" },
-  { label: "HubID", value: hubId.value ? String(hubId.value) : "-" },
-  { label: "Cached Keys", value: String(varpool.state.keys.length) },
-  { label: "Mine Count", value: String(mineEntries.value.length) },
-  { label: "Watch Count", value: String(watchEntries.value.length) },
-  { label: "Subscribed Count", value: String(subscribedEntries.value.length) },
-  { label: "Last Frame", value: varpool.state.lastFrameAt || "-" }
+  { label: t("Connected"), value: connectedLabel.value },
+  { label: t("NodeID"), value: selfNodeId.value ? String(selfNodeId.value) : "-" },
+  { label: t("HubID"), value: hubId.value ? String(hubId.value) : "-" },
+  { label: t("Cached Keys"), value: String(varpool.state.keys.length) },
+  { label: t("Mine Count"), value: String(mineEntries.value.length) },
+  { label: t("Watch Count"), value: String(watchEntries.value.length) },
+  { label: t("Subscribed Count"), value: String(subscribedEntries.value.length) },
+  { label: t("Last Frame"), value: varpool.state.lastFrameAt || "-" }
 ])
+
+const displayMeta = (value: unknown, fallback = "unknown") => {
+  const normalized = String(value ?? "").trim()
+  return t(normalized || fallback)
+}
 
 const setActiveTab = (tab: VarPoolTab) => {
   activeTab.value = tab
@@ -132,13 +139,13 @@ const parseOwner = (value: string, required: boolean) => {
   const trimmed = value.trim()
   if (!trimmed) {
     if (required) {
-      throw new Error("Owner NodeID is required.")
+      throw new Error(t("Owner NodeID is required."))
     }
     return 0
   }
   const parsed = Number.parseInt(trimmed, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Owner NodeID must be a positive number.")
+    throw new Error(t("Owner NodeID must be a positive number."))
   }
   return parsed
 }
@@ -147,10 +154,10 @@ const normalizeName = (value: string) => value.trim()
 
 const ensureReady = () => {
   if (!sessionStore.connected) {
-    throw new Error("Connect to a session before sending VarPool requests.")
+    throw new Error(t("Connect to a session before sending VarPool requests."))
   }
   if (!selfNodeId.value) {
-    throw new Error("Login to a node before using VarPool operations.")
+    throw new Error(t("Login to a node before using VarPool operations."))
   }
 }
 
@@ -211,18 +218,18 @@ const refreshAll = async () => {
     }
 
     if (!mineFailed && watchNotFound === 0 && watchFailed === 0) {
-      toast.success("VarPool refreshed.")
+      toast.success(t("VarPool refreshed."))
       return
     }
 
     const parts: string[] = []
-    if (mineFailed) parts.push("mine list failed")
-    if (watchNotFound) parts.push(`not found: ${watchNotFound}/${watchAttempted}`)
-    if (watchFailed) parts.push(`failed: ${watchFailed}/${watchAttempted}`)
-    toast.warn("VarPool refreshed with issues.", parts.join(" · "))
+    if (mineFailed) parts.push(t("mine list failed"))
+    if (watchNotFound) parts.push(t("not found: {count}/{total}", { count: watchNotFound, total: watchAttempted }))
+    if (watchFailed) parts.push(t("failed: {count}/{total}", { count: watchFailed, total: watchAttempted }))
+    toast.warn(t("VarPool refreshed with issues."), parts.join(" · "))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to refresh VarPool data.")
+    toast.errorOf(err, t("Failed to refresh VarPool data."))
   } finally {
     busy.value = false
   }
@@ -234,10 +241,10 @@ const refreshKey = async (key: VarPoolKey) => {
   try {
     ensureReady()
     await varpool.getVar(key)
-    toast.success("Variable refreshed.")
+    toast.success(t("Variable refreshed."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to refresh variable.")
+    toast.errorOf(err, t("Failed to refresh variable."))
   } finally {
     busy.value = false
   }
@@ -262,25 +269,25 @@ const submitAddMine = async () => {
     ensureReady()
     const name = normalizeName(addMineDialog.name)
     if (!name) {
-      throw new Error("Variable name is required.")
+      throw new Error(t("Variable name is required."))
     }
     const owner = selfNodeId.value
     if (!owner) {
-      throw new Error("Owner NodeID is required.")
+      throw new Error(t("Owner NodeID is required."))
     }
     const value = addMineDialog.value
     if (!value.trim()) {
-      throw new Error("Variable value is required.")
+      throw new Error(t("Variable value is required."))
     }
     const visibility = addMineDialog.visibility || "public"
     const kind = addMineDialog.kind || "string"
     await varpool.setVar({ name, owner }, value, visibility, kind)
     await varpool.getVar({ name, owner })
     closeAddMineDialog()
-    toast.success("Variable added.")
+    toast.success(t("Variable added."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to add variable.")
+    toast.errorOf(err, t("Failed to add variable."))
   } finally {
     busy.value = false
   }
@@ -306,10 +313,10 @@ const submitAddWatch = async () => {
     await varpool.addWatchKey({ name, owner })
     await varpool.getVar({ name, owner })
     closeAddWatchDialog()
-    toast.success("Watch added.")
+    toast.success(t("Watch added."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to add watch.")
+    toast.errorOf(err, t("Failed to add watch."))
   } finally {
     busy.value = false
   }
@@ -336,25 +343,25 @@ const submitEdit = async () => {
     ensureReady()
     const name = normalizeName(editDialog.name)
     if (!name) {
-      throw new Error("Variable name is required.")
+      throw new Error(t("Variable name is required."))
     }
     const owner = editDialog.owner || selfNodeId.value
     if (!owner) {
-      throw new Error("Owner NodeID is required.")
+      throw new Error(t("Owner NodeID is required."))
     }
     const visibility = editDialog.visibility || "public"
     const kind = editDialog.kind || "string"
     const value = editDialog.value
     if (!value.trim()) {
-      throw new Error("Variable value is required.")
+      throw new Error(t("Variable value is required."))
     }
     await varpool.setVar({ name, owner }, value, visibility, kind)
     await varpool.getVar({ name, owner })
     closeEditDialog()
-    toast.success("Variable updated.")
+    toast.success(t("Variable updated."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update variable.")
+    toast.errorOf(err, t("Failed to update variable."))
   } finally {
     busy.value = false
   }
@@ -367,7 +374,7 @@ const reloadWatchList = async (force = false) => {
     await varpool.loadWatchList()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load watch list.")
+    toast.errorOf(err, t("Failed to load watch list."))
   } finally {
     busy.value = false
   }
@@ -378,10 +385,10 @@ const persistWatchList = async () => {
   busy.value = true
   try {
     await varpool.saveWatchList()
-    toast.success("Watch list saved.")
+    toast.success(t("Watch list saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save watch list.")
+    toast.errorOf(err, t("Failed to save watch list."))
   } finally {
     busy.value = false
   }
@@ -393,10 +400,10 @@ const revokeKey = async (key: VarPoolKey) => {
   try {
     ensureReady()
     await varpool.revokeVar(key)
-    toast.success("Variable revoked.")
+    toast.success(t("Variable revoked."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to revoke variable.")
+    toast.errorOf(err, t("Failed to revoke variable."))
   } finally {
     busy.value = false
   }
@@ -411,10 +418,10 @@ const removeKey = async (key: VarPoolKey) => {
       await varpool.unsubscribeVar(key)
     }
     await varpool.removeWatchKey(key)
-    toast.success("Removed.")
+    toast.success(t("Removed."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to remove variable.")
+    toast.errorOf(err, t("Failed to remove variable."))
   } finally {
     busy.value = false
   }
@@ -428,14 +435,14 @@ const toggleSubscribe = async (key: VarPoolKey) => {
     const value = varpool.valueForKey(key)
     if (value.subKnown && value.subscribed) {
       await varpool.unsubscribeVar(key)
-      toast.success("Unsubscribed.")
+      toast.success(t("Unsubscribed."))
     } else {
       await varpool.subscribeVar(key)
-      toast.success("Subscribed.")
+      toast.success(t("Subscribed."))
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update subscription.")
+    toast.errorOf(err, t("Failed to update subscription."))
   } finally {
     busy.value = false
   }
@@ -473,8 +480,8 @@ onMounted(async () => {
     <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Workspace</p>
-          <h2 class="mt-1 text-lg font-semibold">VarPool Control Center</h2>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Workspace") }}</p>
+          <h2 class="mt-1 text-lg font-semibold">{{ t("VarPool Control Center") }}</h2>
         </div>
 
         <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
@@ -486,7 +493,7 @@ onMounted(async () => {
             :aria-pressed="activeTab === tab.id"
             @click="setActiveTab(tab.id)"
           >
-            {{ tab.label }}
+            {{ t(tab.label) }}
           </button>
         </div>
       </div>
@@ -497,11 +504,11 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              VarPool Control
+              {{ t("VarPool Control") }}
             </p>
-            <h3 class="text-lg font-semibold">Target & Identity</h3>
+            <h3 class="text-lg font-semibold">{{ t("Target & Identity") }}</h3>
             <p class="text-sm text-muted-foreground">
-              Use your logged-in node to list variables and manage watch targets.
+              {{ t("Use your logged-in node to list variables and manage watch targets.") }}
             </p>
           </div>
           <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
@@ -510,25 +517,25 @@ onMounted(async () => {
         <div class="mt-4 space-y-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Target Node ID
+              {{ t("Target Node ID") }}
             </label>
             <input
               v-model="varpool.state.targetId"
-              :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
+              :placeholder="hubId ? String(hubId) : t('Hub NodeID')"
               :class="inputClass"
             />
           </div>
 
           <div class="flex flex-wrap gap-2">
-            <Button :disabled="busy" @click="refreshAll">Refresh All</Button>
-            <Button variant="outline" :disabled="busy" @click="persistWatchList">Save Watch List</Button>
+            <Button :disabled="busy" @click="refreshAll">{{ t("Refresh All") }}</Button>
+            <Button variant="outline" :disabled="busy" @click="persistWatchList">{{ t("Save Watch List") }}</Button>
           </div>
         </div>
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Snapshot</p>
-        <h3 class="mt-2 text-lg font-semibold">VarPool Status</h3>
+        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Snapshot") }}</p>
+        <h3 class="mt-2 text-lg font-semibold">{{ t("VarPool Status") }}</h3>
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
           <div
             v-for="item in summaryItems"
@@ -545,11 +552,11 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              Subscriptions
+              {{ t("Subscriptions") }}
             </p>
-            <h3 class="text-lg font-semibold">Active List</h3>
+            <h3 class="text-lg font-semibold">{{ t("Active List") }}</h3>
           </div>
-          <Badge variant="outline">{{ subscribedEntries.length }} active</Badge>
+          <Badge variant="outline">{{ t("{count} active", { count: subscribedEntries.length }) }}</Badge>
         </div>
 
         <div class="mt-4 space-y-3">
@@ -561,13 +568,13 @@ onMounted(async () => {
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p class="font-semibold">{{ entry.key.name }}</p>
-                <p class="text-xs text-muted-foreground">Owner {{ entry.key.owner ?? "-" }}</p>
+                <p class="text-xs text-muted-foreground">{{ t("Owner {owner}", { owner: entry.key.owner ?? "-" }) }}</p>
               </div>
-              <Badge variant="secondary">Subscribed</Badge>
+              <Badge variant="secondary">{{ t("Subscribed") }}</Badge>
             </div>
           </div>
           <p v-if="subscribedEntries.length === 0" class="text-sm text-muted-foreground">
-            No active subscriptions.
+            {{ t("No active subscriptions.") }}
           </p>
         </div>
       </section>
@@ -576,13 +583,13 @@ onMounted(async () => {
     <section v-if="activeTab === 'mine'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Mine</p>
-          <h3 class="mt-1 text-lg font-semibold">My Variables</h3>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Mine") }}</p>
+          <h3 class="mt-1 text-lg font-semibold">{{ t("My Variables") }}</h3>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Updated: {{ varpool.state.lastFrameAt || "-" }}</Badge>
+          <Badge variant="outline">{{ t("Updated: {time}", { time: varpool.state.lastFrameAt || "-" }) }}</Badge>
           <Button size="sm" variant="outline" :disabled="busy" @click="openAddMineDialog">
-            Add Variable
+            {{ t("Add Variable") }}
           </Button>
         </div>
       </div>
@@ -597,46 +604,46 @@ onMounted(async () => {
             <div>
               <h4 class="text-base font-semibold">{{ entry.key.name }}</h4>
               <p class="text-xs text-muted-foreground">
-                Owner {{ entry.key.owner ?? "-" }} ·
-                {{ entry.snapshot.visibility || "unknown" }} ·
-                {{ entry.snapshot.kind || "unknown" }}
+                {{ t("Owner {owner}", { owner: entry.key.owner ?? "-" }) }} ·
+                {{ displayMeta(entry.snapshot.visibility) }} ·
+                {{ displayMeta(entry.snapshot.kind) }}
               </p>
             </div>
-            <Badge variant="secondary">Mine</Badge>
+            <Badge variant="secondary">{{ t("Mine") }}</Badge>
           </div>
           <p class="mt-3 rounded-lg border border-border/60 bg-card/90 px-3 py-2 text-sm">
             {{ entry.snapshot.value || "-" }}
           </p>
           <div class="mt-4 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(entry.key)">
-              Refresh
+              {{ t("Refresh") }}
             </Button>
             <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(entry.key)">
-              Edit
+              {{ t("Edit") }}
             </Button>
             <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(entry.key)">
-              Revoke
+              {{ t("Revoke") }}
             </Button>
             <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(entry.key)">
-              Remove
+              {{ t("Remove") }}
             </Button>
           </div>
         </article>
 
-        <p v-if="mineEntries.length === 0" class="text-sm text-muted-foreground">No variables yet.</p>
+        <p v-if="mineEntries.length === 0" class="text-sm text-muted-foreground">{{ t("No variables yet.") }}</p>
       </div>
     </section>
 
     <section v-if="activeTab === 'watch'" class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Watch</p>
-          <h3 class="mt-1 text-lg font-semibold">Watched Variables</h3>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Watch") }}</p>
+          <h3 class="mt-1 text-lg font-semibold">{{ t("Watched Variables") }}</h3>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">Node Vars</Button>
-          <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">Add Watch</Button>
-          <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">Reload Saved</Button>
+          <Button size="sm" variant="outline" :disabled="busy" @click="openNodeVarsDialog">{{ t("Node Vars") }}</Button>
+          <Button size="sm" variant="outline" :disabled="busy" @click="openAddWatchDialog">{{ t("Add Watch") }}</Button>
+          <Button size="sm" variant="ghost" :disabled="busy" @click="reloadWatchList">{{ t("Reload Saved") }}</Button>
         </div>
       </div>
 
@@ -650,13 +657,13 @@ onMounted(async () => {
             <div>
               <h4 class="text-base font-semibold">{{ entry.key.name }}</h4>
               <p class="text-xs text-muted-foreground">
-                Owner {{ entry.key.owner ?? "-" }} ·
-                {{ entry.snapshot.visibility || "unknown" }} ·
-                {{ entry.snapshot.kind || "unknown" }}
+                {{ t("Owner {owner}", { owner: entry.key.owner ?? "-" }) }} ·
+                {{ displayMeta(entry.snapshot.visibility) }} ·
+                {{ displayMeta(entry.snapshot.kind) }}
               </p>
             </div>
             <Badge v-if="entry.snapshot.subKnown && entry.snapshot.subscribed" variant="secondary">
-              Subscribed
+              {{ t("Subscribed") }}
             </Badge>
           </div>
           <p class="mt-3 rounded-lg border border-border/60 bg-card/90 px-3 py-2 text-sm">
@@ -664,25 +671,25 @@ onMounted(async () => {
           </p>
           <div class="mt-4 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" :disabled="busy" @click="refreshKey(entry.key)">
-              Refresh
+              {{ t("Refresh") }}
             </Button>
             <Button size="sm" variant="outline" :disabled="busy" @click="openEditDialog(entry.key)">
-              Edit
+              {{ t("Edit") }}
             </Button>
             <Button size="sm" variant="outline" :disabled="busy" @click="revokeKey(entry.key)">
-              Revoke
+              {{ t("Revoke") }}
             </Button>
             <Button size="sm" variant="ghost" :disabled="busy" @click="removeKey(entry.key)">
-              Remove
+              {{ t("Remove") }}
             </Button>
             <Button size="sm" variant="outline" :disabled="busy" @click="toggleSubscribe(entry.key)">
-              {{ entry.snapshot.subKnown && entry.snapshot.subscribed ? "Unsubscribe" : "Subscribe" }}
+              {{ entry.snapshot.subKnown && entry.snapshot.subscribed ? t("Unsubscribe") : t("Subscribe") }}
             </Button>
           </div>
         </article>
 
         <p v-if="watchEntries.length === 0" class="text-sm text-muted-foreground">
-          No watched variables yet.
+          {{ t("No watched variables yet.") }}
         </p>
       </div>
     </section>
@@ -697,53 +704,53 @@ onMounted(async () => {
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              VarPool Add
+              {{ t("VarPool Add") }}
             </p>
-            <h3 class="mt-2 text-lg font-semibold">Create Variable</h3>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Create Variable") }}</h3>
             <p class="text-sm text-muted-foreground">
-              Owner defaults to your current NodeID.
+              {{ t("Owner defaults to your current NodeID.") }}
             </p>
           </div>
-          <Badge variant="secondary">New</Badge>
+          <Badge variant="secondary">{{ t("New") }}</Badge>
         </div>
 
         <div class="mt-4 grid gap-4">
           <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Owner</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
             <p class="mt-1 font-medium">{{ selfNodeId || "-" }}</p>
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Name
+              {{ t("Name") }}
             </label>
-            <input v-model="addMineDialog.name" :class="inputClass" placeholder="status.flag" />
+            <input v-model="addMineDialog.name" :class="inputClass" :placeholder="t('status.flag')" />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Value
+              {{ t("Value") }}
             </label>
-            <input v-model="addMineDialog.value" :class="inputClass" placeholder="ready" />
+            <input v-model="addMineDialog.value" :class="inputClass" :placeholder="t('ready')" />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Visibility
+              {{ t("Visibility") }}
             </label>
             <select v-model="addMineDialog.visibility" :class="inputClass">
-              <option value="public">public</option>
-              <option value="private">private</option>
+              <option value="public">{{ t("public") }}</option>
+              <option value="private">{{ t("private") }}</option>
             </select>
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Type
+              {{ t("Type") }}
             </label>
-            <input v-model="addMineDialog.kind" :class="inputClass" placeholder="string" />
+            <input v-model="addMineDialog.kind" :class="inputClass" :placeholder="t('string')" />
           </div>
         </div>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" :disabled="busy" @click="closeAddMineDialog">Cancel</Button>
-          <Button :disabled="busy" @click="submitAddMine">Save</Button>
+          <Button variant="outline" :disabled="busy" @click="closeAddMineDialog">{{ t("Cancel") }}</Button>
+          <Button :disabled="busy" @click="submitAddMine">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -760,34 +767,34 @@ onMounted(async () => {
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              VarPool Watch
+              {{ t("VarPool Watch") }}
             </p>
-            <h3 class="mt-2 text-lg font-semibold">Add Watch</h3>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Add Watch") }}</h3>
             <p class="text-sm text-muted-foreground">
-              Track variables owned by another node.
+              {{ t("Track variables owned by another node.") }}
             </p>
           </div>
-          <Badge variant="secondary">Watch</Badge>
+          <Badge variant="secondary">{{ t("Watch") }}</Badge>
         </div>
 
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Name
+              {{ t("Name") }}
             </label>
-            <input v-model="addWatchDialog.name" :class="inputClass" placeholder="metrics.load" />
+            <input v-model="addWatchDialog.name" :class="inputClass" :placeholder="t('metrics.load')" />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Owner NodeID
+              {{ t("Owner NodeID") }}
             </label>
-            <input v-model="addWatchDialog.owner" :class="inputClass" placeholder="Owner NodeID" />
+            <input v-model="addWatchDialog.owner" :class="inputClass" :placeholder="t('Owner NodeID')" />
           </div>
         </div>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" :disabled="busy" @click="closeAddWatchDialog">Cancel</Button>
-          <Button :disabled="busy" @click="submitAddWatch">Save</Button>
+          <Button variant="outline" :disabled="busy" @click="closeAddWatchDialog">{{ t("Cancel") }}</Button>
+          <Button :disabled="busy" @click="submitAddWatch">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -802,51 +809,51 @@ onMounted(async () => {
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              VarPool Edit
+              {{ t("VarPool Edit") }}
             </p>
-            <h3 class="mt-2 text-lg font-semibold">Update Variable</h3>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Update Variable") }}</h3>
             <p class="text-sm text-muted-foreground">
-              Visibility may not apply to other node owners.
+              {{ t("Visibility may not apply to other node owners.") }}
             </p>
           </div>
-          <Badge variant="secondary">Edit</Badge>
+          <Badge variant="secondary">{{ t("Edit") }}</Badge>
         </div>
 
         <div class="mt-4 grid gap-4">
           <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Name</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Name") }}</p>
             <p class="mt-1 font-medium">{{ editDialog.name || "-" }}</p>
           </div>
           <div class="grid gap-3 sm:grid-cols-2">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Owner</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
               <p class="mt-1 font-medium">{{ editDialog.owner || "-" }}</p>
             </div>
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Type</p>
-              <p class="mt-1 font-medium">{{ editDialog.kind || "string" }}</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Type") }}</p>
+              <p class="mt-1 font-medium">{{ displayMeta(editDialog.kind, "string") }}</p>
             </div>
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Value
+              {{ t("Value") }}
             </label>
-            <input v-model="editDialog.value" :class="inputClass" placeholder="value" />
+            <input v-model="editDialog.value" :class="inputClass" :placeholder="t('value')" />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Visibility
+              {{ t("Visibility") }}
             </label>
             <select v-model="editDialog.visibility" :class="inputClass">
-              <option value="public">public</option>
-              <option value="private">private</option>
+              <option value="public">{{ t("public") }}</option>
+              <option value="private">{{ t("private") }}</option>
             </select>
           </div>
         </div>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="outline" :disabled="busy" @click="closeEditDialog">Cancel</Button>
-          <Button :disabled="busy" @click="submitEdit">Save</Button>
+          <Button variant="outline" :disabled="busy" @click="closeEditDialog">{{ t("Cancel") }}</Button>
+          <Button :disabled="busy" @click="submitEdit">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>

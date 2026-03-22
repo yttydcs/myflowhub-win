@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import { Handle, Position, type NodeProps } from "@vue-flow/core"
+import { useI18n } from "@/i18n"
+import { flowStatusLabelKey } from "@/stores/flow"
 
 type FlowNodeStatus = {
   status?: string
@@ -14,11 +16,13 @@ type FlowNodeData = {
 }
 
 const props = defineProps<NodeProps<FlowNodeData>>()
+const { t } = useI18n()
 
 const label = computed(() => props.data?.label?.trim() || props.id)
 const status = computed(() => props.data?.status?.status?.trim() || "")
 const statusCode = computed(() => Number(props.data?.status?.code ?? 0))
 const statusMsg = computed(() => props.data?.status?.msg?.trim() || "")
+const statusLabel = computed(() => t(flowStatusLabelKey(status.value)))
 
 const statusTone = computed(() => {
   switch (status.value) {
@@ -55,19 +59,19 @@ const statusTone = computed(() => {
     />
 
     <div class="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.24em]">
-      <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">In</span>
-      <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">Out</span>
+      <span class="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700">{{ t("In") }}</span>
+      <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">{{ t("Out") }}</span>
     </div>
 
     <div class="flex items-start justify-between gap-2">
       <p class="truncate text-xs font-semibold text-foreground">{{ label }}</p>
       <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold" :class="statusTone">
-        {{ status || "unknown" }}
+        {{ status ? statusLabel : t("Unknown") }}
       </span>
     </div>
 
     <p v-if="status" class="mt-1 truncate text-[10px] text-muted-foreground">
-      code {{ statusCode }}{{ statusMsg ? ` · ${statusMsg}` : "" }}
+      {{ t("Code {code}", { code: statusCode }) }}{{ statusMsg ? ` · ${statusMsg}` : "" }}
     </p>
   </div>
 </template>

@@ -1,4 +1,5 @@
 import { reactive } from "vue"
+import { t } from "@/i18n"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 import { useToastStore } from "@/stores/toast"
 
@@ -8,7 +9,7 @@ const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.main?.App
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`App binding '${method}' unavailable`)
+    throw new Error(t("App binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -17,7 +18,7 @@ const callVarPool = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.varpool?.VarPoolService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`VarPool binding '${method}' unavailable`)
+    throw new Error(t("VarPool binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -26,7 +27,7 @@ const callTopicBus = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.topicbus?.TopicBusService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`TopicBus binding '${method}' unavailable`)
+    throw new Error(t("TopicBus binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -202,7 +203,7 @@ const defaultWidgetLayout = (): ShowcaseWidgetLayout => ({ colSpan: 1 })
 const emptyConfig = (): ShowcaseConfig => ({
   version: 1,
   currentScreenId: "default",
-  screens: [{ id: "default", name: "Default", updatedAt: nowIso(), layout: defaultScreenLayout(), widgets: [] }]
+  screens: [{ id: "default", name: t("Default"), updatedAt: nowIso(), layout: defaultScreenLayout(), widgets: [] }]
 })
 
 const normalizeVarMode = (mode: any): VarWidgetMode => {
@@ -452,7 +453,7 @@ const cloneScreen = (
   }
   const normalized = normalizeScreen(raw)
   if (!normalized) {
-    throw new Error("Screen is invalid.")
+    throw new Error(t("Screen is invalid."))
   }
   return normalized
 }
@@ -464,17 +465,17 @@ const touchScreen = (screen: ShowcaseScreen, timestamp = nowIso()) => {
 }
 
 const makeDuplicateScreenName = (name: string, screens: ShowcaseScreen[]): string => {
-  const baseName = String(name ?? "").trim() || "Screen"
+  const baseName = String(name ?? "").trim() || t("Screen")
   const existing = new Set(screens.map((item) => item.name.trim().toLowerCase()).filter(Boolean))
 
-  const first = `${baseName} Copy`
+  const first = t("{name} Copy", { name: baseName })
   if (!existing.has(first.toLowerCase())) {
     return first
   }
 
   let index = 2
   for (;;) {
-    const candidate = `${baseName} Copy ${index}`
+    const candidate = t("{name} Copy {index}", { name: baseName, index })
     if (!existing.has(candidate.toLowerCase())) {
       return candidate
     }
@@ -508,7 +509,7 @@ const toast = useToastStore()
 
 const ensureReady = () => {
   if (!state.selfNodeId) {
-    throw new Error("Login required.")
+    throw new Error(t("Login required."))
   }
   return state.selfNodeId
 }
@@ -517,7 +518,7 @@ const resolveTarget = (widgetTargetId: number) => {
   if (Number.isFinite(widgetTargetId) && widgetTargetId > 0) {
     return Math.floor(widgetTargetId)
   }
-  throw new Error("Target ID is required.")
+  throw new Error(t("Target ID is required."))
 }
 
 const parseVarResp = (payload: any) => {
@@ -696,7 +697,7 @@ const selectScreen = async (id: string) => {
 
 const createScreen = async (name: string) => {
   const trimmed = name.trim()
-  if (!trimmed) throw new Error("Screen name is required.")
+  if (!trimmed) throw new Error(t("Screen name is required."))
   const id = newId()
   await leave()
   state.config.screens.push({ id, name: trimmed, updatedAt: nowIso(), layout: defaultScreenLayout(), widgets: [] })
@@ -708,7 +709,7 @@ const createScreen = async (name: string) => {
 
 const renameScreen = async (id: string, name: string) => {
   const trimmed = name.trim()
-  if (!trimmed) throw new Error("Screen name is required.")
+  if (!trimmed) throw new Error(t("Screen name is required."))
   const screen = state.config.screens.find((s) => s.id === id)
   if (!screen) return
   screen.name = trimmed
@@ -719,7 +720,7 @@ const renameScreen = async (id: string, name: string) => {
 const duplicateScreen = async (id: string, name?: string) => {
   const screen = screenById(id)
   if (!screen) {
-    throw new Error("Screen not found.")
+    throw new Error(t("Screen not found."))
   }
   const duplicate = cloneScreen(screen, {
     resetID: true,
@@ -729,7 +730,7 @@ const duplicateScreen = async (id: string, name?: string) => {
   })
   const index = state.config.screens.findIndex((item) => item.id === id)
   if (index < 0) {
-    throw new Error("Screen not found.")
+    throw new Error(t("Screen not found."))
   }
   await leave()
   state.config.screens.splice(index + 1, 0, duplicate)
@@ -742,12 +743,12 @@ const duplicateScreen = async (id: string, name?: string) => {
 const saveScreenDraft = async (screenId: string, draft: ShowcaseScreen) => {
   const trimmed = String(screenId ?? "").trim()
   if (!trimmed) {
-    throw new Error("Screen ID is required.")
+    throw new Error(t("Screen ID is required."))
   }
   const next = cloneConfig(state.config)
   const index = next.screens.findIndex((screen) => screen.id === trimmed)
   if (index < 0) {
-    throw new Error("Screen not found.")
+    throw new Error(t("Screen not found."))
   }
   const normalized = cloneScreen({ ...draft, id: trimmed }, { updatedAt: nowIso() })
   next.screens.splice(index, 1, normalized)
@@ -758,7 +759,7 @@ const saveScreenDraft = async (screenId: string, draft: ShowcaseScreen) => {
 const deleteScreen = async (id: string) => {
   const remaining = state.config.screens.filter((s) => s.id !== id)
   if (!remaining.length) {
-    throw new Error("At least one screen is required.")
+    throw new Error(t("At least one screen is required."))
   }
   const wasCurrent = state.config.currentScreenId === id
   if (wasCurrent) {
@@ -793,12 +794,12 @@ const addTopicButton = async (
   const screen = currentScreen()
   const topic = String(input.topic ?? "").trim()
   const name = String(input.name ?? "").trim()
-  if (!topic) throw new Error("Topic is required.")
-  if (!name) throw new Error("Name is required.")
+  if (!topic) throw new Error(t("Topic is required."))
+  if (!name) throw new Error(t("Name is required."))
   const payloadText = String(input.payloadText ?? "").trim()
   const title = String(input.title ?? "").trim()
   const targetId = Number(input.targetId ?? 0)
-  if (!Number.isFinite(targetId) || targetId <= 0) throw new Error("Target ID is required.")
+  if (!Number.isFinite(targetId) || targetId <= 0) throw new Error(t("Target ID is required."))
   const layout = normalizeWidgetLayout({ colSpan: input.colSpan }, screen.layout)
 
   screen.widgets.push({
@@ -828,11 +829,11 @@ const addVarWidget = async (input: {
   const screen = currentScreen()
   const ownerId = Number(input.ownerId ?? 0)
   const name = String(input.name ?? "").trim()
-  if (!Number.isFinite(ownerId) || ownerId <= 0) throw new Error("Owner NodeID is required.")
-  if (!name) throw new Error("Variable name is required.")
+  if (!Number.isFinite(ownerId) || ownerId <= 0) throw new Error(t("Owner NodeID is required."))
+  if (!name) throw new Error(t("Variable name is required."))
   const title = String(input.title ?? "").trim()
   const targetId = Number(input.targetId ?? 0)
-  if (!Number.isFinite(targetId) || targetId <= 0) throw new Error("Target ID is required.")
+  if (!Number.isFinite(targetId) || targetId <= 0) throw new Error(t("Target ID is required."))
   const mode = input.mode ?? "auto"
   const visibility = String(input.visibility ?? "public").trim() || "public"
   const type = String(input.type ?? "").trim() || defaultTypeForMode(mode)
@@ -897,16 +898,16 @@ const sliderValue = (widget: ShowcaseWidget): number => {
 }
 
 const sendVarSet = async (widget: ShowcaseWidget, value: string, awaitResp: boolean) => {
-  if (widget.kind !== "var" || !widget.var) throw new Error("Invalid var widget.")
+  if (widget.kind !== "var" || !widget.var) throw new Error(t("Invalid var widget."))
   const sourceID = ensureReady()
   const targetID = resolveTarget(widget.targetId)
   const owner = widget.var.ownerId
   const name = widget.var.name.trim()
   const visibility = widget.var.visibility || "public"
   const type = widget.var.type.trim()
-  if (!name) throw new Error("Variable name is required.")
-  if (!value.trim()) throw new Error("Variable value is required.")
-  if (!type) throw new Error("Variable type is required.")
+  if (!name) throw new Error(t("Variable name is required."))
+  if (!value.trim()) throw new Error(t("Variable value is required."))
+  if (!type) throw new Error(t("Variable type is required."))
 
   if (!awaitResp) {
     await callVarPool("SendSimple", sourceID, targetID, "set", {
@@ -939,17 +940,17 @@ const sendVarSet = async (widget: ShowcaseWidget, value: string, awaitResp: bool
 
 const publishTopicButton = async (widget: ShowcaseWidget) => {
   if (widget.kind !== "topic_button" || !widget.topicButton) {
-    throw new Error("Invalid topic button.")
+    throw new Error(t("Invalid topic button."))
   }
   const sourceID = ensureReady()
   const targetID = resolveTarget(widget.targetId)
   const topic = widget.topicButton.topic.trim()
   const name = widget.topicButton.name.trim()
   const payloadText = widget.topicButton.payloadText ?? ""
-  if (!topic) throw new Error("Topic is required.")
-  if (!name) throw new Error("Name is required.")
+  if (!topic) throw new Error(t("Topic is required."))
+  if (!name) throw new Error(t("Name is required."))
   await callTopicBus("PublishSimple", sourceID, targetID, topic, name, payloadText)
-  toast.success("Event sent.")
+  toast.success(t("Event sent."))
 }
 
 const getAndSubscribe = async (targetId: number, ownerId: number, name: string) => {
@@ -1132,7 +1133,7 @@ const sliderCommit = async (widget: ShowcaseWidget) => {
     await sendVarSet(widget, String(value), true)
     delete state.sliderDraft[widget.id]
   } catch (err) {
-    toast.errorOf(err, "Failed to update variable.")
+    toast.errorOf(err, t("Failed to update variable."))
     return
   }
 }
@@ -1145,7 +1146,7 @@ const switchToggle = async (widget: ShowcaseWidget, desiredOn: boolean) => {
   try {
     await sendVarSet(widget, next, true)
   } catch (err) {
-    toast.errorOf(err, "Failed to update variable.")
+    toast.errorOf(err, t("Failed to update variable."))
   }
 }
 

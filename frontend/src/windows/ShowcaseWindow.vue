@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -15,6 +16,7 @@ const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const showcase = useShowcaseStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const busy = ref(false)
 
@@ -22,7 +24,7 @@ const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 const selfNodeId = computed(() => sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0)
 const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId || 0)
 
-const connectedLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectedLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const connectedTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
@@ -31,7 +33,7 @@ const requestedScreenIdRaw = computed(() => String(route.query.screenId ?? "").t
 const requestedScreenId = computed(() => requestedScreenIdRaw.value || "__missing_screen__")
 
 const screen = computed(() => showcase.screenById(requestedScreenId.value))
-const screenName = computed(() => screen.value?.name || "Showcase")
+const screenName = computed(() => screen.value?.name || t("Showcase"))
 const screenMissing = computed(() => Boolean(showcase.state.loaded) && (Boolean(showcase.state.screenMissing) || !screen.value))
 
 const loadHomeDefaults = async () => {
@@ -52,7 +54,7 @@ const safeTitle = (widget: ShowcaseWidget) => {
     return `${widget.topicButton.topic} / ${widget.topicButton.name}`
   }
   if (widget.kind === "var" && widget.var) return widget.var.name
-  return "Widget"
+  return t("Widget")
 }
 
 const isVarOn = (widget: ShowcaseWidget) => {
@@ -63,7 +65,7 @@ const isVarOn = (widget: ShowcaseWidget) => {
 const displayValueText = (widget: ShowcaseWidget) => {
   const raw = showcase.getVarValueText(widget)
   if (raw.trim()) return raw
-  return "No value yet."
+  return t("No value yet.")
 }
 
 const sendTopicButton = async (widget: ShowcaseWidget) => {
@@ -73,7 +75,7 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
     await showcase.publishTopicButton(widget)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to send event.")
+    toast.errorOf(err, t("Failed to send event."))
   } finally {
     busy.value = false
   }
@@ -200,7 +202,7 @@ onMounted(async () => {
     await enterScreen()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load showcase config.")
+    toast.errorOf(err, t("Failed to load showcase config."))
   }
   setupWidgetsGridObserver()
 })
@@ -228,16 +230,16 @@ onBeforeUnmount(() => {
 
     <div class="flex-1 min-h-0 p-4">
       <div v-if="!showcase.state.loaded" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <h2 class="text-base font-semibold">Loading...</h2>
+        <h2 class="text-base font-semibold">{{ t("Loading...") }}</h2>
         <p class="mt-2 text-sm text-muted-foreground">
-          Loading Showcase config.
+          {{ t("Loading Showcase config.") }}
         </p>
       </div>
 
       <div v-else-if="screenMissing" class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-        <h2 class="text-base font-semibold">Screen not found</h2>
+        <h2 class="text-base font-semibold">{{ t("Screen not found") }}</h2>
         <p class="mt-2 text-sm text-muted-foreground">
-          The requested screen does not exist in the current Showcase config.
+          {{ t("The requested screen does not exist in the current Showcase config.") }}
         </p>
       </div>
 
@@ -256,7 +258,7 @@ onBeforeUnmount(() => {
             <div class="min-w-0">
               <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
                 <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                  Send
+                  {{ t("Send") }}
                 </Button>
               </div>
 
@@ -303,7 +305,7 @@ onBeforeUnmount(() => {
           class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
           :style="{ gridColumn: '1 / -1' }"
         >
-          <p class="text-sm text-muted-foreground">No widgets yet.</p>
+          <p class="text-sm text-muted-foreground">{{ t("No widgets yet.") }}</p>
         </div>
       </div>
 
@@ -327,7 +329,7 @@ onBeforeUnmount(() => {
               <div class="min-w-0">
                 <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
                   <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                    Send
+                    {{ t("Send") }}
                   </Button>
                 </div>
 
@@ -373,7 +375,7 @@ onBeforeUnmount(() => {
             v-if="(screen?.widgets || []).length === 0"
             class="absolute inset-0 flex items-center justify-center"
           >
-            <p class="text-sm text-muted-foreground">No widgets yet.</p>
+            <p class="text-sm text-muted-foreground">{{ t("No widgets yet.") }}</p>
           </div>
         </div>
       </div>

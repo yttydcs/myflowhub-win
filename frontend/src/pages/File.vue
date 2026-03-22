@@ -17,6 +17,7 @@ import {
 } from "lucide-vue-next"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
+import { useI18n } from "@/i18n"
 import OfferNodeTreePicker from "@/components/file/OfferNodeTreePicker.vue"
 import { useFileStore, type FileEntry } from "@/stores/file"
 import { useSessionStore } from "@/stores/session"
@@ -27,6 +28,7 @@ import { CanResolveFilePaths, OnFileDrop, OnFileDropOff, ResolveFilePaths } from
 const fileStore = useFileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const settingsOpen = ref(false)
 const downloadOpen = ref(false)
@@ -83,22 +85,22 @@ const canOffer = computed(() => isFileSelected.value && isLocalNode.value)
 const canDropImport = computed(() => isLocalNode.value && currentNodeId.value > 0)
 const canCreateDir = computed(() => currentNodeId.value > 0)
 const createDirButtonTitle = computed(() => {
-  if (canCreateDir.value) return "Create a folder in current directory."
-  return "Select a node first."
+  if (canCreateDir.value) return t("Create a folder in current directory.")
+  return t("Select a node first.")
 })
-const upButtonTitle = computed(() => (currentDir.value ? "Go to parent directory." : "Already at root directory."))
+const upButtonTitle = computed(() => (currentDir.value ? t("Go to parent directory.") : t("Already at root directory.")))
 const downloadButtonTitle = computed(() => {
-  if (canDownload.value) return "Download selected remote file."
-  if (!currentNodeId.value) return "Select a node first."
-  if (!hasSelection.value) return "Select a file first."
-  if (isDirSelected.value) return "Download works for files only."
-  if (currentNodeId.value === selfNodeId.value) return "Download is for remote files only."
-  return "Download unavailable."
+  if (canDownload.value) return t("Download selected remote file.")
+  if (!currentNodeId.value) return t("Select a node first.")
+  if (!hasSelection.value) return t("Select a file first.")
+  if (isDirSelected.value) return t("Download works for files only.")
+  if (currentNodeId.value === selfNodeId.value) return t("Download is for remote files only.")
+  return t("Download unavailable.")
 })
 const dropHintText = computed(() =>
   canDropImport.value
-    ? "Drag files here to import into current directory."
-    : "Switch to Local Node to enable drag import."
+    ? t("Drag files here to import into current directory.")
+    : t("Switch to Local Node to enable drag import.")
 )
 const breadcrumbItems = computed(() => {
   const parts = currentDir.value.split("/").filter(Boolean)
@@ -123,6 +125,14 @@ const normalizeDirValue = (dir: string) =>
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
 
+const displayPath = (dir: string, name = "") => {
+  const normalizedDir = normalizeDirValue(dir)
+  if (!name) {
+    return normalizedDir ? `/${normalizedDir}` : "/"
+  }
+  return normalizedDir ? `/${normalizedDir}/${name}` : `/${name}`
+}
+
 const refreshList = async () => {
   if (!currentNodeId.value) return
   try {
@@ -130,8 +140,8 @@ const refreshList = async () => {
   } catch (err) {
     console.warn(err)
     fileStore.state.listing = false
-    fileStore.state.listMessage = "Failed to load directory."
-    toast.errorOf(err, "Failed to load directory.")
+    fileStore.state.listMessage = t("Failed to load directory.")
+    toast.errorOf(err, t("Failed to load directory."))
   }
 }
 
@@ -180,10 +190,10 @@ const saveSettings = async () => {
   try {
     await fileStore.savePrefs({ ...prefsDraft })
     settingsOpen.value = false
-    toast.success("File settings saved.")
+    toast.success(t("File settings saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save file settings.")
+    toast.errorOf(err, t("Failed to save file settings."))
   }
 }
 
@@ -207,10 +217,10 @@ const confirmDownload = async () => {
       downloadForm.wantHash
     )
     downloadOpen.value = false
-    toast.success("Download started.")
+    toast.success(t("Download started."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to start download.")
+    toast.errorOf(err, t("Failed to start download."))
   }
 }
 
@@ -241,11 +251,11 @@ const onOfferTargetPicked = (nodeId: number) => {
 const confirmOfferTargetPicker = () => {
   const next = Number(offerPickerTargetId.value || 0)
   if (!Number.isInteger(next) || next <= 0) {
-    toast.warn("Please select a target node.")
+    toast.warn(t("Please select a target node."))
     return
   }
   if (next === selfNodeId.value) {
-    toast.warn("Target node must be remote.")
+    toast.warn(t("Target node must be remote."))
     return
   }
   offerForm.targetId = String(next)
@@ -256,21 +266,21 @@ const confirmOffer = async () => {
   if (!selected.value) return
   const targetId = Number.parseInt(String(offerForm.targetId || "").trim(), 10)
   if (!Number.isInteger(targetId) || targetId <= 0) {
-    toast.warn("Please select a target node.")
+    toast.warn(t("Please select a target node."))
     return
   }
   if (targetId === selfNodeId.value) {
-    toast.warn("Target node must be remote.")
+    toast.warn(t("Target node must be remote."))
     return
   }
   const remoteDir = normalizeDirValue(offerForm.remoteDir)
   try {
     await fileStore.startOffer(targetId, currentDir.value, selected.value.name, remoteDir, offerForm.wantHash)
     offerOpen.value = false
-    toast.success("Offer sent.")
+    toast.success(t("Offer sent."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to send offer.")
+    toast.errorOf(err, t("Failed to send offer."))
   }
 }
 
@@ -290,25 +300,25 @@ const openCreateDirDialog = () => {
 const confirmCreateDir = async () => {
   const name = newFolderName.value.trim()
   if (!name) {
-    toast.warn("Folder name is required.")
+    toast.warn(t("Folder name is required."))
     return
   }
   if (name === "." || name === "..") {
-    toast.warn("Invalid folder name.")
+    toast.warn(t("Invalid folder name."))
     return
   }
   if (/[\\/]/.test(name)) {
-    toast.warn("Folder name cannot contain path separators.")
+    toast.warn(t("Folder name cannot contain path separators."))
     return
   }
   try {
     await fileStore.createDir(currentNodeId.value, currentDir.value, name)
     newFolderOpen.value = false
-    toast.success("Folder created.")
+    toast.success(t("Folder created."))
     await refreshList()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to create folder.")
+    toast.errorOf(err, t("Failed to create folder."))
   }
 }
 
@@ -318,34 +328,38 @@ const importLocalPaths = async (paths: string[], errorPrefix: string) => {
     : []
   if (!normalized.length) return
   if (!canDropImport.value) {
-    toast.warn("Upload is available only when Local Node is selected.")
+    toast.warn(t("Upload is available only when Local Node is selected."))
     return
   }
   try {
     const result = await fileStore.importLocalFiles(currentDir.value, normalized, false)
     if (result.imported.length > 0) {
-      toast.success(`Imported ${result.imported.length} file(s).`)
+      toast.success(t("Imported {count} file(s).", { count: result.imported.length }))
       await refreshList()
     }
     if (result.skipped.length > 0) {
-      const firstReason = result.skipped[0]?.reason ? ` (${result.skipped[0].reason})` : ""
-      toast.warn(`Skipped ${result.skipped.length} item(s)${firstReason}.`)
+      const firstReason = result.skipped[0]?.reason ?? ""
+      toast.warn(
+        firstReason
+          ? t("Skipped {count} item(s): {reason}.", { count: result.skipped.length, reason: firstReason })
+          : t("Skipped {count} item(s).", { count: result.skipped.length })
+      )
     } else if (result.imported.length === 0) {
-      toast.warn("No files were imported.")
+      toast.warn(t("No files were imported."))
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, `${errorPrefix}.`)
+    toast.errorOf(err, errorPrefix)
   }
 }
 
 const importDroppedFiles = async (paths: string[]) => {
-  await importLocalPaths(paths, "Failed to import dropped files")
+  await importLocalPaths(paths, t("Failed to import dropped files."))
 }
 
 const openUploadPicker = () => {
   if (!canDropImport.value) {
-    toast.warn("Upload is available only when Local Node is selected.")
+    toast.warn(t("Upload is available only when Local Node is selected."))
     return
   }
   uploadInputRef.value?.click()
@@ -356,7 +370,7 @@ const resolvePickedPaths = async (files: FileList) => {
   if (!list.length) return []
   const canResolve = await CanResolveFilePaths()
   if (!canResolve) {
-    throw new Error("Runtime cannot resolve selected file paths.")
+    throw new Error(t("Runtime cannot resolve selected file paths."))
   }
   const resolved = await ResolveFilePaths(list)
   if (!Array.isArray(resolved)) return []
@@ -369,10 +383,10 @@ const onUploadInputChange = async (event: Event) => {
   if (!files || files.length === 0) return
   try {
     const paths = await resolvePickedPaths(files)
-    await importLocalPaths(paths, "Failed to upload files")
+    await importLocalPaths(paths, t("Failed to upload files."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to upload files.")
+    toast.errorOf(err, t("Failed to upload files."))
   } finally {
     if (input) input.value = ""
   }
@@ -433,7 +447,7 @@ const onContextDownload = () => {
 const onContextCreateFolder = () => {
   closeFileContextMenu()
   if (!canCreateDir.value) {
-    toast.warn("Select a node first.")
+    toast.warn(t("Select a node first."))
     return
   }
   openCreateDirDialog()
@@ -442,7 +456,7 @@ const onContextCreateFolder = () => {
 const onContextSendRemote = () => {
   closeFileContextMenu()
   if (!canOffer.value) {
-    toast.warn("Select a local file first.")
+    toast.warn(t("Select a local file first."))
     return
   }
   openOfferDialog()
@@ -478,11 +492,11 @@ const onAddNodePicked = (nodeId: number) => {
 const confirmAddNodePicker = () => {
   const next = Number(addNodePickerTargetId.value || 0)
   if (!Number.isInteger(next) || next <= 0) {
-    toast.warn("Please select a node.")
+    toast.warn(t("Please select a node."))
     return
   }
   if (next === selfNodeId.value) {
-    toast.warn("Please select a remote node.")
+    toast.warn(t("Please select a remote node."))
     return
   }
   newNodeId.value = String(next)
@@ -492,16 +506,16 @@ const confirmAddNodePicker = () => {
 const saveNode = async () => {
   const id = Number.parseInt(newNodeId.value.trim(), 10)
   if (!id) {
-    toast.warn("Node ID must be a valid number.")
+    toast.warn(t("Node ID must be a valid number."))
     return
   }
   try {
     await fileStore.saveNodes([...fileStore.state.nodes, id])
     addNodeOpen.value = false
-    toast.success("Node saved.")
+    toast.success(t("Node saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save node.")
+    toast.errorOf(err, t("Failed to save node."))
   }
 }
 
@@ -560,10 +574,10 @@ onBeforeUnmount(() => {
     <div class="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
         <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold">Nodes</h2>
-          <Button size="icon" variant="outline" title="Add remote node" @click="openAddNodeDialog">
+          <h2 class="text-sm font-semibold">{{ t("Nodes") }}</h2>
+          <Button size="icon" variant="outline" :title="t('Add remote node')" @click="openAddNodeDialog">
             <Plus class="h-4 w-4" aria-hidden="true" />
-            <span class="sr-only">Add</span>
+            <span class="sr-only">{{ t("Add") }}</span>
           </Button>
         </div>
         <div class="mt-3 space-y-2">
@@ -574,12 +588,12 @@ onBeforeUnmount(() => {
             :class="currentNodeId === selfNodeId ? 'border-primary/60 bg-primary/10' : 'border-transparent hover:border-border/60 hover:bg-muted/60'"
             @click="selectNode(selfNodeId)"
           >
-            <p class="font-semibold">Local Node</p>
-            <p class="text-xs text-muted-foreground">ID {{ selfNodeId }}</p>
+            <p class="font-semibold">{{ t("Local Node") }}</p>
+            <p class="text-xs text-muted-foreground">{{ t("ID {id}", { id: selfNodeId }) }}</p>
           </button>
 
           <div v-if="!fileStore.state.nodes.length" class="text-xs text-muted-foreground">
-            No remote nodes saved.
+            {{ t("No remote nodes saved.") }}
           </div>
 
           <div v-for="node in fileStore.state.nodes" :key="node" class="flex items-center gap-2">
@@ -589,8 +603,8 @@ onBeforeUnmount(() => {
               :class="currentNodeId === node ? 'border-primary/60 bg-primary/10' : 'border-transparent hover:border-border/60 hover:bg-muted/60'"
               @click="selectNode(node)"
             >
-              <p class="font-semibold">Remote Node</p>
-              <p class="text-xs text-muted-foreground">ID {{ node }}</p>
+              <p class="font-semibold">{{ t("Remote Node") }}</p>
+              <p class="text-xs text-muted-foreground">{{ t("ID {id}", { id: node }) }}</p>
             </button>
             <Button size="icon" variant="outline" @click="removeNode(node)">
               ✕
@@ -603,10 +617,10 @@ onBeforeUnmount(() => {
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-semibold">
-              Node {{ currentNodeId || "-" }}
+              {{ t("Node {id}", { id: currentNodeId || "-" }) }}
             </h2>
             <div class="mt-1 flex flex-wrap items-center gap-1 text-xs">
-              <span class="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">Dir</span>
+              <span class="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">{{ t("Dir") }}</span>
               <div class="flex flex-wrap items-center gap-1">
                 <template v-for="(item, index) in breadcrumbItems" :key="item.dir || '/'">
                   <button
@@ -628,17 +642,17 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <Button size="icon" variant="outline" title="Tasks" @click="openTasks">
+            <Button size="icon" variant="outline" :title="t('Tasks')" @click="openTasks">
               <ListChecks class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Tasks</span>
+              <span class="sr-only">{{ t("Tasks") }}</span>
             </Button>
-            <Button size="icon" variant="outline" title="Settings" @click="openSettings">
+            <Button size="icon" variant="outline" :title="t('Settings')" @click="openSettings">
               <Settings class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Settings</span>
+              <span class="sr-only">{{ t("Settings") }}</span>
             </Button>
-            <Button size="icon" variant="outline" title="Refresh directory" @click="refreshList">
+            <Button size="icon" variant="outline" :title="t('Refresh directory')" @click="refreshList">
               <RefreshCw class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Refresh</span>
+              <span class="sr-only">{{ t("Refresh") }}</span>
             </Button>
             <span class="mx-1 hidden h-6 w-px bg-border/60 sm:block" />
             <Button
@@ -649,7 +663,7 @@ onBeforeUnmount(() => {
               @click="goUp"
             >
               <ArrowUp class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Up</span>
+              <span class="sr-only">{{ t("Up") }}</span>
             </Button>
             <Button
               size="icon"
@@ -659,7 +673,7 @@ onBeforeUnmount(() => {
               @click="openCreateDirDialog"
             >
               <FolderPlus class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">New Folder</span>
+              <span class="sr-only">{{ t("New Folder") }}</span>
             </Button>
             <Button
               size="icon"
@@ -669,11 +683,11 @@ onBeforeUnmount(() => {
               @click="openDownloadDialog"
             >
               <Download class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Download</span>
+              <span class="sr-only">{{ t("Download") }}</span>
             </Button>
-            <Button size="icon" variant="outline" :disabled="!canOffer" title="Send selected file to remote node" @click="openOfferDialog">
+            <Button size="icon" variant="outline" :disabled="!canOffer" :title="t('Send selected file to remote node')" @click="openOfferDialog">
               <Send class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">Send to Remote</span>
+              <span class="sr-only">{{ t("Send to Remote") }}</span>
             </Button>
           </div>
         </div>
@@ -685,13 +699,13 @@ onBeforeUnmount(() => {
           <div
             class="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2 text-xs font-semibold uppercase text-muted-foreground"
           >
-            <span>Directory Listing</span>
+            <span>{{ t("Directory Listing") }}</span>
             <span class="text-[11px] font-medium normal-case tracking-normal text-muted-foreground/85">
               {{ dropHintText }}
             </span>
           </div>
           <div v-if="fileStore.state.listing" class="px-4 py-6 text-sm text-muted-foreground">
-            Loading...
+            {{ t("Loading...") }}
           </div>
           <div
             v-else-if="fileStore.state.listMessage && fileStore.state.listMessage !== 'ok'"
@@ -719,12 +733,12 @@ onBeforeUnmount(() => {
               <div class="flex-1">
                 <p class="font-medium">{{ entry.name }}</p>
                 <p class="text-xs text-muted-foreground">
-                  {{ entry.isDir ? "Folder" : "File" }}
+                  {{ entry.isDir ? t("Folder") : t("File") }}
                 </p>
               </div>
             </div>
             <div v-if="!fileStore.state.entries.length" class="px-4 py-6 text-sm text-muted-foreground">
-              No items in this directory.
+              {{ t("No items in this directory.") }}
             </div>
           </div>
         </div>
@@ -747,7 +761,7 @@ onBeforeUnmount(() => {
         ref="fileContextMenuRef"
         class="fixed z-50 w-56 rounded-xl border border-border/60 bg-card/95 p-1 text-sm shadow-xl backdrop-blur"
         role="menu"
-        aria-label="File actions"
+        :aria-label="t('File actions')"
         :style="{ left: `${fileContextMenu.x}px`, top: `${fileContextMenu.y}px` }"
         @pointerdown.stop
         @click.stop
@@ -761,7 +775,7 @@ onBeforeUnmount(() => {
           @click="onContextUpload"
         >
           <Upload class="h-4 w-4" aria-hidden="true" />
-          Upload
+          {{ t("Upload") }}
         </button>
         <button
           type="button"
@@ -771,7 +785,7 @@ onBeforeUnmount(() => {
           @click="onContextDownload"
         >
           <Download class="h-4 w-4" aria-hidden="true" />
-          Download
+          {{ t("Download") }}
         </button>
         <button
           type="button"
@@ -781,7 +795,7 @@ onBeforeUnmount(() => {
           @click="onContextCreateFolder"
         >
           <FolderPlus class="h-4 w-4" aria-hidden="true" />
-          New Folder
+          {{ t("New Folder") }}
         </button>
         <button
           type="button"
@@ -791,18 +805,18 @@ onBeforeUnmount(() => {
           @click="onContextSendRemote"
         >
           <Send class="h-4 w-4" aria-hidden="true" />
-          Send to Remote
+          {{ t("Send to Remote") }}
         </button>
       </div>
     </Teleport>
 
     <Overlay :open="settingsOpen" @close="settingsOpen = false">
       <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">File Settings</h2>
+        <h2 class="text-lg font-semibold">{{ t("File Settings") }}</h2>
         <div class="mt-4 grid gap-4">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Base Dir
+              {{ t("Base Dir") }}
             </label>
             <input
               v-model="prefsDraft.baseDir"
@@ -812,7 +826,7 @@ onBeforeUnmount(() => {
           <div class="grid gap-4 md:grid-cols-2">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Max Size (bytes)
+                {{ t("Max Size (bytes)") }}
               </label>
               <input
                 v-model.number="prefsDraft.maxSizeBytes"
@@ -823,7 +837,7 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Max Concurrent
+                {{ t("Max Concurrent") }}
               </label>
               <input
                 v-model.number="prefsDraft.maxConcurrent"
@@ -834,7 +848,7 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Chunk Bytes
+                {{ t("Chunk Bytes") }}
               </label>
               <input
                 v-model.number="prefsDraft.chunkBytes"
@@ -845,7 +859,7 @@ onBeforeUnmount(() => {
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Incomplete TTL (sec)
+                {{ t("Incomplete TTL (sec)") }}
               </label>
               <input
                 v-model.number="prefsDraft.incompleteTtlSec"
@@ -857,30 +871,30 @@ onBeforeUnmount(() => {
           </div>
           <label class="flex items-center gap-2 text-sm text-muted-foreground">
             <input v-model="prefsDraft.wantSha256" type="checkbox" class="h-4 w-4 rounded border" />
-            Request SHA256 for transfers
+            {{ t("Request SHA256 for transfers") }}
           </label>
           <label class="flex items-center gap-2 text-sm text-muted-foreground">
             <input v-model="prefsDraft.autoAccept" type="checkbox" class="h-4 w-4 rounded border" />
-            Auto-accept incoming offers
+            {{ t("Auto-accept incoming offers") }}
           </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="settingsOpen = false">Cancel</Button>
-          <Button @click="saveSettings">Save</Button>
+          <Button variant="outline" @click="settingsOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="saveSettings">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="downloadOpen" @close="downloadOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Download File</h2>
+        <h2 class="text-lg font-semibold">{{ t("Download File") }}</h2>
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-          <p>Remote file: {{ currentDir || "/" }}/{{ selected?.name }}</p>
+          <p>{{ t("Remote file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
         </div>
         <div class="mt-4 grid gap-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Save Dir (relative)
+              {{ t("Save Dir (relative)") }}
             </label>
             <input
               v-model="downloadForm.saveDir"
@@ -889,7 +903,7 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Save Name
+              {{ t("Save Name") }}
             </label>
             <input
               v-model="downloadForm.saveName"
@@ -898,56 +912,56 @@ onBeforeUnmount(() => {
           </div>
           <label class="flex items-center gap-2 text-sm text-muted-foreground">
             <input v-model="downloadForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
-            Request SHA256
+            {{ t("Request SHA256") }}
           </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="downloadOpen = false">Cancel</Button>
-          <Button @click="confirmDownload">Start</Button>
+          <Button variant="outline" @click="downloadOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="confirmDownload">{{ t("Start") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="offerOpen" @close="offerOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Send Offer</h2>
+        <h2 class="text-lg font-semibold">{{ t("Send Offer") }}</h2>
         <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-          <p>Local file: {{ currentDir || "/" }}/{{ selected?.name }}</p>
+          <p>{{ t("Local file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
         </div>
         <div class="mt-4 grid gap-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Target Node ID
+              {{ t("Target Node ID") }}
             </label>
             <div class="mt-2 flex items-center gap-2">
               <input
                 v-model="offerForm.targetId"
                 class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="Node ID"
+                :placeholder="t('Node ID')"
               />
               <Button type="button" variant="outline" class="h-10 px-3" @click="openOfferNodePicker">
-                Select
+                {{ t("Select") }}
               </Button>
             </div>
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Remote Dir (relative)
+              {{ t("Remote Dir (relative)") }}
             </label>
             <input
               v-model="offerForm.remoteDir"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="/ for root"
+              :placeholder="t('/ for root')"
             />
           </div>
           <label class="flex items-center gap-2 text-sm text-muted-foreground">
             <input v-model="offerForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
-            Include SHA256
+            {{ t("Include SHA256") }}
           </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="offerOpen = false">Cancel</Button>
-          <Button @click="confirmOffer">Send</Button>
+          <Button variant="outline" @click="offerOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="confirmOffer">{{ t("Send") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -955,11 +969,11 @@ onBeforeUnmount(() => {
     <Overlay :open="offerNodePickerOpen" closeOnBackdrop @close="offerNodePickerOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex items-start justify-between gap-3">
-          <h2 class="text-lg font-semibold">Select Target Node</h2>
+          <h2 class="text-lg font-semibold">{{ t("Select Target Node") }}</h2>
           <button
             type="button"
             class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
-            aria-label="Close"
+            :aria-label="t('Close')"
             @click="offerNodePickerOpen = false"
           >
             <X class="h-4 w-4" aria-hidden="true" />
@@ -975,33 +989,33 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="mt-4 flex justify-end gap-2">
-          <Button variant="outline" @click="offerNodePickerOpen = false">Cancel</Button>
-          <Button @click="confirmOfferTargetPicker">Confirm</Button>
+          <Button variant="outline" @click="offerNodePickerOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="confirmOfferTargetPicker">{{ t("Confirm") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Add Remote Node</h2>
+        <h2 class="text-lg font-semibold">{{ t("Add Remote Node") }}</h2>
         <div class="mt-4">
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Node ID
+            {{ t("Node ID") }}
           </label>
           <div class="mt-2 flex items-center gap-2">
             <input
               v-model="newNodeId"
               class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="Node ID"
+              :placeholder="t('Node ID')"
             />
             <Button type="button" variant="outline" class="h-10 px-3" @click="openAddNodePicker">
-              Select
+              {{ t("Select") }}
             </Button>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="addNodeOpen = false">Cancel</Button>
-          <Button @click="saveNode">Save</Button>
+          <Button variant="outline" @click="addNodeOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="saveNode">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -1009,11 +1023,11 @@ onBeforeUnmount(() => {
     <Overlay :open="addNodePickerOpen" closeOnBackdrop @close="addNodePickerOpen = false">
       <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex items-start justify-between gap-3">
-          <h2 class="text-lg font-semibold">Select Remote Node</h2>
+          <h2 class="text-lg font-semibold">{{ t("Select Remote Node") }}</h2>
           <button
             type="button"
             class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
-            aria-label="Close"
+            :aria-label="t('Close')"
             @click="addNodePickerOpen = false"
           >
             <X class="h-4 w-4" aria-hidden="true" />
@@ -1029,21 +1043,21 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="mt-4 flex justify-end gap-2">
-          <Button variant="outline" @click="addNodePickerOpen = false">Cancel</Button>
-          <Button @click="confirmAddNodePicker">Confirm</Button>
+          <Button variant="outline" @click="addNodePickerOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="confirmAddNodePicker">{{ t("Confirm") }}</Button>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="newFolderOpen" @close="newFolderOpen = false">
       <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">New Folder</h2>
+        <h2 class="text-lg font-semibold">{{ t("New Folder") }}</h2>
         <p class="mt-2 text-sm text-muted-foreground">
-          Current dir: {{ currentDir || "/" }}
+          {{ t("Current dir: {dir}", { dir: currentDir || "/" }) }}
         </p>
         <div class="mt-4">
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Folder Name
+            {{ t("Folder Name") }}
           </label>
           <input
             v-model="newFolderName"
@@ -1052,8 +1066,8 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="newFolderOpen = false">Cancel</Button>
-          <Button @click="confirmCreateDir">Create</Button>
+          <Button variant="outline" @click="newFolderOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="confirmCreateDir">{{ t("Create") }}</Button>
         </div>
       </div>
     </Overlay>
@@ -1062,14 +1076,14 @@ onBeforeUnmount(() => {
       <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 shadow-xl">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">
-            Preview {{ fileStore.state.previewTarget?.name }}
+            {{ t("Preview {name}", { name: fileStore.state.previewTarget?.name ?? "" }) }}
           </h2>
-          <Button variant="outline" @click="fileStore.closePreview">Close</Button>
+          <Button variant="outline" @click="fileStore.closePreview">{{ t("Close") }}</Button>
         </div>
         <p class="mt-2 text-xs text-muted-foreground">{{ fileStore.state.previewInfo }}</p>
         <pre
           class="mt-4 max-h-[60vh] overflow-y-auto rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
-        >{{ fileStore.state.previewLoading ? "Loading..." : fileStore.state.previewText }}</pre>
+        >{{ fileStore.state.previewLoading ? t("Loading...") : fileStore.state.previewText }}</pre>
       </div>
     </Overlay>
   </section>

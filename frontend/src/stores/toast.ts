@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 
 export type ToastLevel = "success" | "info" | "warn" | "error"
@@ -107,11 +108,11 @@ const warn = (title: string, detail?: string, options?: PushOptions) =>
 const error = (title: string, detail?: string, options?: PushOptions) =>
   push("error", title, detail, options)
 
-const errorOf = (err: unknown, fallbackTitle = "Operation failed.") => {
+const errorOf = (err: unknown, fallbackTitle = t("Operation failed.")) => {
   const msg = toText(err).trim()
   const title = fallbackTitle.trim()
   if (!msg) {
-    return error(title || "Operation failed.")
+    return error(title || t("Operation failed."))
   }
   if (title && msg !== title) {
     return error(title, msg)

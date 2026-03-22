@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { type AppLocale, t } from "@/i18n"
 import {
   densityOptions,
   normalizeAppSettings,
@@ -9,10 +10,12 @@ import {
   useAppSettingsStore,
   type AppSettingsState
 } from "@/stores/appSettings"
+import { languageOptions, useLanguageStore } from "@/stores/language"
 import { useProfileStore } from "@/stores/profile"
 import { useToastStore } from "@/stores/toast"
 
 const appSettings = useAppSettingsStore()
+const languageStore = useLanguageStore()
 const profileStore = useProfileStore()
 const toast = useToastStore()
 
@@ -27,22 +30,35 @@ const draft = reactive<AppSettingsState>({
   density: "comfortable",
   reduceMotion: false
 })
+const languageDraft = ref<AppLocale>("en")
 
 const syncDraft = () => {
   Object.assign(draft, normalizeAppSettings(appSettings.state.settings))
+  languageDraft.value = languageStore.state.preferences.language
 }
 
 const loadPage = async () => {
-  await Promise.all([appSettings.load(), appSettings.loadAbout()])
+  await Promise.all([
+    appSettings.load(),
+    appSettings.loadAbout(),
+    languageStore.state.loaded ? Promise.resolve(languageStore.state.preferences) : languageStore.load()
+  ])
   syncDraft()
 }
 
-const dirty = computed(
+const settingsDirty = computed(
   () => JSON.stringify(normalizeAppSettings(draft)) !== JSON.stringify(normalizeAppSettings(appSettings.state.settings))
 )
+const languageDirty = computed(() => languageDraft.value !== languageStore.state.preferences.language)
+const dirty = computed(() => settingsDirty.value || languageDirty.value)
 
 const busy = computed(
-  () => appSettings.state.loading || appSettings.state.saving || appSettings.state.aboutLoading
+  () =>
+    appSettings.state.loading ||
+    appSettings.state.saving ||
+    appSettings.state.aboutLoading ||
+    languageStore.state.loading ||
+    languageStore.state.saving
 )
 
 const aboutItems = computed(() => [
@@ -58,26 +74,37 @@ const aboutItems = computed(() => [
   { label: "Settings Path", value: appSettings.state.about.settingsPath, breakAll: true },
   { label: "Keys Path", value: appSettings.state.about.keysPath, breakAll: true }
 ])
+const localizedLanguageOptions = computed(() =>
+  languageOptions.map((option) => ({
+    ...option,
+    translatedLabel: t(option.label)
+  }))
+)
 
 const saveSettings = async () => {
   try {
     await appSettings.save({ ...draft })
+    await languageStore.save(languageDraft.value)
     syncDraft()
-    toast.success("Settings saved.")
+    toast.success(t("Settings saved."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save settings.")
+    await Promise.allSettled([appSettings.load(), appSettings.loadAbout(), languageStore.load()])
+    syncDraft()
+    toast.errorOf(err, t("Failed to save settings."))
   }
 }
 
 const resetSettings = async () => {
   try {
-    await appSettings.reset()
+    await Promise.all([appSettings.reset(), languageStore.reset()])
     syncDraft()
-    toast.info("Settings restored to defaults.")
+    toast.info(t("Settings restored to defaults."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to restore defaults.")
+    await Promise.allSettled([appSettings.load(), appSettings.loadAbout(), languageStore.load()])
+    syncDraft()
+    toast.errorOf(err, t("Failed to restore defaults."))
   }
 }
 
@@ -89,7 +116,7 @@ watch(
         await loadPage()
       } catch (err) {
         console.warn(err)
-        toast.errorOf(err, "Failed to load settings.")
+        toast.errorOf(err, t("Failed to load settings."))
       }
     })()
   },
@@ -103,16 +130,22 @@ watch(
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            App Settings
+            {{ t("App Settings") }}
           </p>
-          <h3 class="mt-1 text-xl font-semibold">Defaults, interface, and build information</h3>
+          <h3 class="mt-1 text-xl font-semibold">
+            {{ t("Defaults, interface, language, and build information") }}
+          </h3>
           <p class="mt-2 max-w-2xl text-sm text-muted-foreground">
-            These preferences are stored per profile. Save applies them immediately and updates startup behavior for the next launch.
+            {{
+              t(
+                "Connection defaults and UI preferences are stored per profile. Language is global for the whole application. Save applies changes immediately and updates startup behavior for the next launch."
+              )
+            }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Profile: {{ profileStore.state.current }}</Badge>
-          <Badge variant="muted">{{ dirty ? "Unsaved changes" : "Saved" }}</Badge>
+          <Badge variant="secondary">{{ t("Profile: {profile}", { profile: profileStore.state.current }) }}</Badge>
+          <Badge variant="muted">{{ dirty ? t("Unsaved changes") : t("Saved") }}</Badge>
         </div>
       </div>
     </div>
@@ -123,19 +156,19 @@ watch(
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Startup Defaults
+                {{ t("Startup Defaults") }}
               </p>
-              <h3 class="mt-1 text-lg font-semibold">Connection and identity</h3>
+              <h3 class="mt-1 text-lg font-semibold">{{ t("Connection and identity") }}</h3>
             </div>
             <Badge :variant="draft.autoConnect || draft.autoLogin ? 'secondary' : 'muted'">
-              {{ draft.autoConnect || draft.autoLogin ? "Automation enabled" : "Manual startup" }}
+              {{ draft.autoConnect || draft.autoLogin ? t("Automation enabled") : t("Manual startup") }}
             </Badge>
           </div>
 
           <div class="mt-5 grid gap-4">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Default Address
+                {{ t("Default Address") }}
               </label>
               <input
                 v-model="draft.defaultAddr"
@@ -146,12 +179,12 @@ watch(
 
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Default Device ID
+                {{ t("Default Device ID") }}
               </label>
               <input
                 v-model="draft.defaultDeviceId"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                placeholder="device-001"
+                :placeholder="t('device-001')"
               />
             </div>
 
@@ -163,8 +196,8 @@ watch(
                   class="h-4 w-4 rounded border border-input accent-primary"
                 />
                 <div>
-                  <p class="text-sm font-semibold text-foreground">Auto-connect</p>
-                  <p class="text-xs text-muted-foreground">Connect to the default address on launch.</p>
+                  <p class="text-sm font-semibold text-foreground">{{ t("Auto-connect") }}</p>
+                  <p class="text-xs text-muted-foreground">{{ t("Connect to the default address on launch.") }}</p>
                 </div>
               </label>
 
@@ -175,8 +208,10 @@ watch(
                   class="h-4 w-4 rounded border border-input accent-primary"
                 />
                 <div>
-                  <p class="text-sm font-semibold text-foreground">Auto-login</p>
-                  <p class="text-xs text-muted-foreground">Login after connect with the saved identity snapshot.</p>
+                  <p class="text-sm font-semibold text-foreground">{{ t("Auto-login") }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ t("Login after connect with the saved identity snapshot.") }}
+                  </p>
                 </div>
               </label>
             </div>
@@ -185,42 +220,42 @@ watch(
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Interface
+            {{ t("Interface") }}
           </p>
-          <h3 class="mt-1 text-lg font-semibold">Launch and visual rhythm</h3>
+          <h3 class="mt-1 text-lg font-semibold">{{ t("Launch and visual rhythm") }}</h3>
 
           <div class="mt-5 grid gap-4">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Default Start Page
+                {{ t("Default Start Page") }}
               </label>
               <select
                 v-model="draft.defaultStartPage"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option v-for="option in startPageOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
+                  {{ t(option.label) }}
                 </option>
               </select>
               <p class="mt-2 text-xs text-muted-foreground">
-                {{ startPageOptions.find((option) => option.value === draft.defaultStartPage)?.detail }}
+                {{ t(startPageOptions.find((option) => option.value === draft.defaultStartPage)?.detail ?? "") }}
               </p>
             </div>
 
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Density
+                {{ t("Density") }}
               </label>
               <select
                 v-model="draft.density"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option v-for="option in densityOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
+                  {{ t(option.label) }}
                 </option>
               </select>
               <p class="mt-2 text-xs text-muted-foreground">
-                {{ densityOptions.find((option) => option.value === draft.density)?.detail }}
+                {{ t(densityOptions.find((option) => option.value === draft.density)?.detail ?? "") }}
               </p>
             </div>
 
@@ -231,17 +266,43 @@ watch(
                 class="h-4 w-4 rounded border border-input accent-primary"
               />
               <div>
-                <p class="text-sm font-semibold text-foreground">Reduce Motion</p>
+                <p class="text-sm font-semibold text-foreground">{{ t("Reduce Motion") }}</p>
                 <p class="text-xs text-muted-foreground">
-                  Disable floating background motion and shorten UI transitions.
+                  {{ t("Disable floating background motion and shorten UI transitions.") }}
                 </p>
               </div>
             </label>
           </div>
+        </div>
+
+        <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+            {{ t("Other") }}
+          </p>
+          <h3 class="mt-1 text-lg font-semibold">{{ t("Language and regional behavior") }}</h3>
+
+          <div class="mt-5 grid gap-4">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Interface Language") }}
+              </label>
+              <select
+                v-model="languageDraft"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option v-for="option in localizedLanguageOptions" :key="option.value" :value="option.value">
+                  {{ option.translatedLabel }}
+                </option>
+              </select>
+              <p class="mt-2 text-xs text-muted-foreground">
+                {{ t("Choose the display language for the entire application.") }}
+              </p>
+            </div>
+          </div>
 
           <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
-            <Button variant="outline" :disabled="busy" @click="resetSettings">Restore Defaults</Button>
-            <Button :disabled="busy || !dirty" @click="saveSettings">Save Settings</Button>
+            <Button variant="outline" :disabled="busy" @click="resetSettings">{{ t("Restore Defaults") }}</Button>
+            <Button :disabled="busy || !dirty" @click="saveSettings">{{ t("Save Settings") }}</Button>
           </div>
         </div>
       </div>
@@ -249,11 +310,11 @@ watch(
       <div class="space-y-6">
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            About
+            {{ t("About") }}
           </p>
           <h3 class="mt-1 text-lg font-semibold">{{ appSettings.state.about.appName }}</h3>
           <p class="mt-2 text-sm text-muted-foreground">
-            Build metadata and local paths for troubleshooting, release validation, and handoff.
+            {{ t("Build metadata and local paths for troubleshooting, release validation, and handoff.") }}
           </p>
 
           <div class="mt-5 grid gap-3 sm:grid-cols-2">
@@ -263,7 +324,7 @@ watch(
               class="rounded-xl border border-border/60 bg-background/70 px-4 py-3"
             >
               <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ item.label }}
+                {{ t(item.label) }}
               </p>
               <p class="mt-1 text-sm font-medium text-foreground" :class="{ 'break-all': item.breakAll }">
                 {{ item.value }}

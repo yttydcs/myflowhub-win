@@ -1,6 +1,7 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
-import { ProfileState, SetCurrentProfile } from "../../wailsjs/go/main/App"
 import { useToastStore } from "@/stores/toast"
+import { ProfileState, SetCurrentProfile } from "../../wailsjs/go/main/App"
 
 export type ProfileStoreState = {
   profiles: string[]
@@ -45,7 +46,7 @@ const loadProfileState = async () => {
     applyProfileState(data)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load profile state.")
+    toast.errorOf(err, t("Failed to load profile state."))
   } finally {
     state.loading = false
   }
@@ -60,7 +61,7 @@ const setProfile = async (name: string) => {
     applyProfileState(data)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Unable to switch profile.")
+    toast.errorOf(err, t("Unable to switch profile."))
   } finally {
     state.loading = false
   }

@@ -1,4 +1,5 @@
 import { reactive } from "vue"
+import { t } from "@/i18n"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 
@@ -63,8 +64,8 @@ const nodeIndex = new Map<string, DeviceTreeNode>()
 const toast = useToastStore()
 
 const toErrorMessage = (err: unknown) => {
-  if (!err) return "Unknown error."
-  if (err instanceof Error) return err.message || "Unknown error."
+  if (!err) return t("Unknown error.")
+  if (err instanceof Error) return err.message || t("Unknown error.")
   return String(err)
 }
 
@@ -72,14 +73,14 @@ const resolveTargetNode = (fallbackHubId: number) => {
   const raw = state.rootTargetId.trim()
   if (!raw) {
     if (!fallbackHubId) {
-      throw new Error("Root node is required.")
+      throw new Error(t("Root node is required."))
     }
     state.rootTargetId = String(fallbackHubId)
     return fallbackHubId
   }
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Root node must be a positive number.")
+    throw new Error(t("Root node must be a positive number."))
   }
   return parsed
 }
@@ -87,15 +88,15 @@ const resolveTargetNode = (fallbackHubId: number) => {
 const ensureIdentity = () => {
   const session = useSessionStore()
   if (!session.connected) {
-    throw new Error("Connect before querying devices.")
+    throw new Error(t("Connect before querying devices."))
   }
   const sourceID = Number(session.auth.nodeId || 0)
   const hubID = Number(session.auth.hubId || 0)
   if (!sourceID) {
-    throw new Error("Login required to query devices.")
+    throw new Error(t("Login required to query devices."))
   }
   if (!hubID) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
   if (!state.rootTargetId && hubID) {
     state.rootTargetId = String(hubID)
@@ -177,7 +178,7 @@ const loadChildren = async (node: DeviceTreeNode, sourceID: number, myEpoch: num
     node.loading = false
     node.error = toErrorMessage(err)
     node.children = null
-    toast.errorOf(err, `Node ${node.nodeId} load failed.`)
+    toast.errorOf(err, t("Node {nodeId} load failed.", { nodeId: node.nodeId }))
   }
 }
 
@@ -249,7 +250,7 @@ const toggle = async (key: string) => {
   } catch (err) {
     node.expanded = false
     node.error = toErrorMessage(err)
-    toast.error(node.error || "Unable to query devices.")
+    toast.error(node.error || t("Unable to query devices."))
     return
   }
   await loadChildren(node, sourceID, epoch, false)
@@ -266,7 +267,7 @@ const retry = async (key: string) => {
     sourceID = identity.sourceID
   } catch (err) {
     node.error = toErrorMessage(err)
-    toast.error(node.error || "Unable to query devices.")
+    toast.error(node.error || t("Unable to query devices."))
     return
   }
   await loadChildren(node, sourceID, epoch, true)

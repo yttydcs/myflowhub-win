@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import NodeVarsDialog from "@/components/varpool/NodeVarsDialog.vue"
+import { useI18n } from "@/i18n"
 import type { DeviceTreeNode, DevicesMode } from "@/stores/devices"
 import { useDevicesStore } from "@/stores/devices"
 import { useManagementStore } from "@/stores/management"
@@ -14,6 +15,7 @@ const devicesStore = useDevicesStore()
 const mgmtStore = useManagementStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 type NodeInfoWire = {
   code?: number
@@ -29,8 +31,11 @@ const autoLoaded = ref(false)
 const identityLabel = computed(() => {
   const nodeId = Number(sessionStore.auth.nodeId || 0)
   const hubId = Number(sessionStore.auth.hubId || 0)
-  if (!nodeId && !hubId) return "Not logged in"
-  return `node=${nodeId || "-"} hub=${hubId || "-"}`
+  if (!nodeId && !hubId) return t("Not logged in")
+  return t("node={nodeId} hub={hubId}", {
+    nodeId: nodeId || "-",
+    hubId: hubId || "-"
+  })
 })
 
 const ready = computed(() => {
@@ -38,7 +43,9 @@ const ready = computed(() => {
 })
 
 const modeLabel = computed(() =>
-  devicesStore.state.mode === "subtree" ? "Subtree (direct + self; not recursive)" : "Direct"
+  devicesStore.state.mode === "subtree"
+    ? t("Subtree (direct + self; not recursive)")
+    : t("Direct")
 )
 
 const flattenVisible = (root: DeviceTreeNode | null) => {
@@ -83,18 +90,18 @@ const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.management?.ManagementService
   const fn = api?.[method]
   if (!fn) {
-    throw new Error(`Management binding '${method}' unavailable`)
+    throw new Error(t("Management binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
 
 const loadNodeInfo = async (targetID: number) => {
   if (!sessionStore.connected) {
-    throw new Error("Connect before querying node info.")
+    throw new Error(t("Connect before querying node info."))
   }
   const sourceID = Number(sessionStore.auth.nodeId || 0)
   if (!sourceID) {
-    throw new Error("Login required to query node info.")
+    throw new Error(t("Login required to query node info."))
   }
   const resp = await callMgmt<NodeInfoWire>("NodeInfoSimple", sourceID, targetID)
   const itemsRaw = resp?.items ?? resp?.Items ?? {}
@@ -118,8 +125,8 @@ const refreshNodeInfo = async () => {
   } catch (err) {
     if (nodeInfoEpoch !== myEpoch) return
     const message = err instanceof Error ? err.message : String(err)
-    nodeInfoError.value = message || "Unknown error."
-    toast.errorOf(err, "Failed to load node info.")
+    nodeInfoError.value = message || t("Unknown error.")
+    toast.errorOf(err, t("Failed to load node info."))
   } finally {
     if (nodeInfoEpoch !== myEpoch) return
     nodeInfoLoading.value = false
@@ -160,7 +167,7 @@ const openConfig = async (node: DeviceTreeNode) => {
     await mgmtStore.selectNode(node.nodeId)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load config.")
+    toast.errorOf(err, t("Failed to load config."))
   }
 }
 
@@ -175,10 +182,10 @@ const closeConfig = () => {
 const refreshConfig = async () => {
   try {
     await mgmtStore.refreshConfig()
-    toast.success("Config refreshed.")
+    toast.success(t("Config refreshed."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to refresh config.")
+    toast.errorOf(err, t("Failed to refresh config."))
   }
 }
 
@@ -192,10 +199,10 @@ const saveConfig = async () => {
   try {
     await mgmtStore.setConfig(configDraft.key, configDraft.value)
     editOpen.value = false
-    toast.success("Config updated.")
+    toast.success(t("Config updated."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update config.")
+    toast.errorOf(err, t("Failed to update config."))
   }
 }
 
@@ -204,7 +211,7 @@ const loadRoot = async () => {
     await devicesStore.loadRoot()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load root.")
+    toast.errorOf(err, t("Failed to load root."))
   }
 }
 
@@ -222,7 +229,7 @@ const toggleNode = async (node: DeviceTreeNode) => {
     await devicesStore.toggle(node.key)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to expand node.")
+    toast.errorOf(err, t("Failed to expand node."))
   }
 }
 
@@ -231,7 +238,7 @@ const retryNode = async (node: DeviceTreeNode) => {
     await devicesStore.retry(node.key)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to retry node.")
+    toast.errorOf(err, t("Failed to retry node."))
   }
 }
 
@@ -269,37 +276,37 @@ onMounted(async () => {
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-sm font-semibold">Nodes</h2>
+          <h2 class="text-sm font-semibold">{{ t("Nodes") }}</h2>
           <p class="text-xs text-muted-foreground">
-            Mode: <span class="font-semibold text-foreground">{{ modeLabel }}</span>
+            {{ t("Mode") }}: <span class="font-semibold text-foreground">{{ modeLabel }}</span>
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Identity</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Identity") }}</span>
             <span class="font-mono text-[11px] text-foreground">{{ identityLabel }}</span>
           </div>
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Mode</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Mode") }}</span>
             <select
               v-model="devicesStore.state.mode"
               class="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
               @change="onModeChanged(devicesStore.state.mode)"
             >
-              <option value="direct">Direct</option>
-              <option value="subtree">Subtree (direct + self)</option>
+              <option value="direct">{{ t("Direct") }}</option>
+              <option value="subtree">{{ t("Subtree (direct + self)") }}</option>
             </select>
           </div>
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Root</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Root") }}</span>
             <input
               v-model="devicesStore.state.rootTargetId"
               class="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-              placeholder="Node ID"
+              :placeholder="t('Node ID')"
               @keydown.enter.prevent="onRootEnter"
             />
           </div>
-          <Button variant="outline" size="sm" @click="loadRoot">Reload</Button>
+          <Button variant="outline" size="sm" @click="loadRoot">{{ t("Reload") }}</Button>
         </div>
       </div>
 
@@ -325,42 +332,42 @@ onMounted(async () => {
 
               <div class="min-w-0">
                 <p class="truncate font-semibold">
-                  Node {{ node.nodeId }}
+                  {{ t("Node {nodeId}", { nodeId: node.nodeId }) }}
                   <span v-if="depth === 0" class="text-xs font-normal text-muted-foreground">
-                    (root)
+                    {{ t("(root)") }}
                   </span>
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  <span v-if="node.duplicate">Duplicate: expansion disabled.</span>
-                  <span v-else-if="node.error">Error: {{ node.error }}</span>
-                  <span v-else-if="node.children && node.children.length === 0">No children.</span>
+                  <span v-if="node.duplicate">{{ t("Duplicate: expansion disabled.") }}</span>
+                  <span v-else-if="node.error">{{ t("Error: {error}", { error: node.error }) }}</span>
+                  <span v-else-if="node.children && node.children.length === 0">{{ t("No children.") }}</span>
                   <span v-else-if="node.children && node.children.length > 0">
-                    Children: {{ node.children.length }}
+                    {{ t("Children: {count}", { count: node.children.length }) }}
                   </span>
-                  <span v-else>Not loaded.</span>
+                  <span v-else>{{ t("Not loaded.") }}</span>
                 </p>
               </div>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-              <Badge v-if="node.duplicate" variant="secondary">Duplicate</Badge>
+              <Badge v-if="node.duplicate" variant="secondary">{{ t("Duplicate") }}</Badge>
               <Badge
                 v-else-if="node.children ? node.children.length > 0 : node.hasChildrenHint"
                 variant="secondary"
               >
-                Has children
+                {{ t("Has children") }}
               </Badge>
               <Badge v-else-if="node.children && node.children.length === 0" variant="secondary">
-                Leaf
+                {{ t("Leaf") }}
               </Badge>
-              <Badge v-else variant="secondary">Unknown</Badge>
+              <Badge v-else variant="secondary">{{ t("Unknown") }}</Badge>
 
               <Button size="sm" variant="outline" :disabled="!ready" @click.stop="openVarsDialog(node)">
-                Vars
+                {{ t("Vars") }}
               </Button>
 
               <Button size="sm" variant="outline" :disabled="!ready" @click.stop="openConfig(node)">
-                Edit
+                {{ t("Edit") }}
               </Button>
 
               <Button
@@ -370,14 +377,14 @@ onMounted(async () => {
                 :disabled="node.loading"
                 @click.stop="retryNode(node)"
               >
-                Retry
+                {{ t("Retry") }}
               </Button>
             </div>
           </div>
         </div>
 
         <div v-if="!devicesStore.state.root" class="text-xs text-muted-foreground">
-          Connect, login, and open this tab to auto-load the tree.
+          {{ t("Connect, login, and open this tab to auto-load the tree.") }}
         </div>
       </div>
     </section>
@@ -387,24 +394,26 @@ onMounted(async () => {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-              Device
+              {{ t("Device") }}
             </p>
-            <h2 class="mt-1 text-lg font-semibold">Node {{ nodeInfoNodeId }}</h2>
+            <h2 class="mt-1 text-lg font-semibold">{{ t("Node {nodeId}", { nodeId: nodeInfoNodeId }) }}</h2>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" :disabled="nodeInfoLoading" @click="refreshNodeInfo">
-              Reload
+              {{ t("Reload") }}
             </Button>
-            <Button size="sm" variant="outline" @click="closeNodeInfo">Close</Button>
+            <Button size="sm" variant="outline" @click="closeNodeInfo">{{ t("Close") }}</Button>
           </div>
         </div>
 
         <div class="mt-4">
-          <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">Loading…</div>
-          <div v-else-if="nodeInfoError" class="text-sm text-rose-600">Error: {{ nodeInfoError }}</div>
+          <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">{{ t("Loading…") }}</div>
+          <div v-else-if="nodeInfoError" class="text-sm text-rose-600">
+            {{ t("Error: {error}", { error: nodeInfoError }) }}
+          </div>
           <div v-else class="space-y-3">
             <div v-if="!sortedNodeInfoItems.length" class="text-sm text-muted-foreground">
-              No details returned.
+              {{ t("No details returned.") }}
             </div>
             <div v-else class="overflow-hidden rounded-xl border border-border/60">
               <div
@@ -427,8 +436,12 @@ onMounted(async () => {
       <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Config</p>
-            <h2 class="mt-1 text-lg font-semibold">Node {{ mgmtStore.state.selectedNodeId || "-" }}</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+              {{ t("Config") }}
+            </p>
+            <h2 class="mt-1 text-lg font-semibold">
+              {{ t("Node {nodeId}", { nodeId: mgmtStore.state.selectedNodeId || "-" }) }}
+            </h2>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <Button
@@ -437,9 +450,9 @@ onMounted(async () => {
               :disabled="!mgmtStore.state.selectedNodeId"
               @click="refreshConfig"
             >
-              Refresh
+              {{ t("Refresh") }}
             </Button>
-            <Button size="sm" variant="outline" @click="closeConfig">Close</Button>
+            <Button size="sm" variant="outline" @click="closeConfig">{{ t("Close") }}</Button>
           </div>
         </div>
 
@@ -453,10 +466,16 @@ onMounted(async () => {
               <p class="font-semibold">{{ entry.key }}</p>
               <p class="truncate text-muted-foreground">{{ entry.value }}</p>
             </div>
-            <Button size="sm" variant="outline" @click="openEdit(entry.key, entry.value)">Edit</Button>
+            <Button size="sm" variant="outline" @click="openEdit(entry.key, entry.value)">
+              {{ t("Edit") }}
+            </Button>
           </div>
           <div v-if="!mgmtStore.state.configEntries.length" class="text-xs text-muted-foreground">
-            {{ mgmtStore.state.selectedNodeId ? "Loading config entries…" : "Select a node to load config entries." }}
+            {{
+              mgmtStore.state.selectedNodeId
+                ? t("Loading config entries…")
+                : t("Select a node to load config entries.")
+            }}
           </div>
         </div>
       </div>
@@ -464,11 +483,11 @@ onMounted(async () => {
 
     <Overlay :open="editOpen" @close="editOpen = false">
       <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">Edit Config</h2>
+        <h2 class="text-lg font-semibold">{{ t("Edit Config") }}</h2>
         <div class="mt-4 space-y-3">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Key
+              {{ t("Key") }}
             </label>
             <input
               v-model="configDraft.key"
@@ -478,7 +497,7 @@ onMounted(async () => {
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Value
+              {{ t("Value") }}
             </label>
             <textarea
               v-model="configDraft.value"
@@ -488,8 +507,8 @@ onMounted(async () => {
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="editOpen = false">Cancel</Button>
-          <Button @click="saveConfig">Save</Button>
+          <Button variant="outline" @click="editOpen = false">{{ t("Cancel") }}</Button>
+          <Button @click="saveConfig">{{ t("Save") }}</Button>
         </div>
       </div>
     </Overlay>
