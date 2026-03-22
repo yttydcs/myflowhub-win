@@ -77,7 +77,7 @@ export const showcaseZhCN: LocaleMessages = {
   "Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.":
     "画布模式支持在预览区直接操作组件。从列布局切换时，会为缺失位置的组件初始化画布坐标。",
   "Apply Layout": "应用布局",
-  "TopicBus": "TopicBus",
+  "TopicBus": "主题总线",
   "VarStore": "变量仓",
   "Add Widget": "添加组件",
   "Edit Widget": "编辑组件",
@@ -169,8 +169,8 @@ export const showcaseZhCN: LocaleMessages = {
   "Event sent.": "事件已发送。",
   "Failed to update variable.": "更新变量失败。",
   "Switch on/off values are required.": "开关的开启值和关闭值不能为空。",
-  "VarPool binding '{method}' unavailable": "VarPool 绑定“{method}”不可用",
-  "TopicBus binding '{method}' unavailable": "TopicBus 绑定“{method}”不可用",
+  "VarPool binding '{method}' unavailable": "变量池绑定“{method}”不可用",
+  "TopicBus binding '{method}' unavailable": "主题总线绑定“{method}”不可用",
   "Failed to load showcase screens.": "加载展示台屏幕失败。",
   "Editor window was blocked by browser popup policy.": "编辑窗口被浏览器弹窗策略拦截。",
   "Viewer window was blocked by browser popup policy.": "查看窗口被浏览器弹窗策略拦截。"

@@ -35,6 +35,7 @@ export const fileZhCN: LocaleMessages = {
   "Children: {count}": "子节点：{count}",
   "Children available (not loaded).": "存在子节点（尚未加载）。",
   "Leaf node.": "叶子节点。",
+  "root": "根",
   "(root)": "（根）",
   "Retry": "重试",
   "Create a folder in current directory.": "在当前目录创建文件夹。",
