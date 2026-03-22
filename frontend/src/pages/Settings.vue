@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { type AppLocale, t } from "@/i18n"
 import {
+  defaultAppSettings,
   densityOptions,
   normalizeAppSettings,
   startPageOptions,
@@ -24,22 +25,51 @@ const toast = useToastStore()
 
 const panelStyle = { padding: "var(--app-panel-pad)" }
 
-const draft = reactive<AppSettingsState>({
-  defaultAddr: "127.0.0.1:9000",
-  defaultDeviceId: "",
-  autoConnect: false,
-  autoLogin: false,
-  defaultStartPage: "home",
-  density: "comfortable",
-  reduceMotion: false
+type ConnectionSettingsDraft = Pick<AppSettingsState, "defaultAddr" | "defaultDeviceId" | "autoConnect" | "autoLogin">
+type InterfaceSettingsDraft = Pick<AppSettingsState, "defaultStartPage" | "density" | "reduceMotion">
+
+const defaultSettings = defaultAppSettings()
+const pickConnectionSettings = (input: Partial<AppSettingsState>): ConnectionSettingsDraft => {
+  const normalized = normalizeAppSettings(input)
+  return {
+    defaultAddr: normalized.defaultAddr,
+    defaultDeviceId: normalized.defaultDeviceId,
+    autoConnect: normalized.autoConnect,
+    autoLogin: normalized.autoLogin
+  }
+}
+const pickInterfaceSettings = (input: Partial<AppSettingsState>): InterfaceSettingsDraft => {
+  const normalized = normalizeAppSettings(input)
+  return {
+    defaultStartPage: normalized.defaultStartPage,
+    density: normalized.density,
+    reduceMotion: normalized.reduceMotion
+  }
+}
+
+const connectionDraft = reactive<ConnectionSettingsDraft>({
+  defaultAddr: defaultSettings.defaultAddr,
+  defaultDeviceId: defaultSettings.defaultDeviceId,
+  autoConnect: defaultSettings.autoConnect,
+  autoLogin: defaultSettings.autoLogin
+})
+const interfaceDraft = reactive<InterfaceSettingsDraft>({
+  defaultStartPage: defaultSettings.defaultStartPage,
+  density: defaultSettings.density,
+  reduceMotion: defaultSettings.reduceMotion
 })
 const languageDraft = ref<AppLocale>("en")
 const topicbusBusy = ref(false)
 const topicbusTargetIdInput = ref("")
 const topicbusMaxEventsInput = ref("500")
 
-const syncDraft = () => {
-  Object.assign(draft, normalizeAppSettings(appSettings.state.settings))
+const syncConnectionDraft = () => {
+  Object.assign(connectionDraft, pickConnectionSettings(appSettings.state.settings))
+}
+const syncInterfaceDraft = () => {
+  Object.assign(interfaceDraft, pickInterfaceSettings(appSettings.state.settings))
+}
+const syncLanguageDraft = () => {
   languageDraft.value = languageStore.state.preferences.language
 }
 
@@ -55,23 +85,38 @@ const loadPage = async () => {
     languageStore.state.loaded ? Promise.resolve(languageStore.state.preferences) : languageStore.load(),
     topicbus.loadPrefs()
   ])
-  syncDraft()
+  syncConnectionDraft()
+  syncInterfaceDraft()
+  syncLanguageDraft()
   syncTopicBusDraft()
 }
 
-const settingsDirty = computed(
-  () => JSON.stringify(normalizeAppSettings(draft)) !== JSON.stringify(normalizeAppSettings(appSettings.state.settings))
+const buildAppSettingsPayload = (patch: Partial<AppSettingsState>): AppSettingsState =>
+  normalizeAppSettings({
+    ...appSettings.state.settings,
+    ...patch
+  })
+
+const connectionDirty = computed(
+  () => JSON.stringify(pickConnectionSettings(connectionDraft)) !== JSON.stringify(pickConnectionSettings(appSettings.state.settings))
+)
+const interfaceDirty = computed(
+  () => JSON.stringify(pickInterfaceSettings(interfaceDraft)) !== JSON.stringify(pickInterfaceSettings(appSettings.state.settings))
 )
 const languageDirty = computed(() => languageDraft.value !== languageStore.state.preferences.language)
-const dirty = computed(() => settingsDirty.value || languageDirty.value)
-
-const busy = computed(
+const topicbusDirty = computed(
   () =>
-    appSettings.state.loading ||
-    appSettings.state.saving ||
-    appSettings.state.aboutLoading ||
-    languageStore.state.loading ||
-    languageStore.state.saving
+    topicbusTargetIdInput.value.trim() !== topicbus.state.targetId ||
+    topicbusMaxEventsInput.value.trim() !== String(topicbus.state.maxEvents || 500)
+)
+const dirty = computed(
+  () => connectionDirty.value || interfaceDirty.value || languageDirty.value || topicbusDirty.value
+)
+
+const appSettingsBusy = computed(() => appSettings.state.loading || appSettings.state.saving)
+const languageBusy = computed(() => languageStore.state.loading || languageStore.state.saving)
+const restoreBusy = computed(
+  () => appSettingsBusy.value || appSettings.state.aboutLoading || languageBusy.value
 )
 
 const aboutItems = computed(() => [
@@ -94,29 +139,58 @@ const localizedLanguageOptions = computed(() =>
   }))
 )
 
-const saveSettings = async () => {
+const saveConnectionSettings = async () => {
   try {
-    await appSettings.save({ ...draft })
-    await languageStore.save(languageDraft.value)
-    syncDraft()
-    toast.success(t("Settings saved."))
+    await appSettings.save(buildAppSettingsPayload({ ...connectionDraft }))
+    syncConnectionDraft()
+    toast.success(t("Connection settings saved."))
   } catch (err) {
     console.warn(err)
-    await Promise.allSettled([appSettings.load(), appSettings.loadAbout(), languageStore.load()])
-    syncDraft()
-    toast.errorOf(err, t("Failed to save settings."))
+    await appSettings.load()
+    syncConnectionDraft()
+    toast.errorOf(err, t("Failed to save connection settings."))
+  }
+}
+
+const saveInterfaceSettings = async () => {
+  try {
+    await appSettings.save(buildAppSettingsPayload({ ...interfaceDraft }))
+    syncInterfaceDraft()
+    toast.success(t("Interface settings saved."))
+  } catch (err) {
+    console.warn(err)
+    await appSettings.load()
+    syncInterfaceDraft()
+    toast.errorOf(err, t("Failed to save interface settings."))
+  }
+}
+
+const saveLanguageSettings = async () => {
+  try {
+    await languageStore.save(languageDraft.value)
+    syncLanguageDraft()
+    toast.success(t("Language settings saved."))
+  } catch (err) {
+    console.warn(err)
+    await languageStore.load()
+    syncLanguageDraft()
+    toast.errorOf(err, t("Failed to save language settings."))
   }
 }
 
 const resetSettings = async () => {
   try {
     await Promise.all([appSettings.reset(), languageStore.reset()])
-    syncDraft()
+    syncConnectionDraft()
+    syncInterfaceDraft()
+    syncLanguageDraft()
     toast.info(t("Settings restored to defaults."))
   } catch (err) {
     console.warn(err)
-    await Promise.allSettled([appSettings.load(), appSettings.loadAbout(), languageStore.load()])
-    syncDraft()
+    await Promise.allSettled([appSettings.load(), languageStore.load()])
+    syncConnectionDraft()
+    syncInterfaceDraft()
+    syncLanguageDraft()
     toast.errorOf(err, t("Failed to restore defaults."))
   }
 }
@@ -195,6 +269,9 @@ watch(
           <div class="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{{ t("Profile: {profile}", { profile: profileStore.state.current }) }}</Badge>
             <Badge variant="muted">{{ dirty ? t("Unsaved changes") : t("Saved") }}</Badge>
+            <Button variant="outline" size="sm" :disabled="restoreBusy" @click="resetSettings">
+              {{ t("Restore Defaults") }}
+            </Button>
           </div>
         </template>
       </CardHeader>
@@ -205,8 +282,12 @@ watch(
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
           <CardHeader class="items-center" :title="t('Connection and identity')" title-tag="h3" title-class="text-lg">
             <template #actions>
-              <Badge :variant="draft.autoConnect || draft.autoLogin ? 'secondary' : 'muted'">
-                {{ draft.autoConnect || draft.autoLogin ? t("Automation enabled") : t("Manual startup") }}
+              <Badge :variant="connectionDraft.autoConnect || connectionDraft.autoLogin ? 'secondary' : 'muted'">
+                {{
+                  connectionDraft.autoConnect || connectionDraft.autoLogin
+                    ? t("Automation enabled")
+                    : t("Manual startup")
+                }}
               </Badge>
             </template>
           </CardHeader>
@@ -217,7 +298,7 @@ watch(
                 {{ t("Default Address") }}
               </label>
               <input
-                v-model="draft.defaultAddr"
+                v-model="connectionDraft.defaultAddr"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 placeholder="127.0.0.1:9000"
               />
@@ -228,7 +309,7 @@ watch(
                 {{ t("Default Device ID") }}
               </label>
               <input
-                v-model="draft.defaultDeviceId"
+                v-model="connectionDraft.defaultDeviceId"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 :placeholder="t('device-001')"
               />
@@ -237,7 +318,7 @@ watch(
             <div class="grid gap-3 md:grid-cols-2">
               <label class="flex items-center gap-3 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
                 <input
-                  v-model="draft.autoConnect"
+                  v-model="connectionDraft.autoConnect"
                   type="checkbox"
                   class="h-4 w-4 rounded border border-input accent-primary"
                 />
@@ -249,7 +330,7 @@ watch(
 
               <label class="flex items-center gap-3 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
                 <input
-                  v-model="draft.autoLogin"
+                  v-model="connectionDraft.autoLogin"
                   type="checkbox"
                   class="h-4 w-4 rounded border border-input accent-primary"
                 />
@@ -262,6 +343,12 @@ watch(
               </label>
             </div>
           </div>
+
+          <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+            <Button :disabled="appSettingsBusy || !connectionDirty" @click="saveConnectionSettings">
+              {{ t("Save Connection Settings") }}
+            </Button>
+          </div>
         </div>
 
         <div class="rounded-2xl border bg-card/90 text-card-foreground shadow-sm" :style="panelStyle">
@@ -273,7 +360,7 @@ watch(
                 {{ t("Default Start Page") }}
               </label>
               <select
-                v-model="draft.defaultStartPage"
+                v-model="interfaceDraft.defaultStartPage"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option v-for="option in startPageOptions" :key="option.value" :value="option.value">
@@ -281,7 +368,9 @@ watch(
                 </option>
               </select>
               <p class="mt-2 text-xs text-muted-foreground">
-                {{ t(startPageOptions.find((option) => option.value === draft.defaultStartPage)?.detail ?? "") }}
+                {{
+                  t(startPageOptions.find((option) => option.value === interfaceDraft.defaultStartPage)?.detail ?? "")
+                }}
               </p>
             </div>
 
@@ -290,7 +379,7 @@ watch(
                 {{ t("Density") }}
               </label>
               <select
-                v-model="draft.density"
+                v-model="interfaceDraft.density"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option v-for="option in densityOptions" :key="option.value" :value="option.value">
@@ -298,13 +387,13 @@ watch(
                 </option>
               </select>
               <p class="mt-2 text-xs text-muted-foreground">
-                {{ t(densityOptions.find((option) => option.value === draft.density)?.detail ?? "") }}
+                {{ t(densityOptions.find((option) => option.value === interfaceDraft.density)?.detail ?? "") }}
               </p>
             </div>
 
             <label class="flex items-center gap-3 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
               <input
-                v-model="draft.reduceMotion"
+                v-model="interfaceDraft.reduceMotion"
                 type="checkbox"
                 class="h-4 w-4 rounded border border-input accent-primary"
               />
@@ -315,6 +404,12 @@ watch(
                 </p>
               </div>
             </label>
+          </div>
+
+          <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+            <Button :disabled="appSettingsBusy || !interfaceDirty" @click="saveInterfaceSettings">
+              {{ t("Save Interface Settings") }}
+            </Button>
           </div>
         </div>
 
@@ -341,8 +436,9 @@ watch(
           </div>
 
           <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
-            <Button variant="outline" :disabled="busy" @click="resetSettings">{{ t("Restore Defaults") }}</Button>
-            <Button :disabled="busy || !dirty" @click="saveSettings">{{ t("Save Settings") }}</Button>
+            <Button :disabled="languageBusy || !languageDirty" @click="saveLanguageSettings">
+              {{ t("Save Language Settings") }}
+            </Button>
           </div>
         </div>
       </div>
@@ -392,7 +488,9 @@ watch(
             <Button variant="outline" :disabled="topicbusBusy" @click="clearTopicBusEvents">
               {{ t("Clear Cached") }}
             </Button>
-            <Button :disabled="topicbusBusy" @click="applyTopicBusSettings">{{ t("Save TopicBus Settings") }}</Button>
+            <Button :disabled="topicbusBusy || !topicbusDirty" @click="applyTopicBusSettings">
+              {{ t("Save TopicBus Settings") }}
+            </Button>
           </div>
         </div>
 
