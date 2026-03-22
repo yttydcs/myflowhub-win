@@ -448,60 +448,62 @@ onBeforeUnmount(() => {
           </section>
         </section>
 
-        <aside class="flex min-h-0 min-w-0 flex-col gap-4 xl:overflow-hidden">
-          <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-            <CardHeader :title="t('Window Snapshot')" title-class="text-lg" />
+        <aside class="min-h-0 min-w-0">
+          <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+            <section class="shrink-0 rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+              <CardHeader :title="t('Window Snapshot')" title-class="text-lg" />
 
-            <div class="mt-4 grid gap-3">
-              <div
-                v-for="item in infoItems"
-                :key="item.label"
-                class="rounded-xl border border-border/60 bg-background/70 px-3 py-2"
-              >
-                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ item.label }}</p>
-                <p class="mt-1 text-sm font-medium text-foreground">{{ item.value }}</p>
+              <div class="mt-4 grid gap-3">
+                <div
+                  v-for="item in infoItems"
+                  :key="item.label"
+                  class="rounded-xl border border-border/60 bg-background/70 px-3 py-2"
+                >
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ item.label }}</p>
+                  <p class="mt-1 text-sm font-medium text-foreground">{{ item.value }}</p>
+                </div>
               </div>
-            </div>
 
-            <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
-              <div class="flex flex-wrap items-center gap-2">
-                <Badge v-if="selectedEvent" variant="outline">{{ selectedEvent.topic }}</Badge>
-                <span class="text-xs text-muted-foreground">
-                  {{ selectedEvent ? formatTopicBusTimestamp(selectedEvent.ts) || "-" : t("No event selected") }}
-                </span>
-              </div>
-              <p class="mt-2 text-sm font-semibold text-foreground">
-                {{ selectedEvent ? selectedEvent.name : t("Selected Event") }}
-              </p>
-              <pre
-                v-if="selectedEvent"
-                class="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border/60 bg-card/90 p-3 text-xs text-muted-foreground"
-              >
+              <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <Badge v-if="selectedEvent" variant="outline">{{ selectedEvent.topic }}</Badge>
+                  <span class="text-xs text-muted-foreground">
+                    {{ selectedEvent ? formatTopicBusTimestamp(selectedEvent.ts) || "-" : t("No event selected") }}
+                  </span>
+                </div>
+                <p class="mt-2 text-sm font-semibold text-foreground">
+                  {{ selectedEvent ? selectedEvent.name : t("Selected Event") }}
+                </p>
+                <pre
+                  v-if="selectedEvent"
+                  class="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border/60 bg-card/90 p-3 text-xs text-muted-foreground"
+                >
 {{ selectedEvent.dataRaw }}
               </pre>
-              <p v-else class="mt-2 text-sm text-muted-foreground">
-                {{ t("Select one event from the receive list to inspect its full payload here.") }}
-              </p>
-            </div>
-          </section>
+                <p v-else class="mt-2 text-sm text-muted-foreground">
+                  {{ t("Select one event from the receive list to inspect its full payload here.") }}
+                </p>
+              </div>
+            </section>
 
-          <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
-            <CardHeader
-              :title="t('Window Actions')"
-              :description="t('Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.')"
-              title-class="text-lg"
-            />
+            <section class="min-h-[220px] rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
+              <CardHeader
+                :title="t('Window Actions')"
+                :description="t('Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.')"
+                title-class="text-lg"
+              />
 
-            <div class="mt-4 grid gap-3">
-              <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
-              <Button variant="outline" class="justify-start" @click="clearLocalEvents">{{ t("Clear Receive List") }}</Button>
-              <Button variant="outline" class="justify-start" @click="clearComposer">{{ t("Reset Draft") }}</Button>
-            </div>
+              <div class="mt-4 grid gap-3">
+                <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
+                <Button variant="outline" class="justify-start" @click="clearLocalEvents">{{ t("Clear Receive List") }}</Button>
+                <Button variant="outline" class="justify-start" @click="clearComposer">{{ t("Reset Draft") }}</Button>
+              </div>
 
-            <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-              {{ t("Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.") }}
-            </div>
-          </section>
+              <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                {{ t("Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.") }}
+              </div>
+            </section>
+          </div>
         </aside>
       </div>
     </div>
