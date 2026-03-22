@@ -1,5 +1,27 @@
 import { reactive } from "vue"
 import { t } from "@/i18n"
+import { readValueAtPointer } from "./flow_json_pointer"
+import { type MethodVisualSchema } from "./flow_method_schemas"
+import { resolveMethodVisualSchema, type CapabilityRouteSchemaSource } from "./flow_schema_resolver"
+import {
+  buildNodeVisualFormModel,
+  clearBindingForPointer,
+  describeFieldBinding as describeVisualFieldBinding,
+  setBindingForPointer,
+  setLiteralFieldValue as setLiteralFieldValueInDoc,
+  type NodeVisualFormModel,
+  type VisualBindingSource
+} from "./flow_visual_form"
+
+export type { MethodFieldSchema, MethodVisualSchema } from "./flow_method_schemas"
+export type {
+  FieldVisualState,
+  FlowInputBindingLike,
+  NodeVisualFormModel,
+  VisualBindingSource,
+  VisualCompatibility,
+  VisualFieldModel
+} from "./flow_visual_form"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -133,6 +155,11 @@ export type ExecCapabilityRoute = {
   viaNode: number
   method: string
   version: string
+  defaultTimeoutMs: number
+  permissions: string[]
+  tags: Record<string, string>
+  inputSchema: unknown
+  outputSchema: unknown
   label: string
 }
 
@@ -570,6 +597,18 @@ const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
   const viaNode = Number(input?.via_node ?? 0)
   const method = String(input?.method ?? "").trim()
   const version = String(input?.version ?? "").trim()
+  const defaultTimeoutMs = Number(input?.default_timeout_ms ?? 0)
+  const permissions = Array.isArray(input?.permissions)
+    ? input.permissions.map((item: any) => String(item ?? "").trim()).filter(Boolean)
+    : []
+  const tags =
+    input?.tags && typeof input.tags === "object" && !Array.isArray(input.tags)
+      ? Object.fromEntries(
+          Object.entries(input.tags as Record<string, unknown>)
+            .map(([key, value]) => [String(key).trim(), String(value ?? "").trim()])
+            .filter(([key]) => Boolean(key))
+        )
+      : {}
   const providerText = providerNode > 0 ? String(providerNode) : "-"
   const viaText = viaNode > 0 ? ` via ${viaNode}` : ""
   const versionText = version ? `@${version}` : ""
@@ -580,6 +619,11 @@ const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
     viaNode: viaNode > 0 ? Math.trunc(viaNode) : 0,
     method,
     version,
+    defaultTimeoutMs: Number.isFinite(defaultTimeoutMs) && defaultTimeoutMs > 0 ? Math.trunc(defaultTimeoutMs) : 0,
+    permissions,
+    tags,
+    inputSchema: input?.input_schema ?? null,
+    outputSchema: input?.output_schema ?? null,
     label
   }
 }
@@ -879,6 +923,18 @@ const tryParseJSONText = (raw: string, fallback: any = {}) => {
   }
 }
 
+const parseArgsTemplateObject = (node: FlowNodeDraft) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  const parsed = parseJSONText(
+    node.argsTemplate,
+    t("Node {nodeId} args template must be valid JSON.", { nodeId })
+  )
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(t("Node {nodeId} args template must be a JSON object.", { nodeId }))
+  }
+  return parsed as Record<string, unknown>
+}
+
 const isBindingBlank = (binding: FlowInputBindingDraft) =>
   !binding.to.trim() &&
   !binding.sourceKind &&
@@ -1113,6 +1169,80 @@ const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>)
   }
 }
 
+const resolveCurrentExecutorNodeOrZero = () => {
+  const raw = state.targetId.trim()
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.trunc(parsed)
+    }
+  }
+  return state.hubId > 0 ? Math.trunc(state.hubId) : 0
+}
+
+const findCapabilityRouteForNode = (node: FlowNodeDraft): ExecCapabilityRoute | null => {
+  if (node.kind !== "call") {
+    return null
+  }
+  const method = node.method.trim()
+  if (!method) {
+    return null
+  }
+  const expectedProvider = node.target > 0 ? Math.trunc(node.target) : resolveCurrentExecutorNodeOrZero()
+  if (!expectedProvider) {
+    return null
+  }
+  return (
+    state.execCapabilities.find(
+      (route) => route.method === method && route.providerNode === expectedProvider
+    ) ?? null
+  )
+}
+
+const routeToSchemaSource = (route: ExecCapabilityRoute | null): CapabilityRouteSchemaSource | null => {
+  if (!route) {
+    return null
+  }
+  return {
+    method: route.method,
+    version: route.version,
+    inputSchema: route.inputSchema
+  }
+}
+
+const resolveNodeVisualSchema = (node: FlowNodeDraft): MethodVisualSchema | null =>
+  resolveMethodVisualSchema(node.method, routeToSchemaSource(findCapabilityRouteForNode(node)))
+
+const applySchemaDefaultsToNode = (node: FlowNodeDraft) => {
+  if (node.kind !== "call") {
+    return
+  }
+  const schema = resolveNodeVisualSchema(node)
+  if (!schema) {
+    return
+  }
+  const argsDoc = tryParseJSONText(node.argsTemplate, {})
+  if (!argsDoc || typeof argsDoc !== "object" || Array.isArray(argsDoc)) {
+    return
+  }
+  let nextDoc = argsDoc as Record<string, unknown>
+  let changed = false
+  for (const field of schema.fields) {
+    if (field.defaultValue === undefined) {
+      continue
+    }
+    const current = readValueAtPointer(nextDoc, field.pointer)
+    if (current.found) {
+      continue
+    }
+    nextDoc = setLiteralFieldValueInDoc(nextDoc, field.pointer, field.defaultValue)
+    changed = true
+  }
+  if (changed) {
+    node.argsTemplate = formatJSONText(nextDoc, {})
+  }
+}
+
 const parseSpecJsonObject = (node: FlowNodeDraft) => {
   const nodeId = node.id.trim() || t("Unnamed")
   let parsed: any
@@ -1209,6 +1339,86 @@ const getNodeValidation = (nodeId: string) => {
   } catch (err) {
     return [String((err as Error)?.message ?? err ?? t("Unknown validation error."))]
   }
+}
+
+const getNodeVisualForm = (nodeId: string): NodeVisualFormModel => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node) {
+    return {
+      schema: null,
+      compatibility: { supported: false, reasons: [t("Node does not exist.")] },
+      fields: []
+    }
+  }
+  const schema = node.kind === "call" ? resolveNodeVisualSchema(node) : null
+  return buildNodeVisualFormModel({
+    kind: node.kind,
+    method: node.method,
+    argsTemplate: node.argsTemplate,
+    inputs: node.inputs,
+    schema
+  })
+}
+
+const setNodeFieldLiteralValue = (nodeId: string, pointer: string, value: unknown) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node || node.kind !== "call") {
+    throw new Error(t("Select a call node first."))
+  }
+  validateJSONPointer(pointer, t("Field pointer must be a valid JSON Pointer."))
+  const argsDoc = parseArgsTemplateObject(node)
+  const nextDoc = setLiteralFieldValueInDoc(argsDoc, pointer, value)
+  node.argsTemplate = formatJSONText(nextDoc, {})
+  commitHistory()
+}
+
+const clearNodeFieldBinding = (nodeId: string, pointer: string) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node || node.kind !== "call") {
+    throw new Error(t("Select a call node first."))
+  }
+  validateJSONPointer(pointer, t("Field pointer must be a valid JSON Pointer."))
+  node.inputs = clearBindingForPointer(node.inputs, pointer).map((binding) => ({
+    ...binding,
+    sourceKind: binding.sourceKind as FlowBindingSourceKind
+  }))
+  commitHistory()
+}
+
+const setNodeFieldBinding = (nodeId: string, pointer: string, source: VisualBindingSource) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node || node.kind !== "call") {
+    throw new Error(t("Select a call node first."))
+  }
+  validateJSONPointer(pointer, t("Field pointer must be a valid JSON Pointer."))
+
+  if (source.kind === "node_result") {
+    const sourceNodeId = source.nodeId.trim()
+    if (!sourceNodeId) {
+      throw new Error(t("Source node is required."))
+    }
+    const allowedAncestors = new Set(listAncestorNodeIds(node.id))
+    if (!allowedAncestors.has(sourceNodeId)) {
+      throw new Error(t("Source node must be an ancestor."))
+    }
+    validateJSONPointer(source.path, t("Result path must be a valid JSON Pointer."))
+  } else if (source.kind === "trigger") {
+    validateJSONPointer(source.path, t("Trigger path must be a valid JSON Pointer."))
+  } else if (source.kind === "flow_meta") {
+    if (source.field !== "flow_id") {
+      throw new Error(t("Flow meta field must be flow_id."))
+    }
+  } else if (source.kind === "run_meta") {
+    if (source.field !== "run_id") {
+      throw new Error(t("Run meta field must be run_id."))
+    }
+  }
+
+  node.inputs = setBindingForPointer(node.inputs, pointer, source).map((binding) => ({
+    ...binding,
+    sourceKind: binding.sourceKind as FlowBindingSourceKind
+  }))
+  commitHistory()
 }
 
 const createInputBinding = () => defaultInputBinding()
@@ -1519,7 +1729,8 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
     requester_node: sourceID,
     method: method || undefined,
     prefix: method.length > 0,
-    limit: 200
+    limit: 200,
+    include_schema: true
   }
   state.execCapabilitiesLoading = true
   try {
@@ -1563,6 +1774,7 @@ const applyCallCapability = (key: string) => {
   if (!String(selected.argsTemplate ?? "").trim()) {
     selected.argsTemplate = "{}"
   }
+  applySchemaDefaultsToNode(selected)
   if (selected.specEditorMode === "json") {
     try {
       const parsed = parseSpecJsonObject(selected)
@@ -1668,12 +1880,18 @@ export const useFlowStore = () => {
     exportPayload,
     exportGraphDraft,
     createInputBinding,
+    getNodeVisualForm,
     getNodeValidation,
     listAncestorNodeIds,
+    listBindableAncestorNodeIds: listAncestorNodeIds,
     normalizeCallTarget,
     queryExecCapabilities,
     applyCallCapability,
     applyExecCapability: applyCallCapability,
+    setFieldLiteralValue: setNodeFieldLiteralValue,
+    setFieldBinding: setNodeFieldBinding,
+    clearFieldBinding: clearNodeFieldBinding,
+    describeFieldBinding: describeVisualFieldBinding,
     setNodeKind,
     setNodeSpecEditorMode,
     undo,
