@@ -93,13 +93,13 @@ const previewPayload = (raw: string) => {
 
 const applyInitialTarget = () => {
   const queryTarget = String(route.query.targetId ?? "").trim()
-  if (queryTarget) {
-    topicbus.state.targetId = queryTarget
+  if (!queryTarget) return
+  const parsedTarget = Number.parseInt(queryTarget, 10)
+  if (Number.isNaN(parsedTarget) || parsedTarget <= 0) {
+    console.warn(`Ignored invalid TopicBus window targetId query: ${queryTarget}`)
     return
   }
-  if (!topicbus.state.targetId && hubId.value) {
-    topicbus.state.targetId = String(hubId.value)
-  }
+  topicbus.state.targetId = String(parsedTarget)
 }
 
 const syncTopicDraft = () => {
@@ -398,28 +398,16 @@ onBeforeUnmount(() => {
 
               <div class="min-h-0 flex-1 overflow-y-auto p-4">
                 <div class="grid gap-4">
-                  <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
-                    <div>
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Target Node ID") }}
-                      </label>
-                      <input
-                        v-model="topicbus.state.targetId"
-                        :class="inputClass"
-                        :placeholder="hubId ? String(hubId) : t('Hub NodeID')"
-                      />
-                    </div>
-                    <div>
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Topic") }}
-                      </label>
-                      <input
-                        v-model="sendForm.topic"
-                        :class="inputClass"
-                        :placeholder="isAllWindow ? t('topic.status') : ''"
-                        :readonly="!isAllWindow"
-                      />
-                    </div>
+                  <div>
+                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {{ t("Topic") }}
+                    </label>
+                    <input
+                      v-model="sendForm.topic"
+                      :class="inputClass"
+                      :placeholder="isAllWindow ? t('topic.status') : ''"
+                      :readonly="!isAllWindow"
+                    />
                   </div>
 
                   <div>
