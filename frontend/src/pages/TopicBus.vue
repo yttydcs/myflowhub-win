@@ -35,9 +35,6 @@ const fallbackIdentity = reactive({
   hubId: 0
 })
 
-const inputClass =
-  "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-
 const textAreaClass =
   "mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
@@ -48,6 +45,7 @@ const connectedTone = computed(() =>
 
 const selfNodeId = computed(() => sessionStore.auth.nodeId || fallbackIdentity.nodeId || 0)
 const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId || 0)
+const resolvedTargetLabel = computed(() => topicbus.state.targetId.trim() || (hubId.value ? String(hubId.value) : "-"))
 
 const channelItems = computed(() => topicbus.channelItems())
 
@@ -66,6 +64,7 @@ const summaryItems = computed(() => [
   { label: t("Connected"), value: connectedLabel.value },
   { label: t("NodeID"), value: selfNodeId.value ? String(selfNodeId.value) : "-" },
   { label: t("HubID"), value: hubId.value ? String(hubId.value) : "-" },
+  { label: t("Target Node ID"), value: resolvedTargetLabel.value },
   { label: t("Local Topics"), value: String(topicbus.state.topics.length) },
   { label: t("Remote Active"), value: String(topicbus.state.remoteTopics.length) },
   { label: t("Cached Events"), value: String(topicbus.state.events.length) },
@@ -364,108 +363,31 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section v-if="activeTab === 'overview'" class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-      <div class="space-y-6">
-        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                {{ t("TopicBus Control") }}
-              </p>
-              <h3 class="text-lg font-semibold">{{ t("Identity & Saved Topics") }}</h3>
-              <p class="text-sm text-muted-foreground">
-                {{ t("Manage the target node, local topic list, and remote subscription sync.") }}
-              </p>
-            </div>
-            <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
+    <section v-if="activeTab === 'overview'" class="space-y-6">
+      <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Snapshot") }}</p>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Current Status") }}</h3>
           </div>
+          <Badge :class="connectedTone">{{ connectedLabel }}</Badge>
+        </div>
 
-          <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_auto]">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Target Node ID") }}
-              </label>
-              <input
-                v-model="topicbus.state.targetId"
-                :placeholder="hubId ? String(hubId) : t('Hub NodeID')"
-                :class="inputClass"
-              />
-            </div>
-            <div class="flex flex-col justify-end gap-2">
-              <Button variant="outline" :disabled="busy || remoteBusy" @click="syncRemoteTopics()">
-                {{ remoteBusy ? t("Syncing...") : t("Sync Remote") }}
-              </Button>
-              <Button :disabled="busy" @click="resubscribeAll">{{ t("Resubscribe") }}</Button>
-            </div>
+        <div class="mt-4 space-y-3 text-sm text-muted-foreground">
+          <div
+            v-for="item in summaryItems"
+            :key="item.label"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2"
+          >
+            <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ item.label }}</p>
+            <p class="font-medium text-foreground">{{ item.value }}</p>
           </div>
+        </div>
 
-          <div class="mt-4">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Saved Topic List") }}
-            </label>
-            <textarea
-              v-model="subForm.text"
-              :class="textAreaClass"
-              rows="4"
-              :placeholder="t('topic.a, topic.b (comma, newline, or semicolon separated)')"
-            />
-            <div class="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" :disabled="busy" @click="subscribeFromInput">{{ t("Save + Subscribe") }}</Button>
-              <Button size="sm" variant="outline" :disabled="busy" @click="unsubscribeFromInput">
-                {{ t("Remove + Unsubscribe") }}
-              </Button>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div class="space-y-6">
-        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Snapshot") }}</p>
-          <h3 class="mt-2 text-lg font-semibold">{{ t("Current Status") }}</h3>
-          <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-            <div
-              v-for="item in summaryItems"
-              :key="item.label"
-              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2"
-            >
-              <p class="text-xs font-semibold uppercase tracking-[0.2em]">{{ item.label }}</p>
-              <p class="font-medium text-foreground">{{ item.value }}</p>
-            </div>
-          </div>
-        </section>
-        <section class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Quick Window") }}</p>
-              <h3 class="text-lg font-semibold">{{ t("Jump Into Live Traffic") }}</h3>
-            </div>
-            <Badge variant="outline">{{ t("{count} channels", { count: channelItems.length }) }}</Badge>
-          </div>
-
-          <div class="mt-4 space-y-3">
-            <div class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
-              <p class="font-semibold text-foreground">{{ t("All Channels") }}</p>
-              <p class="mt-1 text-muted-foreground">
-                {{ t("Aggregate every known channel in one clean receive/send window.") }}
-              </p>
-              <div class="mt-3">
-                <Button size="sm" variant="outline" @click="openTopicWindow()">{{ t("Open All Window") }}</Button>
-              </div>
-            </div>
-
-            <div v-if="topicbus.state.selectedTopic" class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm">
-              <p class="font-semibold text-foreground">{{ topicbus.state.selectedTopic }}</p>
-              <p class="mt-1 text-muted-foreground">{{ t("Open the currently selected channel directly.") }}</p>
-              <div class="mt-3">
-                <Button size="sm" @click="openTopicWindow({ topic: topicbus.state.selectedTopic, localSaved: true, remoteSubscribed: topicbus.state.remoteTopics.includes(topicbus.state.selectedTopic) })">
-                  {{ t("Open Selected Window") }}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+        <div class="mt-5 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+          {{ t("Use Settings for the default target and cache policy, then manage subscriptions from Channels.") }}
+        </div>
+      </section>
     </section>
 
     <section v-else class="space-y-6">
@@ -473,23 +395,57 @@ onMounted(async () => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Channels") }}</p>
-            <h3 class="mt-2 text-lg font-semibold">{{ t("Known Topics") }}</h3>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Saved Topics & Subscriptions") }}</h3>
             <p class="mt-2 text-sm text-muted-foreground">
-              {{ t("Each row opens a dedicated window that starts listening from the moment it opens.") }}
+              {{ t("Manage saved topics, remote subscriptions, and dedicated windows from one list.") }}
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{{ t("Target {id}", { id: resolvedTargetLabel }) }}</Badge>
             <Badge variant="outline">{{ t("{count} saved", { count: topicbus.state.topics.length }) }}</Badge>
             <Badge variant="secondary">{{ t("{count} remote active", { count: topicbus.state.remoteTopics.length }) }}</Badge>
-            <Button size="sm" variant="outline" :disabled="remoteBusy" @click="syncRemoteTopics()">
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Saved Topic List") }}
+          </label>
+          <textarea
+            v-model="subForm.text"
+            :class="textAreaClass"
+            rows="4"
+            :placeholder="t('topic.a, topic.b (comma, newline, or semicolon separated)')"
+          />
+          <p class="mt-2 text-xs text-muted-foreground">
+            {{ t("The default target comes from Settings and falls back to the current Hub when empty.") }}
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" :disabled="busy" @click="subscribeFromInput">{{ t("Save + Subscribe") }}</Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="unsubscribeFromInput">
+              {{ t("Remove + Unsubscribe") }}
+            </Button>
+            <Button size="sm" variant="outline" :disabled="busy || remoteBusy" @click="syncRemoteTopics()">
               {{ remoteBusy ? t("Syncing...") : t("Refresh Remote") }}
             </Button>
+            <Button size="sm" variant="outline" :disabled="busy" @click="resubscribeAll">{{ t("Resubscribe") }}</Button>
           </div>
         </div>
       </section>
 
       <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-        <div class="space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Known Topics") }}</p>
+            <h3 class="mt-2 text-lg font-semibold">{{ t("Known Topics") }}</h3>
+            <p class="mt-2 text-sm text-muted-foreground">
+              {{ t("Each row opens a dedicated window that starts listening from the moment it opens.") }}
+            </p>
+          </div>
+          <Badge variant="outline">{{ t("{count} channels", { count: channelItems.length + 1 }) }}</Badge>
+        </div>
+
+        <div class="mt-5 space-y-3">
           <article
             class="rounded-2xl border px-4 py-4 shadow-sm transition"
             :class="topicbus.state.selectedTopic ? 'border-border/60 bg-background/70 hover:border-primary/40' : 'border-primary/50 bg-primary/10'"
@@ -539,7 +495,7 @@ onMounted(async () => {
           </article>
 
           <p v-if="channelItems.length === 0" class="rounded-xl border border-dashed border-border/60 bg-background/60 px-4 py-6 text-sm text-muted-foreground">
-            {{ t("No known channels yet. Save topics in Overview or sync remote subscriptions first.") }}
+            {{ t("No known channels yet. Save topics here or sync remote subscriptions first.") }}
           </p>
         </div>
       </section>

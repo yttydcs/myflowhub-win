@@ -9,12 +9,14 @@ import (
 const (
 	topicBusSubsKey      = "topicbus.subs"
 	topicBusMaxEventsKey = "topicbus.max_events"
+	topicBusTargetIDKey  = "topicbus.target_id"
 	defaultTopicBusMax   = 500
 )
 
 type TopicBusPrefs struct {
 	Topics    []string `json:"topics"`
 	MaxEvents int      `json:"maxEvents"`
+	TargetID  int      `json:"targetId"`
 }
 
 func (a *App) TopicBusPrefs() (TopicBusPrefs, error) {
@@ -28,7 +30,11 @@ func (a *App) TopicBusPrefs() (TopicBusPrefs, error) {
 	if maxEvents <= 0 {
 		maxEvents = defaultTopicBusMax
 	}
-	return TopicBusPrefs{Topics: topics, MaxEvents: maxEvents}, nil
+	targetID := a.store.GetInt(profile, topicBusTargetIDKey, 0)
+	if targetID < 0 {
+		targetID = 0
+	}
+	return TopicBusPrefs{Topics: topics, MaxEvents: maxEvents, TargetID: targetID}, nil
 }
 
 func (a *App) SaveTopicBusPrefs(prefs TopicBusPrefs) (TopicBusPrefs, error) {
@@ -39,6 +45,10 @@ func (a *App) SaveTopicBusPrefs(prefs TopicBusPrefs) (TopicBusPrefs, error) {
 	maxEvents := prefs.MaxEvents
 	if maxEvents <= 0 {
 		maxEvents = defaultTopicBusMax
+	}
+	targetID := prefs.TargetID
+	if targetID < 0 {
+		targetID = 0
 	}
 	data, err := json.Marshal(normalized)
 	if err != nil {
@@ -51,7 +61,10 @@ func (a *App) SaveTopicBusPrefs(prefs TopicBusPrefs) (TopicBusPrefs, error) {
 	if err := a.store.SetInt(profile, topicBusMaxEventsKey, maxEvents); err != nil {
 		return TopicBusPrefs{}, err
 	}
-	return TopicBusPrefs{Topics: normalized, MaxEvents: maxEvents}, nil
+	if err := a.store.SetInt(profile, topicBusTargetIDKey, targetID); err != nil {
+		return TopicBusPrefs{}, err
+	}
+	return TopicBusPrefs{Topics: normalized, MaxEvents: maxEvents, TargetID: targetID}, nil
 }
 
 func parseTopicBusTopics(raw string) []string {

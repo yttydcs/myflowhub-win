@@ -50,6 +50,16 @@ export type TopicBusState = {
 
 const defaultMaxEvents = 500
 
+const normalizeConfiguredTargetId = (value: unknown) => {
+  const trimmed = String(value ?? "").trim()
+  if (!trimmed) return ""
+  const parsed = Number.parseInt(trimmed, 10)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    throw new Error(t("Target Node ID must be a positive number."))
+  }
+  return String(parsed)
+}
+
 const state = reactive<TopicBusState>({
   targetId: "",
   selfNodeId: 0,
@@ -229,21 +239,28 @@ const loadPrefs = async () => {
   const prefs = await callApp<any>("TopicBusPrefs")
   const topics = normalizeTopics(Array.isArray(prefs?.topics) ? prefs.topics : [])
   const maxEvents = Number(prefs?.maxEvents ?? defaultMaxEvents)
+  const targetId = Number(prefs?.targetId ?? 0)
   state.topics = topics
   state.maxEvents = maxEvents > 0 ? maxEvents : defaultMaxEvents
+  state.targetId = Number.isFinite(targetId) && targetId > 0 ? String(Math.floor(targetId)) : ""
   clearSelectionIfMissing()
   trimEvents()
 }
 
 const savePrefs = async () => {
+  state.targetId = normalizeConfiguredTargetId(state.targetId)
+  trimEvents()
   const saved = await callApp<any>("SaveTopicBusPrefs", {
     topics: state.topics,
-    maxEvents: state.maxEvents
+    maxEvents: state.maxEvents,
+    targetId: state.targetId ? Number.parseInt(state.targetId, 10) : 0
   })
   if (saved) {
     state.topics = normalizeTopics(Array.isArray(saved?.topics) ? saved.topics : state.topics)
     const maxEvents = Number(saved?.maxEvents ?? state.maxEvents)
     state.maxEvents = maxEvents > 0 ? maxEvents : defaultMaxEvents
+    const targetId = Number(saved?.targetId ?? 0)
+    state.targetId = Number.isFinite(targetId) && targetId > 0 ? String(Math.floor(targetId)) : ""
   }
   clearSelectionIfMissing()
 }
@@ -251,9 +268,6 @@ const savePrefs = async () => {
 const setIdentity = (nodeId: number, hubId: number) => {
   state.selfNodeId = Number(nodeId || 0)
   state.defaultTargetId = Number(hubId || 0)
-  if (!state.targetId && state.defaultTargetId) {
-    state.targetId = String(state.defaultTargetId)
-  }
 }
 
 const setSelectedTopic = (topic: string) => {
@@ -383,6 +397,7 @@ export const useTopicBusStore = () => {
     refreshRemoteTopics,
     resubscribe,
     resolveTargetId,
+    savePrefs,
     setIdentity,
     setMaxEvents,
     setSelectedTopic,

@@ -34,6 +34,7 @@ const draft = reactive<AppSettingsState>({
 })
 const languageDraft = ref<AppLocale>("en")
 const topicbusBusy = ref(false)
+const topicbusTargetIdInput = ref("")
 const topicbusMaxEventsInput = ref("500")
 
 const syncDraft = () => {
@@ -42,6 +43,7 @@ const syncDraft = () => {
 }
 
 const syncTopicBusDraft = () => {
+  topicbusTargetIdInput.value = topicbus.state.targetId
   topicbusMaxEventsInput.value = String(topicbus.state.maxEvents || 500)
 }
 
@@ -118,21 +120,35 @@ const resetSettings = async () => {
   }
 }
 
-const applyTopicBusMaxEvents = async () => {
+const applyTopicBusSettings = async () => {
   if (topicbusBusy.value) return
   topicbusBusy.value = true
   try {
-    const raw = topicbusMaxEventsInput.value.trim()
-    const parsed = Number.parseInt(raw || String(topicbus.state.maxEvents || 500), 10)
-    if (Number.isNaN(parsed) || parsed <= 0) {
+    const rawTarget = topicbusTargetIdInput.value.trim()
+    if (rawTarget) {
+      const parsedTarget = Number.parseInt(rawTarget, 10)
+      if (Number.isNaN(parsedTarget) || parsedTarget <= 0) {
+        throw new Error(t("Target Node ID must be a positive number."))
+      }
+      topicbus.state.targetId = String(parsedTarget)
+    } else {
+      topicbus.state.targetId = ""
+    }
+
+    const rawMaxEvents = topicbusMaxEventsInput.value.trim()
+    const parsedMaxEvents = Number.parseInt(rawMaxEvents || String(topicbus.state.maxEvents || 500), 10)
+    if (Number.isNaN(parsedMaxEvents) || parsedMaxEvents <= 0) {
       throw new Error(t("Max events must be a positive number."))
     }
-    await topicbus.setMaxEvents(parsed)
+    topicbus.state.maxEvents = parsedMaxEvents
+    await topicbus.savePrefs()
     syncTopicBusDraft()
-    toast.success(t("TopicBus max events updated."))
+    toast.success(t("TopicBus settings updated."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, t("Failed to update TopicBus max events."))
+    await topicbus.loadPrefs()
+    syncTopicBusDraft()
+    toast.errorOf(err, t("Failed to update TopicBus settings."))
   } finally {
     topicbusBusy.value = false
   }
@@ -349,15 +365,29 @@ watch(
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
                 {{ t("TopicBus") }}
               </p>
-              <h3 class="mt-1 text-lg font-semibold">{{ t("Event Cache Settings") }}</h3>
+              <h3 class="mt-1 text-lg font-semibold">{{ t("TopicBus Settings") }}</h3>
               <p class="mt-2 text-sm text-muted-foreground">
                 {{ t("TopicBus windows only show events received after they open. Your own publish actions do not echo back.") }}
               </p>
             </div>
-            <Badge variant="secondary">{{ t("Max Events") }} · {{ topicbus.state.maxEvents }}</Badge>
+            <Badge variant="secondary">{{ t("Target {id}", { id: topicbus.state.targetId || t("Hub NodeID") }) }}</Badge>
           </div>
 
-          <div class="mt-5 grid gap-4">
+          <div class="mt-5 grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Default Target Node ID") }}
+              </label>
+              <input
+                v-model="topicbusTargetIdInput"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                :placeholder="t('Hub NodeID')"
+              />
+              <p class="mt-2 text-xs text-muted-foreground">
+                {{ t("Leave empty to use the current Hub NodeID.") }}
+              </p>
+            </div>
+
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Max Events") }}
@@ -374,7 +404,7 @@ watch(
             <Button variant="outline" :disabled="topicbusBusy" @click="clearTopicBusEvents">
               {{ t("Clear Cached") }}
             </Button>
-            <Button :disabled="topicbusBusy" @click="applyTopicBusMaxEvents">{{ t("Apply Limit") }}</Button>
+            <Button :disabled="topicbusBusy" @click="applyTopicBusSettings">{{ t("Save TopicBus Settings") }}</Button>
           </div>
         </div>
 
