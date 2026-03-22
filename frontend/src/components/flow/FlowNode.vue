@@ -12,6 +12,8 @@ type FlowNodeStatus = {
 
 type FlowNodeData = {
   label?: string
+  kind?: string
+  meta?: string
   status?: FlowNodeStatus
 }
 
@@ -19,6 +21,8 @@ const props = defineProps<NodeProps<FlowNodeData>>()
 const { t } = useI18n()
 
 const label = computed(() => props.data?.label?.trim() || props.id)
+const kind = computed(() => props.data?.kind?.trim().toLowerCase() || "call")
+const meta = computed(() => props.data?.meta?.trim() || "")
 const status = computed(() => props.data?.status?.status?.trim() || "")
 const statusCode = computed(() => Number(props.data?.status?.code ?? 0))
 const statusMsg = computed(() => props.data?.status?.msg?.trim() || "")
@@ -64,7 +68,12 @@ const statusTone = computed(() => {
     </div>
 
     <div class="flex items-start justify-between gap-2">
-      <p class="truncate text-xs font-semibold text-foreground">{{ label }}</p>
+      <div class="min-w-0">
+        <p class="truncate text-xs font-semibold text-foreground">{{ label }}</p>
+        <p class="mt-1 truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          {{ kind === "compose" ? t("Compose") : t("Call") }}<span v-if="meta"> · {{ meta }}</span>
+        </p>
+      </div>
       <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold" :class="statusTone">
         {{ status ? statusLabel : t("Unknown") }}
       </span>

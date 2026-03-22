@@ -8,7 +8,7 @@ import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useI18n } from "@/i18n"
-import { useFlowStore } from "@/stores/flow"
+import { useFlowStore, type FlowInputBindingDraft, type FlowNodeKind } from "@/stores/flow"
 import { useFlowProjectsStore } from "@/stores/flowProjects"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -35,7 +35,8 @@ const pendingCapabilityKey = ref("")
 const lastCapabilityQueryNode = ref("")
 
 const nodeDraft = reactive({
-  id: ""
+  id: "",
+  kind: "call" as FlowNodeKind
 })
 
 const selectedNode = computed(() => flowStore.state.nodes[flowStore.state.selectedNodeIndex] ?? null)
@@ -64,6 +65,9 @@ const effectiveExecutorNode = computed(() => {
 const selectedTargetLabel = computed(() => {
   const node = selectedNode.value
   if (!node) return t("No target selected.")
+  if (node.kind !== "call") {
+    return t("Compose nodes build local JSON output and do not call a capability.")
+  }
   if (node.target > 0) {
     return t("Remote provider node {nodeId}", { nodeId: node.target })
   }
@@ -106,7 +110,7 @@ const filteredCapabilities = computed(() => {
 })
 const selectedCapabilityKey = computed(() => {
   const node = selectedNode.value
-  if (!node) return ""
+  if (!node || node.kind !== "call") return ""
   const method = node.method.trim()
   if (!method) return ""
   const expectedProvider = node.target > 0 ? Math.trunc(node.target) : effectiveExecutorNode.value
@@ -116,6 +120,14 @@ const selectedCapabilityKey = computed(() => {
   )
   return matched?.key ?? ""
 })
+
+const selectedNodeValidation = computed(() =>
+  selectedNode.value ? flowStore.getNodeValidation(selectedNode.value.id) : []
+)
+
+const ancestorNodeOptions = computed(() =>
+  selectedNode.value ? flowStore.listAncestorNodeIds(selectedNode.value.id) : []
+)
 
 const closeNodeDetail = () => {
   flowStore.clearSelection()
@@ -168,7 +180,7 @@ const refreshMethodCapabilities = async () => {
 }
 
 const openMethodDialog = async () => {
-  if (!selectedNode.value) return
+  if (!selectedNode.value || selectedNode.value.kind !== "call") return
   methodSearch.value = selectedNode.value.method.trim()
   syncPendingCapability()
   syncQueryNodeDraft()
@@ -215,17 +227,83 @@ const commitNodeId = () => {
 
 const openAddNodeDialog = () => {
   nodeDraft.id = flowStore.suggestNodeId()
+  nodeDraft.kind = "call"
   addNodeOpen.value = true
 }
 
 const addNode = () => {
   try {
-    flowStore.addNode(nodeDraft.id)
+    flowStore.addNode(nodeDraft.id, nodeDraft.kind)
     addNodeOpen.value = false
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to add node."))
   }
+}
+
+const setSelectedNodeKind = (kind: FlowNodeKind) => {
+  const node = selectedNode.value
+  if (!node) return
+  try {
+    flowStore.setNodeKind(node.id, kind)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to switch node kind."))
+  }
+}
+
+const onSelectedNodeKindChange = (event: Event) => {
+  const value = String((event.target as HTMLSelectElement | null)?.value ?? "call")
+  setSelectedNodeKind(value === "compose" ? "compose" : "call")
+}
+
+const setSelectedNodeSpecMode = (mode: "form" | "json") => {
+  const node = selectedNode.value
+  if (!node) return
+  try {
+    flowStore.setNodeSpecEditorMode(node.id, mode)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, mode === "form" ? t("Failed to switch back to form mode.") : t("Failed to open advanced JSON mode."))
+  }
+}
+
+const addBinding = () => {
+  const node = selectedNode.value
+  if (!node) return
+  node.inputs.push(flowStore.createInputBinding())
+  flowStore.commitHistory()
+}
+
+const removeBinding = (index: number) => {
+  const node = selectedNode.value
+  if (!node) return
+  node.inputs.splice(index, 1)
+  flowStore.commitHistory()
+}
+
+const onBindingSourceKindChange = (binding: FlowInputBindingDraft, event: Event) => {
+  const sourceKind = String((event.target as HTMLSelectElement | null)?.value ?? "node_result")
+  binding.sourceKind = sourceKind === "trigger" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+    ? sourceKind
+    : "node_result"
+
+  if (binding.sourceKind === "flow_meta") {
+    binding.field = "flow_id"
+    binding.nodeId = ""
+    binding.path = ""
+  } else if (binding.sourceKind === "run_meta") {
+    binding.field = "run_id"
+    binding.nodeId = ""
+    binding.path = ""
+  } else if (binding.sourceKind === "trigger") {
+    binding.field = ""
+    binding.nodeId = ""
+  } else {
+    binding.field = ""
+  }
+
+  flowStore.commitHistory()
 }
 
 const removeNode = () => {
@@ -394,6 +472,15 @@ watch(
 )
 
 watch(
+  () => selectedNode.value?.kind ?? "",
+  (kind) => {
+    if (kind !== "call") {
+      methodDialogOpen.value = false
+    }
+  }
+)
+
+watch(
   () => flowStore.state.message,
   (msg) => {
     const trimmed = msg.trim()
@@ -535,16 +622,26 @@ onUnmounted(() => {
                   </p>
                 </div>
 
+                <div v-if="selectedNodeValidation.length" class="rounded-xl border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-700">
+                  <p class="font-semibold uppercase tracking-[0.18em]">{{ t("Validation") }}</p>
+                  <ul class="mt-2 space-y-1">
+                    <li v-for="message in selectedNodeValidation" :key="message">• {{ message }}</li>
+                  </ul>
+                </div>
+
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                       {{ t("Kind") }}
                     </label>
-                    <input
-                      :value="t('Call')"
-                      disabled
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
-                    />
+                    <select
+                      :value="selectedNode.kind"
+                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      @change="onSelectedNodeKindChange"
+                    >
+                      <option value="call">{{ t("Call") }}</option>
+                      <option value="compose">{{ t("Compose") }}</option>
+                    </select>
                   </div>
 
                   <div>
@@ -592,35 +689,244 @@ onUnmounted(() => {
                 </div>
 
                 <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                  <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div class="min-w-0">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
                       <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Call Method") }}
+                        {{ t("Spec Mode") }}
                       </p>
-                      <p class="mt-2 break-all text-sm font-semibold">
-                        {{ selectedNode.method || t("No method selected.") }}
-                      </p>
-                      <p class="mt-1 text-xs text-muted-foreground">
-                        {{ selectedTargetLabel }}
+                      <p class="mt-1 text-[11px] text-muted-foreground">
+                        {{ t("Form mode edits the supported fields directly. Advanced JSON is the escape hatch for full spec editing.") }}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm" @click="openMethodDialog">{{ t("Select Method") }}</Button>
+                    <div class="flex gap-2">
+                      <Button
+                        size="sm"
+                        :variant="selectedNode.specEditorMode === 'form' ? 'default' : 'outline'"
+                        @click="setSelectedNodeSpecMode('form')"
+                      >
+                        {{ t("Form") }}
+                      </Button>
+                      <Button
+                        size="sm"
+                        :variant="selectedNode.specEditorMode === 'json' ? 'default' : 'outline'"
+                        @click="setSelectedNodeSpecMode('json')"
+                      >
+                        {{ t("Advanced JSON") }}
+                      </Button>
+                    </div>
                   </div>
-                  <p class="mt-3 text-[11px] text-muted-foreground">
-                    {{ t("Use the method dialog to choose a registered capability. The editor will keep method and target aligned.") }}
-                  </p>
                 </div>
 
-                <div>
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    {{ t("Args (JSON)") }}
-                  </label>
-                  <textarea
-                    v-model="selectedNode.args"
-                    rows="10"
-                    class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-                    @blur="flowStore.commitHistory()"
-                  />
+                <template v-if="selectedNode.specEditorMode === 'form'">
+                  <div v-if="selectedNode.kind === 'call'" class="space-y-4">
+                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            {{ t("Call Method") }}
+                          </p>
+                          <p class="mt-2 break-all text-sm font-semibold">
+                            {{ selectedNode.method || t("No method selected.") }}
+                          </p>
+                          <p class="mt-1 text-xs text-muted-foreground">
+                            {{ selectedTargetLabel }}
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" @click="openMethodDialog">{{ t("Select Method") }}</Button>
+                      </div>
+                      <p class="mt-3 text-[11px] text-muted-foreground">
+                        {{ t("Use the method dialog to choose a registered capability. The editor will keep method and target aligned.") }}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        {{ t("Args Template (JSON)") }}
+                      </label>
+                      <textarea
+                        v-model="selectedNode.argsTemplate"
+                        rows="9"
+                        class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                        @blur="flowStore.commitHistory()"
+                      />
+                      <p class="mt-1 text-[11px] text-muted-foreground">
+                        {{ t("This base JSON is materialized first, then input bindings write into it in order.") }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-else class="space-y-4">
+                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        {{ t("Compose Node") }}
+                      </p>
+                      <p class="mt-2 text-sm text-muted-foreground">
+                        {{ t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.") }}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        {{ t("Template (JSON)") }}
+                      </label>
+                      <textarea
+                        v-model="selectedNode.composeTemplate"
+                        rows="9"
+                        class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                        @blur="flowStore.commitHistory()"
+                      />
+                      <p class="mt-1 text-[11px] text-muted-foreground">
+                        {{ t("Compose starts from this JSON template and applies the same binding list as call nodes.") }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                          {{ t("Input Bindings") }}
+                        </p>
+                        <p class="mt-1 text-[11px] text-muted-foreground">
+                          {{ t("Bindings can read trigger data, flow/run metadata, or ancestor node results.") }}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" @click="addBinding">{{ t("Add Binding") }}</Button>
+                    </div>
+
+                    <div v-if="!selectedNode.inputs.length" class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
+                      {{ t("No bindings yet. Nodes can still run with their template alone.") }}
+                    </div>
+
+                    <div v-else class="mt-4 space-y-3">
+                      <div v-for="(binding, index) in selectedNode.inputs" :key="`${selectedNode.id}-binding-${index}`" class="rounded-lg border border-border/70 bg-background/90 p-3">
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                              {{ t("Binding {index}", { index: index + 1 }) }}
+                            </p>
+                            <p class="mt-1 text-[11px] text-muted-foreground">
+                              {{ t("Destination writes into the template. Source chooses where the value comes from.") }}
+                            </p>
+                          </div>
+                          <Button size="sm" variant="ghost" @click="removeBinding(index)">{{ t("Remove") }}</Button>
+                        </div>
+
+                        <div class="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              {{ t("Destination Pointer") }}
+                            </label>
+                            <input
+                              v-model="binding.to"
+                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                              placeholder="/payload/id"
+                              @blur="flowStore.commitHistory()"
+                            />
+                          </div>
+
+                          <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              {{ t("Source Kind") }}
+                            </label>
+                            <select
+                              :value="binding.sourceKind"
+                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                              @change="onBindingSourceKindChange(binding, $event)"
+                            >
+                              <option value="node_result">{{ t("Ancestor Result") }}</option>
+                              <option value="trigger">{{ t("Trigger") }}</option>
+                              <option value="flow_meta">{{ t("Flow Meta") }}</option>
+                              <option value="run_meta">{{ t("Run Meta") }}</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div v-if="binding.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              {{ t("Ancestor Node") }}
+                            </label>
+                            <select
+                              v-model="binding.nodeId"
+                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                              @change="flowStore.commitHistory()"
+                            >
+                              <option value="">{{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
+                              <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                                {{ ancestorId }}
+                              </option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              {{ t("Result Path") }}
+                            </label>
+                            <input
+                              v-model="binding.path"
+                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                              placeholder="/user/id"
+                              @blur="flowStore.commitHistory()"
+                            />
+                          </div>
+                        </div>
+
+                        <div v-else-if="binding.sourceKind === 'trigger'" class="mt-3">
+                          <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            {{ t("Trigger Path") }}
+                          </label>
+                          <input
+                            v-model="binding.path"
+                            class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                            placeholder="/payload/name"
+                            @blur="flowStore.commitHistory()"
+                          />
+                        </div>
+
+                        <div v-else-if="binding.sourceKind === 'flow_meta' || binding.sourceKind === 'run_meta'" class="mt-3">
+                          <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            {{ t("Meta Field") }}
+                          </label>
+                          <select
+                            v-model="binding.field"
+                            class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                            @change="flowStore.commitHistory()"
+                          >
+                            <option v-if="binding.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
+                            <option v-if="binding.sourceKind === 'run_meta'" value="run_id">run_id</option>
+                          </select>
+                        </div>
+
+                        <label class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            v-model="binding.required"
+                            type="checkbox"
+                            class="h-4 w-4 rounded border"
+                            @change="flowStore.commitHistory()"
+                          />
+                          <span>{{ t("Required binding") }}</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <div v-else class="space-y-3">
+                  <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {{ t("Advanced Spec (JSON)") }}
+                    </p>
+                    <p class="mt-2 text-[11px] text-muted-foreground">
+                      {{ t("This is the full node spec. Switching back to form mode will validate JSON and map the supported fields into the visual editor.") }}
+                    </p>
+                    <textarea
+                      v-model="selectedNode.specJson"
+                      rows="16"
+                      class="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                      @blur="flowStore.commitHistory()"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -762,6 +1068,37 @@ onUnmounted(() => {
               v-model="nodeDraft.id"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Kind") }}
+            </label>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :class="nodeDraft.kind === 'call' ? 'border-primary bg-primary/10 text-primary' : 'border-border/70 bg-background text-foreground'"
+                @click="nodeDraft.kind = 'call'"
+              >
+                {{ t("Call") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :class="nodeDraft.kind === 'compose' ? 'border-primary bg-primary/10 text-primary' : 'border-border/70 bg-background text-foreground'"
+                @click="nodeDraft.kind = 'compose'"
+              >
+                {{ t("Compose") }}
+              </button>
+            </div>
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              {{
+                nodeDraft.kind === "call"
+                  ? t("Call nodes execute a capability and can bind ancestor outputs into args.")
+                  : t("Compose nodes build local JSON output from template + bindings.")
+              }}
+            </p>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
