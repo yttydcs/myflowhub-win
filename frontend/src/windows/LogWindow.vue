@@ -2,11 +2,13 @@
 import { nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"
+import { useI18n } from "@/i18n"
 import { useLogsStore } from "@/stores/logs"
 import { useToastStore } from "@/stores/toast"
 
 const logsStore = useLogsStore()
 const toast = useToastStore()
+const { t } = useI18n()
 const logRef = ref<HTMLElement | null>(null)
 
 const onPauseChange = async (event: Event) => {
@@ -15,7 +17,7 @@ const onPauseChange = async (event: Event) => {
     await logsStore.setPaused(target.checked)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update log pause state.")
+    toast.errorOf(err, t("Failed to update log pause state."))
     await logsStore.refreshPaused()
   }
 }
@@ -43,7 +45,7 @@ onMounted(async () => {
     await scrollToBottom()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load logs.")
+    toast.errorOf(err, t("Failed to load logs."))
   }
 })
 </script>
@@ -53,11 +55,11 @@ onMounted(async () => {
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Log Window
+          {{ t("Log Window") }}
         </p>
-        <h1 class="text-lg font-semibold">Live Log Stream</h1>
+        <h1 class="text-lg font-semibold">{{ t("Live Log Stream") }}</h1>
       </div>
-      <Button size="sm" variant="outline" @click="scrollToBottom">Scroll to Bottom</Button>
+      <Button size="sm" variant="outline" @click="scrollToBottom">{{ t("Scroll to Bottom") }}</Button>
     </div>
 
     <div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
@@ -68,7 +70,7 @@ onMounted(async () => {
           :checked="logsStore.state.paused"
           @change="onPauseChange"
         />
-        Pause logs
+        {{ t("Pause logs") }}
       </label>
     </div>
 
@@ -80,7 +82,7 @@ onMounted(async () => {
         <LogItem v-for="line in logsStore.state.lines" :key="line.id" :line="line" />
       </div>
       <p v-if="logsStore.state.lines.length === 0" class="text-sm text-muted-foreground">
-        No logs yet.
+        {{ t("No logs yet.") }}
       </p>
     </div>
 

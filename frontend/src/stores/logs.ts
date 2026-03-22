@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 
@@ -7,7 +8,7 @@ const callLogs = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.logs?.LogService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Log binding '${method}' unavailable`)
+    throw new Error(t("Log binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }

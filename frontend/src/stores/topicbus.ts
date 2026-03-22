@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 
@@ -7,7 +8,7 @@ const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.main?.App
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`App binding '${method}' unavailable`)
+    throw new Error(t("App binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -16,7 +17,7 @@ const callTopicBus = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.topicbus?.TopicBusService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`TopicBus binding '${method}' unavailable`)
+    throw new Error(t("TopicBus binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -158,14 +159,14 @@ const resolveTargetId = () => {
   if (!raw) return state.defaultTargetId
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error("Target ID must be a valid number.")
+    throw new Error(t("Target ID must be a valid number."))
   }
   return parsed
 }
 
 const ensureSourceID = () => {
   if (!state.selfNodeId) {
-    throw new Error("Login required to send TopicBus requests.")
+    throw new Error(t("Login required to send TopicBus requests."))
   }
   return state.selfNodeId
 }
@@ -293,7 +294,7 @@ const refreshRemoteTopics = async () => {
 const subscribe = async (topics: string[]) => {
   const normalized = normalizeTopics(topics)
   if (!normalized.length) {
-    throw new Error("Topic is required.")
+    throw new Error(t("Topic is required."))
   }
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
@@ -309,7 +310,7 @@ const subscribe = async (topics: string[]) => {
 const unsubscribe = async (topics: string[]) => {
   const normalized = normalizeTopics(topics)
   if (!normalized.length) {
-    throw new Error("Topic is required.")
+    throw new Error(t("Topic is required."))
   }
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
@@ -340,8 +341,8 @@ const resubscribe = async () => {
 const publish = async (topic: string, name: string, payloadText: string) => {
   const trimmedTopic = String(topic ?? "").trim()
   const trimmedName = String(name ?? "").trim()
-  if (!trimmedTopic) throw new Error("Topic is required.")
-  if (!trimmedName) throw new Error("Name is required.")
+  if (!trimmedTopic) throw new Error(t("Topic is required."))
+  if (!trimmedName) throw new Error(t("Name is required."))
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
   await callTopicBus("PublishSimple", sourceID, targetID, trimmedTopic, trimmedName, payloadText)
@@ -354,7 +355,7 @@ const clearEvents = () => {
 
 const setMaxEvents = async (value: number) => {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("Max events must be a positive number.")
+    throw new Error(t("Max events must be a positive number."))
   }
   state.maxEvents = Math.floor(value)
   trimEvents()

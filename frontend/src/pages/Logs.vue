@@ -2,12 +2,14 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"
+import { useI18n } from "@/i18n"
 import { useLogsStore } from "@/stores/logs"
 import { useToastStore } from "@/stores/toast"
 
 const logsStore = useLogsStore()
 const toast = useToastStore()
 const logRef = ref<HTMLElement | null>(null)
+const { t } = useI18n()
 
 const lineCount = computed(() => logsStore.state.lines.length)
 
@@ -26,7 +28,7 @@ const onPauseChange = async (event: Event) => {
     await logsStore.setPaused(target.checked)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to update log pause state.")
+    toast.errorOf(err, t("Failed to update log pause state."))
     await logsStore.refreshPaused()
   }
 }
@@ -54,7 +56,7 @@ onMounted(async () => {
     await scrollToBottom()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load logs.")
+    toast.errorOf(err, t("Failed to load logs."))
   }
 })
 </script>
@@ -63,13 +65,13 @@ onMounted(async () => {
   <section class="space-y-6">
     <div class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold">Logs</h2>
+        <h2 class="text-sm font-semibold">{{ t("Logs") }}</h2>
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Lines</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Lines") }}</span>
             <span class="text-foreground">{{ lineCount }}</span>
           </div>
-          <Button size="sm" variant="outline" @click="openLogWindow">Open Window</Button>
+          <Button size="sm" variant="outline" @click="openLogWindow">{{ t("Open Window") }}</Button>
         </div>
       </div>
 
@@ -81,7 +83,7 @@ onMounted(async () => {
             :checked="logsStore.state.paused"
             @change="onPauseChange"
           />
-          Pause logs
+          {{ t("Pause logs") }}
         </label>
       </div>
 
@@ -93,7 +95,7 @@ onMounted(async () => {
           <LogItem v-for="line in logsStore.state.lines" :key="line.id" :line="line" />
         </div>
         <p v-if="logsStore.state.lines.length === 0" class="text-sm text-muted-foreground">
-          No logs yet.
+          {{ t("No logs yet.") }}
         </p>
       </div>
     </div>

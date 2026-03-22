@@ -1,42 +1,47 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useFileStore } from "@/stores/file"
 
 const fileStore = useFileStore()
+const { t } = useI18n()
 
 const tasks = computed(() => fileStore.state.tasks)
 
 const statusLabel = (status: string) => {
   switch (status) {
     case "waiting_response":
-      return "Waiting for response"
+      return t("Waiting for response")
     case "waiting_remote":
-      return "Waiting for remote"
+      return t("Waiting for remote")
     case "waiting_confirm":
-      return "Awaiting confirmation"
+      return t("Awaiting confirmation")
     case "preparing":
-      return "Preparing"
+      return t("Preparing")
     case "hashing":
-      return "Hashing"
+      return t("Hashing")
     case "sending":
-      return "Sending"
+      return t("Sending")
     case "receiving":
-      return "Receiving"
+      return t("Receiving")
     case "waiting_ack":
-      return "Waiting for ack"
+      return t("Waiting for ack")
     case "completed":
-      return "Completed"
+      return t("Completed")
     case "failed":
-      return "Failed"
+      return t("Failed")
     case "canceled":
-      return "Canceled"
+      return t("Canceled")
     case "rejected":
-      return "Rejected"
+      return t("Rejected")
     default:
-      return status || "Unknown"
+      return status ? t(status) : t("Unknown")
   }
 }
+
+const opLabel = (op: string) => t(op || "Unknown")
+const directionLabel = (direction: string) => t(direction || "Unknown")
 
 const canRetry = (status: string) => status === "failed"
 
@@ -63,11 +68,11 @@ const progressValue = (task: any) => {
 
 const progressText = (task: any) => {
   const size = Number(task?.size ?? 0)
-  if (!size) return "0 bytes"
+  if (!size) return t("0 bytes")
   if (task?.direction === "upload") {
-    return `acked ${task?.ackedBytes ?? 0} / ${size}`
+    return t("acked {done} / {size}", { done: task?.ackedBytes ?? 0, size })
   }
-  return `${task?.doneBytes ?? 0} / ${size}`
+  return t("{done} / {size}", { done: task?.doneBytes ?? 0, size })
 }
 
 onMounted(async () => {
@@ -80,17 +85,17 @@ onMounted(async () => {
     <div class="flex items-center justify-between gap-4">
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          Transfers
+          {{ t("Transfers") }}
         </p>
-        <h1 class="text-2xl font-semibold">File Tasks</h1>
+        <h1 class="text-2xl font-semibold">{{ t("File Tasks") }}</h1>
       </div>
       <div class="text-xs text-muted-foreground">
-        {{ tasks.length }} active records
+        {{ t("{count} active records", { count: tasks.length }) }}
       </div>
     </div>
 
     <div v-if="!tasks.length" class="rounded-2xl border bg-card/90 p-6 text-muted-foreground">
-      No transfers yet. Start a download or offer to see tasks here.
+      {{ t("No transfers yet. Start a download or offer to see tasks here.") }}
     </div>
 
     <div v-else class="space-y-4">
@@ -102,10 +107,10 @@ onMounted(async () => {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="text-base font-semibold">
-              {{ task.op }} · {{ task.direction }} · {{ task.name || "unnamed" }}
+              {{ opLabel(task.op) }} · {{ directionLabel(task.direction) }} · {{ task.name || t("unnamed") }}
             </h2>
             <p class="text-xs text-muted-foreground">
-              provider {{ task.provider }} · consumer {{ task.consumer }} · peer {{ task.peer }}
+              {{ t("provider {provider} · consumer {consumer} · peer {peer}", { provider: task.provider, consumer: task.consumer, peer: task.peer }) }}
             </p>
           </div>
           <span
@@ -118,7 +123,7 @@ onMounted(async () => {
         <div class="mt-4">
           <div class="flex items-center justify-between text-xs text-muted-foreground">
             <span>{{ progressText(task) }}</span>
-            <span>{{ task.size }} bytes</span>
+            <span>{{ t("{count} bytes", { count: task.size }) }}</span>
           </div>
           <div class="mt-2 h-2 w-full rounded-full bg-muted">
             <div
@@ -129,9 +134,9 @@ onMounted(async () => {
         </div>
 
         <div class="mt-3 text-xs text-muted-foreground">
-          <p v-if="task.localPath">local: {{ task.localPath }}</p>
-          <p v-else-if="task.localDir">save dir: {{ task.localDir }}</p>
-          <p v-if="task.sha256">sha256: {{ task.sha256 }}</p>
+          <p v-if="task.localPath">{{ t("local: {path}", { path: task.localPath }) }}</p>
+          <p v-else-if="task.localDir">{{ t("save dir: {dir}", { dir: task.localDir }) }}</p>
+          <p v-if="task.sha256">{{ t("sha256: {value}", { value: task.sha256 }) }}</p>
           <p v-if="task.status === 'failed' && task.lastError" class="text-rose-600">
             {{ task.lastError }}
           </p>
@@ -144,7 +149,7 @@ onMounted(async () => {
             :disabled="!canRetry(task.status)"
             @click="fileStore.retryTask(task.taskId)"
           >
-            Retry
+            {{ t("Retry") }}
           </Button>
           <Button
             size="sm"
@@ -152,10 +157,10 @@ onMounted(async () => {
             :disabled="!canCancel(task.status)"
             @click="fileStore.cancelTask(task.taskId)"
           >
-            Cancel
+            {{ t("Cancel") }}
           </Button>
           <Button size="sm" variant="outline" @click="fileStore.openTaskFolder(task.taskId)">
-            Open Folder
+            {{ t("Open Folder") }}
           </Button>
         </div>
       </article>

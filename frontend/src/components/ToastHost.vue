@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue"
+import { useI18n } from "@/i18n"
 import { useToastStore, type ToastItem } from "@/stores/toast"
 
 const toast = useToastStore()
+const { t } = useI18n()
 const items = computed(() => toast.state.items)
 
 const toneClass = (level: ToastItem["level"]) => {
@@ -50,7 +52,7 @@ const toneClass = (level: ToastItem["level"]) => {
         <button
           type="button"
           class="rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs font-semibold text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
-          aria-label="Close"
+          :aria-label="t('Close')"
           @click="toast.remove(item.id)"
         >
           ✕

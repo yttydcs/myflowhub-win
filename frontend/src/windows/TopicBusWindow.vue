@@ -4,6 +4,7 @@ import { useRoute } from "vue-router"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { formatTopicBusTimestamp, normalizeTopicBusEvent, useTopicBusStore, type TopicBusEvent } from "@/stores/topicbus"
@@ -15,6 +16,7 @@ const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const topicbus = useTopicBusStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const busy = ref(false)
 const eventListRef = ref<HTMLElement | null>(null)
@@ -31,7 +33,7 @@ const sendForm = reactive({
   payload: ""
 })
 
-const fallbackTitle = "TopicBus"
+const fallbackTitle = computed(() => t("TopicBus"))
 
 const inputClass =
   "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -39,7 +41,7 @@ const inputClass =
 const textAreaClass =
   "mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
-const connectedLabel = computed(() => (sessionStore.connected ? "Connected" : "Disconnected"))
+const connectedLabel = computed(() => (sessionStore.connected ? t("Connected") : t("Disconnected")))
 const connectedTone = computed(() =>
   sessionStore.connected ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"
 )
@@ -50,9 +52,9 @@ const hubId = computed(() => sessionStore.auth.hubId || fallbackIdentity.hubId |
 const requestedTopic = computed(() => String(route.query.topic ?? "").trim())
 const requestedScope = computed(() => String(route.query.scope ?? "").trim().toLowerCase())
 const isAllWindow = computed(() => requestedScope.value === "all" || !requestedTopic.value)
-const windowTitle = computed(() => (isAllWindow.value ? "All Channels" : requestedTopic.value || fallbackTitle))
-const windowModeLabel = computed(() => (isAllWindow.value ? "Aggregate Window" : "Channel Window"))
-const resolvedTopicLabel = computed(() => (isAllWindow.value ? "All known topics" : requestedTopic.value || "-"))
+const windowTitle = computed(() => (isAllWindow.value ? t("All Channels") : requestedTopic.value || fallbackTitle.value))
+const windowModeLabel = computed(() => (isAllWindow.value ? t("Aggregate Window") : t("Channel Window")))
+const resolvedTopicLabel = computed(() => (isAllWindow.value ? t("All known topics") : requestedTopic.value || "-"))
 const resolvedTargetLabel = computed(() => topicbus.state.targetId.trim() || (hubId.value ? String(hubId.value) : "-"))
 const receivePanelPercent = computed(() => `${Math.round(splitRatio.value * 100)}%`)
 
@@ -60,12 +62,12 @@ const localEvents = ref<TopicBusEvent[]>([])
 const selectedEventIndex = ref(-1)
 const selectedEvent = computed(() => localEvents.value[selectedEventIndex.value] ?? null)
 const infoItems = computed(() => [
-  { label: "Topic", value: resolvedTopicLabel.value },
-  { label: "Self", value: selfNodeId.value ? String(selfNodeId.value) : "-" },
-  { label: "Target", value: resolvedTargetLabel.value },
-  { label: "Events", value: String(localEvents.value.length) },
-  { label: "Cache", value: String(topicbus.state.maxEvents) },
-  { label: "Receive", value: receivePanelPercent.value }
+  { label: t("Topic"), value: resolvedTopicLabel.value },
+  { label: t("Self"), value: selfNodeId.value ? String(selfNodeId.value) : "-" },
+  { label: t("Target"), value: resolvedTargetLabel.value },
+  { label: t("Events"), value: String(localEvents.value.length) },
+  { label: t("Cache"), value: String(topicbus.state.maxEvents) },
+  { label: t("Receive"), value: receivePanelPercent.value }
 ])
 
 const splitRatio = ref(0.62)
@@ -85,7 +87,7 @@ const acceptsEvent = (event: TopicBusEvent) => {
 
 const previewPayload = (raw: string) => {
   const compact = String(raw ?? "").replace(/\s+/g, " ").trim()
-  if (!compact) return "No payload."
+  if (!compact) return t("No payload.")
   if (compact.length <= 180) return compact
   return `${compact.slice(0, 180)}...`
 }
@@ -111,10 +113,10 @@ const syncTopicDraft = () => {
 
 const ensureReady = () => {
   if (!sessionStore.connected) {
-    throw new Error("Connect to a session before sending TopicBus requests.")
+    throw new Error(t("Connect to a session before sending TopicBus requests."))
   }
   if (!selfNodeId.value) {
-    throw new Error("Login to a node before using TopicBus operations.")
+    throw new Error(t("Login to a node before using TopicBus operations."))
   }
 }
 
@@ -260,10 +262,10 @@ const publishEvent = async () => {
     await topicbus.publish(topic, sendForm.name, sendForm.payload)
     sendForm.name = ""
     sendForm.payload = ""
-    toast.success("Event published. This window will not echo your own message.")
+    toast.success(t("Event published. This window will not echo your own message."))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to publish event.")
+    toast.errorOf(err, t("Failed to publish event."))
   } finally {
     busy.value = false
   }
@@ -307,7 +309,7 @@ onMounted(async () => {
     await loadHomeDefaults()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to initialize TopicBus window.")
+    toast.errorOf(err, t("Failed to initialize TopicBus window."))
   }
   attachTopicBusListener()
 })
@@ -328,10 +330,16 @@ onBeforeUnmount(() => {
     <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">TopicBus Window</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+            {{ t("TopicBus Window") }}
+          </p>
           <h1 class="mt-1 text-xl font-semibold">{{ windowTitle }}</h1>
           <p class="mt-2 text-sm text-muted-foreground">
-            {{ isAllWindow ? "Watch every known topic from the moment this window opens." : "Focus on one topic with a dedicated receive and send workspace." }}
+            {{
+              isAllWindow
+                ? t("Watch every known topic from the moment this window opens.")
+                : t("Focus on one topic with a dedicated receive and send workspace.")
+            }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -352,11 +360,13 @@ onBeforeUnmount(() => {
             <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
               <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
                 <div>
-                  <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Receive</p>
-                  <h2 class="text-sm font-semibold">Live Event Stream</h2>
-                  <p class="mt-1 text-xs text-muted-foreground">New events only. Select one item to inspect it from the side panel.</p>
+                  <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Receive") }}</p>
+                  <h2 class="text-sm font-semibold">{{ t("Live Event Stream") }}</h2>
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    {{ t("New events only. Select one item to inspect it from the side panel.") }}
+                  </p>
                 </div>
-                <Badge variant="outline">{{ localEvents.length }} events</Badge>
+                <Badge variant="outline">{{ t("{count} events", { count: localEvents.length }) }}</Badge>
               </div>
 
               <div ref="eventListRef" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
@@ -382,7 +392,7 @@ onBeforeUnmount(() => {
                   v-if="localEvents.length === 0"
                   class="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-background/60 px-6 text-center text-sm text-muted-foreground"
                 >
-                  Waiting for new TopicBus events in this window.
+                  {{ t("Waiting for new TopicBus events in this window.") }}
                 </div>
               </div>
             </div>
@@ -398,8 +408,8 @@ onBeforeUnmount(() => {
           <section class="min-h-0 flex-1">
             <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-background/70">
               <div class="border-b border-border/60 px-4 py-3">
-                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Send</p>
-                <h2 class="text-sm font-semibold">Publish Event</h2>
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Send") }}</p>
+                <h2 class="text-sm font-semibold">{{ t("Publish Event") }}</h2>
               </div>
 
               <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -407,22 +417,22 @@ onBeforeUnmount(() => {
                   <div class="grid gap-4 lg:grid-cols-[1fr_1fr]">
                     <div>
                       <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Target Node ID
+                        {{ t("Target Node ID") }}
                       </label>
                       <input
                         v-model="topicbus.state.targetId"
                         :class="inputClass"
-                        :placeholder="hubId ? String(hubId) : 'Hub NodeID'"
+                        :placeholder="hubId ? String(hubId) : t('Hub NodeID')"
                       />
                     </div>
                     <div>
                       <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Topic
+                        {{ t("Topic") }}
                       </label>
                       <input
                         v-model="sendForm.topic"
                         :class="inputClass"
-                        :placeholder="isAllWindow ? 'topic.status' : ''"
+                        :placeholder="isAllWindow ? t('topic.status') : ''"
                         :readonly="!isAllWindow"
                       />
                     </div>
@@ -430,28 +440,32 @@ onBeforeUnmount(() => {
 
                   <div>
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Name
+                      {{ t("Name") }}
                     </label>
-                    <input v-model="sendForm.name" :class="inputClass" placeholder="event name" />
+                    <input v-model="sendForm.name" :class="inputClass" :placeholder="t('event name')" />
                   </div>
 
                   <div class="min-h-0">
                     <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Payload
+                      {{ t("Payload") }}
                     </label>
                     <textarea
                       v-model="sendForm.payload"
                       :class="textAreaClass"
                       rows="6"
-                      placeholder="JSON or plain text"
+                      :placeholder="t('JSON or plain text')"
                     />
                   </div>
 
                   <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-muted-foreground">
-                      {{ isAllWindow ? "Choose a topic before sending from the aggregate window." : "Topic is locked to this channel for safer publishing." }}
+                      {{
+                        isAllWindow
+                          ? t("Choose a topic before sending from the aggregate window.")
+                          : t("Topic is locked to this channel for safer publishing.")
+                      }}
                     </p>
-                    <Button :disabled="busy" @click="publishEvent">Publish</Button>
+                    <Button :disabled="busy" @click="publishEvent">{{ t("Publish") }}</Button>
                   </div>
                 </div>
               </div>
@@ -461,8 +475,8 @@ onBeforeUnmount(() => {
 
         <aside class="flex min-h-0 min-w-0 flex-col gap-4 xl:overflow-hidden">
           <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Other Info</p>
-            <h2 class="mt-2 text-lg font-semibold">Window Snapshot</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Other Info") }}</p>
+            <h2 class="mt-2 text-lg font-semibold">{{ t("Window Snapshot") }}</h2>
 
             <div class="mt-4 grid gap-3">
               <div
@@ -479,11 +493,11 @@ onBeforeUnmount(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <Badge v-if="selectedEvent" variant="outline">{{ selectedEvent.topic }}</Badge>
                 <span class="text-xs text-muted-foreground">
-                  {{ selectedEvent ? formatTopicBusTimestamp(selectedEvent.ts) || "-" : "No event selected" }}
+                  {{ selectedEvent ? formatTopicBusTimestamp(selectedEvent.ts) || "-" : t("No event selected") }}
                 </span>
               </div>
               <p class="mt-2 text-sm font-semibold text-foreground">
-                {{ selectedEvent ? selectedEvent.name : "Selected Event" }}
+                {{ selectedEvent ? selectedEvent.name : t("Selected Event") }}
               </p>
               <pre
                 v-if="selectedEvent"
@@ -492,26 +506,26 @@ onBeforeUnmount(() => {
 {{ selectedEvent.dataRaw }}
               </pre>
               <p v-else class="mt-2 text-sm text-muted-foreground">
-                Select one event from the receive list to inspect its full payload here.
+                {{ t("Select one event from the receive list to inspect its full payload here.") }}
               </p>
             </div>
           </section>
 
           <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">Control Buttons</p>
-            <h2 class="mt-2 text-lg font-semibold">Window Actions</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("Control Buttons") }}</p>
+            <h2 class="mt-2 text-lg font-semibold">{{ t("Window Actions") }}</h2>
             <p class="mt-2 text-sm text-muted-foreground">
-              Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.
+              {{ t("Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.") }}
             </p>
 
             <div class="mt-4 grid gap-3">
-              <Button variant="outline" class="justify-start" @click="scrollToLatest">Scroll to Latest</Button>
-              <Button variant="outline" class="justify-start" @click="clearLocalEvents">Clear Receive List</Button>
-              <Button variant="outline" class="justify-start" @click="clearComposer">Reset Draft</Button>
+              <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
+              <Button variant="outline" class="justify-start" @click="clearLocalEvents">{{ t("Clear Receive List") }}</Button>
+              <Button variant="outline" class="justify-start" @click="clearComposer">{{ t("Reset Draft") }}</Button>
             </div>
 
             <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-              Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.
+              {{ t("Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.") }}
             </div>
           </section>
         </aside>

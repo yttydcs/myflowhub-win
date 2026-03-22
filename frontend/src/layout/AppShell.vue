@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from "vue"
+import { computed, ref, watch, watchEffect, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import {
   Bug,
@@ -19,11 +19,13 @@ import {
 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { t, useI18n } from "@/i18n"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import ToastHost from "@/components/ToastHost.vue"
 import { useAppSettingsStore } from "@/stores/appSettings"
 import { useFileStore } from "@/stores/file"
+import { useLanguageStore } from "@/stores/language"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -41,10 +43,12 @@ const route = useRoute()
 
 const fileStore = useFileStore()
 const appSettings = useAppSettingsStore()
+const languageStore = useLanguageStore()
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
 const toast = useToastStore()
 const varpool = useVarPoolStore()
+const { locale } = useI18n()
 
 const isWindowLayout = computed(() => route.meta.layout === "window")
 const isFullBleedWindow = computed(() => route.meta.windowMode === "full-bleed")
@@ -92,7 +96,7 @@ const loadVarPoolStorage = async () => {
     await varpool.loadSubPrefs()
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load VarPool settings.")
+    toast.errorOf(err, t("Failed to load VarPool settings."))
   }
   if (varpoolStorageEpoch !== myEpoch) return
 
@@ -113,7 +117,10 @@ const restoreVarPoolSubs = async () => {
     const result = await varpool.restoreDesiredSubscriptions({ concurrency: 4 })
     if (varpoolRestoreEpoch !== myEpoch) return
     if (result.attempted && result.failed) {
-      toast.warn("VarPool auto-subscribe incomplete.", `${result.failed}/${result.attempted} failed.`)
+      toast.warn(
+        t("VarPool auto-subscribe incomplete."),
+        t("{failed}/{attempted} failed.", { failed: result.failed, attempted: result.attempted })
+      )
     }
   } catch (err) {
     if (varpoolRestoreEpoch !== myEpoch) return
@@ -129,12 +136,19 @@ watch(
         await appSettings.load()
       } catch (err) {
         console.warn(err)
-        toast.errorOf(err, "Failed to load app settings.")
+        toast.errorOf(err, t("Failed to load app settings."))
       }
     })()
   },
   { immediate: true }
 )
+
+if (!languageStore.state.loaded && !languageStore.state.loading) {
+  void languageStore.load().catch((err) => {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to load language preference."))
+  })
+}
 
 watch(
   () => profileStore.state.current,
@@ -161,12 +175,14 @@ const statusDotClass = computed(() => {
 
 const headerStatusText = computed(() => {
   if (sessionStore.connected) {
-    return sessionStore.addr ? `Connected to ${sessionStore.addr}` : "Connected"
+    return sessionStore.addr
+      ? t("Connected to {addr}", { addr: sessionStore.addr })
+      : t("Connected")
   }
   if (sessionStore.lastError) {
-    return `Disconnected / Last error: ${sessionStore.lastError}`
+    return t("Disconnected / Last error: {error}", { error: sessionStore.lastError })
   }
-  return "Disconnected"
+  return t("Disconnected")
 })
 
 const navGroups = ref<{ title: string; items: NavItem[] }[]>([
@@ -186,13 +202,6 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/local-hub",
         icon: Server,
         tone: "bg-emerald-500/15 text-emerald-700"
-      },
-      {
-        label: "Settings",
-        description: "Defaults, UI, and about",
-        to: "/settings",
-        icon: Settings2,
-        tone: "bg-slate-500/15 text-slate-700"
       }
     ]
   },
@@ -280,6 +289,18 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         tone: "bg-stone-500/15 text-stone-700"
       }
     ]
+  },
+  {
+    title: "Other",
+    items: [
+      {
+        label: "Settings",
+        description: "Defaults, UI, language, and about",
+        to: "/settings",
+        icon: Settings2,
+        tone: "bg-slate-500/15 text-slate-700"
+      }
+    ]
   }
 ])
 
@@ -294,17 +315,19 @@ const selectedProfile = computed({
   }
 })
 
-const pageTitle = computed(() => (route.meta.title as string) ?? "Module")
+const pageTitle = computed(() => t((route.meta.title as string) ?? "Module"))
 const pageSubtitle = computed(
   () =>
-    (route.meta.subtitle as string) ??
-    "This module will be wired to backend services in upcoming tasks."
+    t(
+      (route.meta.subtitle as string) ??
+        "This module will be wired to backend services in upcoming tasks."
+    )
 )
 const showModuleCard = computed(() => route.name === "home")
 
 const createProfile = async () => {
   closeProfileMenu()
-  const name = window.prompt("New profile name")
+  const name = window.prompt(t("New profile name"))
   if (!name) return
   await profileStore.setProfile(name)
 }
@@ -331,7 +354,7 @@ const sidebarBrandMarkClass = computed(() =>
     : "flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm"
 )
 const sidebarToggleLabel = computed(() =>
-  sidebarCollapsed.value ? "Expand sidebar" : "Collapse sidebar"
+  sidebarCollapsed.value ? t("Expand sidebar") : t("Collapse sidebar")
 )
 const sidebarNavClass = computed(() =>
   sidebarCollapsed.value ? "mt-6 space-y-4" : "mt-6 space-y-6"
@@ -379,6 +402,12 @@ const selectProfile = async (name: string) => {
   await profileStore.setProfile(name)
   closeProfileMenu()
 }
+
+watchEffect(() => {
+  if (typeof document === "undefined") return
+  void locale.value
+  document.title = `${pageTitle.value} - MyFlowHub`
+})
 </script>
 
 <template>
@@ -424,46 +453,46 @@ const selectProfile = async (name: string) => {
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Incoming Transfer
+                {{ t("Incoming Transfer") }}
               </p>
-              <h2 class="mt-1 text-lg font-semibold">Accept file offer?</h2>
+              <h2 class="mt-1 text-lg font-semibold">{{ t("Accept file offer?") }}</h2>
             </div>
-            <Badge variant="secondary">Provider {{ fileStore.state.offer.provider }}</Badge>
+            <Badge variant="secondary">{{ t("Provider {provider}", { provider: fileStore.state.offer.provider }) }}</Badge>
           </div>
 
           <div class="mt-4 space-y-2 text-sm text-muted-foreground">
             <p>
-              <span class="font-semibold text-foreground">File:</span>
+              <span class="font-semibold text-foreground">{{ t("File:") }}</span>
               {{ fileStore.state.offer.name }}
             </p>
             <p>
-              <span class="font-semibold text-foreground">Remote Dir:</span>
+              <span class="font-semibold text-foreground">{{ t("Remote Dir:") }}</span>
               {{ fileStore.state.offer.dir || "/" }}
             </p>
             <p>
-              <span class="font-semibold text-foreground">Size:</span>
-              {{ fileStore.state.offer.size }} bytes
+              <span class="font-semibold text-foreground">{{ t("Size:") }}</span>
+              {{ t("{count} bytes", { count: fileStore.state.offer.size }) }}
             </p>
             <p v-if="fileStore.state.offer.sha256">
-              <span class="font-semibold text-foreground">SHA256:</span>
+              <span class="font-semibold text-foreground">{{ t("SHA256:") }}</span>
               {{ fileStore.state.offer.sha256 }}
             </p>
           </div>
 
           <div class="mt-4">
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Save Directory (relative to base dir)
+              {{ t("Save Directory (relative to base dir)") }}
             </label>
             <input
               v-model="fileStore.state.offerSaveDir"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              placeholder="Optional, defaults to remote dir"
+              :placeholder="t('Optional, defaults to remote dir')"
             />
           </div>
 
           <div class="mt-6 flex justify-end gap-2">
-            <Button variant="outline" @click="fileStore.rejectOffer">Reject</Button>
-            <Button @click="fileStore.acceptOffer">Accept</Button>
+            <Button variant="outline" @click="fileStore.rejectOffer">{{ t("Reject") }}</Button>
+            <Button @click="fileStore.acceptOffer">{{ t("Accept") }}</Button>
           </div>
         </div>
       </Overlay>
@@ -476,7 +505,7 @@ const selectProfile = async (name: string) => {
               <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
                 MyFlowHub
               </p>
-              <h1 class="text-lg font-semibold">Tool Console</h1>
+              <h1 class="text-lg font-semibold">{{ t("Tool Console") }}</h1>
             </div>
           </div>
 
@@ -486,11 +515,11 @@ const selectProfile = async (name: string) => {
                 v-if="!sidebarCollapsed"
                 class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground"
               >
-                {{ group.title }}
+                {{ t(group.title) }}
               </p>
               <div :class="sidebarNavListClass">
                 <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" v-slot="{ isActive }">
-                  <Tooltip v-if="sidebarCollapsed" :content="item.label" side="right">
+                  <Tooltip v-if="sidebarCollapsed" :content="t(item.label)" side="right">
                     <div
                       :class="[sidebarNavItemBaseClass, navItemStateClass(isActive)]"
                       :style="collapsedNavItemStyle"
@@ -503,7 +532,7 @@ const selectProfile = async (name: string) => {
                       >
                         <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
                       </div>
-                      <span class="sr-only">{{ item.label }}</span>
+                      <span class="sr-only">{{ t(item.label) }}</span>
                     </div>
                   </Tooltip>
                   <div
@@ -520,8 +549,8 @@ const selectProfile = async (name: string) => {
                       <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
                     </div>
                     <div>
-                      <p class="text-sm font-medium">{{ item.label }}</p>
-                      <p class="text-xs text-muted-foreground">{{ item.description }}</p>
+                      <p class="text-sm font-medium">{{ t(item.label) }}</p>
+                      <p class="text-xs text-muted-foreground">{{ t(item.description) }}</p>
                     </div>
                   </div>
                 </RouterLink>
@@ -558,7 +587,7 @@ const selectProfile = async (name: string) => {
               <div class="flex flex-wrap items-center gap-2">
                 <div class="hidden text-right sm:block">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                    Active profile
+                    {{ t("Active profile") }}
                   </p>
                   <p class="text-sm font-semibold">{{ selectedProfile }}</p>
                 </div>
@@ -579,7 +608,7 @@ const selectProfile = async (name: string) => {
                     class="absolute right-0 top-11 z-30 w-52 rounded-xl border bg-card/95 p-2 text-sm shadow-xl"
                   >
                     <p class="px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                      Profiles
+                      {{ t("Profiles") }}
                     </p>
                     <button
                       v-for="profile in profiles"
@@ -596,7 +625,7 @@ const selectProfile = async (name: string) => {
                       class="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-primary transition hover:bg-primary/10"
                       @click="createProfile"
                     >
-                      New profile
+                      {{ t("New profile") }}
                     </button>
                   </div>
                 </div>
@@ -614,7 +643,7 @@ const selectProfile = async (name: string) => {
                   <span
                     :class="['h-2 w-2 rounded-full', isActive ? 'bg-primary' : 'bg-muted-foreground/60']"
                   />
-                  {{ item.label }}
+                  {{ t(item.label) }}
                 </span>
               </RouterLink>
             </div>
@@ -628,21 +657,21 @@ const selectProfile = async (name: string) => {
                   <h2 class="text-xl font-semibold">{{ pageTitle }}</h2>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">Profile: {{ selectedProfile }}</Badge>
-                  <Badge variant="muted">{{ profileState.keysPath ? "Keys ready" : "Keys pending" }}</Badge>
+                  <Badge variant="secondary">{{ t("Profile: {profile}", { profile: selectedProfile }) }}</Badge>
+                  <Badge variant="muted">{{ profileState.keysPath ? t("Keys ready") : t("Keys pending") }}</Badge>
                 </div>
               </div>
               <div v-if="profileState.keysPath" class="mt-4 grid gap-3 text-xs text-muted-foreground md:grid-cols-3">
                 <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-                  <p class="font-semibold text-foreground">Base Dir</p>
+                  <p class="font-semibold text-foreground">{{ t("Base Dir") }}</p>
                   <p class="break-all">{{ profileState.baseDir }}</p>
                 </div>
                 <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-                  <p class="font-semibold text-foreground">Settings</p>
+                  <p class="font-semibold text-foreground">{{ t("Settings") }}</p>
                   <p class="break-all">{{ profileState.settingsPath }}</p>
                 </div>
                 <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-                  <p class="font-semibold text-foreground">Keys</p>
+                  <p class="font-semibold text-foreground">{{ t("Keys") }}</p>
                   <p class="break-all">{{ profileState.keysPath }}</p>
                 </div>
               </div>

@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
@@ -10,7 +11,7 @@ const callLocalHub = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.localhub?.LocalHubService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`LocalHub binding '${method}' unavailable`)
+    throw new Error(t("LocalHub binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -65,6 +66,7 @@ type Snapshot = {
 }
 
 const toast = useToastStore()
+const { t } = useI18n()
 
 const snap = reactive<Snapshot>({
   supported: false,
@@ -178,9 +180,9 @@ const downloadProgress = computed(() => {
   if (!snap.download.active) return ""
   if (total > 0) {
     const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)))
-    return `${pct}% (${done}/${total})`
+    return t("{percent}% ({done}/{total})", { percent: pct, done, total })
   }
-  return `${done} bytes`
+  return t("{done} bytes", { done })
 })
 
 const loadSnapshot = async () => {
@@ -201,7 +203,7 @@ const loadSnapshot = async () => {
     form.extraArgs = String(snap.config.extraArgs ?? "")
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to load Local Hub snapshot.")
+    toast.errorOf(err, t("Failed to load Local Hub snapshot."))
   } finally {
     busy.loading = false
   }
@@ -212,21 +214,21 @@ const saveConfig = async (silent = false) => {
 
   const rawPort = form.port.trim()
   if (rawPort && Number.isNaN(Number.parseInt(rawPort, 10))) {
-    toast.warn("Port must be a number.")
+    toast.warn(t("Port must be a number."))
     return
   }
   const nodeId = normalizedNodeId.value
   if (!nodeId) {
-    toast.warn("Node ID must be a positive number.")
+    toast.warn(t("Node ID must be a positive number."))
     return
   }
   const parentReconnectSec = normalizedParentReconnectSec.value
   if (parentReconnectSec < 0) {
-    toast.warn("Parent reconnect seconds must be 0 or a positive number.")
+    toast.warn(t("Parent reconnect seconds must be 0 or a positive number."))
     return
   }
   if (form.parentEnable && !form.parent.trim()) {
-    toast.warn("Parent address is required when parent link is enabled.")
+    toast.warn(t("Parent address is required when parent link is enabled."))
     return
   }
 
@@ -248,11 +250,11 @@ const saveConfig = async (silent = false) => {
     await callLocalHub("SaveConfig", payload)
     await loadSnapshot()
     if (!silent) {
-      toast.success("Config saved.")
+      toast.success(t("Config saved."))
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save config.")
+    toast.errorOf(err, t("Failed to save config."))
   } finally {
     busy.saving = false
   }
@@ -264,11 +266,11 @@ const refreshLatest = async () => {
   try {
     await callLocalHub("RefreshLatest")
     await loadSnapshot()
-    toast.success("Latest release refreshed.")
+    toast.success(t("Latest release refreshed."))
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    toast.errorOf(err, "Failed to refresh latest release.")
+    toast.errorOf(err, t("Failed to refresh latest release."))
   } finally {
     busy.refreshing = false
   }
@@ -285,11 +287,11 @@ const installLatest = async () => {
     }, 500)
     await promise
     await loadSnapshot()
-    toast.success("Installed.")
+    toast.success(t("Installed."))
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    toast.errorOf(err, "Install failed.")
+    toast.errorOf(err, t("Install failed."))
   } finally {
     if (timer) window.clearInterval(timer)
     busy.installing = false
@@ -303,11 +305,11 @@ const startHub = async () => {
     await saveConfig(true)
     await callLocalHub("Start")
     await loadSnapshot()
-    toast.success("Local Hub started.", snap.run.addr || undefined)
+    toast.success(t("Local Hub started."), snap.run.addr || undefined)
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    toast.errorOf(err, "Failed to start hub.")
+    toast.errorOf(err, t("Failed to start hub."))
   } finally {
     busy.starting = false
   }
@@ -319,11 +321,11 @@ const stopHub = async () => {
   try {
     await callLocalHub("Stop")
     await loadSnapshot()
-    toast.info("Local Hub stopped.")
+    toast.info(t("Local Hub stopped."))
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    toast.errorOf(err, "Failed to stop hub.")
+    toast.errorOf(err, t("Failed to stop hub."))
   } finally {
     busy.stopping = false
   }
@@ -336,11 +338,11 @@ const restartHub = async () => {
     await saveConfig(true)
     await callLocalHub("Restart")
     await loadSnapshot()
-    toast.success("Local Hub restarted.", snap.run.addr || undefined)
+    toast.success(t("Local Hub restarted."), snap.run.addr || undefined)
   } catch (err) {
     console.warn(err)
     await loadSnapshot()
-    toast.errorOf(err, "Failed to restart hub.")
+    toast.errorOf(err, t("Failed to restart hub."))
   } finally {
     busy.restarting = false
   }
@@ -359,31 +361,39 @@ onMounted(async () => {
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-semibold">Latest Release</h2>
-          <p class="text-xs text-muted-foreground">Source: GitHub Releases (myflowhub-server)</p>
+          <h2 class="text-sm font-semibold">{{ t("Latest Release") }}</h2>
+          <p class="text-xs text-muted-foreground">{{ t("Source: GitHub Releases (myflowhub-server)") }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge v-if="snap.supported" variant="secondary">Supported: {{ snap.platform }}/{{ snap.arch }}</Badge>
-          <Badge v-else variant="secondary">Unsupported: {{ snap.platform }}/{{ snap.arch }}</Badge>
-          <Button variant="outline" size="sm" :disabled="busy.loading" @click="loadSnapshot">Reload</Button>
+          <Badge v-if="snap.supported" variant="secondary">
+            {{ t("Supported: {platform}/{arch}", { platform: snap.platform, arch: snap.arch }) }}
+          </Badge>
+          <Badge v-else variant="secondary">
+            {{ t("Unsupported: {platform}/{arch}", { platform: snap.platform, arch: snap.arch }) }}
+          </Badge>
+          <Button variant="outline" size="sm" :disabled="busy.loading" @click="loadSnapshot">
+            {{ t("Reload") }}
+          </Button>
           <Button
             variant="outline"
             size="sm"
             :disabled="busy.refreshing || !snap.supported"
             @click="refreshLatest"
           >
-            Refresh
+            {{ t("Refresh") }}
           </Button>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 text-sm md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Tag</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Tag") }}</p>
           <p class="mt-1 font-mono text-[12px]">{{ snap.latest.tag || "-" }}</p>
         </div>
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Published</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Published") }}
+          </p>
           <p class="mt-1 font-mono text-[12px]">{{ snap.latest.publishedAt || "-" }}</p>
         </div>
       </div>
@@ -394,8 +404,10 @@ onMounted(async () => {
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-semibold">Install</h2>
-          <p class="text-xs text-muted-foreground">Binary is stored under your user config directory.</p>
+          <h2 class="text-sm font-semibold">{{ t("Install") }}</h2>
+          <p class="text-xs text-muted-foreground">
+            {{ t("Binary is stored under your user config directory.") }}
+          </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Button
@@ -403,16 +415,18 @@ onMounted(async () => {
             :disabled="busy.installing || snap.download.active || snap.run.running || !snap.supported"
             @click="installLatest"
           >
-            {{ snap.install.installed ? "Reinstall Latest" : "Install Latest" }}
+            {{ snap.install.installed ? t("Reinstall Latest") : t("Install Latest") }}
           </Button>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 text-sm md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Installed</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Installed") }}
+          </p>
           <p class="mt-1">
-            <span class="font-semibold">{{ snap.install.installed ? "Yes" : "No" }}</span>
+            <span class="font-semibold">{{ snap.install.installed ? t("Yes") : t("No") }}</span>
             <span v-if="snap.install.tag" class="ml-2 font-mono text-[12px] text-muted-foreground">
               {{ snap.install.tag }}
             </span>
@@ -423,10 +437,14 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Download</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Download") }}
+          </p>
           <p class="mt-1 font-mono text-[12px]">
-            <span v-if="snap.download.active">Stage: {{ snap.download.stage }}</span>
-            <span v-else>Idle</span>
+            <span v-if="snap.download.active">
+              {{ t("Stage: {stage}", { stage: snap.download.stage }) }}
+            </span>
+            <span v-else>{{ t("Idle") }}</span>
           </p>
           <p v-if="snap.download.active" class="mt-1 text-xs text-muted-foreground">
             {{ snap.download.assetName }} · {{ downloadProgress }}
@@ -436,34 +454,36 @@ onMounted(async () => {
       </div>
 
       <p v-if="snap.run.running" class="mt-3 text-xs text-muted-foreground">
-        Stop Local Hub before reinstalling/upgrading.
+        {{ t("Stop Local Hub before reinstalling/upgrading.") }}
       </p>
 
       <div class="mt-3 text-xs text-muted-foreground">
-        Root: <span class="font-mono text-[11px]">{{ snap.rootDir || "-" }}</span>
+        {{ t("Root: {path}", { path: snap.rootDir || "-" }) }}
       </div>
     </section>
 
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-semibold">Run</h2>
+          <h2 class="text-sm font-semibold">{{ t("Run") }}</h2>
           <p class="text-xs text-muted-foreground">
-            Local Hub keeps running after the Win app exits. Stop it explicitly if needed.
+            {{ t("Local Hub keeps running after the Win app exits. Stop it explicitly if needed.") }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge v-if="snap.run.running" variant="secondary">Running</Badge>
-          <Badge v-else variant="secondary">Stopped</Badge>
+          <Badge v-if="snap.run.running" variant="secondary">{{ t("Running") }}</Badge>
+          <Badge v-else variant="secondary">{{ t("Stopped") }}</Badge>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Listen</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Listen") }}
+          </p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">Host</span>
+              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Host") }}</span>
               <input
                 v-model="form.host"
                 class="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs text-foreground"
@@ -471,7 +491,7 @@ onMounted(async () => {
               />
             </div>
             <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">Port</span>
+              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Port") }}</span>
               <input
                 v-model="form.port"
                 class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
@@ -479,33 +499,35 @@ onMounted(async () => {
               />
             </div>
             <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
-              Save Config
+              {{ t("Save Config") }}
             </Button>
           </div>
 
           <p v-if="nonLoopbackWarning" class="mt-2 text-xs text-amber-700">
-            Warning: non-loopback host may expose your hub to the LAN.
+            {{ t("Warning: non-loopback host may expose your hub to the LAN.") }}
           </p>
 
           <p class="mt-3 text-xs text-muted-foreground">
-            Port <span class="font-mono">0</span> means auto-pick an available port if conflict.
+            {{ t("Port 0 means auto-pick an available port if conflict.") }}
           </p>
         </div>
 
         <div class="rounded-xl border bg-background/70 p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Status</p>
-          <p class="mt-2 font-mono text-[12px]">addr: {{ snap.run.addr || "-" }}</p>
-          <p class="mt-1 font-mono text-[12px]">pid: {{ snap.run.pid || "-" }}</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Status") }}
+          </p>
+          <p class="mt-2 font-mono text-[12px]">{{ t("addr: {addr}", { addr: snap.run.addr || "-" }) }}</p>
+          <p class="mt-1 font-mono text-[12px]">{{ t("pid: {pid}", { pid: snap.run.pid || "-" }) }}</p>
           <p class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-            log: {{ snap.run.logPath || "-" }}
+            {{ t("log: {path}", { path: snap.run.logPath || "-" }) }}
           </p>
           <p v-if="snap.run.exitError" class="mt-2 text-xs text-rose-600">
-            exit: {{ snap.run.exitError }}
+            {{ t("exit: {error}", { error: snap.run.exitError }) }}
           </p>
 
           <div class="mt-3 flex flex-wrap items-center gap-2">
             <Button size="sm" :disabled="busy.starting || snap.run.running" @click="startHub">
-              Start
+              {{ t("Start") }}
             </Button>
             <Button
               size="sm"
@@ -513,7 +535,7 @@ onMounted(async () => {
               :disabled="busy.stopping || !snap.run.running"
               @click="stopHub"
             >
-              Stop
+              {{ t("Stop") }}
             </Button>
             <Button
               size="sm"
@@ -521,7 +543,7 @@ onMounted(async () => {
               :disabled="busy.restarting || !snap.install.installed"
               @click="restartHub"
             >
-              Restart
+              {{ t("Restart") }}
             </Button>
           </div>
         </div>
@@ -529,16 +551,18 @@ onMounted(async () => {
 
       <div class="mt-4 rounded-xl border bg-background/70 p-3 text-sm">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Hub Params</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Hub Params") }}
+          </p>
           <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
-            Save Config
+            {{ t("Save Config") }}
           </Button>
         </div>
 
         <div class="mt-3 grid gap-3 lg:grid-cols-2">
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">Node ID</span>
+              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Node ID") }}</span>
               <input
                 v-model="form.nodeId"
                 class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
@@ -554,23 +578,23 @@ onMounted(async () => {
                 type="checkbox"
                 class="h-4 w-4 rounded border border-input accent-primary"
               />
-              Parent link
+              {{ t("Parent link") }}
             </label>
 
             <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">Reconnect</span>
+              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Reconnect") }}</span>
               <input
                 v-model="form.parentReconnectSec"
                 class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
                 placeholder="3"
                 :disabled="!form.parentEnable"
               />
-              <span class="text-[11px] text-muted-foreground">sec</span>
+              <span class="text-[11px] text-muted-foreground">{{ t("sec") }}</span>
             </div>
           </div>
 
           <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">Parent</span>
+            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Parent") }}</span>
             <input
               v-model="form.parent"
               class="h-7 w-64 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
@@ -581,48 +605,48 @@ onMounted(async () => {
         </div>
 
         <p v-if="missingParentWarning" class="mt-2 text-xs text-amber-700">
-          Parent address is required when parent link is enabled.
+          {{ t("Parent address is required when parent link is enabled.") }}
         </p>
 
         <div class="mt-4 grid gap-3 lg:grid-cols-2">
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Auth Default Role
+              {{ t("Auth Default Role") }}
             </label>
             <input
               v-model="form.authDefaultRole"
               class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="node"
+              :placeholder="t('node')"
             />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Auth Default Perms
+              {{ t("Auth Default Perms") }}
             </label>
             <input
               v-model="form.authDefaultPerms"
               class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="file.read,file.write"
+              :placeholder="t('file.read,file.write')"
             />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Auth Node Roles
+              {{ t("Auth Node Roles") }}
             </label>
             <input
               v-model="form.authNodeRoles"
               class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="1:admin;2:node"
+              :placeholder="t('1:admin;2:node')"
             />
           </div>
           <div>
             <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Auth Role Perms
+              {{ t("Auth Role Perms") }}
             </label>
             <input
               v-model="form.authRolePerms"
               class="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="admin:p1,p2;node:p3"
+              :placeholder="t('admin:p1,p2;node:p3')"
             />
           </div>
         </div>
@@ -631,7 +655,7 @@ onMounted(async () => {
           <summary
             class="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
           >
-            Advanced Args
+            {{ t("Advanced Args") }}
           </summary>
           <div class="mt-3">
             <textarea
@@ -641,7 +665,7 @@ onMounted(async () => {
               placeholder="-send-workers=4\n-proc-workers=8"
             />
             <p class="mt-2 text-xs text-muted-foreground">
-              One full argument per line. Lines starting with <span class="font-mono">#</span> are ignored.
+              {{ t("One full argument per line. Lines starting with # are ignored.") }}
             </p>
           </div>
         </details>

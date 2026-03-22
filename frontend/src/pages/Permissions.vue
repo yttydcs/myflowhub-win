@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/i18n"
 import type { NodeRole, Policy, RolePerm } from "@/stores/permissions"
 import { usePermissionsStore } from "@/stores/permissions"
 import { useSessionStore } from "@/stores/session"
@@ -10,6 +11,7 @@ import { useToastStore } from "@/stores/toast"
 const sessionStore = useSessionStore()
 const permissionStore = usePermissionsStore()
 const toast = useToastStore()
+const { t } = useI18n()
 
 const autoLoaded = ref(false)
 const validationErrors = ref<string[]>([])
@@ -51,9 +53,9 @@ const identityLabel = computed(() => {
   const nodeId = Number(sessionStore.auth.nodeId || 0)
   const hubId = Number(sessionStore.auth.hubId || 0)
   if (!nodeId || !hubId) {
-    return "Not logged in"
+    return t("Not logged in")
   }
-  return `node=${nodeId} hub=${hubId}`
+  return t("node={nodeId} hub={hubId}", { nodeId, hubId })
 })
 
 const runtimePreview = computed(() => {
@@ -63,10 +65,12 @@ const runtimePreview = computed(() => {
 
 const runtimeSummary = computed(() => {
   if (permissionStore.state.runtimeError) {
-    return `Runtime verify failed: ${permissionStore.state.runtimeError}`
+    return t("Runtime verify failed: {error}", {
+      error: permissionStore.state.runtimeError
+    })
   }
   const total = Number(permissionStore.state.runtimeTotal || permissionStore.state.runtime.length || 0)
-  return `Runtime entries: ${total}`
+  return t("Runtime entries: {count}", { count: total })
 })
 
 const authorityLabel = computed(() => {
@@ -129,15 +133,15 @@ const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
 
   const defaultRole = policyForm.defaultRole.trim()
   if (!defaultRole) {
-    errors.push("Default role is required.")
+    errors.push(t("Default role is required."))
   } else if (hasInvalidSeparator(defaultRole)) {
-    errors.push("Default role cannot contain ',', ':', or ';'.")
+    errors.push(t("Default role cannot contain ',', ':', or ';'."))
   }
 
   const defaultPermTokens = splitCsv(policyForm.defaultPerms)
   for (const token of defaultPermTokens) {
     if (hasInvalidSeparator(token)) {
-      errors.push(`Default perm '${token}' contains invalid separator.`)
+      errors.push(t("Default perm '{token}' contains invalid separator.", { token }))
       break
     }
   }
@@ -156,19 +160,21 @@ const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
 
     const nodeId = Number.parseInt(nodeRaw, 10)
     if (Number.isNaN(nodeId) || nodeId <= 0) {
-      errors.push(`Node role row ${rowNo}: nodeId must be a positive number.`)
+      errors.push(t("Node role row {rowNo}: nodeId must be a positive number.", { rowNo }))
       continue
     }
     if (!role) {
-      errors.push(`Node role row ${rowNo}: role is required.`)
+      errors.push(t("Node role row {rowNo}: role is required.", { rowNo }))
       continue
     }
     if (hasInvalidSeparator(role)) {
-      errors.push(`Node role row ${rowNo}: role cannot contain ',', ':', or ';'.`)
+      errors.push(t("Node role row {rowNo}: role cannot contain ',', ':', or ';'.", { rowNo }))
       continue
     }
     if (nodeSeen.has(nodeId)) {
-      errors.push(`Node role row ${rowNo}: duplicate nodeId ${nodeId}.`)
+      errors.push(
+        t("Node role row {rowNo}: duplicate nodeId {nodeId}.", { rowNo, nodeId })
+      )
       continue
     }
 
@@ -189,15 +195,15 @@ const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
     }
 
     if (!role) {
-      errors.push(`Role perms row ${rowNo}: role is required.`)
+      errors.push(t("Role perms row {rowNo}: role is required.", { rowNo }))
       continue
     }
     if (hasInvalidSeparator(role)) {
-      errors.push(`Role perms row ${rowNo}: role cannot contain ',', ':', or ';'.`)
+      errors.push(t("Role perms row {rowNo}: role cannot contain ',', ':', or ';'.", { rowNo }))
       continue
     }
     if (roleSeen.has(role)) {
-      errors.push(`Role perms row ${rowNo}: duplicate role '${role}'.`)
+      errors.push(t("Role perms row {rowNo}: duplicate role '{role}'.", { rowNo, role }))
       continue
     }
 
@@ -210,7 +216,12 @@ const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
       }
     }
     if (invalid) {
-      errors.push(`Role perms row ${rowNo}: perm '${invalid}' contains invalid separator.`)
+      errors.push(
+        t("Role perms row {rowNo}: perm '{perm}' contains invalid separator.", {
+          rowNo,
+          perm: invalid
+        })
+      )
       continue
     }
 
@@ -235,16 +246,16 @@ const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
 
 const ensureReady = () => {
   if (!sessionStore.connected) {
-    throw new Error("Connect to a session first.")
+    throw new Error(t("Connect to a session first."))
   }
   if (!sessionStore.auth.loggedIn) {
-    throw new Error("Login is required.")
+    throw new Error(t("Login is required."))
   }
   if (!Number(sessionStore.auth.nodeId || 0)) {
-    throw new Error("Node ID missing.")
+    throw new Error(t("Node ID missing."))
   }
   if (!Number(sessionStore.auth.hubId || 0)) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
 }
 
@@ -252,10 +263,13 @@ const resolveAuthority = async (silent = false) => {
   ensureReady()
   const authorityId = await permissionStore.resolveAuthority()
   if (!authorityId) {
-    throw new Error("Authority ID unresolved.")
+    throw new Error(t("Authority ID unresolved."))
   }
   if (!silent) {
-    toast.success("Authority resolved.", `authority=${authorityId}`)
+    toast.success(
+      t("Authority resolved."),
+      t("authority={authorityId}", { authorityId })
+    )
   }
 }
 
@@ -264,7 +278,7 @@ const resolveAuthorityAction = async () => {
     await resolveAuthority(false)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to resolve authority.")
+    toast.errorOf(err, t("Failed to resolve authority."))
   }
 }
 
@@ -276,12 +290,15 @@ const loadPolicy = async (silent = false) => {
     await permissionStore.loadPolicy()
     syncFormFromStore()
     if (!silent) {
-      toast.success("Policy loaded.", `authority=${permissionStore.state.authorityId}`)
+      toast.success(
+        t("Policy loaded."),
+        t("authority={authorityId}", { authorityId: permissionStore.state.authorityId })
+      )
     }
   } catch (err) {
     if (!silent) {
       console.warn(err)
-      toast.errorOf(err, "Failed to load policy.")
+      toast.errorOf(err, t("Failed to load policy."))
     }
   }
 }
@@ -292,7 +309,10 @@ const savePolicy = async () => {
     const built = buildPolicyFromForm()
     validationErrors.value = built.errors
     if (built.errors.length) {
-      toast.warn("Policy validation failed.", `${built.errors.length} issue(s).`)
+      toast.warn(
+        t("Policy validation failed."),
+        t("{count} issue(s).", { count: built.errors.length })
+      )
       return
     }
     assignStorePolicy(built.policy as Policy)
@@ -308,13 +328,16 @@ const savePolicy = async () => {
     syncFormFromStore()
 
     if (resp.runtimeError) {
-      toast.warn("Policy saved with runtime verify warning.", resp.runtimeError)
+      toast.warn(t("Policy saved with runtime verify warning."), resp.runtimeError)
     } else {
-      toast.success("Policy saved.", `authority=${resp.authorityId}`)
+      toast.success(
+        t("Policy saved."),
+        t("authority={authorityId}", { authorityId: resp.authorityId })
+      )
     }
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to save policy.")
+    toast.errorOf(err, t("Failed to save policy."))
   }
 }
 
@@ -323,7 +346,7 @@ const queryNodePerms = async () => {
     ensureReady()
     const parsed = Number.parseInt(String(nodePermsQuery.nodeId || "").trim(), 10)
     if (Number.isNaN(parsed) || parsed <= 0) {
-      throw new Error("Node ID must be a positive number.")
+      throw new Error(t("Node ID must be a positive number."))
     }
     const result = await permissionStore.getNodePerms(parsed)
     nodePermsResult.value = {
@@ -331,10 +354,10 @@ const queryNodePerms = async () => {
       role: result.role,
       perms: result.perms
     }
-    toast.success("Node perms loaded.", `node=${result.nodeId}`)
+    toast.success(t("Node perms loaded."), t("node={nodeId}", { nodeId: result.nodeId }))
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, "Failed to query node perms.")
+    toast.errorOf(err, t("Failed to query node perms."))
   }
 }
 
@@ -391,32 +414,36 @@ onMounted(() => {
     <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-sm font-semibold">Authority Permissions</h2>
-          <p class="text-xs text-muted-foreground">V1 uses config_set + perms_snapshot (+optional invalidate).</p>
+          <h2 class="text-sm font-semibold">{{ t("Authority Permissions") }}</h2>
+          <p class="text-xs text-muted-foreground">
+            {{ t("V1 uses config_set + perms_snapshot (+optional invalidate).") }}
+          </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{{ sessionStore.connected ? "Connected" : "Disconnected" }}</Badge>
-          <Badge variant="secondary">{{ sessionStore.auth.loggedIn ? "Logged in" : "Logged out" }}</Badge>
+          <Badge variant="secondary">{{ sessionStore.connected ? t("Connected") : t("Disconnected") }}</Badge>
+          <Badge variant="secondary">{{ sessionStore.auth.loggedIn ? t("Logged in") : t("Logged out") }}</Badge>
           <Badge variant="secondary">{{ identityLabel }}</Badge>
-          <Badge variant="secondary">Authority {{ authorityLabel }}</Badge>
+          <Badge variant="secondary">{{ t("Authority {authority}", { authority: authorityLabel }) }}</Badge>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto_auto]">
         <div>
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Authority Override
+            {{ t("Authority Override") }}
           </label>
           <input
             v-model="permissionStore.state.authorityOverride"
             :class="inputClass"
-            placeholder="Default: hubId"
+            :placeholder="t('Default: hubId')"
           />
         </div>
         <div class="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-          <p class="font-semibold text-foreground">Resolve Rule</p>
-          <p class="mt-1">manual override -> authority.node_id -> hubId fallback</p>
-          <p class="mt-1">Reason: {{ permissionStore.state.authorityReason || "-" }}</p>
+          <p class="font-semibold text-foreground">{{ t("Resolve Rule") }}</p>
+          <p class="mt-1">{{ t("manual override -> authority.node_id -> hubId fallback") }}</p>
+          <p class="mt-1">
+            {{ t("Reason: {reason}", { reason: permissionStore.state.authorityReason || "-" }) }}
+          </p>
         </div>
         <div class="self-end">
           <Button
@@ -425,7 +452,7 @@ onMounted(() => {
             :disabled="permissionStore.state.loading || permissionStore.state.saving"
             @click="resolveAuthorityAction"
           >
-            Resolve
+            {{ t("Resolve") }}
           </Button>
         </div>
         <div class="self-end">
@@ -434,7 +461,7 @@ onMounted(() => {
             :disabled="permissionStore.state.loading || permissionStore.state.saving"
             @click="loadPolicy(false)"
           >
-            Load
+            {{ t("Load") }}
           </Button>
         </div>
       </div>
@@ -450,34 +477,38 @@ onMounted(() => {
         <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 class="text-sm font-semibold">Policy Editor</h3>
-              <p class="text-xs text-muted-foreground">Edit persisted policy fields and push runtime snapshot.</p>
+              <h3 class="text-sm font-semibold">{{ t("Policy Editor") }}</h3>
+              <p class="text-xs text-muted-foreground">
+                {{ t("Edit persisted policy fields and push runtime snapshot.") }}
+              </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" @click="addNodeRole">Add Node Role</Button>
-              <Button size="sm" variant="outline" @click="addRolePerm">Add Role Perm</Button>
+              <Button size="sm" @click="addNodeRole">{{ t("Add Node Role") }}</Button>
+              <Button size="sm" variant="outline" @click="addRolePerm">{{ t("Add Role Perm") }}</Button>
             </div>
           </div>
 
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Default Role
+                {{ t("Default Role") }}
               </label>
-              <input v-model="policyForm.defaultRole" :class="inputClass" placeholder="node" />
+              <input v-model="policyForm.defaultRole" :class="inputClass" :placeholder="t('node')" />
             </div>
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Default Perms (CSV)
+                {{ t("Default Perms (CSV)") }}
               </label>
-              <input v-model="policyForm.defaultPerms" :class="inputClass" placeholder="file.read,file.write" />
+              <input v-model="policyForm.defaultPerms" :class="inputClass" :placeholder="t('file.read,file.write')" />
             </div>
           </div>
 
           <div class="mt-6">
             <div class="flex items-center justify-between gap-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Node Roles</p>
-              <p class="text-xs text-muted-foreground">Format: nodeId -> role</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Node Roles") }}
+              </p>
+              <p class="text-xs text-muted-foreground">{{ t("Format: nodeId -> role") }}</p>
             </div>
             <div class="mt-2 space-y-2">
               <div
@@ -485,20 +516,30 @@ onMounted(() => {
                 :key="`node-role-${index}`"
                 class="grid gap-2 rounded-xl border border-border/60 bg-background/70 p-3 md:grid-cols-[140px_minmax(0,1fr)_auto]"
               >
-                <input v-model="row.nodeId" class="h-9 rounded-md border border-input bg-background px-3 text-sm" placeholder="nodeId" />
-                <input v-model="row.role" class="h-9 rounded-md border border-input bg-background px-3 text-sm" placeholder="role" />
-                <Button size="sm" variant="outline" @click="removeNodeRole(index)">Remove</Button>
+                <input
+                  v-model="row.nodeId"
+                  class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('nodeId')"
+                />
+                <input
+                  v-model="row.role"
+                  class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('role')"
+                />
+                <Button size="sm" variant="outline" @click="removeNodeRole(index)">{{ t("Remove") }}</Button>
               </div>
               <p v-if="!policyForm.nodeRoles.length" class="text-xs text-muted-foreground">
-                No explicit node role entries.
+                {{ t("No explicit node role entries.") }}
               </p>
             </div>
           </div>
 
           <div class="mt-6">
             <div class="flex items-center justify-between gap-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Role Perms</p>
-              <p class="text-xs text-muted-foreground">Format: role -> perms(csv)</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Role Perms") }}
+              </p>
+              <p class="text-xs text-muted-foreground">{{ t("Format: role -> perms(csv)") }}</p>
             </div>
             <div class="mt-2 space-y-2">
               <div
@@ -506,59 +547,65 @@ onMounted(() => {
                 :key="`role-perm-${index}`"
                 class="grid gap-2 rounded-xl border border-border/60 bg-background/70 p-3 md:grid-cols-[160px_minmax(0,1fr)_auto]"
               >
-                <input v-model="row.role" class="h-9 rounded-md border border-input bg-background px-3 text-sm" placeholder="role" />
+                <input
+                  v-model="row.role"
+                  class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('role')"
+                />
                 <input
                   v-model="row.perms"
                   class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="file.read,file.write"
+                  :placeholder="t('file.read,file.write')"
                 />
-                <Button size="sm" variant="outline" @click="removeRolePerm(index)">Remove</Button>
+                <Button size="sm" variant="outline" @click="removeRolePerm(index)">{{ t("Remove") }}</Button>
               </div>
               <p v-if="!policyForm.rolePerms.length" class="text-xs text-muted-foreground">
-                No explicit role permission entries.
+                {{ t("No explicit role permission entries.") }}
               </p>
             </div>
           </div>
 
           <div class="mt-6 rounded-xl border border-border/60 bg-background/70 p-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Save Options</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Save Options") }}
+            </p>
             <div class="mt-3 grid gap-3 sm:grid-cols-2">
               <label class="flex items-center gap-2 text-xs text-foreground">
                 <input v-model="saveOptions.persist" type="checkbox" class="h-4 w-4 rounded border border-input" />
-                Persist auth.* config
+                {{ t("Persist auth.* config") }}
               </label>
               <label class="flex items-center gap-2 text-xs text-foreground">
                 <input v-model="saveOptions.applyRuntime" type="checkbox" class="h-4 w-4 rounded border border-input" />
-                Push perms_snapshot
+                {{ t("Push perms_snapshot") }}
               </label>
               <label class="flex items-center gap-2 text-xs text-foreground">
                 <input v-model="saveOptions.invalidate" type="checkbox" class="h-4 w-4 rounded border border-input" />
-                perms_invalidate
+                {{ t("perms_invalidate") }}
               </label>
               <label class="flex items-center gap-2 text-xs text-foreground">
                 <input v-model="saveOptions.refresh" type="checkbox" class="h-4 w-4 rounded border border-input" />
-                invalidate.refresh=true
+                {{ t("invalidate.refresh=true") }}
               </label>
               <label class="flex items-center gap-2 text-xs text-foreground sm:col-span-2">
                 <input v-model="saveOptions.verifyRuntime" type="checkbox" class="h-4 w-4 rounded border border-input" />
-                Verify runtime by list_roles after save
+                {{ t("Verify runtime by list_roles after save") }}
               </label>
             </div>
 
             <div class="mt-4 flex flex-wrap gap-2">
-              <Button :disabled="permissionStore.state.saving" @click="savePolicy">Save Policy</Button>
+              <Button :disabled="permissionStore.state.saving" @click="savePolicy">{{ t("Save Policy") }}</Button>
               <Button
                 variant="outline"
                 :disabled="permissionStore.state.loading || permissionStore.state.saving"
                 @click="loadPolicy(false)"
               >
-                Reload Policy
+                {{ t("Reload Policy") }}
               </Button>
             </div>
           </div>
 
           <div v-if="validationErrors.length" class="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-            <p class="font-semibold">Validation Errors</p>
+            <p class="font-semibold">{{ t("Validation Errors") }}</p>
             <ul class="mt-2 list-disc space-y-1 pl-4">
               <li v-for="(msg, index) in validationErrors" :key="`validation-${index}`">{{ msg }}</li>
             </ul>
@@ -568,7 +615,7 @@ onMounted(() => {
             v-if="permissionStore.state.warnings.length"
             class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700"
           >
-            <p class="font-semibold">Policy Warnings</p>
+            <p class="font-semibold">{{ t("Policy Warnings") }}</p>
             <ul class="mt-2 list-disc space-y-1 pl-4">
               <li v-for="(msg, index) in permissionStore.state.warnings" :key="`warning-${index}`">{{ msg }}</li>
             </ul>
@@ -580,10 +627,14 @@ onMounted(() => {
         <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 class="text-sm font-semibold">Runtime Roles</h3>
-              <p class="text-xs text-muted-foreground">Current list_roles snapshot from authority.</p>
+              <h3 class="text-sm font-semibold">{{ t("Runtime Roles") }}</h3>
+              <p class="text-xs text-muted-foreground">
+                {{ t("Current list_roles snapshot from authority.") }}
+              </p>
             </div>
-            <Badge variant="secondary">{{ permissionStore.state.runtimeTotal || permissionStore.state.runtime.length }} entries</Badge>
+            <Badge variant="secondary">
+              {{ t("{count} entries", { count: permissionStore.state.runtimeTotal || permissionStore.state.runtime.length }) }}
+            </Badge>
           </div>
 
           <div class="mt-3 max-h-[380px] space-y-2 overflow-y-auto">
@@ -592,38 +643,52 @@ onMounted(() => {
               :key="`runtime-${entry.nodeId}`"
               class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs"
             >
-              <p class="font-semibold text-foreground">Node {{ entry.nodeId }} -> {{ entry.role || "-" }}</p>
+              <p class="font-semibold text-foreground">
+                {{ t("Node {nodeId} -> {role}", { nodeId: entry.nodeId, role: entry.role || "-" }) }}
+              </p>
               <p class="mt-1 break-all text-muted-foreground">
-                {{ entry.perms.length ? entry.perms.join(",") : "(no perms)" }}
+                {{ entry.perms.length ? entry.perms.join(",") : t("(no perms)") }}
               </p>
             </div>
-            <p v-if="!runtimePreview.length" class="text-xs text-muted-foreground">No runtime entries.</p>
+            <p v-if="!runtimePreview.length" class="text-xs text-muted-foreground">
+              {{ t("No runtime entries.") }}
+            </p>
           </div>
 
           <p
             v-if="permissionStore.state.runtime.length > runtimePreview.length"
             class="mt-2 text-xs text-muted-foreground"
           >
-            Showing first {{ runtimePreview.length }} entries.
+            {{ t("Showing first {count} entries.", { count: runtimePreview.length }) }}
           </p>
         </section>
 
         <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
-          <h3 class="text-sm font-semibold">Node Perms Query</h3>
-          <p class="text-xs text-muted-foreground">Call auth.get_perms for a single node.</p>
+          <h3 class="text-sm font-semibold">{{ t("Node Perms Query") }}</h3>
+          <p class="text-xs text-muted-foreground">{{ t("Call auth.get_perms for a single node.") }}</p>
 
           <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <input v-model="nodePermsQuery.nodeId" :class="inputClass" placeholder="Node ID" />
+            <input v-model="nodePermsQuery.nodeId" :class="inputClass" :placeholder="t('Node ID')" />
             <div class="self-end">
-              <Button variant="outline" size="sm" @click="queryNodePerms">Query</Button>
+              <Button variant="outline" size="sm" @click="queryNodePerms">{{ t("Query") }}</Button>
             </div>
           </div>
 
           <div v-if="nodePermsResult" class="mt-3 rounded-xl border border-border/60 bg-background/70 px-3 py-3 text-xs">
-            <p class="font-semibold text-foreground">Node {{ nodePermsResult.nodeId }}</p>
-            <p class="mt-1 text-muted-foreground">Role: {{ nodePermsResult.role || "-" }}</p>
+            <p class="font-semibold text-foreground">
+              {{ t("Node {nodeId}", { nodeId: nodePermsResult.nodeId }) }}
+            </p>
+            <p class="mt-1 text-muted-foreground">
+              {{ t("Role: {role}", { role: nodePermsResult.role || "-" }) }}
+            </p>
             <p class="mt-1 break-all text-muted-foreground">
-              Perms: {{ nodePermsResult.perms.length ? nodePermsResult.perms.join(",") : "(no perms)" }}
+              {{
+                t("Perms: {perms}", {
+                  perms: nodePermsResult.perms.length
+                    ? nodePermsResult.perms.join(",")
+                    : t("(no perms)")
+                })
+              }}
             </p>
           </div>
         </section>

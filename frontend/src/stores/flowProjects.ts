@@ -1,5 +1,11 @@
 import { reactive } from "vue"
-import type { FlowPayload } from "@/stores/flow"
+import { t } from "@/i18n"
+import {
+  flowEventModeLabelKey,
+  flowStatusLabelKey,
+  flowTriggerTypeLabelKey,
+  type FlowPayload
+} from "@/stores/flow"
 import { useSessionStore } from "@/stores/session"
 
 const flowProjectsVersion = 1
@@ -59,6 +65,7 @@ export type FlowProjectRecord = {
 export type FlowDeploymentRecord = {
   flowId: string
   name: string
+  everyMs: number
   trigger: Record<string, any> | null
   triggerLabel: string
   lastStatus: string
@@ -98,15 +105,15 @@ const state = reactive<FlowProjectsState>({
 const ensureIdentity = () => {
   const sessionStore = useSessionStore()
   if (!sessionStore.connected) {
-    throw new Error("Connect before flow deployment operations.")
+    throw new Error(t("Connect before flow deployment operations."))
   }
   const sourceID = Number(sessionStore.auth.nodeId || 0)
   const hubID = Number(sessionStore.auth.hubId || 0)
   if (!sourceID) {
-    throw new Error("Login required to send Flow requests.")
+    throw new Error(t("Login required to send Flow requests."))
   }
   if (!hubID) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
   return { sourceID, hubID }
 }
@@ -114,11 +121,11 @@ const ensureIdentity = () => {
 const parsePositiveNodeId = (input: string | number) => {
   const raw = String(input ?? "").trim()
   if (!raw) {
-    throw new Error("Node ID is required.")
+    throw new Error(t("Node ID is required."))
   }
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Node ID must be a positive number.")
+    throw new Error(t("Node ID must be a positive number."))
   }
   return parsed
 }
@@ -155,7 +162,7 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
     const eventName = trigger.eventName.trim()
     const eventTopic = trigger.eventTopic.trim()
     if (strict && !eventName && !eventTopic) {
-      throw new Error("Event trigger requires event name or event topic.")
+      throw new Error(t("Event trigger requires event name or event topic."))
     }
     const out: Record<string, any> = {
       type: "event",
@@ -182,7 +189,7 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
     return out
   }
   if (strict && (!Number.isFinite(trigger.everyMs) || trigger.everyMs <= 0)) {
-    throw new Error("Interval trigger requires positive everyMs.")
+    throw new Error(t("EveryMs must be a positive number."))
   }
   return {
     type: "interval",
@@ -233,10 +240,10 @@ const flowIDTaken = (projects: FlowProjectRecord[], flowId: string, excludeProje
 const ensureUniqueFlowID = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
   const trimmedFlowID = String(flowId ?? "").trim()
   if (!trimmedFlowID) {
-    throw new Error("Flow ID is required.")
+    throw new Error(t("Flow ID is required."))
   }
   if (flowIDTaken(projects, trimmedFlowID, excludeProjectId)) {
-    throw new Error("Flow ID already exists in local projects.")
+    throw new Error(t("Flow ID already exists in local projects."))
   }
   return trimmedFlowID
 }
@@ -293,7 +300,7 @@ const normalizeProjects = (input: any) => {
 const toProjectWire = (project: FlowProjectRecord) => {
   const normalized = normalizeProject(project)
   if (!normalized) {
-    throw new Error("project is invalid")
+    throw new Error(t("Project is invalid."))
   }
   return {
     project_id: normalized.projectId,
@@ -338,7 +345,7 @@ const createProject = async (input: { projectId?: string; flowId?: string; name?
   const latest = await loadProjectsSnapshot()
   const projectId = String(input?.projectId ?? "").trim() || makeProjectID()
   if (latest.some((item) => item.projectId === projectId)) {
-    throw new Error("Project ID already exists.")
+    throw new Error(t("Project ID already exists."))
   }
   const requestedFlowID = String(input?.flowId ?? "").trim()
   const flowId = requestedFlowID ? ensureUniqueFlowID(latest, requestedFlowID) : makeFlowID(latest)
@@ -358,12 +365,12 @@ const createProject = async (input: { projectId?: string; flowId?: string; name?
 const updateProjectMeta = async (input: { projectId: string; flowId: string; name?: string }) => {
   const trimmedProjectID = String(input?.projectId ?? "").trim()
   if (!trimmedProjectID) {
-    throw new Error("project_id is required")
+    throw new Error(t("Project ID is required."))
   }
   const latest = await loadProjectsSnapshot()
   const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
   if (idx < 0) {
-    throw new Error("project not found")
+    throw new Error(t("Project not found."))
   }
 
   const next: FlowProjectRecord = {
@@ -381,12 +388,12 @@ const updateProjectMeta = async (input: { projectId: string; flowId: string; nam
 const saveProjectGraph = async (projectId: string, graph: any) => {
   const trimmedProjectID = String(projectId ?? "").trim()
   if (!trimmedProjectID) {
-    throw new Error("project_id is required")
+    throw new Error(t("Project ID is required."))
   }
   const latest = await loadProjectsSnapshot()
   const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
   if (idx < 0) {
-    throw new Error("project not found")
+    throw new Error(t("Project not found."))
   }
   const next: FlowProjectRecord = {
     ...latest[idx],
@@ -402,7 +409,7 @@ const saveProjectGraph = async (projectId: string, graph: any) => {
 const deleteProject = async (projectId: string) => {
   const trimmed = String(projectId ?? "").trim()
   if (!trimmed) {
-    throw new Error("project_id is required")
+    throw new Error(t("Project ID is required."))
   }
   const latest = await loadProjectsSnapshot()
   state.projects = latest.filter((item) => item.projectId !== trimmed)
@@ -418,16 +425,16 @@ const getProjectByID = (projectId: string) => {
 const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
   const trimmedProjectID = String(projectId ?? "").trim()
   if (!trimmedProjectID) {
-    throw new Error("project_id is required")
+    throw new Error(t("Project ID is required."))
   }
   const normalizedPayloadFlowID = String(payload?.flow_id ?? "").trim()
   if (!normalizedPayloadFlowID) {
-    throw new Error("flow_id is required")
+    throw new Error(t("Flow ID is required."))
   }
   const latest = await loadProjectsSnapshot()
   const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
   if (idx < 0) {
-    throw new Error("project not found")
+    throw new Error(t("Project not found."))
   }
   const current = latest[idx]
   const next: FlowProjectRecord = {
@@ -446,7 +453,7 @@ const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
 const openEditorWindow = (projectId: string) => {
   const trimmed = String(projectId ?? "").trim()
   if (!trimmed) {
-    throw new Error("project_id is required")
+    throw new Error(t("Project ID is required."))
   }
   const base = window.location.href.split("#")[0]
   const url = `${base}#/flow-editor-window?projectId=${encodeURIComponent(trimmed)}`
@@ -469,29 +476,34 @@ const mapSummary = (input: FlowSummaryWire) => {
   }
 }
 
-const formatTriggerLabel = (trigger: any) => {
+const formatTriggerLabel = (trigger: any, fallbackEveryMs = 0) => {
   const type = String(trigger?.type ?? "").trim().toLowerCase()
   if (type === "event") {
-    const mode = String(trigger?.event_mode ?? "publish")
+    const mode = t(flowEventModeLabelKey(String(trigger?.event_mode ?? "publish")))
     const eventName = String(trigger?.event_name ?? "").trim()
     const eventTopic = String(trigger?.event_topic ?? "").trim()
-    const signal = eventName || eventTopic || "(name/topic empty)"
-    return `event · ${mode} · ${signal}`
+    const signal = eventName || eventTopic || t("Name or topic empty")
+    return t("Event · {mode} · {signal}", { mode, signal })
   }
   if (type === "var_changed") {
     const owner = Number(trigger?.var_owner ?? 0)
     const name = String(trigger?.var_name ?? "").trim()
     if (owner > 0 || name) {
-      return `var_changed · owner ${owner > 0 ? owner : "any"} · ${name || "any"}`
+      return t("Variable changed · owner {owner} · {name}", {
+        owner: owner > 0 ? owner : t("Any"),
+        name: name || t("Any")
+      })
     }
-    return "var_changed"
+    return t(flowTriggerTypeLabelKey(type))
   }
-  const everyMs = Number(trigger?.every_ms ?? 0)
+  const everyMs = Number(trigger?.every_ms ?? fallbackEveryMs ?? 0)
   if (everyMs > 0) {
-    return `interval · every ${everyMs} ms`
+    return t("Interval · every {everyMs} ms", { everyMs })
   }
-  return "interval"
+  return t(type ? flowTriggerTypeLabelKey(type) : "Trigger unavailable")
 }
+
+const describeDeploymentStatus = (status: string) => t(flowStatusLabelKey(status || "idle"))
 
 const mapWithConcurrency = async <T, R>(
   items: T[],
@@ -529,7 +541,7 @@ const loadDeployments = async (nodeIdInput: string | number) => {
     })
     const listCode = Number(listResp?.code ?? 0)
     if (listCode !== 1) {
-      throw new Error(String(listResp?.msg ?? "Flow list failed."))
+      throw new Error(String(listResp?.msg ?? t("Flow list failed.")))
     }
 
     const flowItems: FlowSummaryWire[] = Array.isArray(listResp?.flows) ? listResp.flows : []
@@ -556,12 +568,9 @@ const loadDeployments = async (nodeIdInput: string | number) => {
       return {
         flowId: summary.flowId,
         name: summary.name,
+        everyMs: summary.everyMs,
         trigger,
-        triggerLabel: trigger
-          ? formatTriggerLabel(trigger)
-          : summary.everyMs > 0
-            ? `interval · every ${summary.everyMs} ms`
-            : "trigger unavailable",
+        triggerLabel: formatTriggerLabel(trigger, summary.everyMs),
         lastStatus: summary.lastStatus,
         lastRunId: summary.lastRunId
       }
@@ -583,10 +592,10 @@ const deployProject = async (input: {
 }) => {
   const project = getProjectByID(input.projectId)
   if (!project) {
-    throw new Error("project not found")
+    throw new Error(t("Project not found."))
   }
   if (!Array.isArray(project.graph?.nodes) || project.graph.nodes.length === 0) {
-    throw new Error("Project graph requires at least one node.")
+    throw new Error(t("Project graph requires at least one node."))
   }
   const targetNodeID = parsePositiveNodeId(input.nodeId)
   const trigger = normalizeTriggerDraft(input.trigger)
@@ -599,7 +608,7 @@ const deployProject = async (input: {
   })
   const listCode = Number(listResp?.code ?? 0)
   if (listCode !== 1) {
-    throw new Error(String(listResp?.msg ?? "Flow list failed."))
+    throw new Error(String(listResp?.msg ?? t("Flow list failed.")))
   }
   const existingFlows: FlowSummaryWire[] = Array.isArray(listResp?.flows) ? listResp.flows : []
   const flowExists = existingFlows
@@ -621,7 +630,7 @@ const deployProject = async (input: {
   })
   const setCode = Number(setResp?.code ?? 0)
   if (setCode !== 1) {
-    throw new Error(String(setResp?.msg ?? "Flow deploy failed."))
+    throw new Error(String(setResp?.msg ?? t("Flow deploy failed.")))
   }
 
   const latest = await loadProjectsSnapshot()
@@ -643,7 +652,7 @@ const deleteDeployment = async (nodeIdInput: string | number, flowId: string) =>
   const targetNodeID = parsePositiveNodeId(nodeIdInput)
   const trimmedFlowID = String(flowId ?? "").trim()
   if (!trimmedFlowID) {
-    throw new Error("flow_id is required")
+    throw new Error(t("Flow ID is required."))
   }
   const { sourceID, hubID } = ensureIdentity()
   const resp = await callFlow<any>("DeleteSimple", sourceID, hubID, {
@@ -654,7 +663,7 @@ const deleteDeployment = async (nodeIdInput: string | number, flowId: string) =>
   })
   const code = Number(resp?.code ?? 0)
   if (code !== 1) {
-    throw new Error(String(resp?.msg ?? "Flow delete failed."))
+    throw new Error(String(resp?.msg ?? t("Flow delete failed.")))
   }
   state.deployments = state.deployments.filter((item) => item.flowId !== trimmedFlowID)
 }
@@ -674,6 +683,8 @@ export const useFlowProjectsStore = () => {
     loadDeployments,
     deployProject,
     deleteDeployment,
+    describeDeploymentStatus,
+    describeTrigger: formatTriggerLabel,
     normalizeTriggerDraft,
     toTriggerWire
   }

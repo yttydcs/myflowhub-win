@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 type WailsBinding = (...args: any[]) => Promise<any>
@@ -6,7 +7,7 @@ const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.main?.App
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`App binding '${method}' unavailable`)
+    throw new Error(t("App binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -15,7 +16,7 @@ const callVarPool = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.varpool?.VarPoolService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`VarPool binding '${method}' unavailable`)
+    throw new Error(t("VarPool binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -264,7 +265,7 @@ const resolveTargetId = () => {
   if (!raw) return state.defaultTargetId
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error("Target ID must be a valid number.")
+    throw new Error(t("Target ID must be a valid number."))
   }
   return parsed
 }
@@ -272,14 +273,14 @@ const resolveTargetId = () => {
 const resolveHubTargetId = () => {
   const hubId = Number(state.defaultTargetId || 0)
   if (!hubId || hubId <= 0) {
-    throw new Error("Hub target is unavailable. Re-login and retry.")
+    throw new Error(t("Hub target is unavailable. Re-login and retry."))
   }
   return hubId
 }
 
 const ensureSourceID = () => {
   if (!state.selfNodeId) {
-    throw new Error("Login required to send VarPool requests.")
+    throw new Error(t("Login required to send VarPool requests."))
   }
   return state.selfNodeId
 }
@@ -289,7 +290,7 @@ const listOwnerNames = async (ownerId: number) => {
   const targetID = resolveHubTargetId()
   const owner = Number(ownerId || 0)
   if (!owner || owner <= 0) {
-    throw new Error("Owner NodeID is required.")
+    throw new Error(t("Owner NodeID is required."))
   }
   const resp = parseResp(await callVarPool<any>("ListSimple", sourceID, targetID, { owner }))
   if (resp.code === 4) {
@@ -300,7 +301,7 @@ const listOwnerNames = async (ownerId: number) => {
     if (msg) {
       throw new Error(msg)
     }
-    throw new Error(`VarPool list failed (code=${resp.code})`)
+    throw new Error(t("VarPool list failed (code={code})", { code: resp.code }))
   }
   const out: string[] = []
   const seen = new Set<string>()
@@ -328,8 +329,8 @@ const getVar = async (input: VarPoolKey) => {
   const targetID = resolveTargetId()
   const key = normalizeKey(input)
   const owner = key.owner || sourceID
-  if (!key.name) throw new Error("Variable name is required.")
-  if (!owner) throw new Error("Owner is required.")
+  if (!key.name) throw new Error(t("Variable name is required."))
+  if (!owner) throw new Error(t("Owner is required."))
   const resp = parseResp(await callVarPool<any>("GetSimple", sourceID, targetID, { name: key.name, owner }))
   handleVarChanged(resp)
 }
@@ -339,8 +340,8 @@ const setVar = async (input: VarPoolKey, value: string, visibility: string, kind
   const targetID = resolveTargetId()
   const key = normalizeKey(input)
   const owner = key.owner || sourceID
-  if (!key.name) throw new Error("Variable name is required.")
-  if (!value.trim()) throw new Error("Variable value is required.")
+  if (!key.name) throw new Error(t("Variable name is required."))
+  if (!value.trim()) throw new Error(t("Variable value is required."))
   const resp = parseResp(await callVarPool<any>("SetSimple", sourceID, targetID, {
     name: key.name,
     value,
@@ -361,8 +362,8 @@ const revokeVar = async (input: VarPoolKey) => {
   const targetID = resolveTargetId()
   const key = normalizeKey(input)
   const owner = key.owner || sourceID
-  if (!key.name) throw new Error("Variable name is required.")
-  if (!owner) throw new Error("Owner is required.")
+  if (!key.name) throw new Error(t("Variable name is required."))
+  if (!owner) throw new Error(t("Owner is required."))
   const resp = parseResp(await callVarPool<any>("RevokeSimple", sourceID, targetID, { name: key.name, owner }))
   handleVarRevokeResp("revoke_resp", resp)
 }
@@ -372,8 +373,8 @@ const subscribeVar = async (input: VarPoolKey) => {
   const targetID = resolveTargetId()
   const key = normalizeKey(input)
   const owner = key.owner || sourceID
-  if (!key.name) throw new Error("Variable name is required.")
-  if (!owner) throw new Error("Owner is required.")
+  if (!key.name) throw new Error(t("Variable name is required."))
+  if (!owner) throw new Error(t("Owner is required."))
   const desiredKey = { name: key.name, owner }
   upsertKey(desiredKey)
   setDesiredSubscribe(desiredKey, true)
@@ -394,8 +395,8 @@ const unsubscribeVar = async (input: VarPoolKey) => {
   const targetID = resolveTargetId()
   const key = normalizeKey(input)
   const owner = key.owner || sourceID
-  if (!key.name) throw new Error("Variable name is required.")
-  if (!owner) throw new Error("Owner is required.")
+  if (!key.name) throw new Error(t("Variable name is required."))
+  if (!owner) throw new Error(t("Owner is required."))
   const desiredKey = { name: key.name, owner }
   upsertKey(desiredKey)
   setDesiredSubscribe(desiredKey, false)
