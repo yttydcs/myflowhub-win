@@ -448,8 +448,8 @@ onBeforeUnmount(() => {
           </section>
         </section>
 
-        <aside class="min-h-0 min-w-0">
-          <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+        <aside class="flex h-full min-h-0 min-w-0 flex-col">
+          <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
             <section class="shrink-0 rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
               <CardHeader :title="t('Window Snapshot')" title-class="text-lg" />
 
@@ -486,21 +486,23 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="min-h-[220px] rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
+            <section class="flex min-h-[220px] flex-col rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm xl:flex-1">
               <CardHeader
                 :title="t('Window Actions')"
                 :description="t('Keep the main workspace focused on traffic and publishing. Use this side panel for quick actions.')"
                 title-class="text-lg"
               />
 
-              <div class="mt-4 grid gap-3">
-                <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
-                <Button variant="outline" class="justify-start" @click="clearLocalEvents">{{ t("Clear Receive List") }}</Button>
-                <Button variant="outline" class="justify-start" @click="clearComposer">{{ t("Reset Draft") }}</Button>
-              </div>
+              <div class="mt-4 flex min-h-0 flex-1 flex-col gap-4 xl:overflow-y-auto">
+                <div class="grid gap-3">
+                  <Button variant="outline" class="justify-start" @click="scrollToLatest">{{ t("Scroll to Latest") }}</Button>
+                  <Button variant="outline" class="justify-start" @click="clearLocalEvents">{{ t("Clear Receive List") }}</Button>
+                  <Button variant="outline" class="justify-start" @click="clearComposer">{{ t("Reset Draft") }}</Button>
+                </div>
 
-              <div class="mt-4 rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-                {{ t("Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.") }}
+                <div class="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                  {{ t("Your own publish action will not echo back into this window. Open another subscriber if you need to observe your outbound event.") }}
+                </div>
               </div>
             </section>
           </div>
