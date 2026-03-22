@@ -20,6 +20,7 @@ import (
 )
 
 const defaultManagementTimeout = 8 * time.Second
+const nodeDisplayNameKey = "node.display_name"
 
 type ManagementService struct {
 	session *sessionsvc.SessionService
@@ -55,7 +56,7 @@ func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message st
 
 func (s *ManagementService) NodeInfo(ctx context.Context, sourceID, targetID uint32) (management.NodeInfoResp, error) {
 	if sourceID != 0 && sourceID == targetID {
-		return management.NodeInfoResp{Code: 1, Msg: "ok", Items: collectNodeInfoItems(sourceID)}, nil
+		return management.NodeInfoResp{Code: 1, Msg: "ok", Items: s.collectSelfNodeInfoItems(sourceID)}, nil
 	}
 	payload, err := transport.EncodeMessage(management.ActionNodeInfo, management.NodeInfoReq{})
 	if err != nil {
@@ -340,6 +341,40 @@ func formatConfigValue(value any) string {
 			return string(encoded)
 		}
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+func (s *ManagementService) collectSelfNodeInfoItems(nodeID uint32) map[string]string {
+	items := collectNodeInfoItems(nodeID)
+	if displayName := s.localNodeDisplayName(); displayName != "" {
+		items["display_name"] = displayName
+	}
+	return items
+}
+
+func (s *ManagementService) localNodeDisplayName() string {
+	if s.store == nil {
+		return ""
+	}
+	if raw, ok := s.store.GetRaw(nodeDisplayNameKey); ok {
+		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
+			return displayName
+		}
+	}
+	profile := s.store.CurrentProfile()
+	return strings.TrimSpace(s.store.GetString(profile, nodeDisplayNameKey, ""))
+}
+
+func normalizeNodeDisplayName(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case []byte:
+		return strings.TrimSpace(string(v))
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
 	}
 }
 

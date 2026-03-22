@@ -15,23 +15,36 @@ import (
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
+	storagesvc "github.com/yttydcs/myflowhub-win/internal/storage"
 )
 
 const defaultNodeKeysPath = "config/node_keys.json"
 
 const defaultAuthTimeout = 8 * time.Second
+const nodeDisplayNameKey = "node.display_name"
 
 type AuthService struct {
 	session  *sessionsvc.SessionService
 	logs     *logs.LogService
+	store    *storagesvc.Store
 	keyMu    sync.Mutex
 	nodePriv *ecdsa.PrivateKey
 	nodePub  string
 	keysPath string
 }
 
-func New(session *sessionsvc.SessionService, logsSvc *logs.LogService) *AuthService {
-	return &AuthService{session: session, logs: logsSvc, keysPath: defaultNodeKeysPath}
+type registerRequest struct {
+	auth.RegisterData
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+type loginRequest struct {
+	auth.LoginData
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, store *storagesvc.Store) *AuthService {
+	return &AuthService{session: session, logs: logsSvc, store: store, keysPath: defaultNodeKeysPath}
 }
 
 func (s *AuthService) SetKeysPath(path string) {
@@ -79,11 +92,7 @@ func (s *AuthService) Register(ctx context.Context, sourceID, targetID uint32, d
 	if err != nil {
 		return auth.RespData{}, err
 	}
-	payload, err := transport.EncodeMessage(auth.ActionRegister, auth.RegisterData{
-		DeviceID: deviceID,
-		PubKey:   pub,
-		NodePub:  pub,
-	})
+	payload, err := transport.EncodeMessage(auth.ActionRegister, s.newRegisterRequest(deviceID, pub))
 	if err != nil {
 		return auth.RespData{}, err
 	}
@@ -114,7 +123,7 @@ func (s *AuthService) Login(ctx context.Context, sourceID, targetID uint32, devi
 	if err != nil {
 		return auth.RespData{}, err
 	}
-	payload, err := transport.EncodeMessage(auth.ActionLogin, login)
+	payload, err := transport.EncodeMessage(auth.ActionLogin, s.newLoginRequest(login))
 	if err != nil {
 		return auth.RespData{}, err
 	}
@@ -177,6 +186,50 @@ func (s *AuthService) SignLogin(deviceID string, nodeID uint32) (auth.LoginData,
 		Sig:      sig,
 		Alg:      "ES256",
 	}, nil
+}
+
+func (s *AuthService) newRegisterRequest(deviceID, pub string) registerRequest {
+	return registerRequest{
+		RegisterData: auth.RegisterData{
+			DeviceID: deviceID,
+			PubKey:   pub,
+			NodePub:  pub,
+		},
+		DisplayName: s.localNodeDisplayName(),
+	}
+}
+
+func (s *AuthService) newLoginRequest(login auth.LoginData) loginRequest {
+	return loginRequest{
+		LoginData:   login,
+		DisplayName: s.localNodeDisplayName(),
+	}
+}
+
+func (s *AuthService) localNodeDisplayName() string {
+	if s.store == nil {
+		return ""
+	}
+	if raw, ok := s.store.GetRaw(nodeDisplayNameKey); ok {
+		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
+			return displayName
+		}
+	}
+	profile := s.store.CurrentProfile()
+	return strings.TrimSpace(s.store.GetString(profile, nodeDisplayNameKey, ""))
+}
+
+func normalizeNodeDisplayName(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case []byte:
+		return strings.TrimSpace(string(v))
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", v))
+	}
 }
 
 func (s *AuthService) send(_ context.Context, sourceID, targetID uint32, payload []byte) error {

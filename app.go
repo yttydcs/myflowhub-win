@@ -66,7 +66,7 @@ func NewApp() *App {
 		logs:       logs,
 		session:    session,
 		localhub:   localhubsvc.New(store, logs),
-		auth:       authsvc.New(session, logs),
+		auth:       authsvc.New(session, logs, store),
 		varpool:    varpoolsvc.New(session, logs, bus),
 		topicbus:   topicbussvc.New(session, logs, bus),
 		file:       filesvc.New(session, logs, store, bus),

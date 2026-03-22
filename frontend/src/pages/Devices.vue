@@ -220,7 +220,8 @@ const openEdit = (key: string, value: string) => {
 }
 
 const configDisplayName = computed(() => {
-  return resolveNodeDisplayName(mgmtStore.state.selectedNodeId)
+  const localValue = mgmtStore.state.configEntries.find((entry) => entry.key === "node.display_name")?.value
+  return normalizeDisplayName(localValue) || resolveNodeDisplayName(mgmtStore.state.selectedNodeId)
 })
 
 const configTitle = computed(() => {
