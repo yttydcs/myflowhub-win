@@ -8,7 +8,15 @@ import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useI18n } from "@/i18n"
-import { useFlowStore, type FlowInputBindingDraft, type FlowNodeKind } from "@/stores/flow"
+import {
+  useFlowStore,
+  type FlowBindingSourceKind,
+  type FlowInputBindingDraft,
+  type FlowNodeKind,
+  type NodeVisualFormModel,
+  type VisualBindingSource,
+  type VisualFieldModel
+} from "@/stores/flow"
 import { useFlowProjectsStore } from "@/stores/flowProjects"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -28,11 +36,21 @@ const loadedProjectName = ref("")
 const saveBusy = ref(false)
 const addNodeOpen = ref(false)
 const methodDialogOpen = ref(false)
+const fieldBindingDialogOpen = ref(false)
 const methodSearch = ref("")
 const queryNodeIdDraft = ref("")
 const nodeIdDraft = ref("")
 const pendingCapabilityKey = ref("")
 const lastCapabilityQueryNode = ref("")
+const activeBindingFieldPointer = ref("")
+const fieldDrafts = reactive<Record<string, string>>({})
+const fieldBindingDraft = reactive({
+  sourceKind: "trigger" as FlowBindingSourceKind,
+  nodeId: "",
+  path: "",
+  field: "flow_id",
+  required: false
+})
 
 const nodeDraft = reactive({
   id: "",
@@ -128,6 +146,243 @@ const selectedNodeValidation = computed(() =>
 const ancestorNodeOptions = computed(() =>
   selectedNode.value ? flowStore.listAncestorNodeIds(selectedNode.value.id) : []
 )
+const bindableAncestorNodeOptions = computed(() =>
+  selectedNode.value ? flowStore.listBindableAncestorNodeIds(selectedNode.value.id) : []
+)
+const selectedCallVisualForm = computed<NodeVisualFormModel | null>(() => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "call") return null
+  return flowStore.getNodeVisualForm(node.id)
+})
+const activeBindingField = computed<VisualFieldModel | null>(() => {
+  const form = selectedCallVisualForm.value
+  if (!form) return null
+  return form.fields.find((field) => field.schema.pointer === activeBindingFieldPointer.value) ?? null
+})
+
+const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
+  if (source?.kind === "node_result") {
+    fieldBindingDraft.sourceKind = "node_result"
+    fieldBindingDraft.nodeId = source.nodeId
+    fieldBindingDraft.path = source.path
+    fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.required = source.required
+    return
+  }
+  if (source?.kind === "trigger") {
+    fieldBindingDraft.sourceKind = "trigger"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = source.path
+    fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.required = source.required
+    return
+  }
+  if (source?.kind === "flow_meta") {
+    fieldBindingDraft.sourceKind = "flow_meta"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.required = source.required
+    return
+  }
+  if (source?.kind === "run_meta") {
+    fieldBindingDraft.sourceKind = "run_meta"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = "run_id"
+    fieldBindingDraft.required = source.required
+    return
+  }
+
+  fieldBindingDraft.sourceKind = bindableAncestorNodeOptions.value.length ? "node_result" : "trigger"
+  fieldBindingDraft.nodeId = bindableAncestorNodeOptions.value[0] ?? ""
+  fieldBindingDraft.path = ""
+  fieldBindingDraft.field = "flow_id"
+  fieldBindingDraft.required = false
+}
+
+const closeFieldBindingDialog = () => {
+  fieldBindingDialogOpen.value = false
+  activeBindingFieldPointer.value = ""
+}
+
+const openFieldBindingDialog = (field: VisualFieldModel) => {
+  if (field.schema.bindable === false) return
+  activeBindingFieldPointer.value = field.schema.pointer
+  resetFieldBindingDraft(field.state.binding)
+  fieldBindingDialogOpen.value = true
+}
+
+const onFieldBindingSourceKindChange = (event: Event) => {
+  const sourceKind = String((event.target as HTMLSelectElement | null)?.value ?? "trigger")
+  fieldBindingDraft.sourceKind = sourceKind === "node_result" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+    ? sourceKind
+    : "trigger"
+  if (fieldBindingDraft.sourceKind === "node_result") {
+    fieldBindingDraft.nodeId = bindableAncestorNodeOptions.value[0] ?? ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = "flow_id"
+    return
+  }
+  if (fieldBindingDraft.sourceKind === "trigger") {
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = "flow_id"
+    return
+  }
+  fieldBindingDraft.nodeId = ""
+  fieldBindingDraft.path = ""
+  fieldBindingDraft.field = fieldBindingDraft.sourceKind === "run_meta" ? "run_id" : "flow_id"
+}
+
+const buildVisualBindingSource = (): VisualBindingSource => {
+  switch (fieldBindingDraft.sourceKind) {
+    case "node_result":
+      return {
+        kind: "node_result",
+        nodeId: fieldBindingDraft.nodeId,
+        path: fieldBindingDraft.path,
+        required: fieldBindingDraft.required
+      }
+    case "flow_meta":
+      return {
+        kind: "flow_meta",
+        field: "flow_id",
+        required: fieldBindingDraft.required
+      }
+    case "run_meta":
+      return {
+        kind: "run_meta",
+        field: "run_id",
+        required: fieldBindingDraft.required
+      }
+    case "trigger":
+    default:
+      return {
+        kind: "trigger",
+        path: fieldBindingDraft.path,
+        required: fieldBindingDraft.required
+      }
+  }
+}
+
+const applyFieldBinding = () => {
+  const node = selectedNode.value
+  const field = activeBindingField.value
+  if (!node || node.kind !== "call" || !field) return
+  try {
+    flowStore.setFieldBinding(node.id, field.schema.pointer, buildVisualBindingSource())
+    closeFieldBindingDialog()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to save field binding."))
+  }
+}
+
+const clearVisualFieldBinding = (pointer?: string) => {
+  const node = selectedNode.value
+  const targetPointer = pointer ?? activeBindingFieldPointer.value
+  if (!node || node.kind !== "call" || !targetPointer) return
+  try {
+    flowStore.clearFieldBinding(node.id, targetPointer)
+    if (!pointer) {
+      closeFieldBindingDialog()
+    }
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to clear field binding."))
+  }
+}
+
+const stringifyFieldDraftValue = (field: VisualFieldModel) => {
+  const value = field.state.literalValue
+  switch (field.schema.control) {
+    case "number":
+      return value === undefined || value === null ? "" : String(value)
+    case "select":
+      return value === undefined ? "" : JSON.stringify(value)
+    case "json":
+      return value === undefined ? "" : JSON.stringify(value, null, 2)
+    case "switch":
+      return value ? "true" : "false"
+    case "textarea":
+    case "text":
+    default:
+      return value === undefined || value === null ? "" : String(value)
+  }
+}
+
+const syncFieldDrafts = (form: NodeVisualFormModel | null) => {
+  for (const key of Object.keys(fieldDrafts)) {
+    delete fieldDrafts[key]
+  }
+  if (!form?.compatibility.supported) {
+    return
+  }
+  for (const field of form.fields) {
+    fieldDrafts[field.schema.pointer] = stringifyFieldDraftValue(field)
+  }
+}
+
+const parseFieldDraftValue = (field: VisualFieldModel): unknown => {
+  const raw = fieldDrafts[field.schema.pointer] ?? ""
+  switch (field.schema.control) {
+    case "number": {
+      const trimmed = raw.trim()
+      if (!trimmed) return undefined
+      const parsed = Number(trimmed)
+      if (!Number.isFinite(parsed)) {
+        throw new Error(t("Field {label} must be a valid number.", { label: field.schema.label }))
+      }
+      return parsed
+    }
+    case "select":
+      return raw ? JSON.parse(raw) : undefined
+    case "json": {
+      const trimmed = raw.trim()
+      if (!trimmed) return undefined
+      try {
+        return JSON.parse(trimmed)
+      } catch {
+        throw new Error(t("Field {label} must be valid JSON.", { label: field.schema.label }))
+      }
+    }
+    case "textarea":
+    case "text":
+    default:
+      return raw
+  }
+}
+
+const commitFieldLiteralValue = (field: VisualFieldModel) => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "call") return
+  try {
+    flowStore.setFieldLiteralValue(node.id, field.schema.pointer, parseFieldDraftValue(field))
+    const form = flowStore.getNodeVisualForm(node.id)
+    const nextField = form.fields.find((item) => item.schema.pointer === field.schema.pointer)
+    fieldDrafts[field.schema.pointer] = nextField ? stringifyFieldDraftValue(nextField) : ""
+  } catch (err) {
+    console.warn(err)
+    fieldDrafts[field.schema.pointer] = stringifyFieldDraftValue(field)
+    toast.errorOf(err, t("Failed to update field value."))
+  }
+}
+
+const setBooleanFieldLiteralValue = (field: VisualFieldModel, event: Event) => {
+  const node = selectedNode.value
+  if (!node || node.kind !== "call") return
+  try {
+    flowStore.setFieldLiteralValue(
+      node.id,
+      field.schema.pointer,
+      Boolean((event.target as HTMLInputElement | null)?.checked)
+    )
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to update field value."))
+  }
+}
 
 const closeNodeDetail = () => {
   flowStore.clearSelection()
@@ -401,7 +656,7 @@ const isEditableTarget = (target: EventTarget | null) => {
 }
 
 const onKeyDown = (event: KeyboardEvent) => {
-  if (addNodeOpen.value || methodDialogOpen.value) return
+  if (addNodeOpen.value || methodDialogOpen.value || fieldBindingDialogOpen.value) return
 
   const key = event.key || ""
   const lower = key.toLowerCase()
@@ -453,6 +708,7 @@ watch(
   () => selectedNode.value?.id ?? "",
   () => {
     nodeIdDraft.value = selectedNode.value?.id ?? ""
+    closeFieldBindingDialog()
     if (!methodDialogOpen.value) {
       methodSearch.value = selectedNode.value?.method?.trim() ?? ""
       syncPendingCapability()
@@ -467,6 +723,7 @@ watch(
   (open) => {
     if (!open) {
       methodDialogOpen.value = false
+      closeFieldBindingDialog()
     }
   }
 )
@@ -476,8 +733,22 @@ watch(
   (kind) => {
     if (kind !== "call") {
       methodDialogOpen.value = false
+      closeFieldBindingDialog()
     }
   }
+)
+
+watch(
+  () => selectedCallVisualForm.value,
+  (form) => {
+    syncFieldDrafts(form)
+    if (!fieldBindingDialogOpen.value || !activeBindingFieldPointer.value) return
+    const stillExists = form?.fields.some((field) => field.schema.pointer === activeBindingFieldPointer.value)
+    if (!stillExists) {
+      closeFieldBindingDialog()
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -739,19 +1010,178 @@ onUnmounted(() => {
                       </p>
                     </div>
 
-                    <div>
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Args Template (JSON)") }}
-                      </label>
-                      <textarea
-                        v-model="selectedNode.argsTemplate"
-                        rows="9"
-                        class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-                        @blur="flowStore.commitHistory()"
-                      />
-                      <p class="mt-1 text-[11px] text-muted-foreground">
-                        {{ t("This base JSON is materialized first, then input bindings write into it in order.") }}
-                      </p>
+                    <div
+                      v-if="selectedCallVisualForm?.compatibility.supported"
+                      class="rounded-xl border border-border/70 bg-muted/20 p-4"
+                    >
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            {{ t("Method Fields") }}
+                          </p>
+                          <p class="mt-2 text-sm font-semibold">
+                            {{ selectedCallVisualForm.schema?.title || selectedNode.method }}
+                          </p>
+                          <p class="mt-1 text-[11px] text-muted-foreground">
+                            {{
+                              selectedCallVisualForm.schema?.source === "local_override"
+                                ? t("Schema source: local override")
+                                : t("Schema source: capability input_schema")
+                            }}
+                          </p>
+                        </div>
+                        <span class="rounded-full border border-border/70 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          {{ t("Visual Form") }}
+                        </span>
+                      </div>
+
+                      <div class="mt-4 space-y-3">
+                        <div
+                          v-for="field in selectedCallVisualForm.fields"
+                          :key="field.schema.pointer"
+                          class="rounded-lg border border-border/70 bg-background/90 p-4"
+                        >
+                          <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <div class="flex flex-wrap items-center gap-2">
+                                <p class="text-sm font-semibold">{{ field.schema.label }}</p>
+                                <span
+                                  v-if="field.schema.required"
+                                  class="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-muted-foreground"
+                                >
+                                  {{ t("Required") }}
+                                </span>
+                                <span
+                                  v-if="field.state.mode === 'binding'"
+                                  class="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-primary"
+                                >
+                                  {{ t("Bound") }}
+                                </span>
+                              </div>
+                              <p class="mt-1 break-all text-[11px] text-muted-foreground">{{ field.schema.pointer }}</p>
+                              <p v-if="field.schema.description" class="mt-1 text-[11px] text-muted-foreground">
+                                {{ field.schema.description }}
+                              </p>
+                            </div>
+                            <Button
+                              v-if="field.schema.bindable !== false"
+                              size="sm"
+                              variant="outline"
+                              @click="openFieldBindingDialog(field)"
+                            >
+                              {{ field.state.mode === "binding" ? t("Edit fx") : t("Add fx") }}
+                            </Button>
+                          </div>
+
+                          <div
+                            v-if="field.state.mode === 'binding'"
+                            class="mt-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-3"
+                          >
+                            <p class="text-xs font-medium text-primary">
+                              {{ t("This field currently reads from an upstream source.") }}
+                            </p>
+                            <p class="mt-1 text-sm font-medium">{{ field.bindingSummary || t("Binding configured.") }}</p>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                              <Button size="sm" variant="outline" @click="openFieldBindingDialog(field)">
+                                {{ t("Edit Binding") }}
+                              </Button>
+                              <Button size="sm" variant="ghost" @click="clearVisualFieldBinding(field.schema.pointer)">
+                                {{ t("Use Literal Instead") }}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div v-else class="mt-3">
+                            <input
+                              v-if="field.schema.control === 'text'"
+                              v-model="fieldDrafts[field.schema.pointer]"
+                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              @blur="commitFieldLiteralValue(field)"
+                            />
+
+                            <textarea
+                              v-else-if="field.schema.control === 'textarea'"
+                              v-model="fieldDrafts[field.schema.pointer]"
+                              rows="4"
+                              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                              @blur="commitFieldLiteralValue(field)"
+                            />
+
+                            <input
+                              v-else-if="field.schema.control === 'number'"
+                              v-model="fieldDrafts[field.schema.pointer]"
+                              type="number"
+                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              @blur="commitFieldLiteralValue(field)"
+                            />
+
+                            <select
+                              v-else-if="field.schema.control === 'select'"
+                              v-model="fieldDrafts[field.schema.pointer]"
+                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              @change="commitFieldLiteralValue(field)"
+                            >
+                              <option v-if="!field.schema.required" value="">{{ t("Not set") }}</option>
+                              <option
+                                v-for="option in field.schema.options ?? []"
+                                :key="JSON.stringify(option.value)"
+                                :value="JSON.stringify(option.value)"
+                              >
+                                {{ option.label }}
+                              </option>
+                            </select>
+
+                            <label
+                              v-else-if="field.schema.control === 'switch'"
+                              class="flex h-10 items-center gap-3 rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                              <input
+                                :checked="Boolean(field.state.literalValue)"
+                                type="checkbox"
+                                class="h-4 w-4 rounded border"
+                                @change="setBooleanFieldLiteralValue(field, $event)"
+                              />
+                              <span>{{ t("Enabled") }}</span>
+                            </label>
+
+                            <textarea
+                              v-else
+                              v-model="fieldDrafts[field.schema.pointer]"
+                              rows="6"
+                              class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
+                              @blur="commitFieldLiteralValue(field)"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+                            {{ t("Visual form unavailable") }}
+                          </p>
+                          <p class="mt-2 text-sm text-foreground">
+                            {{ t("This call node cannot be edited safely in ordinary mode. Use Advanced JSON for the full spec.") }}
+                          </p>
+                        </div>
+                        <Button size="sm" variant="outline" @click="setSelectedNodeSpecMode('json')">
+                          {{ t("Open Advanced JSON") }}
+                        </Button>
+                      </div>
+                      <ul
+                        v-if="selectedCallVisualForm?.compatibility.reasons.length"
+                        class="mt-3 space-y-1 text-xs text-muted-foreground"
+                      >
+                        <li
+                          v-for="reason in selectedCallVisualForm.compatibility.reasons"
+                          :key="reason"
+                          class="rounded-md bg-background/70 px-3 py-2"
+                        >
+                          {{ reason }}
+                        </li>
+                      </ul>
                     </div>
                   </div>
 
@@ -779,134 +1209,133 @@ onUnmounted(() => {
                         {{ t("Compose starts from this JSON template and applies the same binding list as call nodes.") }}
                       </p>
                     </div>
-                  </div>
-
-                  <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                          {{ t("Input Bindings") }}
-                        </p>
-                        <p class="mt-1 text-[11px] text-muted-foreground">
-                          {{ t("Bindings can read trigger data, flow/run metadata, or ancestor node results.") }}
-                        </p>
+                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            {{ t("Input Bindings") }}
+                          </p>
+                          <p class="mt-1 text-[11px] text-muted-foreground">
+                            {{ t("Bindings can read trigger data, flow/run metadata, or ancestor node results.") }}
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" @click="addBinding">{{ t("Add Binding") }}</Button>
                       </div>
-                      <Button variant="outline" size="sm" @click="addBinding">{{ t("Add Binding") }}</Button>
-                    </div>
 
-                    <div v-if="!selectedNode.inputs.length" class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
-                      {{ t("No bindings yet. Nodes can still run with their template alone.") }}
-                    </div>
+                      <div v-if="!selectedNode.inputs.length" class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
+                        {{ t("No bindings yet. Nodes can still run with their template alone.") }}
+                      </div>
 
-                    <div v-else class="mt-4 space-y-3">
-                      <div v-for="(binding, index) in selectedNode.inputs" :key="`${selectedNode.id}-binding-${index}`" class="rounded-lg border border-border/70 bg-background/90 p-3">
-                        <div class="flex items-start justify-between gap-3">
-                          <div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                              {{ t("Binding {index}", { index: index + 1 }) }}
-                            </p>
-                            <p class="mt-1 text-[11px] text-muted-foreground">
-                              {{ t("Destination writes into the template. Source chooses where the value comes from.") }}
-                            </p>
-                          </div>
-                          <Button size="sm" variant="ghost" @click="removeBinding(index)">{{ t("Remove") }}</Button>
-                        </div>
-
-                        <div class="mt-3 grid gap-3 md:grid-cols-2">
-                          <div>
-                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Destination Pointer") }}
-                            </label>
-                            <input
-                              v-model="binding.to"
-                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              placeholder="/payload/id"
-                              @blur="flowStore.commitHistory()"
-                            />
+                      <div v-else class="mt-4 space-y-3">
+                        <div v-for="(binding, index) in selectedNode.inputs" :key="`${selectedNode.id}-binding-${index}`" class="rounded-lg border border-border/70 bg-background/90 p-3">
+                          <div class="flex items-start justify-between gap-3">
+                            <div>
+                              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                {{ t("Binding {index}", { index: index + 1 }) }}
+                              </p>
+                              <p class="mt-1 text-[11px] text-muted-foreground">
+                                {{ t("Destination writes into the template. Source chooses where the value comes from.") }}
+                              </p>
+                            </div>
+                            <Button size="sm" variant="ghost" @click="removeBinding(index)">{{ t("Remove") }}</Button>
                           </div>
 
-                          <div>
-                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Source Kind") }}
-                            </label>
-                            <select
-                              :value="binding.sourceKind"
-                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              @change="onBindingSourceKindChange(binding, $event)"
-                            >
-                              <option value="node_result">{{ t("Ancestor Result") }}</option>
-                              <option value="trigger">{{ t("Trigger") }}</option>
-                              <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                              <option value="run_meta">{{ t("Run Meta") }}</option>
-                            </select>
-                          </div>
-                        </div>
+                          <div class="mt-3 grid gap-3 md:grid-cols-2">
+                            <div>
+                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                {{ t("Destination Pointer") }}
+                              </label>
+                              <input
+                                v-model="binding.to"
+                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                                placeholder="/payload/id"
+                                @blur="flowStore.commitHistory()"
+                              />
+                            </div>
 
-                        <div v-if="binding.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
-                          <div>
-                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Ancestor Node") }}
-                            </label>
-                            <select
-                              v-model="binding.nodeId"
-                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              @change="flowStore.commitHistory()"
-                            >
-                              <option value="">{{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
-                              <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
-                                {{ ancestorId }}
-                              </option>
-                            </select>
+                            <div>
+                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                {{ t("Source Kind") }}
+                              </label>
+                              <select
+                                :value="binding.sourceKind"
+                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                                @change="onBindingSourceKindChange(binding, $event)"
+                              >
+                                <option value="node_result">{{ t("Ancestor Result") }}</option>
+                                <option value="trigger">{{ t("Trigger") }}</option>
+                                <option value="flow_meta">{{ t("Flow Meta") }}</option>
+                                <option value="run_meta">{{ t("Run Meta") }}</option>
+                              </select>
+                            </div>
                           </div>
 
-                          <div>
+                          <div v-if="binding.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
+                            <div>
+                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                {{ t("Ancestor Node") }}
+                              </label>
+                              <select
+                                v-model="binding.nodeId"
+                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                                @change="flowStore.commitHistory()"
+                              >
+                                <option value="">{{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
+                                <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                                  {{ ancestorId }}
+                                </option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                {{ t("Result Path") }}
+                              </label>
+                              <input
+                                v-model="binding.path"
+                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                                placeholder="/user/id"
+                                @blur="flowStore.commitHistory()"
+                              />
+                            </div>
+                          </div>
+
+                          <div v-else-if="binding.sourceKind === 'trigger'" class="mt-3">
                             <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Result Path") }}
+                              {{ t("Trigger Path") }}
                             </label>
                             <input
                               v-model="binding.path"
                               class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              placeholder="/user/id"
+                              placeholder="/payload/name"
                               @blur="flowStore.commitHistory()"
                             />
                           </div>
-                        </div>
 
-                        <div v-else-if="binding.sourceKind === 'trigger'" class="mt-3">
-                          <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                            {{ t("Trigger Path") }}
+                          <div v-else-if="binding.sourceKind === 'flow_meta' || binding.sourceKind === 'run_meta'" class="mt-3">
+                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              {{ t("Meta Field") }}
+                            </label>
+                            <select
+                              v-model="binding.field"
+                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                              @change="flowStore.commitHistory()"
+                            >
+                              <option v-if="binding.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
+                              <option v-if="binding.sourceKind === 'run_meta'" value="run_id">run_id</option>
+                            </select>
+                          </div>
+
+                          <label class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              v-model="binding.required"
+                              type="checkbox"
+                              class="h-4 w-4 rounded border"
+                              @change="flowStore.commitHistory()"
+                            />
+                            <span>{{ t("Required binding") }}</span>
                           </label>
-                          <input
-                            v-model="binding.path"
-                            class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                            placeholder="/payload/name"
-                            @blur="flowStore.commitHistory()"
-                          />
                         </div>
-
-                        <div v-else-if="binding.sourceKind === 'flow_meta' || binding.sourceKind === 'run_meta'" class="mt-3">
-                          <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                            {{ t("Meta Field") }}
-                          </label>
-                          <select
-                            v-model="binding.field"
-                            class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                            @change="flowStore.commitHistory()"
-                          >
-                            <option v-if="binding.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
-                            <option v-if="binding.sourceKind === 'run_meta'" value="run_id">run_id</option>
-                          </select>
-                        </div>
-
-                        <label class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                          <input
-                            v-model="binding.required"
-                            type="checkbox"
-                            class="h-4 w-4 rounded border"
-                            @change="flowStore.commitHistory()"
-                          />
-                          <span>{{ t("Required binding") }}</span>
-                        </label>
                       </div>
                     </div>
                   </div>
@@ -1051,6 +1480,121 @@ onUnmounted(() => {
           <div class="flex gap-2">
             <Button variant="outline" @click="closeMethodDialog">{{ t("Cancel") }}</Button>
             <Button :disabled="!pendingCapabilityKey" @click="applyCapabilitySelection">{{ t("Apply Method") }}</Button>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay
+      :open="fieldBindingDialogOpen"
+      overlayClass="bg-slate-950/60 p-4"
+      zIndexClass="z-40"
+      closeOnBackdrop
+      @close="closeFieldBindingDialog"
+    >
+      <div class="w-full max-w-xl rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
+        <CardHeader
+          class="items-start"
+          :title="activeBindingField ? t('Bind Field: {label}', { label: activeBindingField.schema.label }) : t('Bind Field')"
+          :description="t('Choose an upstream source for this field. The editor will write the binding back into the node spec.')"
+          title-class="text-lg"
+        />
+
+        <div v-if="activeBindingField" class="mt-4 space-y-4">
+          <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Destination") }}
+            </p>
+            <p class="mt-2 break-all text-sm font-semibold">{{ activeBindingField.schema.pointer }}</p>
+            <p v-if="activeBindingField.schema.description" class="mt-1 text-[11px] text-muted-foreground">
+              {{ activeBindingField.schema.description }}
+            </p>
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Source Kind") }}
+            </label>
+            <select
+              :value="fieldBindingDraft.sourceKind"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              @change="onFieldBindingSourceKindChange"
+            >
+              <option v-if="bindableAncestorNodeOptions.length" value="node_result">{{ t("Ancestor Result") }}</option>
+              <option value="trigger">{{ t("Trigger") }}</option>
+              <option value="flow_meta">{{ t("Flow Meta") }}</option>
+              <option value="run_meta">{{ t("Run Meta") }}</option>
+            </select>
+          </div>
+
+          <div v-if="fieldBindingDraft.sourceKind === 'node_result'" class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Ancestor Node") }}
+              </label>
+              <select
+                v-model="fieldBindingDraft.nodeId"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">{{ bindableAncestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
+                <option v-for="ancestorId in bindableAncestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                  {{ ancestorId }}
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Result Path") }}
+              </label>
+              <input
+                v-model="fieldBindingDraft.path"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="/user/id"
+              />
+            </div>
+          </div>
+
+          <div v-else-if="fieldBindingDraft.sourceKind === 'trigger'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Trigger Path") }}
+            </label>
+            <input
+              v-model="fieldBindingDraft.path"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="/payload/name"
+            />
+          </div>
+
+          <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+            {{
+              fieldBindingDraft.sourceKind === "flow_meta"
+                ? t("This field will read from flow meta: flow_id.")
+                : t("This field will read from run meta: run_id.")
+            }}
+          </div>
+
+          <label class="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              v-model="fieldBindingDraft.required"
+              type="checkbox"
+              class="h-4 w-4 rounded border"
+            />
+            <span>{{ t("Required binding") }}</span>
+          </label>
+        </div>
+
+        <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            :disabled="!activeBindingField?.state.binding"
+            @click="clearVisualFieldBinding()"
+          >
+            {{ t("Clear Binding") }}
+          </Button>
+          <div class="flex gap-2">
+            <Button variant="outline" @click="closeFieldBindingDialog">{{ t("Cancel") }}</Button>
+            <Button @click="applyFieldBinding">{{ t("Apply Binding") }}</Button>
           </div>
         </div>
       </div>

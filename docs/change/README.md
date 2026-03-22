@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-22_win-call-visual-form.md](2026-03-22_win-call-visual-form.md)
   - [2026-03-22_devices-node-display-name.md](2026-03-22_devices-node-display-name.md)
   - [2026-03-22_win-translation-settings.md](2026-03-22_win-translation-settings.md)
   - [2026-03-22_win-flow-data-dag-editor.md](2026-03-22_win-flow-data-dag-editor.md)
