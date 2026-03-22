@@ -96,6 +96,18 @@ const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
   return fn(...args)
 }
 
+const normalizeDisplayName = (value: unknown) => String(value ?? "").trim()
+
+const resolveNodeDisplayName = (nodeId: number, fallback = "") => {
+  return normalizeDisplayName(fallback) || devicesStore.getDisplayName(nodeId)
+}
+
+const formatNodeTitle = (nodeId: number, fallback = "") => {
+  const displayName = resolveNodeDisplayName(nodeId, fallback)
+  if (displayName) return displayName
+  return t("Node {nodeId}", { nodeId: nodeId || "-" })
+}
+
 const loadNodeInfo = async (targetID: number) => {
   if (!sessionStore.connected) {
     throw new Error(t("Connect before querying node info."))
@@ -154,6 +166,17 @@ const sortedNodeInfoItems = computed(() => {
   return Object.entries(nodeInfoItems.value).sort((a, b) => a[0].localeCompare(b[0]))
 })
 
+const nodeInfoDisplayName = computed(() => {
+  return resolveNodeDisplayName(
+    nodeInfoNodeId.value,
+    nodeInfoItems.value.display_name ?? nodeInfoItems.value.displayName ?? ""
+  )
+})
+
+const nodeInfoTitle = computed(() => formatNodeTitle(nodeInfoNodeId.value, nodeInfoDisplayName.value))
+
+const showNodeInfoNodeId = computed(() => Boolean(nodeInfoDisplayName.value) && nodeInfoNodeId.value > 0)
+
 const configOpen = ref(false)
 const editOpen = ref(false)
 const configDraft = reactive({ key: "", value: "" })
@@ -195,6 +218,18 @@ const openEdit = (key: string, value: string) => {
   configDraft.value = value
   editOpen.value = true
 }
+
+const configDisplayName = computed(() => {
+  return resolveNodeDisplayName(mgmtStore.state.selectedNodeId)
+})
+
+const configTitle = computed(() => {
+  return formatNodeTitle(mgmtStore.state.selectedNodeId, configDisplayName.value)
+})
+
+const showConfigNodeId = computed(() => {
+  return Boolean(configDisplayName.value) && mgmtStore.state.selectedNodeId > 0
+})
 
 const saveConfig = async () => {
   try {
@@ -333,12 +368,16 @@ onMounted(async () => {
 
               <div class="min-w-0">
                 <p class="truncate font-semibold">
-                  {{ t("Node {nodeId}", { nodeId: node.nodeId }) }}
+                  {{ formatNodeTitle(node.nodeId, node.displayName) }}
                   <span v-if="depth === 0" class="text-xs font-normal text-muted-foreground">
                     {{ t("(root)") }}
                   </span>
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
+                  <span v-if="node.displayName" class="font-mono text-[11px]">
+                    {{ t("Node {nodeId}", { nodeId: node.nodeId }) }}
+                  </span>
+                  <span v-if="node.displayName" aria-hidden="true"> · </span>
                   <span v-if="node.duplicate">{{ t("Duplicate: expansion disabled.") }}</span>
                   <span v-else-if="node.error">{{ t("Error: {error}", { error: node.error }) }}</span>
                   <span v-else-if="node.children && node.children.length === 0">{{ t("No children.") }}</span>
@@ -392,11 +431,7 @@ onMounted(async () => {
 
     <Overlay :open="nodeInfoOpen" closeOnBackdrop @close="closeNodeInfo">
       <div class="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
-        <CardHeader
-          class="items-start"
-          :title="t('Node {nodeId}', { nodeId: nodeInfoNodeId })"
-          title-class="text-lg"
-        >
+        <CardHeader class="items-start" :title="nodeInfoTitle" title-class="text-lg">
           <template #actions>
             <div class="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" :disabled="nodeInfoLoading" @click="refreshNodeInfo">
@@ -408,6 +443,9 @@ onMounted(async () => {
         </CardHeader>
 
         <div class="mt-4">
+          <div v-if="showNodeInfoNodeId" class="mb-3 font-mono text-xs text-muted-foreground">
+            {{ t("Node {nodeId}", { nodeId: nodeInfoNodeId }) }}
+          </div>
           <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">{{ t("Loading…") }}</div>
           <div v-else-if="nodeInfoError" class="text-sm text-rose-600">
             {{ t("Error: {error}", { error: nodeInfoError }) }}
@@ -435,11 +473,7 @@ onMounted(async () => {
 
     <Overlay :open="configOpen" closeOnBackdrop @close="closeConfig">
       <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
-        <CardHeader
-          class="items-start"
-          :title="t('Node {nodeId}', { nodeId: mgmtStore.state.selectedNodeId || '-' })"
-          title-class="text-lg"
-        >
+        <CardHeader class="items-start" :title="configTitle" title-class="text-lg">
           <template #actions>
             <div class="flex flex-wrap items-center gap-2">
               <Button
@@ -456,6 +490,9 @@ onMounted(async () => {
         </CardHeader>
 
         <div class="mt-4 max-h-[65vh] space-y-2 overflow-y-auto">
+          <div v-if="showConfigNodeId" class="font-mono text-xs text-muted-foreground">
+            {{ t("Node {nodeId}", { nodeId: mgmtStore.state.selectedNodeId }) }}
+          </div>
           <div
             v-for="entry in mgmtStore.state.configEntries"
             :key="entry.key"
