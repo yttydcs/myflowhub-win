@@ -24,6 +24,8 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-23_win-frontend-number-input-normalization.md](2026-03-23_win-frontend-number-input-normalization.md)
+  - [2026-03-23_win-flow-varstore-owner-constant.md](2026-03-23_win-flow-varstore-owner-constant.md)
   - [2026-03-22_win-call-visual-form.md](2026-03-22_win-call-visual-form.md)
   - [2026-03-22_devices-node-display-name-followup.md](2026-03-22_devices-node-display-name-followup.md)
   - [2026-03-22_devices-node-display-name.md](2026-03-22_devices-node-display-name.md)

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useI18n } from "@/i18n"
+import { parseFloatInput, parseIntegerInput } from "@/lib/numberInput"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -360,37 +361,29 @@ const closeWidgetDialog = () => {
   widgetDialog.open = false
 }
 
-const parsePositiveInt = (raw: string, field: string) => {
-  const parsed = Number.parseInt(raw.trim(), 10)
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(t("{field} must be a positive number.", { field: t(field) }))
-  }
-  return parsed
-}
+const parsePositiveInt = (raw: unknown, field: string) =>
+  parseIntegerInput(raw, {
+    min: 1,
+    invalidMessage: t("{field} must be a positive number.", { field: t(field) })
+  })
 
-const parseNonNegativeInt = (raw: string, field: string) => {
-  const parsed = Number.parseInt(raw.trim(), 10)
-  if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error(t("{field} must be a valid number (>= 0).", { field: t(field) }))
-  }
-  return parsed
-}
+const parseNonNegativeInt = (raw: unknown, field: string) =>
+  parseIntegerInput(raw, {
+    min: 0,
+    invalidMessage: t("{field} must be a valid number (>= 0).", { field: t(field) })
+  })
 
-const parseIntInRange = (raw: string, field: string, min: number, max: number) => {
-  const parsed = Number.parseInt(raw.trim(), 10)
-  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
-    throw new Error(t("{field} must be between {min} and {max}.", { field: t(field), min, max }))
-  }
-  return parsed
-}
+const parseIntInRange = (raw: unknown, field: string, min: number, max: number) =>
+  parseIntegerInput(raw, {
+    min,
+    max,
+    invalidMessage: t("{field} must be between {min} and {max}.", { field: t(field), min, max })
+  })
 
-const parseFloatStrict = (raw: string, field: string) => {
-  const parsed = Number.parseFloat(raw.trim())
-  if (!Number.isFinite(parsed)) {
-    throw new Error(t("{field} must be a valid number.", { field: t(field) }))
-  }
-  return parsed
-}
+const parseFloatStrict = (raw: unknown, field: string) =>
+  parseFloatInput(raw, {
+    invalidMessage: t("{field} must be a valid number.", { field: t(field) })
+  })
 
 const makeDraftID = (prefix: string) => {
   const uuid = (globalThis as any)?.crypto?.randomUUID?.()
