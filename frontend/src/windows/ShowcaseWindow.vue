@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
+import ShowcaseWidgetCardContent from "@/components/showcase/ShowcaseWidgetCardContent.vue"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
@@ -45,27 +45,6 @@ const loadHomeDefaults = async () => {
     console.warn(err)
   }
   showcase.setIdentity(selfNodeId.value, hubId.value)
-}
-
-const safeTitle = (widget: ShowcaseWidget) => {
-  const title = widget.title?.trim()
-  if (title) return title
-  if (widget.kind === "topic_button" && widget.topicButton) {
-    return `${widget.topicButton.topic} / ${widget.topicButton.name}`
-  }
-  if (widget.kind === "var" && widget.var) return widget.var.name
-  return t("Widget")
-}
-
-const isVarOn = (widget: ShowcaseWidget) => {
-  if (widget.kind !== "var" || !widget.var) return false
-  return showcase.getVarValueText(widget) === widget.var.switch.onValue
-}
-
-const displayValueText = (widget: ShowcaseWidget) => {
-  const raw = showcase.getVarValueText(widget)
-  if (raw.trim()) return raw
-  return t("No value yet.")
 }
 
 const sendTopicButton = async (widget: ShowcaseWidget) => {
@@ -250,54 +229,17 @@ onBeforeUnmount(() => {
           class="rounded-2xl border bg-card/90 p-6 text-card-foreground shadow-sm"
           :style="widgetCardStyle(widget)"
         >
-          <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-            <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-              {{ safeTitle(widget) }}
-            </h5>
-
-            <div class="min-w-0">
-              <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-                <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                  {{ t("Send") }}
-                </Button>
-              </div>
-
-              <div v-else-if="widget.kind === 'var' && widget.var">
-                <div
-                  v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                  class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                  :title="displayValueText(widget)"
-                >
-                  {{ displayValueText(widget) }}
-                </div>
-
-                <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                  <input
-                    type="checkbox"
-                    class="h-4 w-4 rounded"
-                    :checked="isVarOn(widget)"
-                    :disabled="busy || !sessionStore.connected || !selfNodeId"
-                    @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                  />
-                </div>
-
-                <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                  <input
-                    class="min-w-[min(180px,100%)] flex-1"
-                    type="range"
-                    :min="widget.var.slider.min"
-                    :max="widget.var.slider.max"
-                    :step="widget.var.slider.step"
-                    :value="showcase.sliderValue(widget)"
-                    :disabled="busy || !sessionStore.connected || !selfNodeId"
-                    @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                    @change="showcase.sliderCommit(widget)"
-                  />
-                  <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ShowcaseWidgetCardContent
+            :widget="widget"
+            :busy="busy"
+            :connected="sessionStore.connected"
+            :self-node-id="selfNodeId"
+            surface="columns"
+            @send-topic="sendTopicButton(widget)"
+            @switch-change="showcase.switchToggle(widget, $event)"
+            @slider-input="showcase.sliderInput(widget, $event)"
+            @slider-commit="showcase.sliderCommit(widget)"
+          />
         </div>
 
         <div
@@ -321,54 +263,17 @@ onBeforeUnmount(() => {
             class="absolute overflow-hidden rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
             :style="canvasWidgetStyle(widget)"
           >
-            <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-              <h5 class="min-w-0 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-                {{ safeTitle(widget) }}
-              </h5>
-
-              <div class="min-w-0">
-                <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-                  <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                    {{ t("Send") }}
-                  </Button>
-                </div>
-
-                <div v-else-if="widget.kind === 'var' && widget.var">
-                  <div
-                    v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                    class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                    :title="displayValueText(widget)"
-                  >
-                    {{ displayValueText(widget) }}
-                  </div>
-
-                  <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                    <input
-                      type="checkbox"
-                      class="h-4 w-4 rounded"
-                      :checked="isVarOn(widget)"
-                      :disabled="busy || !sessionStore.connected || !selfNodeId"
-                      @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                    />
-                  </div>
-
-                  <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                    <input
-                      class="min-w-[min(180px,100%)] flex-1"
-                      type="range"
-                      :min="widget.var.slider.min"
-                      :max="widget.var.slider.max"
-                      :step="widget.var.slider.step"
-                      :value="showcase.sliderValue(widget)"
-                      :disabled="busy || !sessionStore.connected || !selfNodeId"
-                      @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                      @change="showcase.sliderCommit(widget)"
-                    />
-                    <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ShowcaseWidgetCardContent
+              :widget="widget"
+              :busy="busy"
+              :connected="sessionStore.connected"
+              :self-node-id="selfNodeId"
+              surface="canvas"
+              @send-topic="sendTopicButton(widget)"
+              @switch-change="showcase.switchToggle(widget, $event)"
+              @slider-input="showcase.sliderInput(widget, $event)"
+              @slider-commit="showcase.sliderCommit(widget)"
+            />
           </div>
 
           <div

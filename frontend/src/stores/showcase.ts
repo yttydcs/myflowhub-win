@@ -33,7 +33,7 @@ const callTopicBus = async <T>(method: string, ...args: any[]): Promise<T> => {
 }
 
 export type ShowcaseWidgetKind = "topic_button" | "var"
-export type VarWidgetMode = "auto" | "display" | "slider" | "switch"
+export type VarWidgetMode = "auto" | "display" | "metric" | "badge" | "progress" | "slider" | "switch"
 
 export type ShowcaseVarSlider = {
   min: number
@@ -183,6 +183,7 @@ const defaultSwitch = (): ShowcaseVarSwitch => ({ onValue: "true", offValue: "fa
 const defaultTypeForMode = (mode: VarWidgetMode): string => {
   switch (mode) {
     case "slider":
+    case "progress":
       return "float64"
     case "switch":
       return "bool"
@@ -214,6 +215,12 @@ const normalizeVarMode = (mode: any): VarWidgetMode => {
       return "auto"
     case "display":
       return "display"
+    case "metric":
+      return "metric"
+    case "badge":
+      return "badge"
+    case "progress":
+      return "progress"
     case "slider":
       return "slider"
     case "switch":

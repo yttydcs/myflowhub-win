@@ -22,3 +22,4 @@
 ## Current Docs
 
 - [flow-editor-visual-form.md](flow-editor-visual-form.md)
+- [showcase-display-widgets.md](showcase-display-widgets.md)

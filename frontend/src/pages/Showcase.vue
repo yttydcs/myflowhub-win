@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute } from "vue-router"
 import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Save, Settings2, Undo2 } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
+import ShowcaseWidgetCardContent from "@/components/showcase/ShowcaseWidgetCardContent.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
@@ -209,12 +210,15 @@ const varQuickPickDialog = reactive({
 })
 
 const defaultTypeForMode = (mode: VarWidgetMode) => {
-  if (mode === "slider") return "float64"
+  if (mode === "slider" || mode === "progress") return "float64"
   if (mode === "switch") return "bool"
   return "string"
 }
 
 const lastModeForType = ref<VarWidgetMode>("auto")
+const widgetDialogUsesRange = computed(() => widgetDialog.varMode === "slider" || widgetDialog.varMode === "progress")
+const widgetDialogUsesSliderControls = computed(() => widgetDialog.varMode === "slider")
+const widgetDialogUsesSwitchSettings = computed(() => widgetDialog.varMode === "switch")
 
 const resetWidgetDialog = () => {
   widgetDialog.mode = "create"
@@ -385,6 +389,17 @@ const parseFloatStrict = (raw: unknown, field: string) =>
     invalidMessage: t("{field} must be a valid number.", { field: t(field) })
   })
 
+const coerceFloatOr = (raw: unknown, fallback: number) => {
+  const parsed = Number.parseFloat(String(raw ?? "").trim())
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+const coerceNonNegativeIntOr = (raw: unknown, fallback: number) => {
+  const parsed = Number.parseInt(String(raw ?? "").trim(), 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback
+  return parsed
+}
+
 const makeDraftID = (prefix: string) => {
   const uuid = (globalThis as any)?.crypto?.randomUUID?.()
   if (uuid) return `${prefix}-${String(uuid)}`
@@ -451,13 +466,23 @@ const submitWidgetDialog = async () => {
     const varName = widgetDialog.varName.trim()
     if (!varName) throw new Error(t("Variable name is required."))
     const mode = widgetDialog.varMode
+    const modeUsesRange = mode === "slider" || mode === "progress"
+    const modeUsesSliderControls = mode === "slider"
     const visibility = widgetDialog.visibility.trim() || "public"
     const type = widgetDialog.varType.trim() || defaultTypeForMode(mode)
     if (!type) throw new Error(t("Variable type is required."))
-    const sliderMin = parseFloatStrict(widgetDialog.sliderMin, "Min")
-    const sliderMax = parseFloatStrict(widgetDialog.sliderMax, "Max")
-    const sliderStep = parseFloatStrict(widgetDialog.sliderStep, "Step")
-    const throttleMs = parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle")
+    const sliderMin = modeUsesRange ? parseFloatStrict(widgetDialog.sliderMin, "Min") : coerceFloatOr(widgetDialog.sliderMin, 0)
+    const sliderMax = modeUsesRange ? parseFloatStrict(widgetDialog.sliderMax, "Max") : coerceFloatOr(widgetDialog.sliderMax, 100)
+    const sliderStep = modeUsesSliderControls ? parseFloatStrict(widgetDialog.sliderStep, "Step") : coerceFloatOr(widgetDialog.sliderStep, 1)
+    const throttleMs = modeUsesSliderControls
+      ? parseNonNegativeInt(widgetDialog.sliderThrottleMs, "Throttle")
+      : coerceNonNegativeIntOr(widgetDialog.sliderThrottleMs, 50)
+    if (modeUsesRange && sliderMax <= sliderMin) {
+      throw new Error(t("Max must be greater than Min."))
+    }
+    if (modeUsesSliderControls && sliderStep <= 0) {
+      throw new Error(t("Step must be greater than 0."))
+    }
     const onValue = widgetDialog.switchOnValue.trim()
     const offValue = widgetDialog.switchOffValue.trim()
     if (mode === "switch" && (!onValue || !offValue)) {
@@ -605,27 +630,6 @@ const onGlobalKeydown = (event: KeyboardEvent) => {
   if (event.key !== "Escape") return
   event.preventDefault()
   closeWidgetContextMenu()
-}
-
-const safeTitle = (widget: ShowcaseWidget) => {
-  const title = widget.title?.trim()
-  if (title) return title
-  if (widget.kind === "topic_button" && widget.topicButton) {
-    return `${widget.topicButton.topic} / ${widget.topicButton.name}`
-  }
-  if (widget.kind === "var" && widget.var) return widget.var.name
-  return t("Widget")
-}
-
-const displayValueText = (widget: ShowcaseWidget) => {
-  const raw = showcase.getVarValueText(widget)
-  if (raw.trim()) return raw
-  return t("No value yet.")
-}
-
-const isVarOn = (widget: ShowcaseWidget) => {
-  if (widget.kind !== "var" || !widget.var) return false
-  return showcase.getVarValueText(widget) === widget.var.switch.onValue
 }
 
 const sendTopicButton = async (widget: ShowcaseWidget) => {
@@ -1260,8 +1264,18 @@ onBeforeUnmount(() => {
               @dragover.prevent="onDragOver(widget.id)"
               @drop.prevent="onDrop(widget.id)"
             >
-              <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-                <div class="flex min-w-0 items-center gap-3">
+              <ShowcaseWidgetCardContent
+                :widget="widget"
+                :busy="busy"
+                :connected="sessionStore.connected"
+                :self-node-id="selfNodeId"
+                surface="columns"
+                @send-topic="sendTopicButton(widget)"
+                @switch-change="showcase.switchToggle(widget, $event)"
+                @slider-input="showcase.sliderInput(widget, $event)"
+                @slider-commit="showcase.sliderCommit(widget)"
+              >
+                <template #leading>
                   <button
                     type="button"
                     class="inline-flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
@@ -1272,55 +1286,8 @@ onBeforeUnmount(() => {
                   >
                     <GripVertical class="h-4 w-4" />
                   </button>
-
-                  <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-                    {{ safeTitle(widget) }}
-                  </h5>
-                </div>
-
-                <div class="min-w-0">
-                  <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-                    <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                      {{ t("Send") }}
-                    </Button>
-                  </div>
-
-                  <div v-else-if="widget.kind === 'var' && widget.var">
-                    <div
-                      v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                      class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                      :title="displayValueText(widget)"
-                    >
-                      {{ displayValueText(widget) }}
-                    </div>
-
-                    <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                      <input
-                        type="checkbox"
-                        class="h-4 w-4 rounded"
-                        :checked="isVarOn(widget)"
-                        :disabled="busy || !sessionStore.connected || !selfNodeId"
-                        @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                      />
-                    </div>
-
-                    <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                      <input
-                        class="min-w-[min(180px,100%)] flex-1"
-                        type="range"
-                        :min="widget.var.slider.min"
-                        :max="widget.var.slider.max"
-                        :step="widget.var.slider.step"
-                        :value="showcase.sliderValue(widget)"
-                        :disabled="busy || !sessionStore.connected || !selfNodeId"
-                        @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                        @change="showcase.sliderCommit(widget)"
-                      />
-                      <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </template>
+              </ShowcaseWidgetCardContent>
             </div>
 
             <div
@@ -1346,8 +1313,18 @@ onBeforeUnmount(() => {
                 :style="canvasWidgetStyle(widget)"
                 @contextmenu.prevent="openWidgetContextMenu(widget, $event)"
               >
-                <div class="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-4">
-                  <div class="flex min-w-0 items-center gap-3">
+                <ShowcaseWidgetCardContent
+                  :widget="widget"
+                  :busy="busy"
+                  :connected="sessionStore.connected"
+                  :self-node-id="selfNodeId"
+                  surface="canvas"
+                  @send-topic="sendTopicButton(widget)"
+                  @switch-change="showcase.switchToggle(widget, $event)"
+                  @slider-input="showcase.sliderInput(widget, $event)"
+                  @slider-commit="showcase.sliderCommit(widget)"
+                >
+                  <template #leading>
                     <button
                       type="button"
                       class="inline-flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-lg border border-border/60 bg-background/70 text-muted-foreground hover:text-foreground active:cursor-grabbing"
@@ -1356,62 +1333,17 @@ onBeforeUnmount(() => {
                     >
                       <GripVertical class="h-4 w-4" />
                     </button>
+                  </template>
 
-                    <h5 class="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold" :title="safeTitle(widget)">
-                      {{ safeTitle(widget) }}
-                    </h5>
-                  </div>
-
-                  <div class="min-w-0">
-                    <div v-if="widget.kind === 'topic_button' && widget.topicButton" class="flex justify-end">
-                      <Button :disabled="busy || !sessionStore.connected || !selfNodeId" @click="sendTopicButton(widget)">
-                        {{ t("Send") }}
-                      </Button>
-                    </div>
-
-                    <div v-else-if="widget.kind === 'var' && widget.var">
-                      <div
-                        v-if="showcase.resolveEffectiveMode(widget) === 'display'"
-                        class="min-w-0 truncate whitespace-nowrap text-right text-sm text-muted-foreground"
-                        :title="displayValueText(widget)"
-                      >
-                        {{ displayValueText(widget) }}
-                      </div>
-
-                      <div v-else-if="showcase.resolveEffectiveMode(widget) === 'switch'" class="flex justify-end">
-                        <input
-                          type="checkbox"
-                          class="h-4 w-4 rounded"
-                          :checked="isVarOn(widget)"
-                          :disabled="busy || !sessionStore.connected || !selfNodeId"
-                          @change="showcase.switchToggle(widget, ($event.target as HTMLInputElement).checked)"
-                        />
-                      </div>
-
-                      <div v-else class="flex flex-wrap items-center justify-end gap-3">
-                        <input
-                          class="min-w-[min(180px,100%)] flex-1"
-                          type="range"
-                          :min="widget.var.slider.min"
-                          :max="widget.var.slider.max"
-                          :step="widget.var.slider.step"
-                          :value="showcase.sliderValue(widget)"
-                          :disabled="busy || !sessionStore.connected || !selfNodeId"
-                          @input="showcase.sliderInput(widget, Number(($event.target as HTMLInputElement).value))"
-                          @change="showcase.sliderCommit(widget)"
-                        />
-                        <Badge variant="outline" class="shrink-0">{{ showcase.sliderValue(widget) }}</Badge>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
-                  :title="t('Resize')"
-                  @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
-                />
+                  <template #overlay>
+                    <button
+                      type="button"
+                      class="absolute bottom-2 right-2 h-4 w-4 cursor-nwse-resize touch-none rounded-sm border border-border/60 bg-background/70"
+                      :title="t('Resize')"
+                      @pointerdown.stop.prevent="startCanvasEdit(widget, 'resize', $event)"
+                    />
+                  </template>
+                </ShowcaseWidgetCardContent>
               </div>
 
               <div
@@ -1620,6 +1552,9 @@ onBeforeUnmount(() => {
                 <select v-model="widgetDialog.varMode" :class="inputClass">
                   <option value="auto">{{ t("Auto") }}</option>
                   <option value="display">{{ t("Display") }}</option>
+                  <option value="metric">{{ t("Metric") }}</option>
+                  <option value="badge">{{ t("Badge") }}</option>
+                  <option value="progress">{{ t("Progress") }}</option>
                   <option value="slider">{{ t("Slider") }}</option>
                   <option value="switch">{{ t("Switch") }}</option>
                 </select>
@@ -1633,7 +1568,25 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="grid gap-4 sm:grid-cols-5">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Type") }}
+                </label>
+                <input v-model="widgetDialog.varType" :class="inputClass" :placeholder="t('float64 / bool / string')" />
+              </div>
+              <div v-if="widgetDialogUsesRange" class="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-3">
+                <p class="text-xs text-muted-foreground">
+                  {{
+                    widgetDialogUsesSliderControls
+                      ? t("Slider writes values back. Range, step, and throttle stay active.")
+                      : t("Progress is display-only. It reuses Min and Max as the visual range.")
+                  }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="widgetDialogUsesRange" class="grid gap-4" :class="widgetDialogUsesSliderControls ? 'sm:grid-cols-4' : 'sm:grid-cols-2'">
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Min") }}</label>
                 <input v-model="widgetDialog.sliderMin" :class="inputClass" />
@@ -1642,11 +1595,11 @@ onBeforeUnmount(() => {
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max") }}</label>
                 <input v-model="widgetDialog.sliderMax" :class="inputClass" />
               </div>
-              <div>
+              <div v-if="widgetDialogUsesSliderControls">
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Step") }}</label>
                 <input v-model="widgetDialog.sliderStep" :class="inputClass" />
               </div>
-              <div>
+              <div v-if="widgetDialogUsesSliderControls">
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   <Tooltip
                     :content="t('Unit: milliseconds (ms). Set to 0 to disable throttling (sends on every drag update). This may cause congestion.')"
@@ -1660,15 +1613,9 @@ onBeforeUnmount(() => {
                 </label>
                 <input v-model="widgetDialog.sliderThrottleMs" :class="inputClass" />
               </div>
-              <div>
-                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  {{ t("Type") }}
-                </label>
-                <input v-model="widgetDialog.varType" :class="inputClass" :placeholder="t('float64 / bool / string')" />
-              </div>
             </div>
 
-            <div v-if="widgetDialog.varMode === 'switch'" class="grid gap-4">
+            <div v-if="widgetDialogUsesSwitchSettings" class="grid gap-4">
               <div class="h-px bg-border/60" />
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Switch Settings") }}

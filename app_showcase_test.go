@@ -41,6 +41,7 @@ func TestNormalizeShowcaseConfig_DropsInvalidWidgets(t *testing.T) {
 					{ID: "w3", Kind: "var", Var: &ShowcaseVarWidget{OwnerID: 0, Name: "a"}},
 					{ID: "w4", Kind: "topic_button", TopicButton: &ShowcaseTopicButton{Topic: "t", Name: "n"}},
 					{ID: "w5", Kind: "var", Var: &ShowcaseVarWidget{OwnerID: 7, Name: "v", Mode: "bad"}},
+					{ID: "w6", Kind: "var", Var: &ShowcaseVarWidget{OwnerID: 7, Name: "rich", Mode: "metric"}},
 				},
 			},
 		},
@@ -49,8 +50,8 @@ func TestNormalizeShowcaseConfig_DropsInvalidWidgets(t *testing.T) {
 		t.Fatalf("expected 1 screen got %d", len(cfg.Screens))
 	}
 	screen := cfg.Screens[0]
-	if len(screen.Widgets) != 2 {
-		t.Fatalf("expected 2 valid widgets got %d", len(screen.Widgets))
+	if len(screen.Widgets) != 3 {
+		t.Fatalf("expected 3 valid widgets got %d", len(screen.Widgets))
 	}
 	if screen.Widgets[0].Kind == "var" {
 		if screen.Widgets[0].Var == nil || screen.Widgets[0].Var.Mode != "auto" {
@@ -61,6 +62,9 @@ func TestNormalizeShowcaseConfig_DropsInvalidWidgets(t *testing.T) {
 		if screen.Widgets[1].Var == nil || screen.Widgets[1].Var.Mode != "auto" {
 			t.Fatalf("expected var mode auto got %+v", screen.Widgets[1].Var)
 		}
+	}
+	if screen.Widgets[2].Kind != "var" || screen.Widgets[2].Var == nil || screen.Widgets[2].Var.Mode != "metric" {
+		t.Fatalf("expected metric mode preserved got %+v", screen.Widgets[2].Var)
 	}
 }
 
@@ -106,13 +110,19 @@ func TestNormalizeShowcaseWidget_TargetAndTypeDefaults(t *testing.T) {
 							Name:  "n",
 						},
 					},
+					{
+						ID:       "w4",
+						Kind:     "var",
+						TargetID: 3,
+						Var:      &ShowcaseVarWidget{OwnerID: 8, Name: "c", Mode: "progress", Type: ""},
+					},
 				},
 			},
 		},
 	})
 	screen := cfg.Screens[0]
-	if len(screen.Widgets) != 3 {
-		t.Fatalf("expected 3 widgets got %d", len(screen.Widgets))
+	if len(screen.Widgets) != 4 {
+		t.Fatalf("expected 4 widgets got %d", len(screen.Widgets))
 	}
 	if screen.Widgets[0].TargetID != 1 {
 		t.Fatalf("expected target default 1 got %d", screen.Widgets[0].TargetID)
@@ -125,6 +135,9 @@ func TestNormalizeShowcaseWidget_TargetAndTypeDefaults(t *testing.T) {
 	}
 	if screen.Widgets[2].TargetID != 1 {
 		t.Fatalf("expected topic_button target default 1 got %d", screen.Widgets[2].TargetID)
+	}
+	if screen.Widgets[3].Var == nil || screen.Widgets[3].Var.Type != "float64" {
+		t.Fatalf("expected progress type default float64 got %+v", screen.Widgets[3].Var)
 	}
 }
 

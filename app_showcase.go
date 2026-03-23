@@ -88,7 +88,7 @@ type ShowcaseTopicButton struct {
 type ShowcaseVarWidget struct {
 	OwnerID    uint32             `json:"ownerId"`
 	Name       string             `json:"name"`
-	Mode       string             `json:"mode,omitempty"` // auto|display|slider|switch
+	Mode       string             `json:"mode,omitempty"` // auto|display|metric|badge|progress|slider|switch
 	Visibility string             `json:"visibility,omitempty"`
 	Type       string             `json:"type,omitempty"` // optional; empty means "do not override"
 	Slider     *ShowcaseVarSlider `json:"slider,omitempty"`
@@ -515,7 +515,7 @@ func normalizeShowcaseVarWidget(v ShowcaseVarWidget) ShowcaseVarWidget {
 	v.Type = strings.TrimSpace(v.Type)
 	if v.Type == "" {
 		switch v.Mode {
-		case "slider":
+		case "slider", "progress":
 			v.Type = "float64"
 		case "switch":
 			v.Type = "bool"
@@ -569,7 +569,7 @@ func normalizeShowcaseVarSwitch(s ShowcaseVarSwitch) ShowcaseVarSwitch {
 func normalizeVarMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case "", "auto", "display", "slider", "switch":
+	case "", "auto", "display", "metric", "badge", "progress", "slider", "switch":
 		if mode == "" {
 			return "auto"
 		}
