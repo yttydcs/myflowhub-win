@@ -8,6 +8,7 @@ import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
 import { useI18n } from "@/i18n"
+import { normalizeFormInputText, parseNumberInput, type FormInputValue } from "@/lib/numberInput"
 import {
   useFlowStore,
   type FlowBindingSourceKind,
@@ -43,7 +44,7 @@ const nodeIdDraft = ref("")
 const pendingCapabilityKey = ref("")
 const lastCapabilityQueryNode = ref("")
 const activeBindingFieldPointer = ref("")
-const fieldDrafts = reactive<Record<string, string>>({})
+const fieldDrafts = reactive<Record<string, FormInputValue>>({})
 const fieldBindingDraft = reactive({
   sourceKind: "trigger" as FlowBindingSourceKind,
   nodeId: "",
@@ -325,21 +326,20 @@ const syncFieldDrafts = (form: NodeVisualFormModel | null) => {
 }
 
 const parseFieldDraftValue = (field: VisualFieldModel): unknown => {
-  const raw = fieldDrafts[field.schema.pointer] ?? ""
+  const raw = fieldDrafts[field.schema.pointer]
   switch (field.schema.control) {
-    case "number": {
-      const trimmed = raw.trim()
-      if (!trimmed) return undefined
-      const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed)) {
-        throw new Error(t("Field {label} must be a valid number.", { label: field.schema.label }))
-      }
-      return parsed
+    case "number":
+      return parseNumberInput(raw, {
+        allowBlank: true,
+        blankValue: undefined,
+        invalidMessage: t("Field {label} must be a valid number.", { label: field.schema.label })
+      })
+    case "select": {
+      const normalized = normalizeFormInputText(raw)
+      return normalized ? JSON.parse(normalized) : undefined
     }
-    case "select":
-      return raw ? JSON.parse(raw) : undefined
     case "json": {
-      const trimmed = raw.trim()
+      const trimmed = normalizeFormInputText(raw).trim()
       if (!trimmed) return undefined
       try {
         return JSON.parse(trimmed)
@@ -350,7 +350,7 @@ const parseFieldDraftValue = (field: VisualFieldModel): unknown => {
     case "textarea":
     case "text":
     default:
-      return raw
+      return normalizeFormInputText(raw)
   }
 }
 

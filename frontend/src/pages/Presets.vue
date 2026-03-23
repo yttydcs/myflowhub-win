@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
+import { parseIntegerInput } from "@/lib/numberInput"
 import { usePresetsStore } from "@/stores/presets"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
@@ -143,26 +144,6 @@ const receiverRate = computed(() => {
   return Math.round((receiverStatus.value.unique / (updated - started)) * 1000)
 })
 
-const parseTarget = (raw: string, fallback: number) => {
-  const trimmed = raw.trim()
-  if (!trimmed) return fallback
-  const parsed = Number.parseInt(trimmed, 10)
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(t("Target ID must be a positive number."))
-  }
-  return parsed
-}
-
-const parseOwner = (raw: string, fallback: number) => {
-  const trimmed = raw.trim()
-  if (!trimmed) return fallback
-  const parsed = Number.parseInt(trimmed, 10)
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(t("Owner must be a positive number."))
-  }
-  return parsed
-}
-
 const newReqId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID()
@@ -208,43 +189,41 @@ const ensureHubId = () => {
 }
 
 const parsePositiveInt = (raw: any, field: string) => {
-  const parsed = Number.parseInt(String(raw), 10)
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(
-      t("{field} must be a positive number.", {
-        field: t(field)
-      })
-    )
-  }
-  return parsed
+  return parseIntegerInput(raw, {
+    min: 1,
+    invalidMessage: t("{field} must be a positive number.", {
+      field: t(field)
+    })
+  })
 }
 
 const parseNonNegativeInt = (raw: any, field: string) => {
-  const parsed = Number.parseInt(String(raw ?? "0"), 10)
-  if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error(
-      t("{field} must be a non-negative number.", {
-        field: t(field)
-      })
-    )
-  }
-  return parsed
+  return parseIntegerInput(raw, {
+    min: 0,
+    invalidMessage: t("{field} must be a non-negative number.", {
+      field: t(field)
+    })
+  })
 }
 
-const resolveTargetId = (raw: string) => {
+const resolveTargetId = (raw: unknown) => {
   const fallback = defaultTargetId.value
-  if (!raw.trim()) {
-    if (!fallback) {
-      throw new Error(t("Target ID is required."))
-    }
-    return fallback
-  }
-  return parseTarget(raw, fallback)
+  return parseIntegerInput(raw, {
+    allowBlank: fallback > 0,
+    blankValue: fallback,
+    requiredMessage: t("Target ID is required."),
+    invalidMessage: t("Target ID must be a positive number."),
+    min: 1
+  })
 }
 
-const resolveOwnerId = (raw: string, fallback: number) => {
-  return parseOwner(raw, fallback)
-}
+const resolveOwnerId = (raw: unknown, fallback: number) =>
+  parseIntegerInput(raw, {
+    allowBlank: fallback > 0,
+    blankValue: fallback,
+    invalidMessage: t("Owner must be a positive number."),
+    min: 1
+  })
 
 const runAction = async (label: string, action: () => Promise<void>) => {
   if (busy.value) return
