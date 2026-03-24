@@ -89,11 +89,6 @@ const resolveEditorScreen = () => {
   return showcase.currentScreen()
 }
 
-const quickPickSourceScreen = computed(() => {
-  const requested = requestedScreenId.value
-  return requested ? showcase.screenById(requested) : showcase.currentScreen()
-})
-
 const syncDraftSubscriptions = async () => {
   await showcase.leave()
   await showcase.enterScreen(resolveEditorScreen())
@@ -205,7 +200,7 @@ type VarQuickPickItem = {
   name: string
   owner: number
   mine: boolean
-  subscribed: boolean
+  watched: boolean
 }
 
 const varQuickPickDialog = reactive({
@@ -293,51 +288,33 @@ const mergeVarQuickPickItem = (merged: Map<string, VarQuickPickItem>, input: Par
   const existing = merged.get(id)
   if (existing) {
     existing.mine = existing.mine || Boolean(input.mine)
-    existing.subscribed = existing.subscribed || Boolean(input.subscribed)
+    existing.watched = existing.watched || Boolean(input.watched)
     return
   }
   merged.set(id, {
     name,
     owner,
     mine: Boolean(input.mine),
-    subscribed: Boolean(input.subscribed)
+    watched: Boolean(input.watched)
   })
 }
 
-const subscribedVarQuickPickSourceItems = computed<VarQuickPickItem[]>(() => {
+const watchedVarQuickPickSourceItems = computed<VarQuickPickItem[]>(() => {
   const merged = new Map<string, VarQuickPickItem>()
-  const selfID = Number(selfNodeId.value || 0)
-  const currentScreenVarIds = new Set<string>()
-
-  // Showcase keeps the editor's live variable context in its own store, not in VarPool's watch list.
-  for (const widget of quickPickSourceScreen.value?.widgets ?? []) {
-    if (widget.kind !== "var" || !widget.var) continue
-    currentScreenVarIds.add(`${widget.var.ownerId}:${String(widget.var.name ?? "").trim()}`)
+  for (const key of varpool.state.keys) {
     mergeVarQuickPickItem(merged, {
-      name: widget.var.name,
-      owner: widget.var.ownerId,
-      mine: selfID > 0 && widget.var.ownerId === selfID,
-      subscribed: true
+      name: key.name,
+      owner: Number(key.owner ?? 0),
+      mine: false,
+      watched: true
     })
   }
-
-  for (const snap of Object.values(showcase.state.values)) {
-    const id = `${snap.ownerId}:${String(snap.name ?? "").trim()}`
-    if (!currentScreenVarIds.has(id)) continue
-    mergeVarQuickPickItem(merged, {
-      name: snap.name,
-      owner: snap.ownerId,
-      mine: selfID > 0 && snap.ownerId === selfID,
-      subscribed: true
-    })
-  }
-
   return Array.from(merged.values())
 })
 
 const varQuickPickItems = computed<VarQuickPickItem[]>(() => {
   const merged = new Map<string, VarQuickPickItem>()
-  for (const item of subscribedVarQuickPickSourceItems.value) {
+  for (const item of watchedVarQuickPickSourceItems.value) {
     mergeVarQuickPickItem(merged, item)
   }
   for (const item of loadedMineVarQuickPickItems.value) {
@@ -346,7 +323,7 @@ const varQuickPickItems = computed<VarQuickPickItem[]>(() => {
   const out = Array.from(merged.values())
   out.sort((a, b) => {
     if (a.mine !== b.mine) return a.mine ? -1 : 1
-    if (a.subscribed !== b.subscribed) return a.subscribed ? -1 : 1
+    if (a.watched !== b.watched) return a.watched ? -1 : 1
     if (a.owner !== b.owner) return a.owner - b.owner
     return a.name.localeCompare(b.name)
   })
@@ -361,8 +338,8 @@ const filteredVarQuickPickItems = computed(() => {
   )
 })
 
-const subscribedVarQuickPickItems = computed(() =>
-  filteredVarQuickPickItems.value.filter((item) => item.subscribed)
+const watchedVarQuickPickItems = computed(() =>
+  filteredVarQuickPickItems.value.filter((item) => item.watched)
 )
 
 const mineVarQuickPickItems = computed(() => filteredVarQuickPickItems.value.filter((item) => item.mine))
@@ -385,7 +362,7 @@ const refreshVarQuickPickMine = async (showSuccess = true) => {
       name,
       owner: selfNodeId.value,
       mine: true,
-      subscribed: false
+      watched: false
     }))
     if (showSuccess) {
       toast.success(t("Mine variables refreshed."))
@@ -1588,7 +1565,7 @@ onBeforeUnmount(() => {
                 </label>
                 <div class="mt-2 flex items-center gap-2">
                   <input v-model="widgetDialog.varName" :class="[inputClass, '!mt-0 flex-1']" />
-                  <Tooltip :content="t('Pick from subscribed or mine variables.')" side="bottom">
+                  <Tooltip :content="t('Pick from watched or mine variables.')" side="bottom">
                     <Button size="icon" variant="outline" class="shrink-0" :disabled="busy" @click="openVarQuickPickDialog">
                       <ListChecks class="h-4 w-4" aria-hidden="true" />
                       <span class="sr-only">{{ t("Pick Variable") }}</span>
@@ -1707,7 +1684,7 @@ onBeforeUnmount(() => {
         <CardHeader
           class="items-start"
           :title="t('Pick Variable')"
-          :description="t('Data source: current subscribed variables and mine.')"
+          :description="t('Data source: watched variables and mine.')"
           title-tag="h3"
           title-class="text-lg"
           description-class="text-xs"
@@ -1737,13 +1714,13 @@ onBeforeUnmount(() => {
         <div class="mt-5 grid gap-4 md:grid-cols-2">
           <div class="rounded-xl border border-border/60 bg-background/60">
             <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Subscribed") }}</p>
-              <Badge variant="outline">{{ subscribedVarQuickPickItems.length }}</Badge>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Watched") }}</p>
+              <Badge variant="outline">{{ watchedVarQuickPickItems.length }}</Badge>
             </div>
             <div class="max-h-72 space-y-2 overflow-auto p-3">
               <button
-                v-for="item in subscribedVarQuickPickItems"
-                :key="`sub-${item.owner}-${item.name}`"
+                v-for="item in watchedVarQuickPickItems"
+                :key="`watch-${item.owner}-${item.name}`"
                 type="button"
                 class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
                 @click="applyVarQuickPick(item)"
@@ -1754,8 +1731,8 @@ onBeforeUnmount(() => {
                   <Badge v-if="item.mine" variant="secondary">{{ t("mine") }}</Badge>
                 </div>
               </button>
-              <p v-if="subscribedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-                {{ t("No subscribed variables.") }}
+              <p v-if="watchedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+                {{ t("No watched variables.") }}
               </p>
             </div>
           </div>
@@ -1776,7 +1753,7 @@ onBeforeUnmount(() => {
                 <p class="truncate text-sm font-semibold">{{ item.name }}</p>
                 <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
-                  <Badge v-if="item.subscribed" variant="secondary">{{ t("subscribed") }}</Badge>
+                  <Badge v-if="item.watched" variant="secondary">{{ t("watched") }}</Badge>
                 </div>
               </button>
               <p v-if="mineVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">

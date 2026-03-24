@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-24_win-showcase-var-picker-watch-all.md](2026-03-24_win-showcase-var-picker-watch-all.md)
   - [2026-03-23_win-showcase-var-picker-fix.md](2026-03-23_win-showcase-var-picker-fix.md)
   - [2026-03-23_win-showcase-rich-display-widgets.md](2026-03-23_win-showcase-rich-display-widgets.md)
   - [2026-03-23_win-frontend-number-input-normalization.md](2026-03-23_win-frontend-number-input-normalization.md)
