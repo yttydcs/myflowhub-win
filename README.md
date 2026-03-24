@@ -5,6 +5,23 @@
 - Node.js + npm
 - Wails CLI (`wails version`)
 
+## Fresh Worktree Bootstrap (PowerShell)
+When a new worktree is created, `frontend/wailsjs/` is not present because it is generated and ignored by git.
+Before running frontend-only validation in a fresh worktree, use this bootstrap sequence from the repo root:
+
+```powershell
+wails version
+$env:GOWORK='off'; wails generate module
+cd frontend
+npm ci
+npm run build
+```
+
+Notes:
+- `wails generate module` restores `frontend/wailsjs/**`, which the frontend build depends on.
+- `wails dev` / `wails build` may also regenerate bindings, but the explicit generate step is the recommended preflight for fresh worktrees.
+- Re-run `$env:GOWORK='off'; wails generate module` after backend binding changes or if `frontend/wailsjs/**` is missing.
+
 ## Dev (recommended)
 1) Start server (defaults to `:9000`):
    - `cd ../MyFlowHub-Server`

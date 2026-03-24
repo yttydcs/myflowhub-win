@@ -1,3 +1,4 @@
+import { t } from "@/i18n"
 import { collectLeafPointers, deleteValueAtPointer, readValueAtPointer, setValueAtPointer } from "./flow_json_pointer"
 import type { MethodFieldSchema, MethodVisualSchema } from "./flow_method_schemas"
 
@@ -22,9 +23,24 @@ export type FieldVisualState = {
   binding: VisualBindingSource | null
 }
 
+export type VisualCompatibilityReasonCode =
+  | "not_call_node"
+  | "missing_method"
+  | "missing_schema"
+  | "args_template_invalid_json"
+  | "args_template_not_object"
+  | "binding_target_unknown"
+  | "duplicate_field_binding"
+  | "extra_literal_field"
+
+export type VisualCompatibilityReason = {
+  code: VisualCompatibilityReasonCode
+  pointer?: string
+}
+
 export type VisualCompatibility = {
   supported: boolean
-  reasons: string[]
+  reasons: VisualCompatibilityReason[]
 }
 
 export type VisualFieldModel = {
@@ -60,16 +76,18 @@ const normalizeBindings = (inputs: FlowInputBindingLike[]) =>
     required: Boolean(binding.required)
   }))
 
-const parseArgsTemplateObject = (raw: string): { ok: true; doc: Record<string, unknown> } | { ok: false; reason: string } => {
+const parseArgsTemplateObject = (
+  raw: string
+): { ok: true; doc: Record<string, unknown> } | { ok: false; reason: VisualCompatibilityReason } => {
   const trimmed = String(raw ?? "").trim() || "{}"
   try {
     const parsed = JSON.parse(trimmed)
     if (!isPlainObject(parsed)) {
-      return { ok: false, reason: "Args template must be a JSON object." }
+      return { ok: false, reason: { code: "args_template_not_object" } }
     }
     return { ok: true, doc: parsed }
   } catch {
-    return { ok: false, reason: "Args template must be valid JSON." }
+    return { ok: false, reason: { code: "args_template_invalid_json" } }
   }
 }
 
@@ -111,13 +129,44 @@ export const describeFieldBinding = (source: VisualBindingSource | null) => {
   }
   switch (source.kind) {
     case "node_result":
-      return source.path ? `${source.nodeId} -> ${source.path}` : `${source.nodeId} -> /`
+      return source.path
+        ? t("Node {nodeId} result at {path}", { nodeId: source.nodeId || "?", path: source.path })
+        : t("Node {nodeId} full result", { nodeId: source.nodeId || "?" })
     case "trigger":
-      return source.path ? `Trigger -> ${source.path}` : "Trigger"
+      return source.path ? t("Trigger data at {path}", { path: source.path }) : t("Trigger payload")
     case "flow_meta":
-      return `Flow Meta -> ${source.field}`
+      return t("Flow metadata · {field}", { field: source.field })
     case "run_meta":
-      return `Run Meta -> ${source.field}`
+      return t("Run metadata · {field}", { field: source.field })
+    default:
+      return ""
+  }
+}
+
+export const describeVisualCompatibilityReason = (reason: VisualCompatibilityReason) => {
+  switch (reason.code) {
+    case "not_call_node":
+      return t("Visual form only supports call nodes.")
+    case "missing_method":
+      return t("No method selected.")
+    case "missing_schema":
+      return t("The current method does not provide a supported visual form schema.")
+    case "args_template_invalid_json":
+      return t("Args template must be valid JSON.")
+    case "args_template_not_object":
+      return t("Args template must be a JSON object.")
+    case "binding_target_unknown":
+      return t("Binding target {pointer} is not defined by the visual form schema.", {
+        pointer: reason.pointer || "/"
+      })
+    case "duplicate_field_binding":
+      return t("Visual form only supports one binding per field ({pointer}).", {
+        pointer: reason.pointer || "/"
+      })
+    case "extra_literal_field":
+      return t("Args template contains a field that is not covered by the visual form schema ({pointer}).", {
+        pointer: reason.pointer || "/"
+      })
     default:
       return ""
   }
@@ -130,17 +179,17 @@ export const analyzeVisualCompatibility = (input: {
   inputs: FlowInputBindingLike[]
   schema: MethodVisualSchema | null
 }): VisualCompatibility => {
-  const reasons: string[] = []
+  const reasons: VisualCompatibilityReason[] = []
   if (input.kind !== "call") {
-    reasons.push("Visual form only supports call nodes.")
+    reasons.push({ code: "not_call_node" })
     return { supported: false, reasons }
   }
   if (!String(input.method ?? "").trim()) {
-    reasons.push("No method selected.")
+    reasons.push({ code: "missing_method" })
     return { supported: false, reasons }
   }
   if (!input.schema) {
-    reasons.push("The current method does not provide a supported visual form schema.")
+    reasons.push({ code: "missing_schema" })
     return { supported: false, reasons }
   }
 
@@ -154,11 +203,11 @@ export const analyzeVisualCompatibility = (input: {
   const seenBindings = new Set<string>()
   for (const binding of normalizeBindings(input.inputs)) {
     if (!schemaPointers.has(binding.to)) {
-      reasons.push(`Binding target ${binding.to} is not defined by the visual form schema.`)
+      reasons.push({ code: "binding_target_unknown", pointer: binding.to })
       continue
     }
     if (seenBindings.has(binding.to)) {
-      reasons.push(`Visual form only supports one binding per field (${binding.to}).`)
+      reasons.push({ code: "duplicate_field_binding", pointer: binding.to })
       continue
     }
     seenBindings.add(binding.to)
@@ -166,7 +215,7 @@ export const analyzeVisualCompatibility = (input: {
 
   for (const pointer of collectLeafPointers(parsed.doc)) {
     if (!schemaPointers.has(pointer)) {
-      reasons.push(`Args template contains a field that is not covered by the visual form schema (${pointer}).`)
+      reasons.push({ code: "extra_literal_field", pointer })
     }
   }
 

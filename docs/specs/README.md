@@ -21,5 +21,7 @@
 
 ## Current Docs
 
+- [flow-editor-accessibility.md](flow-editor-accessibility.md)
+- [flow-editor-draft-reliability.md](flow-editor-draft-reliability.md)
 - [flow-editor-visual-form.md](flow-editor-visual-form.md)
 - [showcase-display-widgets.md](showcase-display-widgets.md)

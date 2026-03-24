@@ -14,12 +14,15 @@ import {
 } from "./flow_visual_form"
 
 export type { MethodFieldSchema, MethodVisualSchema } from "./flow_method_schemas"
+export { describeFieldBinding, describeVisualCompatibilityReason } from "./flow_visual_form"
 export type {
   FieldVisualState,
   FlowInputBindingLike,
   NodeVisualFormModel,
   VisualBindingSource,
   VisualCompatibility,
+  VisualCompatibilityReason,
+  VisualCompatibilityReasonCode,
   VisualFieldModel
 } from "./flow_visual_form"
 
@@ -179,6 +182,13 @@ type FlowDraftSnapshot = {
   selectedEdgeIndex: number
 }
 
+export type FlowGraphEditorState = {
+  nodes: FlowNodeDraft[]
+  edges: FlowEdge[]
+  selectedNodeIndex: number
+  selectedEdgeIndex: number
+}
+
 type FlowState = {
   targetId: string
   selfNodeId: number
@@ -244,6 +254,15 @@ const MAX_HISTORY = 120
 let draftHistory: FlowDraftSnapshot[] = []
 let draftHistoryIndex = 0
 
+const cloneBindingDraft = (binding: FlowInputBindingDraft): FlowInputBindingDraft => ({ ...binding })
+
+const cloneNodeDraft = (node: FlowNodeDraft): FlowNodeDraft => ({
+  ...node,
+  inputs: node.inputs.map(cloneBindingDraft)
+})
+
+const cloneEdge = (edge: FlowEdge): FlowEdge => ({ ...edge })
+
 const setMessage = (message: string, level: Exclude<FlowMessageLevel, ""> = "info") => {
   const trimmed = message.trim()
   state.message = trimmed
@@ -262,25 +281,22 @@ const takeSnapshot = (): FlowDraftSnapshot => ({
   eventTopic: state.eventTopic,
   varOwner: state.varOwner,
   varName: state.varName,
-  nodes: state.nodes.map((node) => ({
-    id: node.id,
-    kind: node.kind,
-    allowFail: node.allowFail,
-    retry: node.retry,
-    timeoutMs: node.timeoutMs,
-    method: node.method,
-    target: node.target,
-    argsTemplate: node.argsTemplate,
-    composeTemplate: node.composeTemplate,
-    inputs: node.inputs.map((binding) => ({ ...binding })),
-    specEditorMode: node.specEditorMode,
-    specJson: node.specJson,
-    x: node.x,
-    y: node.y
-  })),
-  edges: state.edges.map((edge) => ({ from: edge.from, to: edge.to })),
+  nodes: state.nodes.map(cloneNodeDraft),
+  edges: state.edges.map(cloneEdge),
   selectedNodeIndex: state.selectedNodeIndex,
   selectedEdgeIndex: state.selectedEdgeIndex
+})
+
+const takeGraphEditorState = (): FlowGraphEditorState => ({
+  nodes: state.nodes.map(cloneNodeDraft),
+  edges: state.edges.map(cloneEdge),
+  selectedNodeIndex: state.selectedNodeIndex,
+  selectedEdgeIndex: state.selectedEdgeIndex
+})
+
+const takeGraphEditorContentState = () => ({
+  nodes: state.nodes.map(cloneNodeDraft),
+  edges: state.edges.map(cloneEdge)
 })
 
 const updateHistoryState = () => {
@@ -304,11 +320,8 @@ const applySnapshot = (snapshot: FlowDraftSnapshot) => {
   state.eventTopic = snapshot.eventTopic
   state.varOwner = snapshot.varOwner
   state.varName = snapshot.varName
-  state.nodes = snapshot.nodes.map((node) => ({
-    ...node,
-    inputs: node.inputs.map((binding) => ({ ...binding }))
-  }))
-  state.edges = snapshot.edges.map((edge) => ({ ...edge }))
+  state.nodes = snapshot.nodes.map(cloneNodeDraft)
+  state.edges = snapshot.edges.map(cloneEdge)
   state.selectedNodeIndex =
     snapshot.selectedNodeIndex >= 0 && snapshot.selectedNodeIndex < state.nodes.length
       ? snapshot.selectedNodeIndex
@@ -344,6 +357,28 @@ const commitHistory = () => {
   updateHistoryState()
   return true
 }
+
+const applyGraphEditorState = (snapshot: FlowGraphEditorState) => {
+  state.nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes.map(cloneNodeDraft) : []
+  state.edges = Array.isArray(snapshot?.edges) ? snapshot.edges.map(cloneEdge) : []
+  state.selectedNodeIndex =
+    Number.isInteger(snapshot?.selectedNodeIndex) &&
+    Number(snapshot.selectedNodeIndex) >= 0 &&
+    Number(snapshot.selectedNodeIndex) < state.nodes.length
+      ? Number(snapshot.selectedNodeIndex)
+      : -1
+  state.selectedEdgeIndex =
+    Number.isInteger(snapshot?.selectedEdgeIndex) &&
+    Number(snapshot.selectedEdgeIndex) >= 0 &&
+    Number(snapshot.selectedEdgeIndex) < state.edges.length
+      ? Number(snapshot.selectedEdgeIndex)
+      : -1
+  state.execCapabilities = []
+  state.execCapabilitiesLoading = false
+  resetHistory()
+}
+
+const graphEditorSignature = () => JSON.stringify(takeGraphEditorContentState())
 
 const undo = () => {
   if (draftHistoryIndex <= 0) return false
@@ -1877,8 +1912,13 @@ export const useFlowStore = () => {
     saveFlow,
     loadFromPayload,
     loadGraphDraft,
+    loadGraphEditorState: (snapshot: FlowGraphEditorState) => {
+      applyGraphEditorState(snapshot)
+    },
     exportPayload,
     exportGraphDraft,
+    exportGraphEditorState: () => takeGraphEditorState(),
+    graphEditorSignature,
     createInputBinding,
     getNodeVisualForm,
     getNodeValidation,
