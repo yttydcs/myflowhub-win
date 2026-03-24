@@ -1,27 +1,39 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
-import { LayoutGrid, Link2Off, Plus, Redo2, Save, Trash2, Undo2, X } from "lucide-vue-next"
-import CardHeader from "@/components/CardHeader.vue"
-import { Button } from "@/components/ui/button"
-import { Overlay } from "@/components/ui/overlay"
-import { Tooltip } from "@/components/ui/tooltip"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
+import FlowAddNodeDialog from "@/components/flow/editor/FlowAddNodeDialog.vue"
+import FlowEditorToolbar from "@/components/flow/editor/FlowEditorToolbar.vue"
+import FlowFieldBindingDialog from "@/components/flow/editor/FlowFieldBindingDialog.vue"
+import FlowMethodPickerDialog from "@/components/flow/editor/FlowMethodPickerDialog.vue"
+import FlowNodeInspector from "@/components/flow/editor/FlowNodeInspector.vue"
 import { useI18n } from "@/i18n"
 import { normalizeFormInputText, parseNumberInput, type FormInputValue } from "@/lib/numberInput"
 import {
   useFlowStore,
+  type ExecCapabilityRoute,
   type FlowBindingSourceKind,
+  type FlowGraphEditorState,
   type FlowInputBindingDraft,
   type FlowNodeKind,
   type NodeVisualFormModel,
   type VisualBindingSource,
   type VisualFieldModel
 } from "@/stores/flow"
-import { useFlowProjectsStore } from "@/stores/flowProjects"
+import { useFlowProjectsStore, type FlowProjectRecord } from "@/stores/flowProjects"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
+
+type FlowEditorRecoveryRecord = {
+  version: 1
+  projectId: string
+  baseSignature: string
+  savedAt: string
+  snapshot: FlowGraphEditorState
+}
+
+const recoveryStoragePrefix = "myflowhub.flow-editor.recovery:"
 
 const route = useRoute()
 const flowStore = useFlowStore()
@@ -45,6 +57,10 @@ const pendingCapabilityKey = ref("")
 const lastCapabilityQueryNode = ref("")
 const activeBindingFieldPointer = ref("")
 const fieldDrafts = reactive<Record<string, FormInputValue>>({})
+const lastSavedSignature = ref("")
+const lastSavedAt = ref("")
+let recoveryWriteTimer: number | null = null
+
 const fieldBindingDraft = reactive({
   sourceKind: "trigger" as FlowBindingSourceKind,
   nodeId: "",
@@ -70,6 +86,12 @@ const canRedo = computed(
 )
 
 const projectId = computed(() => String(route.query.projectId ?? "").trim())
+const recoveryStorageKey = computed(() =>
+  projectId.value ? `${recoveryStoragePrefix}${projectId.value}` : ""
+)
+const graphSignature = computed(() => flowStore.graphEditorSignature())
+const dirty = computed(() => !loading.value && graphSignature.value !== lastSavedSignature.value)
+
 const effectiveExecutorNode = computed(() => {
   const rawTarget = String(flowStore.state.targetId ?? "").trim()
   if (rawTarget) {
@@ -78,9 +100,10 @@ const effectiveExecutorNode = computed(() => {
       return Math.trunc(parsed)
     }
   }
-  const hubId = Number(sessionStore.auth.hubId || flowStore.state.hubId || 0)
-  return Number.isFinite(hubId) && hubId > 0 ? Math.trunc(hubId) : 0
+  const currentHubId = Number(sessionStore.auth.hubId || flowStore.state.hubId || 0)
+  return Number.isFinite(currentHubId) && currentHubId > 0 ? Math.trunc(currentHubId) : 0
 })
+
 const selectedTargetLabel = computed(() => {
   const node = selectedNode.value
   if (!node) return t("No target selected.")
@@ -95,11 +118,13 @@ const selectedTargetLabel = computed(() => {
   }
   return t("Current executor")
 })
+
 const capabilityQueryNodeLabel = computed(() => {
   const raw = queryNodeIdDraft.value.trim()
   if (raw) return raw
   return effectiveExecutorNode.value > 0 ? String(effectiveExecutorNode.value) : "-"
 })
+
 const capabilityOptions = computed(() => {
   const executorNode = effectiveExecutorNode.value
   return [...flowStore.state.execCapabilities].sort((left, right) => {
@@ -117,16 +142,49 @@ const capabilityOptions = computed(() => {
     return left.viaNode - right.viaNode
   })
 })
+
+const capabilitySearchText = (route: ExecCapabilityRoute) => {
+  const tags = Object.entries(route.tags).flatMap(([key, value]) => [key, value, `${key}:${value}`])
+  return [
+    route.method,
+    route.label,
+    route.providerNode,
+    route.viaNode,
+    route.version,
+    ...route.permissions,
+    ...tags,
+    route.inputSchema ? "schema" : ""
+  ]
+    .join(" ")
+    .toLowerCase()
+}
+
+const capabilityMatchScore = (route: ExecCapabilityRoute, query: string) => {
+  const normalizedMethod = route.method.toLowerCase()
+  if (normalizedMethod === query) {
+    return 4
+  }
+  if (normalizedMethod.startsWith(query)) {
+    return 3
+  }
+  if (normalizedMethod.includes(query)) {
+    return 2
+  }
+  return capabilitySearchText(route).includes(query) ? 1 : -1
+}
+
 const filteredCapabilities = computed(() => {
   const query = methodSearch.value.trim().toLowerCase()
   if (!query) {
     return capabilityOptions.value
   }
-  return capabilityOptions.value.filter((route) => {
-    const haystack = `${route.method} ${route.providerNode} ${route.viaNode} ${route.version}`.toLowerCase()
-    return haystack.includes(query)
-  })
+  return capabilityOptions.value
+    .map((route) => ({ route, score: capabilityMatchScore(route, query) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.route)
 })
+
 const selectedCapabilityKey = computed(() => {
   const node = selectedNode.value
   if (!node || node.kind !== "call") return ""
@@ -147,19 +205,157 @@ const selectedNodeValidation = computed(() =>
 const ancestorNodeOptions = computed(() =>
   selectedNode.value ? flowStore.listAncestorNodeIds(selectedNode.value.id) : []
 )
+
 const bindableAncestorNodeOptions = computed(() =>
   selectedNode.value ? flowStore.listBindableAncestorNodeIds(selectedNode.value.id) : []
 )
+
 const selectedCallVisualForm = computed<NodeVisualFormModel | null>(() => {
   const node = selectedNode.value
   if (!node || node.kind !== "call") return null
   return flowStore.getNodeVisualForm(node.id)
 })
+
 const activeBindingField = computed<VisualFieldModel | null>(() => {
   const form = selectedCallVisualForm.value
   if (!form) return null
   return form.fields.find((field) => field.schema.pointer === activeBindingFieldPointer.value) ?? null
 })
+
+const formatTimestamp = (value: string) => {
+  const raw = String(value ?? "").trim()
+  if (!raw) return "-"
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) return raw
+  return new Date(parsed).toLocaleString()
+}
+
+const lastSavedLabel = computed(() => {
+  if (!lastSavedAt.value) return ""
+  return t("Last saved {time}", { time: formatTimestamp(lastSavedAt.value) })
+})
+
+const graphSignatureOf = (snapshot: FlowGraphEditorState) =>
+  JSON.stringify({
+    nodes: Array.isArray(snapshot?.nodes) ? snapshot.nodes : [],
+    edges: Array.isArray(snapshot?.edges) ? snapshot.edges : []
+  })
+
+const clearRecoveryWriteTimer = () => {
+  if (recoveryWriteTimer !== null) {
+    window.clearTimeout(recoveryWriteTimer)
+    recoveryWriteTimer = null
+  }
+}
+
+const clearRecoveryDraft = () => {
+  clearRecoveryWriteTimer()
+  const storageKey = recoveryStorageKey.value
+  if (!storageKey || typeof globalThis.localStorage === "undefined") return
+  try {
+    globalThis.localStorage.removeItem(storageKey)
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
+const readRecoveryDraft = (): FlowEditorRecoveryRecord | null => {
+  const storageKey = recoveryStorageKey.value
+  if (!storageKey || typeof globalThis.localStorage === "undefined") return null
+  try {
+    const raw = globalThis.localStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      String(parsed.projectId ?? "").trim() !== projectId.value ||
+      typeof parsed.snapshot !== "object"
+    ) {
+      clearRecoveryDraft()
+      return null
+    }
+    return {
+      version: 1,
+      projectId: String(parsed.projectId ?? "").trim(),
+      baseSignature: String(parsed.baseSignature ?? ""),
+      savedAt: String(parsed.savedAt ?? "").trim(),
+      snapshot: parsed.snapshot as FlowGraphEditorState
+    }
+  } catch (err) {
+    console.warn(err)
+    return null
+  }
+}
+
+const writeRecoveryDraft = () => {
+  if (!dirty.value || loading.value || typeof globalThis.localStorage === "undefined") return
+  const storageKey = recoveryStorageKey.value
+  if (!storageKey) return
+  try {
+    const payload: FlowEditorRecoveryRecord = {
+      version: 1,
+      projectId: projectId.value,
+      baseSignature: lastSavedSignature.value,
+      savedAt: new Date().toISOString(),
+      snapshot: flowStore.exportGraphEditorState()
+    }
+    globalThis.localStorage.setItem(storageKey, JSON.stringify(payload))
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
+const scheduleRecoveryDraftWrite = () => {
+  clearRecoveryWriteTimer()
+  recoveryWriteTimer = window.setTimeout(() => {
+    recoveryWriteTimer = null
+    writeRecoveryDraft()
+  }, 400)
+}
+
+const updateSavedBaseline = (updatedAt: string) => {
+  lastSavedSignature.value = graphSignature.value
+  lastSavedAt.value = String(updatedAt ?? "").trim() || new Date().toISOString()
+}
+
+const maybeRestoreRecoveryDraft = (project: FlowProjectRecord) => {
+  const recovery = readRecoveryDraft()
+  if (!recovery) return
+  if (recovery.baseSignature !== lastSavedSignature.value) {
+    clearRecoveryDraft()
+    return
+  }
+
+  const recoveryGraphSignature = graphSignatureOf(recovery.snapshot)
+  if (recoveryGraphSignature === lastSavedSignature.value) {
+    clearRecoveryDraft()
+    return
+  }
+
+  const restore = window.confirm(
+    t("A local draft from {time} was found for this project. Restore it now?", {
+      time: formatTimestamp(recovery.savedAt || project.updatedAt)
+    })
+  )
+  if (!restore) {
+    clearRecoveryDraft()
+    return
+  }
+
+  try {
+    flowStore.loadGraphEditorState(recovery.snapshot)
+    toast.info(
+      t("Recovered local draft from {time}. Save project to persist it.", {
+        time: formatTimestamp(recovery.savedAt || project.updatedAt)
+      })
+    )
+  } catch (err) {
+    console.warn(err)
+    clearRecoveryDraft()
+    toast.error(t("Failed to restore local draft."))
+  }
+}
 
 const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
   if (source?.kind === "node_result") {
@@ -214,11 +410,11 @@ const openFieldBindingDialog = (field: VisualFieldModel) => {
   fieldBindingDialogOpen.value = true
 }
 
-const onFieldBindingSourceKindChange = (event: Event) => {
-  const sourceKind = String((event.target as HTMLSelectElement | null)?.value ?? "trigger")
-  fieldBindingDraft.sourceKind = sourceKind === "node_result" || sourceKind === "flow_meta" || sourceKind === "run_meta"
-    ? sourceKind
-    : "trigger"
+const onFieldBindingSourceKindChange = (sourceKind: string) => {
+  fieldBindingDraft.sourceKind =
+    sourceKind === "node_result" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+      ? sourceKind
+      : "trigger"
   if (fieldBindingDraft.sourceKind === "node_result") {
     fieldBindingDraft.nodeId = bindableAncestorNodeOptions.value[0] ?? ""
     fieldBindingDraft.path = ""
@@ -369,15 +565,11 @@ const commitFieldLiteralValue = (field: VisualFieldModel) => {
   }
 }
 
-const setBooleanFieldLiteralValue = (field: VisualFieldModel, event: Event) => {
+const setBooleanFieldLiteralValue = (field: VisualFieldModel, checked: boolean) => {
   const node = selectedNode.value
   if (!node || node.kind !== "call") return
   try {
-    flowStore.setFieldLiteralValue(
-      node.id,
-      field.schema.pointer,
-      Boolean((event.target as HTMLInputElement | null)?.checked)
-    )
+    flowStore.setFieldLiteralValue(node.id, field.schema.pointer, checked)
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to update field value."))
@@ -507,11 +699,6 @@ const setSelectedNodeKind = (kind: FlowNodeKind) => {
   }
 }
 
-const onSelectedNodeKindChange = (event: Event) => {
-  const value = String((event.target as HTMLSelectElement | null)?.value ?? "call")
-  setSelectedNodeKind(value === "compose" ? "compose" : "call")
-}
-
 const setSelectedNodeSpecMode = (mode: "form" | "json") => {
   const node = selectedNode.value
   if (!node) return
@@ -519,7 +706,10 @@ const setSelectedNodeSpecMode = (mode: "form" | "json") => {
     flowStore.setNodeSpecEditorMode(node.id, mode)
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, mode === "form" ? t("Failed to switch back to form mode.") : t("Failed to open advanced JSON mode."))
+    toast.errorOf(
+      err,
+      mode === "form" ? t("Failed to switch back to form mode.") : t("Failed to open advanced JSON mode.")
+    )
   }
 }
 
@@ -537,11 +727,11 @@ const removeBinding = (index: number) => {
   flowStore.commitHistory()
 }
 
-const onBindingSourceKindChange = (binding: FlowInputBindingDraft, event: Event) => {
-  const sourceKind = String((event.target as HTMLSelectElement | null)?.value ?? "node_result")
-  binding.sourceKind = sourceKind === "trigger" || sourceKind === "flow_meta" || sourceKind === "run_meta"
-    ? sourceKind
-    : "node_result"
+const onBindingSourceKindChange = (binding: FlowInputBindingDraft, sourceKind: string) => {
+  binding.sourceKind =
+    sourceKind === "trigger" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+      ? sourceKind
+      : "node_result"
 
   if (binding.sourceKind === "flow_meta") {
     binding.field = "flow_id"
@@ -615,6 +805,8 @@ const saveProject = async () => {
     const graph = flowStore.exportGraphDraft()
     const saved = await projectsStore.saveProjectGraph(id, graph)
     loadedProjectName.value = saved.name || saved.flowId || id
+    updateSavedBaseline(saved.updatedAt)
+    clearRecoveryDraft()
     toast.success(t("Project saved."))
   } catch (err) {
     console.warn(err)
@@ -639,6 +831,8 @@ const loadProject = async () => {
     loadedProjectName.value = project.name || project.flowId
     flowStore.loadGraphDraft(project.graph)
     nodeIdDraft.value = selectedNode.value?.id ?? ""
+    updateSavedBaseline(project.updatedAt)
+    maybeRestoreRecoveryDraft(project)
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to load project."))
@@ -671,6 +865,12 @@ const onKeyDown = (event: KeyboardEvent) => {
   const editable = isEditableTarget(event.target)
   if (editable) return
 
+  if (key === "Escape" && nodeDetailOpen.value) {
+    event.preventDefault()
+    closeNodeDetail()
+    return
+  }
+
   if (key === "Delete") {
     event.preventDefault()
     if (flowStore.state.selectedEdgeIndex >= 0) {
@@ -693,10 +893,16 @@ const onKeyDown = (event: KeyboardEvent) => {
   }
 }
 
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ""
+}
+
 watch(
   () => [selfNodeId.value, hubId.value],
-  ([nodeId, hubId]) => {
-    flowStore.setIdentity(Number(nodeId), Number(hubId))
+  ([nodeId, currentHubId]) => {
+    flowStore.setIdentity(Number(nodeId), Number(currentHubId))
     if (!methodDialogOpen.value) {
       syncQueryNodeDraft()
     }
@@ -771,71 +977,51 @@ watch(
   }
 )
 
+watch(
+  () => [projectId.value, loading.value, dirty.value, graphSignature.value, lastSavedSignature.value],
+  ([id, isLoading, isDirty]) => {
+    if (!id || isLoading) return
+    if (!isDirty) {
+      clearRecoveryDraft()
+      return
+    }
+    scheduleRecoveryDraftWrite()
+  }
+)
+
 onMounted(() => {
   void loadHomeDefaults().then(() => loadProject())
   window.addEventListener("keydown", onKeyDown)
+  window.addEventListener("beforeunload", onBeforeUnload)
 })
 
 onUnmounted(() => {
+  clearRecoveryWriteTimer()
   window.removeEventListener("keydown", onKeyDown)
+  window.removeEventListener("beforeunload", onBeforeUnload)
 })
 </script>
 
 <template>
   <section class="flex h-full min-h-0 flex-col bg-card/70 text-card-foreground">
-    <header class="flex-none border-b border-border/60 bg-card/92 px-5 py-4 shadow-sm">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-xl font-semibold">{{ loadedProjectName || t("Untitled Project") }}</h1>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <Tooltip :content="t('Add Node')" side="bottom">
-            <Button size="icon" variant="outline" @click="openAddNodeDialog">
-              <Plus class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Add Node") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Remove Node (Delete)')" side="bottom">
-            <Button size="icon" variant="outline" :disabled="flowStore.state.selectedNodeIndex < 0" @click="removeNode">
-              <Trash2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Remove Node (Delete)") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Remove Edge (Delete)')" side="bottom">
-            <Button size="icon" variant="outline" :disabled="flowStore.state.selectedEdgeIndex < 0" @click="removeEdge">
-              <Link2Off class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Remove Edge (Delete)") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Undo (Ctrl+Z)')" side="bottom">
-            <Button size="icon" variant="outline" :disabled="!canUndo" @click="flowStore.undo()">
-              <Undo2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Undo (Ctrl+Z)") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Redo (Ctrl+Y)')" side="bottom">
-            <Button size="icon" variant="outline" :disabled="!canRedo" @click="flowStore.redo()">
-              <Redo2 class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Redo (Ctrl+Y)") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Auto Layout')" side="bottom">
-            <Button size="icon" variant="outline" @click="autoLayout">
-              <LayoutGrid class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Auto Layout") }}</span>
-            </Button>
-          </Tooltip>
-          <Tooltip :content="t('Save Project (Ctrl+S)')" side="bottom">
-            <Button size="icon" :disabled="saveBusy || loading" @click="saveProject">
-              <Save class="h-4 w-4" aria-hidden="true" />
-              <span class="sr-only">{{ t("Save Project (Ctrl+S)") }}</span>
-            </Button>
-          </Tooltip>
-        </div>
-      </div>
-
-    </header>
+    <FlowEditorToolbar
+      :title="loadedProjectName || t('Untitled Project')"
+      :dirty="dirty"
+      :last-saved-label="lastSavedLabel"
+      :save-busy="saveBusy"
+      :loading="loading"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :has-selected-node="flowStore.state.selectedNodeIndex >= 0"
+      :has-selected-edge="flowStore.state.selectedEdgeIndex >= 0"
+      @add-node="openAddNodeDialog"
+      @remove-node="removeNode"
+      @remove-edge="removeEdge"
+      @undo="flowStore.undo()"
+      @redo="flowStore.redo()"
+      @auto-layout="autoLayout"
+      @save-project="saveProject"
+    />
 
     <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
       {{ t("Loading project...") }}
@@ -859,797 +1045,74 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="nodeDetailOpen" class="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full justify-end p-0">
-        <aside
-          v-if="selectedNode"
-          class="pointer-events-auto h-full w-full max-w-[420px] border-l border-border/70 bg-card shadow-2xl"
-        >
-          <div class="flex h-full flex-col">
-            <div class="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
-              <CardHeader class="w-full items-start" :title="selectedNode.id" title-class="text-lg">
-                <template #actions>
-                  <Button size="icon" variant="ghost" @click="closeNodeDetail">
-                    <X class="h-4 w-4" aria-hidden="true" />
-                    <span class="sr-only">{{ t("Close") }}</span>
-                  </Button>
-                </template>
-              </CardHeader>
-            </div>
-
-            <div class="flex-1 overflow-y-auto px-5 py-4">
-              <div class="space-y-4">
-                <div>
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    Node ID
-                  </label>
-                  <input
-                    v-model="nodeIdDraft"
-                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    @blur="commitNodeId"
-                    @keydown.enter.prevent="commitNodeId"
-                  />
-                  <p class="mt-1 text-[11px] text-muted-foreground">
-                    {{ t("Node ID must be unique. Renaming updates all connected edges.") }}
-                  </p>
-                </div>
-
-                <div v-if="selectedNodeValidation.length" class="rounded-xl border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-700">
-                  <p class="font-semibold uppercase tracking-[0.18em]">{{ t("Validation") }}</p>
-                  <ul class="mt-2 space-y-1">
-                    <li v-for="message in selectedNodeValidation" :key="message">• {{ message }}</li>
-                  </ul>
-                </div>
-
-                <div class="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Kind") }}
-                    </label>
-                    <select
-                      :value="selectedNode.kind"
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      @change="onSelectedNodeKindChange"
-                    >
-                      <option value="call">{{ t("Call") }}</option>
-                      <option value="compose">{{ t("Compose") }}</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Allow Fail") }}
-                    </label>
-                    <div class="mt-2 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
-                      <input
-                        v-model="selectedNode.allowFail"
-                        type="checkbox"
-                        class="h-4 w-4 rounded border"
-                        @change="flowStore.commitHistory()"
-                      />
-                      <span class="text-muted-foreground">{{ t("Continue on error") }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Retry") }}
-                    </label>
-                    <input
-                      v-model.number="selectedNode.retry"
-                      type="number"
-                      min="0"
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      @blur="flowStore.commitHistory()"
-                    />
-                  </div>
-
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Timeout (ms)") }}
-                    </label>
-                    <input
-                      v-model.number="selectedNode.timeoutMs"
-                      type="number"
-                      min="0"
-                      class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      @blur="flowStore.commitHistory()"
-                    />
-                  </div>
-                </div>
-
-                <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                  <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Spec Mode") }}
-                      </p>
-                      <p class="mt-1 text-[11px] text-muted-foreground">
-                        {{ t("Form mode edits the supported fields directly. Advanced JSON is the escape hatch for full spec editing.") }}
-                      </p>
-                    </div>
-                    <div class="flex gap-2">
-                      <Button
-                        size="sm"
-                        :variant="selectedNode.specEditorMode === 'form' ? 'default' : 'outline'"
-                        @click="setSelectedNodeSpecMode('form')"
-                      >
-                        {{ t("Form") }}
-                      </Button>
-                      <Button
-                        size="sm"
-                        :variant="selectedNode.specEditorMode === 'json' ? 'default' : 'outline'"
-                        @click="setSelectedNodeSpecMode('json')"
-                      >
-                        {{ t("Advanced JSON") }}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <template v-if="selectedNode.specEditorMode === 'form'">
-                  <div v-if="selectedNode.kind === 'call'" class="space-y-4">
-                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                      <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                            {{ t("Call Method") }}
-                          </p>
-                          <p class="mt-2 break-all text-sm font-semibold">
-                            {{ selectedNode.method || t("No method selected.") }}
-                          </p>
-                          <p class="mt-1 text-xs text-muted-foreground">
-                            {{ selectedTargetLabel }}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" @click="openMethodDialog">{{ t("Select Method") }}</Button>
-                      </div>
-                      <p class="mt-3 text-[11px] text-muted-foreground">
-                        {{ t("Use the method dialog to choose a registered capability. The editor will keep method and target aligned.") }}
-                      </p>
-                    </div>
-
-                    <div
-                      v-if="selectedCallVisualForm?.compatibility.supported"
-                      class="rounded-xl border border-border/70 bg-muted/20 p-4"
-                    >
-                      <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                            {{ t("Method Fields") }}
-                          </p>
-                          <p class="mt-2 text-sm font-semibold">
-                            {{ selectedCallVisualForm.schema?.title || selectedNode.method }}
-                          </p>
-                          <p class="mt-1 text-[11px] text-muted-foreground">
-                            {{
-                              selectedCallVisualForm.schema?.source === "local_override"
-                                ? t("Schema source: local override")
-                                : t("Schema source: capability input_schema")
-                            }}
-                          </p>
-                        </div>
-                        <span class="rounded-full border border-border/70 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                          {{ t("Visual Form") }}
-                        </span>
-                      </div>
-
-                      <div class="mt-4 space-y-3">
-                        <div
-                          v-for="field in selectedCallVisualForm.fields"
-                          :key="field.schema.pointer"
-                          class="rounded-lg border border-border/70 bg-background/90 p-4"
-                        >
-                          <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div class="min-w-0">
-                              <div class="flex flex-wrap items-center gap-2">
-                                <p class="text-sm font-semibold">{{ field.schema.label }}</p>
-                                <span
-                                  v-if="field.schema.required"
-                                  class="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-muted-foreground"
-                                >
-                                  {{ t("Required") }}
-                                </span>
-                                <span
-                                  v-if="field.state.mode === 'binding'"
-                                  class="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-primary"
-                                >
-                                  {{ t("Bound") }}
-                                </span>
-                              </div>
-                              <p class="mt-1 break-all text-[11px] text-muted-foreground">{{ field.schema.pointer }}</p>
-                              <p v-if="field.schema.description" class="mt-1 text-[11px] text-muted-foreground">
-                                {{ field.schema.description }}
-                              </p>
-                            </div>
-                            <Button
-                              v-if="field.schema.bindable !== false"
-                              size="sm"
-                              variant="outline"
-                              @click="openFieldBindingDialog(field)"
-                            >
-                              {{ field.state.mode === "binding" ? t("Edit fx") : t("Add fx") }}
-                            </Button>
-                          </div>
-
-                          <div
-                            v-if="field.state.mode === 'binding'"
-                            class="mt-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-3"
-                          >
-                            <p class="text-xs font-medium text-primary">
-                              {{ t("This field currently reads from an upstream source.") }}
-                            </p>
-                            <p class="mt-1 text-sm font-medium">{{ field.bindingSummary || t("Binding configured.") }}</p>
-                            <div class="mt-3 flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" @click="openFieldBindingDialog(field)">
-                                {{ t("Edit Binding") }}
-                              </Button>
-                              <Button size="sm" variant="ghost" @click="clearVisualFieldBinding(field.schema.pointer)">
-                                {{ t("Use Literal Instead") }}
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div v-else class="mt-3">
-                            <input
-                              v-if="field.schema.control === 'text'"
-                              v-model="fieldDrafts[field.schema.pointer]"
-                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              @blur="commitFieldLiteralValue(field)"
-                            />
-
-                            <textarea
-                              v-else-if="field.schema.control === 'textarea'"
-                              v-model="fieldDrafts[field.schema.pointer]"
-                              rows="4"
-                              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                              @blur="commitFieldLiteralValue(field)"
-                            />
-
-                            <input
-                              v-else-if="field.schema.control === 'number'"
-                              v-model="fieldDrafts[field.schema.pointer]"
-                              type="number"
-                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              @blur="commitFieldLiteralValue(field)"
-                            />
-
-                            <select
-                              v-else-if="field.schema.control === 'select'"
-                              v-model="fieldDrafts[field.schema.pointer]"
-                              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              @change="commitFieldLiteralValue(field)"
-                            >
-                              <option v-if="!field.schema.required" value="">{{ t("Not set") }}</option>
-                              <option
-                                v-for="option in field.schema.options ?? []"
-                                :key="JSON.stringify(option.value)"
-                                :value="JSON.stringify(option.value)"
-                              >
-                                {{ option.label }}
-                              </option>
-                            </select>
-
-                            <label
-                              v-else-if="field.schema.control === 'switch'"
-                              class="flex h-10 items-center gap-3 rounded-md border border-input bg-background px-3 text-sm"
-                            >
-                              <input
-                                :checked="Boolean(field.state.literalValue)"
-                                type="checkbox"
-                                class="h-4 w-4 rounded border"
-                                @change="setBooleanFieldLiteralValue(field, $event)"
-                              />
-                              <span>{{ t("Enabled") }}</span>
-                            </label>
-
-                            <textarea
-                              v-else
-                              v-model="fieldDrafts[field.schema.pointer]"
-                              rows="6"
-                              class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
-                              @blur="commitFieldLiteralValue(field)"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div v-else class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-                      <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
-                            {{ t("Visual form unavailable") }}
-                          </p>
-                          <p class="mt-2 text-sm text-foreground">
-                            {{ t("This call node cannot be edited safely in ordinary mode. Use Advanced JSON for the full spec.") }}
-                          </p>
-                        </div>
-                        <Button size="sm" variant="outline" @click="setSelectedNodeSpecMode('json')">
-                          {{ t("Open Advanced JSON") }}
-                        </Button>
-                      </div>
-                      <ul
-                        v-if="selectedCallVisualForm?.compatibility.reasons.length"
-                        class="mt-3 space-y-1 text-xs text-muted-foreground"
-                      >
-                        <li
-                          v-for="reason in selectedCallVisualForm.compatibility.reasons"
-                          :key="reason"
-                          class="rounded-md bg-background/70 px-3 py-2"
-                        >
-                          {{ reason }}
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div v-else class="space-y-4">
-                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Compose Node") }}
-                      </p>
-                      <p class="mt-2 text-sm text-muted-foreground">
-                        {{ t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.") }}
-                      </p>
-                    </div>
-
-                    <div>
-                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        {{ t("Template (JSON)") }}
-                      </label>
-                      <textarea
-                        v-model="selectedNode.composeTemplate"
-                        rows="9"
-                        class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-                        @blur="flowStore.commitHistory()"
-                      />
-                      <p class="mt-1 text-[11px] text-muted-foreground">
-                        {{ t("Compose starts from this JSON template and applies the same binding list as call nodes.") }}
-                      </p>
-                    </div>
-                    <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                      <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                            {{ t("Input Bindings") }}
-                          </p>
-                          <p class="mt-1 text-[11px] text-muted-foreground">
-                            {{ t("Bindings can read trigger data, flow/run metadata, or ancestor node results.") }}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" @click="addBinding">{{ t("Add Binding") }}</Button>
-                      </div>
-
-                      <div v-if="!selectedNode.inputs.length" class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
-                        {{ t("No bindings yet. Nodes can still run with their template alone.") }}
-                      </div>
-
-                      <div v-else class="mt-4 space-y-3">
-                        <div v-for="(binding, index) in selectedNode.inputs" :key="`${selectedNode.id}-binding-${index}`" class="rounded-lg border border-border/70 bg-background/90 p-3">
-                          <div class="flex items-start justify-between gap-3">
-                            <div>
-                              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                                {{ t("Binding {index}", { index: index + 1 }) }}
-                              </p>
-                              <p class="mt-1 text-[11px] text-muted-foreground">
-                                {{ t("Destination writes into the template. Source chooses where the value comes from.") }}
-                              </p>
-                            </div>
-                            <Button size="sm" variant="ghost" @click="removeBinding(index)">{{ t("Remove") }}</Button>
-                          </div>
-
-                          <div class="mt-3 grid gap-3 md:grid-cols-2">
-                            <div>
-                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {{ t("Destination Pointer") }}
-                              </label>
-                              <input
-                                v-model="binding.to"
-                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                                placeholder="/payload/id"
-                                @blur="flowStore.commitHistory()"
-                              />
-                            </div>
-
-                            <div>
-                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {{ t("Source Kind") }}
-                              </label>
-                              <select
-                                :value="binding.sourceKind"
-                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                                @change="onBindingSourceKindChange(binding, $event)"
-                              >
-                                <option value="node_result">{{ t("Ancestor Result") }}</option>
-                                <option value="trigger">{{ t("Trigger") }}</option>
-                                <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                                <option value="run_meta">{{ t("Run Meta") }}</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <div v-if="binding.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
-                            <div>
-                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {{ t("Ancestor Node") }}
-                              </label>
-                              <select
-                                v-model="binding.nodeId"
-                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                                @change="flowStore.commitHistory()"
-                              >
-                                <option value="">{{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
-                                <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
-                                  {{ ancestorId }}
-                                </option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {{ t("Result Path") }}
-                              </label>
-                              <input
-                                v-model="binding.path"
-                                class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                                placeholder="/user/id"
-                                @blur="flowStore.commitHistory()"
-                              />
-                            </div>
-                          </div>
-
-                          <div v-else-if="binding.sourceKind === 'trigger'" class="mt-3">
-                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Trigger Path") }}
-                            </label>
-                            <input
-                              v-model="binding.path"
-                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              placeholder="/payload/name"
-                              @blur="flowStore.commitHistory()"
-                            />
-                          </div>
-
-                          <div v-else-if="binding.sourceKind === 'flow_meta' || binding.sourceKind === 'run_meta'" class="mt-3">
-                            <label class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              {{ t("Meta Field") }}
-                            </label>
-                            <select
-                              v-model="binding.field"
-                              class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
-                              @change="flowStore.commitHistory()"
-                            >
-                              <option v-if="binding.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
-                              <option v-if="binding.sourceKind === 'run_meta'" value="run_id">run_id</option>
-                            </select>
-                          </div>
-
-                          <label class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                            <input
-                              v-model="binding.required"
-                              type="checkbox"
-                              class="h-4 w-4 rounded border"
-                              @change="flowStore.commitHistory()"
-                            />
-                            <span>{{ t("Required binding") }}</span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <div v-else class="space-y-3">
-                  <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Advanced Spec (JSON)") }}
-                    </p>
-                    <p class="mt-2 text-[11px] text-muted-foreground">
-                      {{ t("This is the full node spec. Switching back to form mode will validate JSON and map the supported fields into the visual editor.") }}
-                    </p>
-                    <textarea
-                      v-model="selectedNode.specJson"
-                      rows="16"
-                      class="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
-                      @blur="flowStore.commitHistory()"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </aside>
+      <div
+        v-if="nodeDetailOpen"
+        class="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full justify-end p-0"
+      >
+        <FlowNodeInspector
+          :selected-node="selectedNode"
+          :node-id-draft="nodeIdDraft"
+          :selected-node-validation="selectedNodeValidation"
+          :selected-target-label="selectedTargetLabel"
+          :selected-call-visual-form="selectedCallVisualForm"
+          :ancestor-node-options="ancestorNodeOptions"
+          :field-drafts="fieldDrafts"
+          @close="closeNodeDetail"
+          @update:node-id-draft="nodeIdDraft = $event"
+          @commit-node-id="commitNodeId"
+          @node-kind-change="setSelectedNodeKind"
+          @toggle-spec-mode="setSelectedNodeSpecMode"
+          @open-method="openMethodDialog"
+          @open-field-binding="openFieldBindingDialog"
+          @clear-field-binding="clearVisualFieldBinding"
+          @commit-field-literal="commitFieldLiteralValue"
+          @set-boolean-field-literal="setBooleanFieldLiteralValue($event.field, $event.checked)"
+          @add-binding="addBinding"
+          @remove-binding="removeBinding"
+          @binding-source-kind-change="onBindingSourceKindChange($event.binding, $event.sourceKind)"
+          @commit-history="flowStore.commitHistory()"
+        />
       </div>
     </div>
 
-    <Overlay
+    <FlowMethodPickerDialog
       :open="methodDialogOpen"
-      overlayClass="bg-slate-950/60 p-4"
-      zIndexClass="z-40"
-      closeOnBackdrop
+      :loading="flowStore.state.execCapabilitiesLoading"
+      :capability-count="flowStore.state.execCapabilities.length"
+      :filtered-capabilities="filteredCapabilities"
+      :effective-executor-node="effectiveExecutorNode"
+      :capability-query-node-label="capabilityQueryNodeLabel"
+      :selected-target-label="selectedTargetLabel"
+      :query-node-id-draft="queryNodeIdDraft"
+      :method-search="methodSearch"
+      :pending-capability-key="pendingCapabilityKey"
       @close="closeMethodDialog"
-    >
-      <div class="flex max-h-[80vh] w-full max-w-4xl flex-col rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
-        <CardHeader
-          class="items-start"
-          :title="t('Select Capability')"
-          :description="t('Pick a registered capability and the editor will keep method and target aligned.')"
-          title-class="text-lg"
-        >
-          <template #actions>
-            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span class="rounded-full border border-border/60 px-3 py-1">
-                {{ t("Executor {nodeId}", { nodeId: effectiveExecutorNode || "-" }) }}
-              </span>
-              <span class="rounded-full border border-border/60 px-3 py-1">
-                {{ t("Query Node {nodeId}", { nodeId: capabilityQueryNodeLabel }) }}
-              </span>
-              <span class="rounded-full border border-border/60 px-3 py-1">
-                {{ selectedTargetLabel }}
-              </span>
-            </div>
-          </template>
-        </CardHeader>
+      @refresh="refreshMethodCapabilities"
+      @select-capability="selectCapability"
+      @apply="applyCapabilitySelection"
+      @update:query-node-id-draft="queryNodeIdDraft = $event"
+      @update:method-search="methodSearch = $event"
+    />
 
-        <div class="mt-5 flex flex-wrap items-end gap-3">
-          <div class="min-w-[200px] max-w-[240px] flex-1">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Query Node ID") }}
-            </label>
-            <input
-              v-model="queryNodeIdDraft"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              inputmode="numeric"
-              :placeholder="t('Current executor')"
-            />
-            <p class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("Used only for capability lookup. It will not be written back into the call node.") }}
-            </p>
-          </div>
-          <div class="min-w-[240px] flex-[2]">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Filter") }}
-            </label>
-            <input
-              v-model="methodSearch"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Search method / provider / version')"
-            />
-          </div>
-          <Button variant="outline" :disabled="flowStore.state.execCapabilitiesLoading" @click="refreshMethodCapabilities">
-            {{ flowStore.state.execCapabilitiesLoading ? t("Refreshing...") : t("Refresh Capabilities") }}
-          </Button>
-        </div>
-
-        <div class="mt-5 flex-1 overflow-y-auto rounded-xl border border-border/70 bg-background/80">
-          <div
-            v-if="flowStore.state.execCapabilitiesLoading && !flowStore.state.execCapabilities.length"
-            class="px-4 py-10 text-center text-sm text-muted-foreground"
-          >
-            {{ t("Loading capability list...") }}
-          </div>
-          <div v-else-if="!filteredCapabilities.length" class="px-4 py-10 text-center text-sm text-muted-foreground">
-            {{
-              flowStore.state.execCapabilities.length
-                ? t("No capability matched the current filter.")
-                : t("No capability loaded yet. Refresh to query the selected node.")
-            }}
-          </div>
-          <div v-else class="divide-y divide-border/60">
-            <button
-              v-for="route in filteredCapabilities"
-              :key="route.key"
-              type="button"
-              class="flex w-full items-start justify-between gap-4 px-4 py-4 text-left transition hover:bg-muted/50"
-              :class="pendingCapabilityKey === route.key ? 'bg-muted/70' : ''"
-              @click="selectCapability(route.key)"
-            >
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="break-all text-sm font-semibold">{{ route.method }}</p>
-                  <span class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    {{ route.providerNode === effectiveExecutorNode ? t("Self") : t("Remote") }}
-                  </span>
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {{ t("Provider {nodeId}", { nodeId: route.providerNode }) }}
-                  <span v-if="route.viaNode > 0"> {{ t("via {nodeId}", { nodeId: route.viaNode }) }}</span>
-                  <span v-if="route.version"> · {{ route.version }}</span>
-                </p>
-              </div>
-              <span
-                class="shrink-0 rounded-full border px-3 py-1 text-xs"
-                :class="
-                  pendingCapabilityKey === route.key
-                    ? 'border-primary text-primary'
-                    : 'border-border/70 text-muted-foreground'
-                "
-              >
-                {{ pendingCapabilityKey === route.key ? t("Selected") : t("Choose") }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <p class="text-xs text-muted-foreground">
-            {{ t("Applying a capability updates the method and hidden call target. The query node stays temporary.") }}
-          </p>
-          <div class="flex gap-2">
-            <Button variant="outline" @click="closeMethodDialog">{{ t("Cancel") }}</Button>
-            <Button :disabled="!pendingCapabilityKey" @click="applyCapabilitySelection">{{ t("Apply Method") }}</Button>
-          </div>
-        </div>
-      </div>
-    </Overlay>
-
-    <Overlay
+    <FlowFieldBindingDialog
       :open="fieldBindingDialogOpen"
-      overlayClass="bg-slate-950/60 p-4"
-      zIndexClass="z-40"
-      closeOnBackdrop
+      :active-binding-field="activeBindingField"
+      :bindable-ancestor-node-options="bindableAncestorNodeOptions"
+      :field-binding-draft="fieldBindingDraft"
       @close="closeFieldBindingDialog"
-    >
-      <div class="w-full max-w-xl rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
-        <CardHeader
-          class="items-start"
-          :title="activeBindingField ? t('Bind Field: {label}', { label: activeBindingField.schema.label }) : t('Bind Field')"
-          :description="t('Choose an upstream source for this field. The editor will write the binding back into the node spec.')"
-          title-class="text-lg"
-        />
+      @apply="applyFieldBinding"
+      @clear="clearVisualFieldBinding()"
+      @source-kind-change="onFieldBindingSourceKindChange"
+    />
 
-        <div v-if="activeBindingField" class="mt-4 space-y-4">
-          <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Destination") }}
-            </p>
-            <p class="mt-2 break-all text-sm font-semibold">{{ activeBindingField.schema.pointer }}</p>
-            <p v-if="activeBindingField.schema.description" class="mt-1 text-[11px] text-muted-foreground">
-              {{ activeBindingField.schema.description }}
-            </p>
-          </div>
-
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Source Kind") }}
-            </label>
-            <select
-              :value="fieldBindingDraft.sourceKind"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="onFieldBindingSourceKindChange"
-            >
-              <option v-if="bindableAncestorNodeOptions.length" value="node_result">{{ t("Ancestor Result") }}</option>
-              <option value="trigger">{{ t("Trigger") }}</option>
-              <option value="flow_meta">{{ t("Flow Meta") }}</option>
-              <option value="run_meta">{{ t("Run Meta") }}</option>
-            </select>
-          </div>
-
-          <div v-if="fieldBindingDraft.sourceKind === 'node_result'" class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Ancestor Node") }}
-              </label>
-              <select
-                v-model="fieldBindingDraft.nodeId"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">{{ bindableAncestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}</option>
-                <option v-for="ancestorId in bindableAncestorNodeOptions" :key="ancestorId" :value="ancestorId">
-                  {{ ancestorId }}
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Result Path") }}
-              </label>
-              <input
-                v-model="fieldBindingDraft.path"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="/user/id"
-              />
-            </div>
-          </div>
-
-          <div v-else-if="fieldBindingDraft.sourceKind === 'trigger'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Trigger Path") }}
-            </label>
-            <input
-              v-model="fieldBindingDraft.path"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="/payload/name"
-            />
-          </div>
-
-          <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-            {{
-              fieldBindingDraft.sourceKind === "flow_meta"
-                ? t("This field will read from flow meta: flow_id.")
-                : t("This field will read from run meta: run_id.")
-            }}
-          </div>
-
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              v-model="fieldBindingDraft.required"
-              type="checkbox"
-              class="h-4 w-4 rounded border"
-            />
-            <span>{{ t("Required binding") }}</span>
-          </label>
-        </div>
-
-        <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <Button
-            variant="ghost"
-            :disabled="!activeBindingField?.state.binding"
-            @click="clearVisualFieldBinding()"
-          >
-            {{ t("Clear Binding") }}
-          </Button>
-          <div class="flex gap-2">
-            <Button variant="outline" @click="closeFieldBindingDialog">{{ t("Cancel") }}</Button>
-            <Button @click="applyFieldBinding">{{ t("Apply Binding") }}</Button>
-          </div>
-        </div>
-      </div>
-    </Overlay>
-
-    <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
-      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
-        <h2 class="text-lg font-semibold">{{ t("Add Node") }}</h2>
-        <div class="mt-4 space-y-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Node ID") }}
-            </label>
-            <input
-              v-model="nodeDraft.id"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Kind") }}
-            </label>
-            <div class="mt-2 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                class="rounded-md border px-3 py-2 text-sm transition"
-                :class="nodeDraft.kind === 'call' ? 'border-primary bg-primary/10 text-primary' : 'border-border/70 bg-background text-foreground'"
-                @click="nodeDraft.kind = 'call'"
-              >
-                {{ t("Call") }}
-              </button>
-              <button
-                type="button"
-                class="rounded-md border px-3 py-2 text-sm transition"
-                :class="nodeDraft.kind === 'compose' ? 'border-primary bg-primary/10 text-primary' : 'border-border/70 bg-background text-foreground'"
-                @click="nodeDraft.kind = 'compose'"
-              >
-                {{ t("Compose") }}
-              </button>
-            </div>
-            <p class="mt-1 text-[11px] text-muted-foreground">
-              {{
-                nodeDraft.kind === "call"
-                  ? t("Call nodes execute a capability and can bind ancestor outputs into args.")
-                  : t("Compose nodes build local JSON output from template + bindings.")
-              }}
-            </p>
-          </div>
-        </div>
-        <div class="mt-6 flex justify-end gap-2">
-          <Button variant="outline" @click="addNodeOpen = false">{{ t("Cancel") }}</Button>
-          <Button @click="addNode">{{ t("Add") }}</Button>
-        </div>
-      </div>
-    </Overlay>
+    <FlowAddNodeDialog
+      :open="addNodeOpen"
+      :node-id="nodeDraft.id"
+      :node-kind="nodeDraft.kind"
+      @close="addNodeOpen = false"
+      @update:node-id="nodeDraft.id = $event"
+      @update:node-kind="nodeDraft.kind = $event"
+      @add="addNode"
+    />
   </section>
 </template>

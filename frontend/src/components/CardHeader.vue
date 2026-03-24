@@ -8,6 +8,8 @@ const props = withDefaults(
     titleTag?: string
     titleClass?: string
     descriptionClass?: string
+    titleId?: string
+    descriptionId?: string
   }>(),
   {
     titleTag: "h2"
@@ -23,10 +25,10 @@ const hasDescription = computed(() => Boolean(props.description?.trim()))
 <template>
   <div class="flex flex-wrap justify-between gap-3">
     <div :class="['min-w-0', hasDescription ? 'space-y-1.5' : '']">
-      <component :is="titleTag" :class="['font-semibold', titleClass]">
+      <component :is="titleTag" :id="titleId" :class="['font-semibold', titleClass]">
         {{ title }}
       </component>
-      <p v-if="hasDescription" :class="['text-sm text-muted-foreground', descriptionClass]">
+      <p v-if="hasDescription" :id="descriptionId" :class="['text-sm text-muted-foreground', descriptionClass]">
         {{ description }}
       </p>
     </div>
