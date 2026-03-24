@@ -89,6 +89,11 @@ const resolveEditorScreen = () => {
   return showcase.currentScreen()
 }
 
+const quickPickSourceScreen = computed(() => {
+  const requested = requestedScreenId.value
+  return requested ? showcase.screenById(requested) : showcase.currentScreen()
+})
+
 const syncDraftSubscriptions = async () => {
   await showcase.leave()
   await showcase.enterScreen(resolveEditorScreen())
@@ -208,6 +213,7 @@ const varQuickPickDialog = reactive({
   query: "",
   refreshing: false
 })
+const loadedMineVarQuickPickItems = ref<VarQuickPickItem[]>([])
 
 const defaultTypeForMode = (mode: VarWidgetMode) => {
   if (mode === "slider" || mode === "progress") return "float64"
@@ -279,25 +285,63 @@ const openEditWidget = (widget: ShowcaseWidget) => {
   }
 }
 
-const varQuickPickItems = computed<VarQuickPickItem[]>(() => {
+const mergeVarQuickPickItem = (merged: Map<string, VarQuickPickItem>, input: Partial<VarQuickPickItem>) => {
+  const name = String(input.name ?? "").trim()
+  const owner = Number(input.owner ?? 0)
+  if (!name || !Number.isFinite(owner) || owner <= 0) return
+  const id = `${owner}:${name}`
+  const existing = merged.get(id)
+  if (existing) {
+    existing.mine = existing.mine || Boolean(input.mine)
+    existing.subscribed = existing.subscribed || Boolean(input.subscribed)
+    return
+  }
+  merged.set(id, {
+    name,
+    owner,
+    mine: Boolean(input.mine),
+    subscribed: Boolean(input.subscribed)
+  })
+}
+
+const subscribedVarQuickPickSourceItems = computed<VarQuickPickItem[]>(() => {
   const merged = new Map<string, VarQuickPickItem>()
   const selfID = Number(selfNodeId.value || 0)
-  for (const key of varpool.state.keys) {
-    const name = String(key.name ?? "").trim()
-    const owner = Number(key.owner ?? 0)
-    if (!name || !Number.isFinite(owner) || owner <= 0) continue
-    const snap = varpool.valueForKey({ name, owner })
-    const mine = selfID > 0 && owner === selfID
-    const subscribed = Boolean(snap.subKnown && snap.subscribed)
-    if (!mine && !subscribed) continue
-    const id = `${owner}:${name}`
-    const existing = merged.get(id)
-    if (existing) {
-      existing.mine = existing.mine || mine
-      existing.subscribed = existing.subscribed || subscribed
-      continue
-    }
-    merged.set(id, { name, owner, mine, subscribed })
+  const currentScreenVarIds = new Set<string>()
+
+  // Showcase keeps the editor's live variable context in its own store, not in VarPool's watch list.
+  for (const widget of quickPickSourceScreen.value?.widgets ?? []) {
+    if (widget.kind !== "var" || !widget.var) continue
+    currentScreenVarIds.add(`${widget.var.ownerId}:${String(widget.var.name ?? "").trim()}`)
+    mergeVarQuickPickItem(merged, {
+      name: widget.var.name,
+      owner: widget.var.ownerId,
+      mine: selfID > 0 && widget.var.ownerId === selfID,
+      subscribed: true
+    })
+  }
+
+  for (const snap of Object.values(showcase.state.values)) {
+    const id = `${snap.ownerId}:${String(snap.name ?? "").trim()}`
+    if (!currentScreenVarIds.has(id)) continue
+    mergeVarQuickPickItem(merged, {
+      name: snap.name,
+      owner: snap.ownerId,
+      mine: selfID > 0 && snap.ownerId === selfID,
+      subscribed: true
+    })
+  }
+
+  return Array.from(merged.values())
+})
+
+const varQuickPickItems = computed<VarQuickPickItem[]>(() => {
+  const merged = new Map<string, VarQuickPickItem>()
+  for (const item of subscribedVarQuickPickSourceItems.value) {
+    mergeVarQuickPickItem(merged, item)
+  }
+  for (const item of loadedMineVarQuickPickItems.value) {
+    mergeVarQuickPickItem(merged, item)
   }
   const out = Array.from(merged.values())
   out.sort((a, b) => {
@@ -333,9 +377,16 @@ const refreshVarQuickPickMine = async (showSuccess = true) => {
   try {
     varpool.setIdentity(selfNodeId.value, hubId.value)
     if (!selfNodeId.value) {
+      loadedMineVarQuickPickItems.value = []
       throw new Error(t("Login to a node before loading mine variables."))
     }
-    await varpool.listMine()
+    const names = await varpool.listOwnerNames(selfNodeId.value)
+    loadedMineVarQuickPickItems.value = names.map((name) => ({
+      name,
+      owner: selfNodeId.value,
+      mine: true,
+      subscribed: false
+    }))
     if (showSuccess) {
       toast.success(t("Mine variables refreshed."))
     }
@@ -350,6 +401,7 @@ const refreshVarQuickPickMine = async (showSuccess = true) => {
 const openVarQuickPickDialog = () => {
   if (widgetDialog.kind !== "var") return
   varQuickPickDialog.query = ""
+  loadedMineVarQuickPickItems.value = []
   varQuickPickDialog.open = true
   void refreshVarQuickPickMine(false)
 }
@@ -1531,18 +1583,18 @@ onBeforeUnmount(() => {
                 <input v-model="widgetDialog.ownerId" :class="inputClass" :placeholder="String(selfNodeId || '')" />
               </div>
               <div class="sm:col-span-2">
-                <div class="flex items-center justify-between gap-2">
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    {{ t("Variable Name") }}
-                  </label>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Variable Name") }}
+                </label>
+                <div class="mt-2 flex items-center gap-2">
+                  <input v-model="widgetDialog.varName" :class="[inputClass, '!mt-0 flex-1']" />
                   <Tooltip :content="t('Pick from subscribed or mine variables.')" side="bottom">
-                    <Button size="icon" variant="outline" :disabled="busy" @click="openVarQuickPickDialog">
+                    <Button size="icon" variant="outline" class="shrink-0" :disabled="busy" @click="openVarQuickPickDialog">
                       <ListChecks class="h-4 w-4" aria-hidden="true" />
                       <span class="sr-only">{{ t("Pick Variable") }}</span>
                     </Button>
                   </Tooltip>
                 </div>
-                <input v-model="widgetDialog.varName" :class="inputClass" />
               </div>
             </div>
 

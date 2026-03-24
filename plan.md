@@ -1,117 +1,124 @@
-# Plan - MyFlowHub-Win Showcase Rich Display Widgets
+# Plan - MyFlowHub-Win Showcase Variable Picker Fix
 
 ## Workflow Information
 
 - Repo: `MyFlowHub-Win`
-- Branch: `feat/win-showcase-rich-components`
+- Branch: `fix/showcase-editor-var-picker`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win`
+- Control-plane worktree: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker`
 - Current Stage: `4 归档变更（已完成，等待 workflow 结束确认）`
 
 ## Stage Records
 
 ### Initialization
 
-- `guide.md`: 已阅读，遵守 commit 中文说明、worktree 必须位于 `D:\project\MyFlowHub3\worktrees\`、优先使用 chrome-devtools 做界面验证的约束。
+- `guide.md`:
+  - 已阅读，遵守以下约束：
+    - commit 信息使用中文，前缀可英文
+    - 优先可尝试 `chrome-devtools` 做界面验证
+    - worktree 必须在 `D:\project\MyFlowHub3\worktrees\`
 - base/worktree confirmation:
-  - 控制面仓库：`D:\project\MyFlowHub3`，仅用于 workflow 编排与归档。
-  - 实现仓库：`MyFlowHub-Win`。
-  - 活跃执行 worktree：`D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`。
-  - 参考文档：`D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`、`D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\topicbus.md`，本轮不计划修改。
+  - 控制面工作区：`D:\project\MyFlowHub3`
+    - 用途：workflow 编排、文档治理、worktree 管理
+    - 不在此处做业务实现改动
+  - 实现仓库：`D:\project\MyFlowHub3\repo\MyFlowHub-Win`
+  - 活跃执行 worktree：`D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win`
+  - 参与模块：
+    - `frontend/src/pages/Showcase.vue`
+    - 参考：`frontend/src/stores/varpool.ts`
+    - 参考：`frontend/src/stores/showcase.ts`
+  - 参考规范：
+    - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`
 
 ### Stage 1 - Requirements Analysis
 
 #### Goal
 
-- 在现有 Win Showcase 基础上补充更丰富的展示组件，让 Screen 在不增加理解成本的前提下具备更强的“状态面板”表达力。
-- 保持当前简洁风格，不把 Showcase 扩展成复杂仪表盘系统。
+- 修复 Showcase Editor 中新增 / 编辑 `var` widget 的两个可见问题：
+  - `Variable Name` 的选择按钮与输入框需要处于同一行
+  - 变量选择弹窗应能稳定显示候选项，而不是常态空白
 
 #### Scope
 
 ##### Must
 
-- 在现有 `topic_button` / `var` 体系内扩展更丰富的展示能力，不引入新协议。
-- 为 `var` widget 增加至少三种显式展示模式：
-  - `metric`
-  - `badge`
-  - `progress`
-- 保持既有 `display`、`slider`、`switch`、`topic_button` 行为兼容。
-- Editor 预览与 Viewer 渲染结果一致，且同时支持 `columns` 与 `canvas_percent` 两种布局。
-- 非法值、空值、非数值进度等异常场景必须优雅降级，不得破坏布局。
+- 修正 `Variable Name` 输入区布局，使输入框与选择按钮并排显示。
+- 修正变量快捷选择弹窗的数据来源，使其在 Showcase Editor 场景下能显示：
+  - 当前编辑上下文里已订阅 / 已存在值快照的变量
+  - 当前登录节点的 mine 变量
+- 保持点击候选后自动回填 `Owner NodeID` 与 `Variable Name`。
+- 保持手工输入路径不受影响。
 
 ##### Optional
 
-- 为展示模式增加轻量的语义色和辅助元信息，只要不引入视觉噪音。
-- 适度复用当前 slider 范围配置，为 `progress` 提供上下界。
+- 收敛空状态提示，让“无候选”与“未登录 / 未加载”的表现更清晰。
 
 ##### Out of Scope
 
-- 不新增 Server / SDK / Proto 能力，也不改 TopicBus / VarStore 协议。
-- 不做历史曲线、趋势图、聚合统计或多变量组合计算。
-- 不重做 Showcase Center、Screen 布局模型或多窗口同步机制。
+- 不改 VarStore / VarPool 协议。
+- 不重做 VarPool 页面、Node Vars 弹窗或 Showcase 整体编辑器结构。
+- 不新增新的后端接口或持久化字段。
 
 #### Use Cases
 
-- 操作人员希望用更醒目的方式查看单个变量的当前值，而不是只看一行普通文本。
-- 操作人员希望用紧凑 badge 快速判断状态值或布尔值。
-- 操作人员希望用进度条查看数值变量在目标区间中的位置。
-- 配置人员希望在编辑器里直接选择合适的展示模式，并在 Viewer 中得到一致呈现。
+- 用户在 Showcase Editor 中新增 `var` widget，希望直接在输入框右侧点选变量，而不是手输名称。
+- 用户当前并未在 `#/varpool` 页面维护 watch 列表，但仍希望在 Showcase Editor 中看到当前 screen 正在使用的变量或自己的变量。
+- 用户选择某个候选后，希望 `Owner NodeID` 与 `Variable Name` 一次性正确回填。
 
 #### Functional Requirements
 
-1. Widget 编辑表单必须允许为 `var` widget 选择新的展示模式。
-2. `metric` 模式必须以更突出的数字/文本主值方式展示当前变量值。
-3. `badge` 模式必须以紧凑状态标签方式展示当前变量值，并提供稳定的语义色规则。
-4. `progress` 模式必须基于已配置区间展示当前数值进度，并在无法解析数值时回退到明确提示。
-5. `auto` 模式必须保持现有推断规则，避免老配置出现静默行为变化。
-6. 所有新增模式必须沿用现有订阅与刷新机制，不新增额外数据源。
-7. 配置保存后重新打开 Editor / Viewer，新增模式必须稳定保留并正确渲染。
+1. `Variable Name` 输入框和选择按钮必须位于同一视觉行。
+2. 打开变量选择弹窗后，必须展示当前 Showcase 编辑上下文中的可选变量。
+3. 当前 screen 已有订阅 / 值快照的变量必须能进入 `Subscribed` 候选。
+4. 当前登录节点的 mine 变量必须能进入 `Mine` 候选，并允许手动刷新。
+5. 同一 `(owner, name)` 候选若同时属于 `Subscribed` 和 `Mine`，展示时应去重并保留双重标记。
+6. 点击候选后必须继续回填 `Owner NodeID` 与 `Variable Name`。
+7. 变量名过滤能力必须继续支持按 `name` / `owner` 搜索。
 
 #### Non-functional Requirements
 
-- 简洁性：
-  - 保持当前卡片式、低噪音视觉风格。
-  - 不引入重装饰、复杂图例或大段说明文字。
-- 兼容性：
-  - 旧配置无需迁移脚本即可继续加载。
-  - 未识别 mode 必须回退到安全默认值。
-- 可维护性：
-  - Editor 与 Viewer 不应维护两套分叉的展示规则。
-  - 新增模式应便于未来继续扩展，而不是继续堆积条件分支。
+- 最小改动：
+  - 优先局部修改 `Showcase.vue`，避免扩散到无关模块。
+- 一致性：
+  - 候选来源应与 Showcase Editor 当前上下文一致，而不是依赖用户是否提前打开过其他页面。
+- 稳定性：
+  - 登录态缺失、mine 拉取失败、无候选时必须显式降级，不得抛未处理异常。
 - 性能：
-  - 不增加额外订阅。
-  - 不引入高频保存、额外 I/O 或无意义的重复解析。
+  - 候选合并在前端内存完成。
+  - mine 列表请求只在打开弹窗或显式刷新时触发，不引入轮询。
 
 #### Inputs / Outputs
 
 - Inputs:
-  - 用户在 Showcase Editor 中选择的 `var` widget 展示模式与已有范围配置。
-  - VarStore 当前订阅值快照。
+  - Showcase 当前草稿 / 当前 screen 的变量值快照
+  - Session 登录态中的 `selfNodeId` / `hubId`
+  - 用户在弹窗中的搜索关键词
 - Outputs:
-  - 持久化后的 Showcase 配置。
-  - Editor / Viewer 中一致的 widget 展示结果。
+  - 同行布局的变量名输入区
+  - 可筛选、可点击回填的候选变量列表
 
 #### Edge Cases
 
-- `progress` 模式收到空值或非数值字符串。
-- `progress` 的上下界非法或相等。
-- `badge` 模式收到未知字符串、空字符串或布尔值。
-- `metric` 模式在值缺失时不能出现布局塌陷。
-- 旧配置里保存了未知 `mode`。
+- 当前未登录，无法加载 mine 变量。
+- 当前 screen 没有任何变量值快照。
+- mine 列表为空。
+- 同一变量同时出现在当前 screen 快照和 mine 中。
+- 当前字段已有 `ownerId` / `varName`，但用户选择了不同候选。
 
 #### Acceptance Criteria
 
-1. 用户可以在 Editor 中创建或编辑 `metric`、`badge`、`progress` 三种 `var` widget。
-2. 保存后重新加载配置，三种模式都能被 Go 和前端正确规范化并保留。
-3. Viewer 在 `columns` 与 `canvas_percent` 下都能正确渲染三种模式。
-4. `progress` 模式在数值异常时显示明确降级态，不报错、不空白。
-5. `npm run build` 与 `go test ./... -count=1` 通过。
+1. `Variable Name` 输入框与选择按钮在同一行显示。
+2. 打开弹窗后，在存在当前 screen 变量或 mine 变量时，列表不再常态空白。
+3. 搜索、分组显示和点击回填继续可用。
+4. 没有候选或未登录时，界面给出明确空态 / 错误提示，不出现静默异常。
+5. `Showcase` 其余 widget 编辑、保存与手工输入行为不回退。
 
 #### Risks
 
-- 新模式如果直接在 Editor 与 Viewer 中各自追加分支，后续易发生视觉和逻辑漂移。
-- `progress` 复用 slider 配置时要明确哪些字段是“显示范围”而不是“交互行为”。
-- badge 语义色若规则不稳定，会让同一值在不同窗口中呈现不一致。
+- 若继续把候选完全绑定到 `varpool.state.keys`，会把 Showcase Editor 的可用性错误地依赖到 VarPool watch list。
+- 若 mine 数据刷新和当前 screen 快照合并去重不当，可能出现重复条目或分组错位。
+- 若布局改动过大，可能影响现有弹窗在窄宽度下的换行策略。
 
 #### Issue List
 
@@ -121,85 +128,87 @@
 
 #### Overall Solution
 
-- 继续沿用现有 ShowcaseConfig / VarStore 数据模型，不引入新 widget kind。
-- 将 `ShowcaseVarWidget.mode` 扩展为：
-  - `auto`
-  - `display`
-  - `metric`
-  - `badge`
-  - `progress`
-  - `slider`
-  - `switch`
-- 在 Go 与前端 store 中同时扩展 mode normalize，保证持久化兼容。
-- 前端新增 Showcase 专用共享渲染组件，集中承载 var / topic widget 的卡片内容与新模式展示逻辑，再由 Editor / Viewer 复用。
+- 保持修复范围在前端，主改 `frontend/src/pages/Showcase.vue`。
+- 将快捷选择候选拆成两类来源，再在页面内合并：
+  - `Subscribed`：
+    - 基于 Showcase 当前上下文的变量快照构建，而不是依赖 `VarPool` watch list
+  - `Mine`：
+    - 打开弹窗或点击刷新时，显式调用 `varpool.listOwnerNames(selfNodeId)` 拉取
+- 使用 `(owner:name)` 作为唯一键在前端去重，并保留 `mine` / `subscribed` 双标记。
+- 调整变量名表单布局：
+  - label 单独保留
+  - 输入框与按钮改为同一 `flex` 行
 
 #### Alternatives Considered
 
-- 新增多个 widget kind（如 `var_metric` / `var_progress`）：
-  - 放弃。会扩大 schema 和表单复杂度，且与现有 `var` 订阅逻辑重复。
-- 只在 Viewer 做样式增强，不改配置模型：
-  - 放弃。用户无法显式选择想要的展示组件，Editor / Viewer 会失配。
-- 纯 CSS 改造现有 `display`：
-  - 放弃。无法覆盖 badge / progress 等明确的语义差异。
+- 继续复用 `varpool.state.keys` 作为唯一候选源：
+  - 不采用。该状态主要受 VarPool watch list 驱动，和 Showcase Editor 当前使用场景不一致，是本次空弹窗的主要原因。
+- 把 `listMine()` 结果继续塞回 `varpool.state.keys` 后再复用原逻辑：
+  - 不采用。仍然把 Showcase 候选逻辑绑定到全局 store 副作用，语义不清晰，且无法覆盖当前 screen 的订阅上下文。
+- 新增后端接口专门给 Showcase 查询候选：
+  - 不采用。当前已有 `showcase` 快照和 `varpool.listOwnerNames()` 能满足需求，新增接口属于过度设计。
 
 #### Module Responsibilities
 
-- `app_showcase.go`
-  - 扩展 mode normalize，保持未知值回退和旧配置兼容。
-- `app_showcase_test.go`
-  - 补 mode normalize / 默认值 / 兼容性回归测试。
-- `frontend/src/stores/showcase.ts`
-  - 扩展类型定义、mode normalize、值格式化与数值/状态辅助判断。
-- `frontend/src/components/showcase/*`
-  - 新增共享 widget 渲染组件，统一 Editor / Viewer 的展示行为。
 - `frontend/src/pages/Showcase.vue`
-  - 扩展 widget 对话框模式选项，接入共享渲染组件。
-- `frontend/src/windows/ShowcaseWindow.vue`
-  - 复用共享渲染组件，保持与 Editor 预览一致。
+  - 修正候选计算来源
+  - 维护 mine 列表的弹窗内状态
+  - 合并去重候选
+  - 调整 `Variable Name` 输入区布局
+- `frontend/src/stores/showcase.ts`
+  - 仅作为当前 screen 变量值快照来源，本轮不改接口
+- `frontend/src/stores/varpool.ts`
+  - 继续提供 `listOwnerNames(ownerId)` 能力，本轮不改契约
 
 #### Data / Call Flow
 
-1. 用户在 Editor 中为 `var` widget 选择显示模式。
-2. Editor 将模式与现有配置写入 screen draft。
-3. 保存 draft 后，Go 执行 normalize 并持久化。
-4. Viewer / Editor 收到 `showcase.config_changed` 后 reload 现有配置。
-5. 共享渲染组件根据当前值和 mode 统一输出对应卡片形态。
+1. 用户打开 `var` widget 编辑弹窗。
+2. `Showcase.vue` 从当前 Showcase 状态提取当前 screen 的变量快照，形成 `Subscribed` 候选。
+3. 用户打开变量选择弹窗：
+   - 立即展示本地可得的 `Subscribed` 候选
+   - 并发触发 `listOwnerNames(selfNodeId)` 拉取 mine 名单
+4. mine 名单返回后，前端按 `(owner:name)` 合并到候选集合。
+5. 用户输入关键词时，在合并后的集合上执行前端过滤。
+6. 用户点击候选后，回填 `ownerId` 和 `varName`，关闭弹窗。
 
 #### Interface Drafts
 
-- `type VarWidgetMode = "auto" | "display" | "metric" | "badge" | "progress" | "slider" | "switch"`
-- 共享渲染组件输入草案：
-  - `widget`
-  - `surface: "editor" | "viewer"`
-  - `connected`
-  - `busy`
-  - `selfNodeId`
-  - 现有 send / switch / slider 行为透传
-- `progress` 复用 `widget.var.slider.min/max` 作为显示区间；`step/throttleMs` 仅在 `slider` 交互模式下生效。
+- `type VarQuickPickItem = { name: string; owner: number; mine: boolean; subscribed: boolean }`
+- 新增页面内状态：
+  - `mineVarQuickPickItems`
+  - `subscribedVarQuickPickItems` 改为从 Showcase 当前上下文计算
+  - `filteredVarQuickPickItems` 改为基于合并结果过滤
 
 #### Error Handling and Safety
 
-- 未识别 mode：
-  - Go 与前端都回退为 `auto`。
-- `progress` 无法解析数值：
-  - 渲染为空态说明，不执行写操作。
-- display-only 模式：
-  - 不触发 `SetSimple` / `SendSimple`。
-- 保持 `slider` / `switch` / `topic_button` 的发送校验与 ready-check 不变。
+- 未登录或 `selfNodeId <= 0`：
+  - 不触发 mine 列表请求
+  - 保留当前 screen 候选
+  - `Refresh Mine` 继续禁用或报出明确提示
+- mine 列表请求失败：
+  - 保留已可见的本地候选
+  - toast 显式提示失败
+- 无候选：
+  - 各分组显示明确空态文案
+- 候选去重：
+  - 使用 `(owner:name)` 保证无重复点击项
 
 #### Performance and Testing Strategy
 
-- 共享渲染组件复用同一套模式判断和展示逻辑，减少双份分支维护。
-- 避免新增 watcher 或订阅；继续复用现有 `enter/leave` 生命周期。
+- 只在打开弹窗 / 手动刷新时发起一次 mine 查询。
+- 候选去重、过滤在前端内存完成，不新增持久化或订阅。
 - 验证策略：
-  - Go：`go test ./... -count=1`
-  - 前端：`npm run build`
-  - 手工 / 冒烟：Editor 创建三种新模式，保存后在 Viewer 中验证一致性。
+  - 静态：`npm run build`
+  - 静态：`git diff --check`
+  - 手工 / 页面级：
+    - 打开 Add/Edit Var，检查按钮与输入框同行
+    - 检查弹窗在已有 Showcase 变量 / mine 变量场景下出现候选
+    - 点击候选后检查回填
 
 #### Extensibility Design Points
 
-- 后续新增展示模式时，优先扩 mode enum 和共享渲染组件，而不是复制新的页面分支。
-- 若未来需要更丰富的视觉参数，可在 `ShowcaseVarWidget` 下追加展示配置，而不必新增新的 widget kind。
+- 后续若要扩展“当前 owner 的所有变量”或“最近使用”，可继续在页面内增加新的候选来源并复用同一去重链路。
+- 候选去重键与分组标记保持独立，可支持未来增加更多来源而不改点击回填逻辑。
 
 #### Issue List
 
@@ -209,225 +218,166 @@
 
 #### Project Goal and Current State
 
-- 当前 Showcase 已支持：
-  - `topic_button`
-  - `var` 的 `auto/display/slider/switch`
-  - `columns` / `canvas_percent`
-  - Center / Editor / Viewer 分离
-- 当前不足：
-  - 纯展示组件只有单行 `display`
-  - Editor 与 Viewer 在 widget 卡片上存在重复渲染逻辑
-  - Showcase 缺少长期 requirements/specs 文档来约束新增展示模式
+- 当前状态：
+  - `Variable Name` 区域为“label + 按钮”一行、输入框单独下一行
+  - 快捷选择候选主要取自 `varpool.state.keys`
+  - `Subscribed` 语义实际上更接近 VarPool watch/subscription，而不是 Showcase 当前编辑上下文
+- 直接后果：
+  - 视觉上按钮没有与输入框形成一体操作区
+  - 用户若未在 VarPool 页面维护 watch list，弹窗容易全空，即使当前 Showcase screen 已经在使用变量
 
 #### Docs Governance Routing Decision
 
 - 使用 `$docs-governor` 校验计划文档路由和 requirements/specs 影响。
+- docs tree 状态：
+  - `docs/README.md`、`docs/requirements/README.md`、`docs/specs/README.md` 已存在，结构完整，无需 bootstrap。
 - Canonical destination:
-  - 长期行为真相 -> `docs/requirements/showcase-display-widgets.md`
-  - 长期技术约束 -> `docs/specs/showcase-display-widgets.md`
-  - 执行控制面 -> worktree 根 `plan.md`
-  - 完成结果 -> `docs/change/2026-03-23_win-showcase-rich-display-widgets.md`
-- Requirements impact: `add`
-- Specs impact: `add`
+  - 稳定需求 / 技术真相：当前无需新增或修改
+  - 执行控制：worktree 根 `plan.md`
+  - 完成结果：`docs/change/2026-03-23_win-showcase-var-picker-fix.md`
+- Requirements impact: `none`
+- Specs impact: `none`
 - Related requirements:
-  - `docs/requirements/showcase-display-widgets.md`
+  - `docs/requirements/showcase-display-widgets.md`（引用，无改动）
 - Related specs:
-  - `docs/specs/showcase-display-widgets.md`
-- Reference-only specs:
-  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`
-  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\topicbus.md`
+  - `docs/specs/showcase-display-widgets.md`（引用，无改动）
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`（引用，无改动）
 
 #### Executable Task List
 
-- [x] `SHW-1` 补齐 Showcase 展示组件的稳定 requirements/specs 与索引
-- [x] `SHW-2` 扩展 Go / store 的展示模式 schema 与辅助判断
-- [x] `SHW-3` 为 Editor / Viewer 接入共享渲染组件和新展示模式
-- [x] `SHW-4` 执行验证并完成 Code Review
-- [x] `SHW-5` 归档 `docs/change` 并更新索引
+- [x] `SHVP-1` 修复 Showcase 变量快捷选择候选来源
+- [x] `SHVP-2` 调整 `Variable Name` 输入区为同一行布局
+- [x] `SHVP-3` 验证、Code Review 与归档
 
 #### Task Details
 
-##### `SHW-1` - 补齐稳定 requirements/specs 与索引
+##### `SHVP-1` - 修复 Showcase 变量快捷选择候选来源
 
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win\plan.md`
 - Goal:
-  - 为 Showcase 展示组件增强建立长期 requirements/specs 真相，并更新 `docs/requirements/README.md` / `docs/specs/README.md`。
+  - 将快捷选择候选改为“Showcase 当前上下文订阅 + 显式加载 mine”，消除对 VarPool watch list 的错误依赖。
 - Files / Modules:
-  - `docs/requirements/showcase-display-widgets.md`
-  - `docs/specs/showcase-display-widgets.md`
-  - `docs/requirements/README.md`
-  - `docs/specs/README.md`
-- Write Set:
-  - `docs/requirements/*`
-  - `docs/specs/*`
-- Acceptance:
-  - requirement/spec 文档完整记录目标、范围、验收、技术契约和错误边界
-  - 索引可导航到新增文档
-- Test Points:
-  - 文档路径、交叉引用和 impact 记录正确
-- Rollback:
-  - 删除新增 requirement/spec 并回退对应索引修改
-
-##### `SHW-2` - 扩展展示模式 schema 与 store 辅助判断
-
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components\plan.md`
-- Goal:
-  - 在 Go 与前端 store 中支持 `metric` / `badge` / `progress` 三种模式，并补齐数值/状态解析辅助逻辑。
-- Files / Modules:
-  - `app_showcase.go`
-  - `app_showcase_test.go`
-  - `frontend/src/stores/showcase.ts`
-- Write Set:
-  - `app_showcase.go`
-  - `app_showcase_test.go`
-  - `frontend/src/stores/showcase.ts`
-- Acceptance:
-  - 新 mode 可保存、加载、normalize
-  - 旧配置和未知 mode 兼容
-  - 新辅助逻辑不改变现有 `auto` 推断语义
-- Test Points:
-  - `go test ./... -count=1`
-  - TypeScript 构建验证
-- Rollback:
-  - 回退 schema / normalize / helper 改动
-
-##### `SHW-3` - 接入共享渲染组件与新展示模式
-
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components\plan.md`
-- Goal:
-  - 将新展示模式接入 Editor 预览和 Viewer，并保持简洁、一致的 widget 卡片视觉。
-- Files / Modules:
-  - `frontend/src/components/showcase/*`
   - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/windows/ShowcaseWindow.vue`
 - Write Set:
-  - `frontend/src/components/showcase/*`
   - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/windows/ShowcaseWindow.vue`
 - Acceptance:
-  - Editor 对话框可选择新模式
-  - Editor / Viewer 渲染结果一致
-  - `columns` / `canvas_percent` 下都不出现布局破坏
+  - 弹窗在存在当前 screen 变量或 mine 变量时有候选可见
+  - 去重、分组、过滤与点击回填继续正确
 - Test Points:
-  - `frontend/npm run build`
-  - 手工检查三种模式在 Editor / Viewer 的显示与保存
+  - 打开 Add/Edit Var，验证 `Subscribed` / `Mine` 分组出现数据
+  - 搜索过滤仍按 `name` / `owner` 生效
 - Rollback:
-  - 回退共享渲染组件与页面接入
+  - 回滚 `Showcase.vue` 中快捷选择候选计算与刷新逻辑
 
-##### `SHW-4` - 验证与 Code Review
+##### `SHVP-2` - 调整 `Variable Name` 输入区为同一行布局
 
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win\plan.md`
 - Goal:
-  - 执行本轮构建 / 测试，并按 workflow 清单做 code review。
+  - 让变量名输入框与选择按钮处于同一操作行，提升编辑效率与可发现性。
 - Files / Modules:
-  - 本轮所有改动文件
+  - `frontend/src/pages/Showcase.vue`
 - Write Set:
-  - 限于 `SHW-1` ~ `SHW-3` 已授权写集
+  - `frontend/src/pages/Showcase.vue`
 - Acceptance:
-  - review 清单结论完整
-  - 发现问题时返回对应任务修正
+  - 输入框与按钮同行，窄宽度下仍可用
 - Test Points:
-  - `go test ./... -count=1`
-  - `cd frontend && npm run build`
-  - 如可行，`chrome-devtools` 冒烟验证
+  - 打开 Add/Edit Var 检查布局与点击行为
 - Rollback:
-  - 若 review 不通过，回到对应任务修正后重新验证
+  - 回滚 `Showcase.vue` 中变量名输入区模板
 
-##### `SHW-5` - 归档 change 与索引
+##### `SHVP-3` - 验证、Code Review 与归档
 
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-win-showcase-rich-components\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-showcase-editor-var-picker-win\plan.md`
 - Goal:
-  - 使用 `$docs-governor` 记录本轮实现结果、impact、验证和回滚，并更新 `docs/change/README.md`。
+  - 完成静态验证、阶段 3.3 Review 和 `docs/change` 归档。
 - Files / Modules:
-  - `docs/change/2026-03-23_win-showcase-rich-display-widgets.md`
+  - `frontend/src/pages/Showcase.vue`
+  - `docs/change/2026-03-23_win-showcase-var-picker-fix.md`
   - `docs/change/README.md`
 - Write Set:
-  - `docs/change/*`
+  - `frontend/src/pages/Showcase.vue`
+  - `docs/change/2026-03-23_win-showcase-var-picker-fix.md`
+  - `docs/change/README.md`
 - Acceptance:
-  - change 文档覆盖任务映射、验证结果、权衡与回滚
-  - 索引已更新
+  - 关键验证命令执行并记录结果
+  - Stage 3.3 检查项完成
+  - Stage 4 归档文档完成并更新索引
 - Test Points:
-  - 文档路径、引用与 impact 结论一致
+  - `npm run build`
+  - `git diff --check`
+  - 必要时页面级手工验证
 - Rollback:
-  - 删除本轮 change 并回退索引修改
+  - 回滚本次代码与文档变更
 
 #### Dependencies
 
-- `SHW-1` -> `SHW-2` -> `SHW-3` -> `SHW-4` -> `SHW-5`
+- `showcase` store 当前值快照必须已能反映 Editor 当前 screen 的变量上下文。
+- `varpool.listOwnerNames(ownerId)` 必须继续遵守通过 Hub 查询 owner 变量名的现有契约。
+- 现有 Wails binding / `wailsjs` 生成物需保持可用，便于前端构建验证。
 
 #### Risks and Notes
 
-- `progress` 需要明确“显示范围”与“交互 slider 配置”的边界，避免误导用户。
-- 共享渲染组件不能吞掉 Editor 的拖拽、右键和 canvas resize 钩子。
-- 本轮只做“更丰富但仍然简洁”的单值展示，不扩成图表系统。
+- 若当前 Showcase screen 没有任何变量值快照，而 mine 也为空，弹窗仍会显示空态；这是有效空结果，不是 bug。
+- 当前仓库若存在与 `wailsjs` 或其它页面无关的基线构建问题，需要在验证阶段明确区分“既有问题”与“本次引入”。
 
 #### Parallelism Assessment
 
-- 本轮不派发子Agent。
+- 评估结果：本轮不派发子Agent。
 - 原因：
-  - `app_showcase.go`、`frontend/src/stores/showcase.ts`、共享渲染组件、`Showcase.vue`、`ShowcaseWindow.vue` 处于同一条高耦合关键路径。
-  - 任务之间的 write set 难以彻底解耦，提前并行会放大 schema / UI 接口漂移风险。
-  - 主Agent 需要持续统筹 Stage 1/2 决策、计划确认、代码集成与最终验收。
+  - 写集高度集中在 `frontend/src/pages/Showcase.vue`
+  - 任务规模小，分拆后会增加同步成本，收益低
+  - 当前关键路径是单文件逻辑与模板联动，需要主Agent本地一次性完成
 
 #### Issue List
 
 - 无
 
+阻塞：否
+进入 3.2
+
 ### Stage 3.3 - Code Review
 
 - 需求覆盖：通过
-  - `metric` / `badge` / `progress` 已覆盖 Editor 配置、Go normalize、Viewer 渲染与兼容性。
+  - 已修复候选源错误依赖，`Variable Name` 输入区也已改为输入框与按钮同行。
 - 架构合理性：通过
-  - 沿用现有 `var` widget 模型，只扩 mode enum，并通过共享渲染组件避免双份逻辑。
+  - 维持前端局部修复，不引入新的后端接口或全局 store 契约变更。
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 未新增订阅、未新增高频保存；新增计算均为组件内轻量字符串 / 数值派生。
+  - mine 列表请求仅在打开弹窗或显式刷新时触发；候选合并与过滤均在前端内存完成。
 - 可读性与一致性：通过
-  - Editor / Viewer 的 widget 主体已收敛为共享组件，减少分叉。
+  - 通过 `mergeVarQuickPickItem` 收敛去重逻辑，并用单独的局部状态承载 mine 候选。
 - 可扩展性与配置化：通过
-  - 后续新增 display-only mode 可继续复用同一 contract；未引入硬编码环境值。
+  - 候选来源已拆分为可组合链路，后续可继续追加“当前 owner”或“最近使用”等来源。
 - 稳定性与安全：通过
-  - display-only 模式不触发写操作；未知 mode 仍回退为 `auto`。
-- 测试覆盖情况：通过
-  - Go 回归测试补齐；前端生产构建通过。
+  - 未登录、mine 拉取失败、空候选等场景都有显式降级路径。
+- 测试覆盖情况：部分通过
+  - `git diff --check` 通过
+  - `npm ci` 通过
+  - `Showcase.vue` 定向 SFC 解析通过
+  - `npm run build` 失败，原因为仓库基线缺失 `frontend/wailsjs` 生成物，失败点在 `Home.vue`，非本次改动引入
 - 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 本轮未派发子Agent，关键路径由主Agent 完成并复核。
+  - 本轮未派发子Agent，由主Agent 单独完成并复核。
 
 ### Stage 4 - Change Archive
 
+- 使用 `$docs-governor` 完成归档路由与 impact 检查。
 - Archive Path:
-  - `docs/change/2026-03-23_win-showcase-rich-display-widgets.md`
+  - `docs/change/2026-03-23_win-showcase-var-picker-fix.md`
 - Requirements impact:
-  - `updated`
+  - `none`
 - Specs impact:
-  - `updated`
+  - `none`
 - Related requirements:
   - `docs/requirements/showcase-display-widgets.md`
 - Related specs:
   - `docs/specs/showcase-display-widgets.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`
 - Lessons needed:
   - `none`
 - Index updates:
-  - `docs/requirements/README.md`
-  - `docs/specs/README.md`
   - `docs/change/README.md`
-
-## Execution Results Summary
-
-- `SHW-1`：已完成。新增 Showcase 展示组件的 requirements/specs，并更新索引。
-- `SHW-2`：已完成。Go 与前端 store 已支持 `metric` / `badge` / `progress`。
-- `SHW-3`：已完成。Editor / Viewer 已接入共享渲染组件，展示逻辑统一。
-- `SHW-4`：已完成。`$env:GOWORK='off'; go test ./... -count=1`、`npm run build` 通过。
-- `SHW-5`：已完成。变更已归档到 `docs/change/2026-03-23_win-showcase-rich-display-widgets.md`。
-
-阻塞：否
-已完成 Stage 4，等待用户确认是否结束 workflow
