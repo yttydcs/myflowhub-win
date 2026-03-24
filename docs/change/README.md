@@ -29,6 +29,7 @@
   - [2026-03-24_win-flow-editor-visual-form-ux.md](2026-03-24_win-flow-editor-visual-form-ux.md)
   - [2026-03-24_win-flow-editor-bootstrap-baseline.md](2026-03-24_win-flow-editor-bootstrap-baseline.md)
   - [2026-03-24_win-flow-editor-shell-reliability.md](2026-03-24_win-flow-editor-shell-reliability.md)
+  - [2026-03-24_win-showcase-var-picker-watch-all.md](2026-03-24_win-showcase-var-picker-watch-all.md)
   - [2026-03-23_win-showcase-var-picker-fix.md](2026-03-23_win-showcase-var-picker-fix.md)
   - [2026-03-23_win-showcase-rich-display-widgets.md](2026-03-23_win-showcase-rich-display-widgets.md)
   - [2026-03-23_win-frontend-number-input-normalization.md](2026-03-23_win-frontend-number-input-normalization.md)
