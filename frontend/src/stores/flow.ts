@@ -1278,6 +1278,27 @@ const applySchemaDefaultsToNode = (node: FlowNodeDraft) => {
   }
 }
 
+const reconcileNodeFormStateToSchema = (node: FlowNodeDraft, schema: MethodVisualSchema) => {
+  if (node.kind !== "call") {
+    return
+  }
+  const allowedPointers = new Set(schema.fields.map((field) => field.pointer))
+  const argsDoc = tryParseJSONText(node.argsTemplate, {})
+  let nextDoc: Record<string, unknown> = {}
+  for (const field of schema.fields) {
+    const current = readValueAtPointer(argsDoc, field.pointer)
+    if (!current.found) {
+      continue
+    }
+    nextDoc = setLiteralFieldValueInDoc(nextDoc, field.pointer, current.value)
+  }
+  node.argsTemplate = formatJSONText(nextDoc, {})
+  node.inputs = node.inputs.filter((binding) => {
+    const to = binding.to.trim()
+    return !to || allowedPointers.has(to)
+  })
+}
+
 const parseSpecJsonObject = (node: FlowNodeDraft) => {
   const nodeId = node.id.trim() || t("Unnamed")
   let parsed: any
@@ -1804,10 +1825,15 @@ const applyCallCapability = (key: string) => {
   if (!route) {
     throw new Error(t("Capability not found in current list."))
   }
+  const methodChanged = selected.method !== route.method
+  const nextSchema = resolveMethodVisualSchema(route.method, routeToSchemaSource(route))
   selected.method = route.method
   selected.target = normalizeCallTarget(route.providerNode)
   if (!String(selected.argsTemplate ?? "").trim()) {
     selected.argsTemplate = "{}"
+  }
+  if (methodChanged && selected.specEditorMode === "form" && nextSchema) {
+    reconcileNodeFormStateToSchema(selected, nextSchema)
   }
   applySchemaDefaultsToNode(selected)
   if (selected.specEditorMode === "json") {

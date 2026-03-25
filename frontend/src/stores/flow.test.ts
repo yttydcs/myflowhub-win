@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { setLocale } from "@/i18n"
-import { useFlowStore, type FlowEdge, type FlowGraphEditorState, type FlowNodeDraft } from "./flow"
+import {
+  useFlowStore,
+  type ExecCapabilityRoute,
+  type FlowEdge,
+  type FlowGraphEditorState,
+  type FlowNodeDraft
+} from "./flow"
 
 const store = useFlowStore()
 
@@ -30,6 +36,21 @@ const loadGraph = (nodes: FlowNodeDraft[], edges: FlowEdge[] = [], selection?: P
     selectedEdgeIndex: selection?.selectedEdgeIndex ?? -1
   })
 }
+
+const createCapabilityRoute = (method: string, overrides: Partial<ExecCapabilityRoute> = {}): ExecCapabilityRoute => ({
+  key: `${method}|route`,
+  providerNode: 1,
+  viaNode: 0,
+  method,
+  version: "",
+  defaultTimeoutMs: 3000,
+  permissions: [],
+  tags: {},
+  inputSchema: null,
+  outputSchema: null,
+  label: method,
+  ...overrides
+})
 
 beforeEach(() => {
   setLocale("en")
@@ -182,6 +203,69 @@ describe("flow store", () => {
       ]
     })
     expect(JSON.parse(store.state.nodes[0].argsTemplate)).toEqual({ value: "updated" })
+  })
+
+  it("prunes stale literals and bindings when switching methods in form mode", () => {
+    loadGraph(
+      [
+        createCallNode("n1", {
+          method: "varstore::set",
+          argsTemplate: JSON.stringify(
+            {
+              owner: 7,
+              name: "token",
+              value: "secret",
+              visibility: "public"
+            },
+            null,
+            2
+          ),
+          inputs: [
+            {
+              to: "/visibility",
+              sourceKind: "trigger",
+              nodeId: "",
+              path: "/payload/visibility",
+              field: "",
+              required: false
+            },
+            {
+              to: "/name",
+              sourceKind: "trigger",
+              nodeId: "",
+              path: "/payload/name",
+              field: "",
+              required: true
+            }
+          ]
+        })
+      ],
+      [],
+      { selectedNodeIndex: 0 }
+    )
+
+    store.state.execCapabilities = [createCapabilityRoute("varstore::get")]
+    store.applyCallCapability("varstore::get|route")
+
+    expect(store.state.nodes[0].method).toBe("varstore::get")
+    expect(JSON.parse(store.state.nodes[0].argsTemplate)).toEqual({
+      owner: 7,
+      name: "token"
+    })
+    expect(store.state.nodes[0].inputs).toEqual([
+      {
+        to: "/name",
+        sourceKind: "trigger",
+        nodeId: "",
+        path: "/payload/name",
+        field: "",
+        required: true
+      }
+    ])
+
+    const visualForm = store.getNodeVisualForm("n1")
+    expect(visualForm.compatibility.supported).toBe(true)
+    expect(visualForm.compatibility.reasons).toEqual([])
   })
 
   it("keeps graph editor signatures stable across selection changes while round-tripping editor state", () => {
