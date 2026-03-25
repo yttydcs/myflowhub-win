@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue"
 import { X } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
@@ -116,6 +117,10 @@ const visualCompatibilityReasonHelp = (reason: VisualCompatibilityReason) => {
       return t("Review the current node spec in Advanced JSON.")
   }
 }
+
+const visibleVisualCompatibilityReasons = computed(() =>
+  (props.selectedCallVisualForm?.compatibility.reasons ?? []).filter((reason) => reason.code !== "missing_schema")
+)
 </script>
 
 <template>
@@ -471,12 +476,9 @@ const visualCompatibilityReasonHelp = (reason: VisualCompatibilityReason) => {
                     {{ t("Open Advanced JSON") }}
                   </Button>
                 </div>
-                <ul
-                  v-if="selectedCallVisualForm?.compatibility.reasons.length"
-                  class="mt-4 space-y-2 text-xs text-muted-foreground"
-                >
+                <ul v-if="visibleVisualCompatibilityReasons.length" class="mt-4 space-y-2 text-xs text-muted-foreground">
                   <li
-                    v-for="reason in selectedCallVisualForm.compatibility.reasons"
+                    v-for="reason in visibleVisualCompatibilityReasons"
                     :key="`${reason.code}:${reason.pointer ?? '-'}`"
                     class="rounded-lg border border-amber-500/20 bg-background/70 px-3 py-3"
                   >
