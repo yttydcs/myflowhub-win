@@ -16,7 +16,7 @@ const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.main?.App
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`App binding '${method}' unavailable`)
+    throw new Error(t("App binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -25,7 +25,7 @@ const callFlow = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.flow?.FlowService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Flow binding '${method}' unavailable`)
+    throw new Error(t("Flow binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }

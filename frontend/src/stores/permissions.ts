@@ -1,4 +1,5 @@
 import { reactive } from "vue"
+import { t } from "@/i18n"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -6,7 +7,7 @@ const callPermission = async <T>(method: string, ...args: any[]): Promise<T> => 
   const api = (window as any)?.go?.permission?.PermissionService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Permission binding '${method}' unavailable`)
+    throw new Error(t("Permission binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }
@@ -121,10 +122,10 @@ const state = reactive<PermissionState>({
 
 const ensureIdentity = () => {
   if (!state.sourceId) {
-    throw new Error("Login required.")
+    throw new Error(t("Login required."))
   }
   if (!state.hubId) {
-    throw new Error("Hub ID missing.")
+    throw new Error(t("Hub ID missing."))
   }
   return { sourceId: state.sourceId, hubId: state.hubId }
 }
@@ -134,7 +135,7 @@ const parseOverride = () => {
   if (!raw) return 0
   const parsed = Number.parseInt(raw, 10)
   if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error("Authority override must be a positive number.")
+    throw new Error(t("Authority override must be a positive number."))
   }
   return parsed
 }
@@ -175,7 +176,7 @@ const loadPolicy = async () => {
     await resolveAuthority()
   }
   if (!state.authorityId) {
-    throw new Error("Authority ID unresolved.")
+    throw new Error(t("Authority ID unresolved."))
   }
   state.loading = true
   try {
@@ -200,7 +201,7 @@ const savePolicy = async (options: {
 }) => {
   const { sourceId } = ensureIdentity()
   if (!state.authorityId) {
-    throw new Error("Authority ID unresolved.")
+    throw new Error(t("Authority ID unresolved."))
   }
   const req: SavePolicyReq = {
     sourceId,
@@ -234,7 +235,10 @@ const savePolicy = async (options: {
     state.runtimeTotal = Number(resp?.runtimeTotal || 0)
     state.runtimeError = String(resp?.runtimeError || "")
     if (!resp?.success) {
-      throw new Error(resp?.errorMessage || `Save failed at stage ${resp?.errorStage || "unknown"}.`)
+      throw new Error(
+        resp?.errorMessage ||
+          t("Save failed at stage {stage}.", { stage: String(resp?.errorStage || "unknown") })
+      )
     }
     return resp
   } finally {
@@ -245,11 +249,11 @@ const savePolicy = async (options: {
 const getNodePerms = async (nodeId: number) => {
   const { sourceId } = ensureIdentity()
   if (!state.authorityId) {
-    throw new Error("Authority ID unresolved.")
+    throw new Error(t("Authority ID unresolved."))
   }
   const parsed = Number(nodeId || 0)
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("Node ID must be a positive number.")
+    throw new Error(t("Node ID must be a positive number."))
   }
   const resp = await callPermission<NodePermsResp>("GetNodePerms", sourceId, state.authorityId, parsed)
   return {

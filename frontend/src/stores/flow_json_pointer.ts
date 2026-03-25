@@ -1,3 +1,5 @@
+import { t } from "@/i18n"
+
 const decodeJsonPointerToken = (token: string) => {
   if (!token.includes("~")) {
     return token
@@ -20,7 +22,7 @@ const decodeJsonPointerToken = (token: string) => {
       i += 1
       continue
     }
-    throw new Error("JSON Pointer contains an invalid escape sequence.")
+    throw new Error(t("JSON Pointer contains an invalid escape sequence."))
   }
   return out
 }
@@ -31,7 +33,7 @@ const parseJsonPointer = (pointer: string) => {
     return [] as string[]
   }
   if (!trimmed.startsWith("/")) {
-    throw new Error("JSON Pointer must start with '/'.")
+    throw new Error(t("JSON Pointer must start with '/'."))
   }
   return trimmed
     .slice(1)

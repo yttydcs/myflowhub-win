@@ -1,4 +1,5 @@
 import { reactive } from "vue"
+import { t } from "@/i18n"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
@@ -56,7 +57,7 @@ const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.main?.App
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`App binding '${method}' unavailable`)
+    throw new Error(t("App binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }

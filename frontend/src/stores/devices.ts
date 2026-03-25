@@ -9,7 +9,7 @@ const callMgmt = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.management?.ManagementService
   const fn: WailsBinding | undefined = api?.[method]
   if (!fn) {
-    throw new Error(`Management binding '${method}' unavailable`)
+    throw new Error(t("Management binding '{method}' unavailable", { method }))
   }
   return fn(...args)
 }

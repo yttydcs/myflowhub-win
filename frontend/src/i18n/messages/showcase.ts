@@ -173,5 +173,19 @@ export const showcaseZhCN: LocaleMessages = {
   "TopicBus binding '{method}' unavailable": "主题总线绑定“{method}”不可用",
   "Failed to load showcase screens.": "加载展示台屏幕失败。",
   "Editor window was blocked by browser popup policy.": "编辑窗口被浏览器弹窗策略拦截。",
-  "Viewer window was blocked by browser popup policy.": "查看窗口被浏览器弹窗策略拦截。"
+  "Viewer window was blocked by browser popup policy.": "查看窗口被浏览器弹窗策略拦截。",
+  "Badge": "标签",
+  "Data source: watched variables and mine.": "数据来源：已监听变量和我的变量。",
+  "Invalid range.": "区间无效。",
+  "Live Value": "实时值",
+  "Max must be greater than Min.": "最大值必须大于最小值。",
+  "Metric": "指标",
+  "No numeric value yet.": "当前还没有数值。",
+  "No watched variables.": "没有已监听变量。",
+  "Pick from watched or mine variables.": "从已监听或我的变量中选择。",
+  "Progress": "进度",
+  "Progress is display-only. It reuses Min and Max as the visual range.": "进度条仅用于展示，会复用最小值和最大值作为可视区间。",
+  "Slider writes values back. Range, step, and throttle stay active.": "滑块会把值写回变量，区间、步长和节流设置继续生效。",
+  "Step must be greater than 0.": "步长必须大于 0。",
+  "watched": "已监听"
 }
