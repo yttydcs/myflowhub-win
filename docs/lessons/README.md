@@ -21,4 +21,6 @@
 
 ## Current Docs
 
-- 当前仓尚无受治理的 lessons 叶子文档
+- [wails-embed-dist-placeholder.md](wails-embed-dist-placeholder.md)
+  - 症状：`pattern all:frontend/dist: cannot embed directory frontend/dist: contains no embeddable files`
+  - 关键词：`go:embed all:frontend/dist`、`go mod tidy`、`Generating bindings`

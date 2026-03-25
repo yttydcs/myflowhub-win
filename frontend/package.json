@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "node ./node_modules/vite/bin/vite.js build && node -e \"import('node:fs').then((fs)=>{fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/.keep','');})\"",
+    "build": "node ./node_modules/vite/bin/vite.js build && node -e \"import('node:fs').then((fs)=>{fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/placeholder.txt','This file keeps frontend/dist embeddable for go:embed before Wails builds real assets.\\n');})\"",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "test": "vitest run"
   },
