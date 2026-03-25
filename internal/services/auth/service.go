@@ -21,6 +21,8 @@ import (
 const defaultNodeKeysPath = "config/node_keys.json"
 
 const defaultAuthTimeout = 8 * time.Second
+
+const mcpDisplayNameKey = "mcp.display_name"
 const nodeDisplayNameKey = "node.display_name"
 
 type AuthService struct {
@@ -210,12 +212,20 @@ func (s *AuthService) localNodeDisplayName() string {
 	if s.store == nil {
 		return ""
 	}
+	if raw, ok := s.store.GetRaw(mcpDisplayNameKey); ok {
+		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
+			return displayName
+		}
+	}
 	if raw, ok := s.store.GetRaw(nodeDisplayNameKey); ok {
 		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
 			return displayName
 		}
 	}
 	profile := s.store.CurrentProfile()
+	if displayName := strings.TrimSpace(s.store.GetString(profile, mcpDisplayNameKey, "")); displayName != "" {
+		return displayName
+	}
 	return strings.TrimSpace(s.store.GetString(profile, nodeDisplayNameKey, ""))
 }
 
