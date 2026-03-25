@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-25_win-flow-varstore-visual-form-stale.md](2026-03-25_win-flow-varstore-visual-form-stale.md)
   - [2026-03-25_win-flow-capability-backend-schema-consumption.md](2026-03-25_win-flow-capability-backend-schema-consumption.md)
   - [2026-03-25_win-flow-capability-picker-followup.md](2026-03-25_win-flow-capability-picker-followup.md)
   - [2026-03-24_win-flow-editor-regression-tests.md](2026-03-24_win-flow-editor-regression-tests.md)
