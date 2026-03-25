@@ -121,6 +121,10 @@ type MethodVisualSchema = {
   - `properties`
   - 基础类型：`string` / `number` / `integer` / `boolean` / `object`
   - `enum`
+- 支持的受限 vendor extension：
+  - 属性级 `x-ui-control`
+  - 当前支持值：`textarea`
+  - 当前仅对 `type=string` 生效，用于覆盖默认单行文本控件
 - 第一版不支持：
   - `oneOf`
   - `anyOf`
@@ -132,6 +136,7 @@ type MethodVisualSchema = {
 
 - 视为该方法不可生成普通模式
 - 仅显示 `Advanced JSON`
+- 对未知或不兼容的 `x-ui-control` 值，前端必须忽略并回退到基础类型推断，不得抛出破坏性异常
 
 ### 3. 推荐前端模型
 

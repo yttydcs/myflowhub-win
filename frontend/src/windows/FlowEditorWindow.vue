@@ -613,6 +613,21 @@ const closeMethodDialog = () => {
   methodSearch.value = ""
 }
 
+const ensureSelectedNodeCapabilityLoaded = async () => {
+  if (loading.value) {
+    return
+  }
+  const node = selectedNode.value
+  if (!node || node.kind !== "call" || !node.method.trim()) {
+    return
+  }
+  try {
+    await flowStore.ensureNodeCapabilityLoaded(node.id)
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
 const refreshMethodCapabilities = async () => {
   try {
     const queryNodeId = queryNodeIdDraft.value.trim()
@@ -907,6 +922,24 @@ watch(
     if (!methodDialogOpen.value) {
       syncQueryNodeDraft()
     }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [
+    loading.value,
+    selectedNode.value?.id ?? "",
+    selectedNode.value?.kind ?? "",
+    selectedNode.value?.method ?? "",
+    selectedNode.value?.target ?? 0,
+    effectiveExecutorNode.value
+  ],
+  ([isLoading]) => {
+    if (isLoading) {
+      return
+    }
+    void ensureSelectedNodeCapabilityLoaded()
   },
   { immediate: true }
 )

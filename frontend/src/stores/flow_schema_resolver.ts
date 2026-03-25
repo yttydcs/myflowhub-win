@@ -70,10 +70,26 @@ const getEnumOptions = (schema: Record<string, unknown>): MethodFieldOption[] | 
   return out
 }
 
+const getUiControlOverride = (schema: Record<string, unknown>): MethodFieldControl | null => {
+  const raw = typeof schema["x-ui-control"] === "string" ? schema["x-ui-control"].trim().toLowerCase() : ""
+  if (!raw) {
+    return null
+  }
+  if (raw === "textarea" && schema.type === "string") {
+    return "textarea"
+  }
+  return null
+}
+
 const inferFieldControl = (schema: Record<string, unknown>): { control: MethodFieldControl; options?: MethodFieldOption[] } | null => {
   const enumOptions = getEnumOptions(schema)
   if (enumOptions) {
     return { control: "select", options: enumOptions }
+  }
+
+  const uiControl = getUiControlOverride(schema)
+  if (uiControl) {
+    return { control: uiControl }
   }
 
   const type = typeof schema.type === "string" ? schema.type : ""

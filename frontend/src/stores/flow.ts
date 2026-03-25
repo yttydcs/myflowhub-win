@@ -253,6 +253,10 @@ const state = reactive<FlowState>({
 const MAX_HISTORY = 120
 let draftHistory: FlowDraftSnapshot[] = []
 let draftHistoryIndex = 0
+let execCapabilityLoadCount = 0
+let execCapabilityLoadEpoch = 0
+let execCapabilityCacheVersion = 0
+const pendingCapabilityHydrations = new Map<string, Promise<boolean>>()
 
 const cloneBindingDraft = (binding: FlowInputBindingDraft): FlowInputBindingDraft => ({ ...binding })
 
@@ -373,8 +377,7 @@ const applyGraphEditorState = (snapshot: FlowGraphEditorState) => {
     Number(snapshot.selectedEdgeIndex) < state.edges.length
       ? Number(snapshot.selectedEdgeIndex)
       : -1
-  state.execCapabilities = []
-  state.execCapabilitiesLoading = false
+  resetExecCapabilityState()
   resetHistory()
 }
 
@@ -663,6 +666,50 @@ const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
   }
 }
 
+const beginExecCapabilityLoad = () => {
+  const epoch = execCapabilityLoadEpoch
+  execCapabilityLoadCount += 1
+  state.execCapabilitiesLoading = execCapabilityLoadCount > 0
+  return epoch
+}
+
+const endExecCapabilityLoad = (epoch: number) => {
+  if (epoch !== execCapabilityLoadEpoch) {
+    return
+  }
+  execCapabilityLoadCount = Math.max(0, execCapabilityLoadCount - 1)
+  state.execCapabilitiesLoading = execCapabilityLoadCount > 0
+}
+
+const replaceExecCapabilityRoutes = (routes: ExecCapabilityRoute[]) => {
+  state.execCapabilities = routes
+}
+
+const mergeExecCapabilityRoutes = (routes: ExecCapabilityRoute[]) => {
+  if (!routes.length) {
+    return
+  }
+  const merged = new Map(state.execCapabilities.map((route) => [route.key, route] as const))
+  for (const route of routes) {
+    merged.set(route.key, route)
+  }
+  state.execCapabilities = Array.from(merged.values())
+}
+
+const hasExecCapabilityRoute = (method: string, providerNode: number) =>
+  state.execCapabilities.some(
+    (route) => route.method === method && route.providerNode === providerNode
+  )
+
+const resetExecCapabilityState = () => {
+  execCapabilityLoadEpoch += 1
+  execCapabilityCacheVersion += 1
+  state.execCapabilities = []
+  state.execCapabilitiesLoading = false
+  execCapabilityLoadCount = 0
+  pendingCapabilityHydrations.clear()
+}
+
 const newDraft = () => {
   state.flowId = ""
   state.flowName = ""
@@ -678,8 +725,7 @@ const newDraft = () => {
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   state.statusRunId = ""
-  state.execCapabilities = []
-  state.execCapabilitiesLoading = false
+  resetExecCapabilityState()
   resetHistory()
 }
 
@@ -1705,8 +1751,7 @@ const applyGraphDraft = (graphSource: any, successMessage: string) => {
   state.edges = edges.map(mapEdge)
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
-  state.execCapabilities = []
-  state.execCapabilitiesLoading = false
+  resetExecCapabilityState()
   setMessage(successMessage, "success")
   resetHistory()
 }
@@ -1776,9 +1821,8 @@ const exportPayload = (): FlowPayload => {
 
 const exportGraphDraft = (): FlowGraphDraft => buildGraph()
 
-const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string | number) => {
+const fetchExecCapabilityRoutes = async (executorNode: number, methodFilter?: string) => {
   const { sourceID } = ensureIdentity()
-  const executorNode = resolveCapabilityQueryNode(queryNodeId)
   const method = String(methodFilter ?? "").trim()
   const req = {
     req_id: newReqId(),
@@ -1788,31 +1832,98 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
     limit: 200,
     include_schema: true
   }
-  state.execCapabilitiesLoading = true
+  const data = await callFlow<any>("ExecCapQuerySimple", sourceID, executorNode, req)
+  const code = Number(data?.code ?? 0)
+  const msg = String(data?.msg ?? "")
+  if (code !== 1) {
+    throw new Error(msg || t("Capability query failed."))
+  }
+  const routes: any[] = Array.isArray(data?.routes) ? data.routes : []
+  return routes
+    .map(mapExecCapabilityRoute)
+    .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
+}
+
+const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string | number) => {
+  const executorNode = resolveCapabilityQueryNode(queryNodeId)
+  const cacheVersion = execCapabilityCacheVersion
+  const loadEpoch = beginExecCapabilityLoad()
   try {
-    const data = await callFlow<any>("ExecCapQuerySimple", sourceID, executorNode, req)
-    const code = Number(data?.code ?? 0)
-    const msg = String(data?.msg ?? "")
-    if (code !== 1) {
-      state.execCapabilities = []
-      setMessage(msg || t("Capability query failed."), "error")
+    const routes = await fetchExecCapabilityRoutes(executorNode, methodFilter)
+    if (cacheVersion !== execCapabilityCacheVersion) {
       return
     }
-    const routes: any[] = Array.isArray(data?.routes) ? data.routes : []
-    state.execCapabilities = routes
-      .map(mapExecCapabilityRoute)
-      .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
+    replaceExecCapabilityRoutes(routes)
     setMessage(
-      state.execCapabilities.length
+      routes.length
         ? t("Capability list updated from node {nodeId} ({count}).", {
             nodeId: executorNode,
-            count: state.execCapabilities.length
+            count: routes.length
           })
         : t("No capability matched on node {nodeId}.", { nodeId: executorNode }),
-      state.execCapabilities.length ? "success" : "info"
+      routes.length ? "success" : "info"
     )
+  } catch (err) {
+    if (cacheVersion !== execCapabilityCacheVersion) {
+      return
+    }
+    replaceExecCapabilityRoutes([])
+    setMessage(String((err as Error)?.message ?? err ?? t("Capability query failed.")), "error")
   } finally {
-    state.execCapabilitiesLoading = false
+    endExecCapabilityLoad(loadEpoch)
+  }
+}
+
+const ensureNodeCapabilityLoaded = async (nodeId: string) => {
+  const trimmedNodeId = String(nodeId ?? "").trim()
+  if (!trimmedNodeId) {
+    return false
+  }
+  const node = state.nodes.find((item) => item.id.trim() === trimmedNodeId)
+  if (!node || node.kind !== "call") {
+    return false
+  }
+  const method = node.method.trim()
+  if (!method) {
+    return false
+  }
+  const providerNode = node.target > 0 ? Math.trunc(node.target) : resolveCurrentExecutorNodeOrZero()
+  if (!providerNode || hasExecCapabilityRoute(method, providerNode)) {
+    return false
+  }
+
+  const hydrationKey = `${providerNode}|${method}`
+  const pending = pendingCapabilityHydrations.get(hydrationKey)
+  if (pending) {
+    return pending
+  }
+
+  const task = (async () => {
+    const cacheVersion = execCapabilityCacheVersion
+    const loadEpoch = beginExecCapabilityLoad()
+    try {
+      const routes = await fetchExecCapabilityRoutes(providerNode, method)
+      if (cacheVersion !== execCapabilityCacheVersion) {
+        return false
+      }
+      const matched = routes.filter(
+        (route) => route.providerNode === providerNode && route.method === method
+      )
+      if (!matched.length) {
+        return false
+      }
+      mergeExecCapabilityRoutes(matched)
+      return true
+    } finally {
+      endExecCapabilityLoad(loadEpoch)
+    }
+  })()
+
+  pendingCapabilityHydrations.set(hydrationKey, task)
+  try {
+    return await task
+  } finally {
+    pendingCapabilityHydrations.delete(hydrationKey)
   }
 }
 
@@ -1952,6 +2063,7 @@ export const useFlowStore = () => {
     listBindableAncestorNodeIds: listAncestorNodeIds,
     normalizeCallTarget,
     queryExecCapabilities,
+    ensureNodeCapabilityLoaded,
     applyCallCapability,
     applyExecCapability: applyCallCapability,
     setFieldLiteralValue: setNodeFieldLiteralValue,

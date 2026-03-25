@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest"
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setLocale } from "@/i18n"
 import {
   useFlowStore,
@@ -9,6 +11,7 @@ import {
 } from "./flow"
 
 const store = useFlowStore()
+const execCapQuerySimple = vi.fn()
 
 const createCallNode = (id: string, overrides: Partial<FlowNodeDraft> = {}): FlowNodeDraft => ({
   id,
@@ -52,6 +55,16 @@ const createCapabilityRoute = (method: string, overrides: Partial<ExecCapability
   ...overrides
 })
 
+const createVarStoreGetInputSchema = () => ({
+  title: "VarStore Get",
+  type: "object",
+  required: ["owner", "name"],
+  properties: {
+    owner: { type: "integer" },
+    name: { type: "string" }
+  }
+})
+
 beforeEach(() => {
   setLocale("en")
   store.newDraft()
@@ -62,6 +75,14 @@ beforeEach(() => {
   store.state.selfNodeId = 1
   store.state.hubId = 100
   store.clearMessage()
+  execCapQuerySimple.mockReset()
+  ;(window as any).go = {
+    flow: {
+      FlowService: {
+        ExecCapQuerySimple: execCapQuerySimple
+      }
+    }
+  }
 })
 
 describe("flow store", () => {
@@ -244,7 +265,11 @@ describe("flow store", () => {
       { selectedNodeIndex: 0 }
     )
 
-    store.state.execCapabilities = [createCapabilityRoute("varstore::get")]
+    store.state.execCapabilities = [
+      createCapabilityRoute("varstore::get", {
+        inputSchema: createVarStoreGetInputSchema()
+      })
+    ]
     store.applyCallCapability("varstore::get|route")
 
     expect(store.state.nodes[0].method).toBe("varstore::get")
@@ -266,6 +291,69 @@ describe("flow store", () => {
     const visualForm = store.getNodeVisualForm("n1")
     expect(visualForm.compatibility.supported).toBe(true)
     expect(visualForm.compatibility.reasons).toEqual([])
+  })
+
+  it("hydrates an existing call node capability without replacing the current capability list", async () => {
+    loadGraph(
+      [
+        createCallNode("n1", {
+          method: "varstore::get",
+          target: 0
+        })
+      ],
+      [],
+      { selectedNodeIndex: 0 }
+    )
+
+    store.state.execCapabilities = [
+      createCapabilityRoute("demo::existing", {
+        key: "demo::existing|route",
+        providerNode: 100
+      })
+    ]
+
+    execCapQuerySimple.mockResolvedValue({
+      code: 1,
+      routes: [
+        {
+          provider_node: 100,
+          via_node: 0,
+          method: "varstore::get",
+          version: "v1",
+          default_timeout_ms: 3000,
+          permissions: [],
+          tags: {},
+          input_schema: createVarStoreGetInputSchema(),
+          output_schema: {
+            type: "object",
+            properties: {
+              owner: { type: "integer" },
+              name: { type: "string" }
+            }
+          }
+        }
+      ]
+    })
+
+    await expect(store.ensureNodeCapabilityLoaded("n1")).resolves.toBe(true)
+
+    expect(execCapQuerySimple).toHaveBeenCalledWith(
+      1,
+      100,
+      expect.objectContaining({
+        method: "varstore::get",
+        prefix: true,
+        include_schema: true
+      })
+    )
+    expect(store.state.execCapabilities.map((route) => route.method)).toEqual([
+      "demo::existing",
+      "varstore::get"
+    ])
+
+    const visualForm = store.getNodeVisualForm("n1")
+    expect(visualForm.compatibility.supported).toBe(true)
+    expect(visualForm.schema?.source).toBe("capability")
   })
 
   it("keeps graph editor signatures stable across selection changes while round-tripping editor state", () => {

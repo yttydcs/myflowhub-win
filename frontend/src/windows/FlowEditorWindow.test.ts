@@ -19,6 +19,9 @@ const toastStore = {
   warn: vi.fn()
 }
 
+const queryExecCapabilities = vi.fn(async () => undefined)
+const ensureNodeCapabilityLoaded = vi.fn(async () => false)
+
 vi.mock("vue-router", () => ({
   useRoute: () => ({
     query: {
@@ -51,7 +54,8 @@ vi.mock("@/stores/flow", async () => {
     ...actual,
     useFlowStore: () => ({
       ...store,
-      queryExecCapabilities: vi.fn(async () => undefined)
+      queryExecCapabilities,
+      ensureNodeCapabilityLoaded
     })
   }
 })
@@ -101,6 +105,8 @@ describe("FlowEditorWindow", () => {
     const flowStore = useFlowStore()
     setLocale("en")
     vi.clearAllMocks()
+    queryExecCapabilities.mockResolvedValue(undefined)
+    ensureNodeCapabilityLoaded.mockResolvedValue(false)
     flowStore.newDraft()
     flowStore.loadGraphEditorState({
       nodes: [],
@@ -175,5 +181,29 @@ describe("FlowEditorWindow", () => {
     const dialog = wrapper.get('[data-test="method-dialog"]')
     expect(dialog.attributes("data-open")).toBe("true")
     expect(dialog.attributes("data-method-search")).toBe("")
+  })
+
+  it("hydrates the selected call node capability when opening an existing project node", async () => {
+    const flowStore = useFlowStore()
+
+    mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    flowStore.selectNodeById("call1")
+    await flushAsync()
+
+    expect(ensureNodeCapabilityLoaded).toHaveBeenCalledWith("call1")
   })
 })
