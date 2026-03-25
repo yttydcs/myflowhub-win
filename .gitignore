@@ -3,7 +3,7 @@ cmd/file/**
 frontend/node_modules/
 frontend/package.json.md5
 frontend/dist/*
-!frontend/dist/.keep
+!frontend/dist/placeholder.txt
 frontend/.vite/
 frontend/wailsjs/
 build/
