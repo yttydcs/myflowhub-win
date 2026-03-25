@@ -1,0 +1,179 @@
+// @vitest-environment jsdom
+
+import { defineComponent, nextTick } from "vue"
+import { mount } from "@vue/test-utils"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { setLocale } from "@/i18n"
+
+const projectsStore = {
+  loadProjects: vi.fn(async () => undefined),
+  getProjectByID: vi.fn(),
+  saveProjectGraph: vi.fn()
+}
+
+const toastStore = {
+  error: vi.fn(),
+  errorOf: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+  warn: vi.fn()
+}
+
+vi.mock("vue-router", () => ({
+  useRoute: () => ({
+    query: {
+      projectId: "project-1"
+    }
+  })
+}))
+
+vi.mock("@/stores/flowProjects", () => ({
+  useFlowProjectsStore: () => projectsStore
+}))
+
+vi.mock("@/stores/session", () => ({
+  useSessionStore: () => ({
+    auth: {
+      nodeId: 1,
+      hubId: 100
+    }
+  })
+}))
+
+vi.mock("@/stores/toast", () => ({
+  useToastStore: () => toastStore
+}))
+
+vi.mock("@/stores/flow", async () => {
+  const actual = await vi.importActual<typeof import("@/stores/flow")>("@/stores/flow")
+  const store = actual.useFlowStore()
+  return {
+    ...actual,
+    useFlowStore: () => ({
+      ...store,
+      queryExecCapabilities: vi.fn(async () => undefined)
+    })
+  }
+})
+
+import FlowEditorWindow from "./FlowEditorWindow.vue"
+import { useFlowStore } from "@/stores/flow"
+
+const FlowEditorToolbarStub = defineComponent({
+  template: `<div data-test="toolbar" />`
+})
+
+const FlowCanvasStub = defineComponent({
+  template: `<div data-test="canvas" />`
+})
+
+const FlowNodeInspectorStub = defineComponent({
+  emits: ["open-method"],
+  template: `<button data-test="open-method" type="button" @click="$emit('open-method')">Open Method</button>`
+})
+
+const FlowMethodPickerDialogStub = defineComponent({
+  props: {
+    open: { type: Boolean, default: false },
+    methodSearch: { type: String, default: "" }
+  },
+  template: `
+    <div
+      data-test="method-dialog"
+      :data-open="String(open)"
+      :data-method-search="methodSearch"
+    />
+  `
+})
+
+const SimpleStub = defineComponent({
+  template: `<div />`
+})
+
+const flushAsync = async () => {
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+}
+
+describe("FlowEditorWindow", () => {
+  beforeEach(() => {
+    const flowStore = useFlowStore()
+    setLocale("en")
+    vi.clearAllMocks()
+    flowStore.newDraft()
+    flowStore.loadGraphEditorState({
+      nodes: [],
+      edges: [],
+      selectedNodeIndex: -1,
+      selectedEdgeIndex: -1
+    })
+    projectsStore.getProjectByID.mockReturnValue({
+      id: "project-1",
+      flowId: "project-1",
+      name: "Project 1",
+      updatedAt: "2026-03-25T12:00:00.000Z",
+      graph: {
+        nodes: [
+          {
+            id: "call1",
+            kind: "call",
+            allow_fail: false,
+            retry: 1,
+            timeout_ms: 3000,
+            spec: {
+              method: "demo::existing",
+              args_template: {}
+            }
+          }
+        ],
+        edges: []
+      }
+    })
+  })
+
+  it("opens the method picker with an empty filter instead of the selected method", async () => {
+    const flowStore = useFlowStore()
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    flowStore.state.execCapabilities = [
+      {
+        key: "100|0|demo::existing|v1",
+        providerNode: 100,
+        viaNode: 0,
+        method: "demo::existing",
+        version: "v1",
+        defaultTimeoutMs: 0,
+        permissions: [],
+        tags: {},
+        inputSchema: null,
+        outputSchema: null,
+        label: "100 · demo::existing@v1"
+      }
+    ]
+
+    flowStore.selectNodeById("call1")
+    await nextTick()
+
+    await wrapper.get('[data-test="open-method"]').trigger("click")
+    await flushAsync()
+
+    const dialog = wrapper.get('[data-test="method-dialog"]')
+    expect(dialog.attributes("data-open")).toBe("true")
+    expect(dialog.attributes("data-method-search")).toBe("")
+  })
+})

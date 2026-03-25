@@ -95,7 +95,7 @@ const tagPreview = (route: ExecCapabilityRoute) => Object.entries(route.tags).sl
         </template>
       </CardHeader>
 
-      <div class="mt-5 flex flex-wrap items-end gap-3">
+      <div class="mt-5 flex flex-wrap items-start gap-3">
         <div class="min-w-[200px] max-w-[240px] flex-1">
           <label :for="queryNodeInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {{ t("Query Node ID") }}
@@ -125,9 +125,11 @@ const tagPreview = (route: ExecCapabilityRoute) => Object.entries(route.tags).sl
             @input="emit('update:methodSearch', ($event.target as HTMLInputElement).value)"
           />
         </div>
-        <Button variant="outline" :disabled="props.loading" @click="emit('refresh')">
-          {{ props.loading ? t("Refreshing...") : t("Refresh Capabilities") }}
-        </Button>
+        <div class="self-end">
+          <Button variant="outline" :disabled="props.loading" @click="emit('refresh')">
+            {{ props.loading ? t("Refreshing...") : t("Refresh Capabilities") }}
+          </Button>
+        </div>
       </div>
 
       <p class="mt-3 text-xs text-muted-foreground">

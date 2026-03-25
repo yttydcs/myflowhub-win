@@ -610,6 +610,7 @@ const syncPendingCapability = () => {
 
 const closeMethodDialog = () => {
   methodDialogOpen.value = false
+  methodSearch.value = ""
 }
 
 const refreshMethodCapabilities = async () => {
@@ -628,7 +629,7 @@ const refreshMethodCapabilities = async () => {
 
 const openMethodDialog = async () => {
   if (!selectedNode.value || selectedNode.value.kind !== "call") return
-  methodSearch.value = selectedNode.value.method.trim()
+  methodSearch.value = ""
   syncPendingCapability()
   syncQueryNodeDraft()
   methodDialogOpen.value = true
@@ -651,7 +652,7 @@ const applyCapabilitySelection = () => {
   }
   try {
     flowStore.applyCallCapability(pendingCapabilityKey.value)
-    methodDialogOpen.value = false
+    closeMethodDialog()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to apply method capability."))
@@ -916,7 +917,6 @@ watch(
     nodeIdDraft.value = selectedNode.value?.id ?? ""
     closeFieldBindingDialog()
     if (!methodDialogOpen.value) {
-      methodSearch.value = selectedNode.value?.method?.trim() ?? ""
       syncPendingCapability()
       syncQueryNodeDraft()
     }
@@ -928,7 +928,7 @@ watch(
   () => nodeDetailOpen.value,
   (open) => {
     if (!open) {
-      methodDialogOpen.value = false
+      closeMethodDialog()
       closeFieldBindingDialog()
     }
   }
@@ -938,7 +938,7 @@ watch(
   () => selectedNode.value?.kind ?? "",
   (kind) => {
     if (kind !== "call") {
-      methodDialogOpen.value = false
+      closeMethodDialog()
       closeFieldBindingDialog()
     }
   }

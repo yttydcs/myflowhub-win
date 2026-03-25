@@ -131,6 +131,148 @@ describe("flow_schema_resolver", () => {
     )
   })
 
+  it("parses the first batch of backend capability schemas for flow ordinary mode", () => {
+    const topicbus = resolveMethodVisualSchema("topicbus::publish", {
+      method: "topicbus::publish",
+      inputSchema: {
+        title: "Publish Event",
+        type: "object",
+        required: ["name"],
+        properties: {
+          topic: {
+            type: "string"
+          },
+          name: {
+            type: "string"
+          },
+          ts: {
+            type: "integer"
+          },
+          payload: {
+            type: "object",
+            properties: {}
+          }
+        }
+      }
+    })
+
+    expect(topicbus).toMatchObject({
+      title: "Publish Event",
+      source: "capability"
+    })
+    expect(topicbus?.fields).toEqual([
+      expect.objectContaining({
+        pointer: "/topic",
+        control: "text",
+        required: false
+      }),
+      expect.objectContaining({
+        pointer: "/name",
+        control: "text",
+        required: true
+      }),
+      expect.objectContaining({
+        pointer: "/ts",
+        control: "number",
+        required: false
+      }),
+      expect.objectContaining({
+        pointer: "/payload",
+        control: "json",
+        required: false
+      })
+    ])
+
+    const fileList = resolveMethodVisualSchema("file::list", {
+      method: "file::list",
+      inputSchema: {
+        title: "List Directory",
+        type: "object",
+        properties: {
+          dir: {
+            type: "string"
+          }
+        }
+      }
+    })
+
+    expect(fileList?.fields).toEqual([
+      expect.objectContaining({
+        pointer: "/dir",
+        control: "text",
+        required: false
+      })
+    ])
+
+    const fileReadText = resolveMethodVisualSchema("file::read_text", {
+      method: "file::read_text",
+      inputSchema: {
+        title: "Read Text File",
+        type: "object",
+        required: ["name"],
+        properties: {
+          dir: {
+            type: "string"
+          },
+          name: {
+            type: "string"
+          },
+          max_bytes: {
+            type: "integer"
+          }
+        }
+      }
+    })
+
+    expect(fileReadText?.fields).toEqual([
+      expect.objectContaining({
+        pointer: "/dir",
+        control: "text",
+        required: false
+      }),
+      expect.objectContaining({
+        pointer: "/name",
+        control: "text",
+        required: true
+      }),
+      expect.objectContaining({
+        pointer: "/max_bytes",
+        control: "number",
+        required: false
+      })
+    ])
+
+    const fileMkdir = resolveMethodVisualSchema("file::mkdir", {
+      method: "file::mkdir",
+      inputSchema: {
+        title: "Create Directory",
+        type: "object",
+        required: ["name"],
+        properties: {
+          dir: {
+            type: "string"
+          },
+          name: {
+            type: "string"
+          }
+        }
+      }
+    })
+
+    expect(fileMkdir?.fields).toEqual([
+      expect.objectContaining({
+        pointer: "/dir",
+        control: "text",
+        required: false
+      }),
+      expect.objectContaining({
+        pointer: "/name",
+        control: "text",
+        required: true
+      })
+    ])
+  })
+
   it("returns null for unsupported or mismatched capability schemas", () => {
     expect(
       resolveMethodVisualSchema("demo::call", {
