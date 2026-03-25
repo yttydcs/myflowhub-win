@@ -40,14 +40,18 @@ type Store struct {
 }
 
 func NewStore() (*Store, error) {
-	baseDir, err := resolveBaseDir()
+	return NewStoreWithBaseDir("")
+}
+
+func NewStoreWithBaseDir(baseDir string) (*Store, error) {
+	resolved, err := resolveStoreBaseDir(baseDir)
 	if err != nil {
 		return nil, err
 	}
 	store := &Store{
-		baseDir:    baseDir,
-		path:       filepath.Join(baseDir, settingsFile),
-		legacyPath: filepath.Join(baseDir, legacyPrefsFile),
+		baseDir:    resolved,
+		path:       filepath.Join(resolved, settingsFile),
+		legacyPath: filepath.Join(resolved, legacyPrefsFile),
 		values:     map[string]any{},
 	}
 	if err := store.load(); err != nil {
@@ -313,6 +317,21 @@ func resolveBaseDir() (string, error) {
 		}
 	}
 	return filepath.Join(dir, "fyne", legacyFyneAppID), nil
+}
+
+func resolveStoreBaseDir(baseDir string) (string, error) {
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		return resolveBaseDir()
+	}
+	resolved, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(resolved) == "" {
+		return "", errors.New("base dir is empty")
+	}
+	return resolved, nil
 }
 
 func profileStateFromValues(values map[string]any) ([]string, string) {

@@ -20,6 +20,8 @@ import (
 )
 
 const defaultManagementTimeout = 8 * time.Second
+
+const mcpDisplayNameKey = "mcp.display_name"
 const nodeDisplayNameKey = "node.display_name"
 
 type ManagementService struct {
@@ -356,12 +358,20 @@ func (s *ManagementService) localNodeDisplayName() string {
 	if s.store == nil {
 		return ""
 	}
+	if raw, ok := s.store.GetRaw(mcpDisplayNameKey); ok {
+		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
+			return displayName
+		}
+	}
 	if raw, ok := s.store.GetRaw(nodeDisplayNameKey); ok {
 		if displayName := normalizeNodeDisplayName(raw); displayName != "" {
 			return displayName
 		}
 	}
 	profile := s.store.CurrentProfile()
+	if displayName := strings.TrimSpace(s.store.GetString(profile, mcpDisplayNameKey, "")); displayName != "" {
+		return displayName
+	}
 	return strings.TrimSpace(s.store.GetString(profile, nodeDisplayNameKey, ""))
 }
 

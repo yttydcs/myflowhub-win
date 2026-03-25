@@ -43,6 +43,26 @@ func TestNodeInfoSimpleSelfIncludesRawDisplayName(t *testing.T) {
 	}
 }
 
+func TestNodeInfoSimpleSelfPrefersMCPDisplayName(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.SetRaw(mcpDisplayNameKey, "  mcp-self  "); err != nil {
+		t.Fatalf("SetRaw(mcp) error = %v", err)
+	}
+	if err := store.SetRaw(nodeDisplayNameKey, "legacy-self"); err != nil {
+		t.Fatalf("SetRaw(legacy) error = %v", err)
+	}
+
+	svc := New(nil, nil, store)
+	resp, err := svc.NodeInfoSimple(8, 8)
+	if err != nil {
+		t.Fatalf("NodeInfoSimple() error = %v", err)
+	}
+
+	if got := resp.Items["display_name"]; got != "mcp-self" {
+		t.Fatalf("expected mcp display_name, got %q", got)
+	}
+}
+
 func TestNodeInfoSimpleSelfFallsBackToProfileDisplayName(t *testing.T) {
 	store := newTestStore(t)
 	if err := store.SetCurrentProfile("work"); err != nil {

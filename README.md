@@ -45,3 +45,42 @@ Output:
 Notes:
 - This build embeds `frontend/dist`. The build command runs `npm install` + `npm run build` automatically (per `wails.json`).
 
+## MCP CLI
+- Build:
+  - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+- Start via script:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
+- Run directly:
+  - `.\myflowhub-mcp.exe --endpoint 127.0.0.1:9000 --config-dir "$env:APPDATA\\MyFlowHub\\mcp-client" --device-id ai-node --display-name "AI MCP" --allow-write`
+- Typical MCP host config:
+
+```json
+{
+  "mcpServers": {
+    "myflowhub": {
+      "command": "powershell.exe",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "D:\\project\\MyFlowHub3\\worktrees\\win-mcp-ai-client\\scripts\\start-myflowhub-mcp.ps1",
+        "--endpoint",
+        "127.0.0.1:9000",
+        "--config-dir",
+        "C:\\Users\\<user>\\AppData\\Roaming\\MyFlowHub\\mcp-client",
+        "--device-id",
+        "ai-node",
+        "--display-name",
+        "AI MCP"
+      ]
+    }
+  }
+}
+```
+
+Notes:
+- The MCP process uses `stdio`; `stdout` is reserved for JSON-RPC and logs go to `stderr`.
+- `scripts/start-myflowhub-mcp.ps1` is a thin wrapper around `go run ./cmd/myflowhub-mcp` and forwards any extra CLI flags unchanged.
+- Use a dedicated `--config-dir` so the MCP node keeps separate `settings.json` and node keys from the GUI client.
+- Write tools such as `myflowhub_varstore_set` and `myflowhub_varstore_revoke` stay disabled unless `--allow-write` is set.
+

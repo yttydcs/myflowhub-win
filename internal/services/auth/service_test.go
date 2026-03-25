@@ -50,6 +50,22 @@ func TestNewRegisterRequestIncludesRawDisplayName(t *testing.T) {
 	}
 }
 
+func TestNewRegisterRequestPrefersMCPDisplayName(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.SetRaw(mcpDisplayNameKey, "  mcp-node  "); err != nil {
+		t.Fatalf("SetRaw(mcp) error = %v", err)
+	}
+	if err := store.SetRaw(nodeDisplayNameKey, "legacy-node"); err != nil {
+		t.Fatalf("SetRaw(legacy) error = %v", err)
+	}
+
+	svc := New(nil, nil, store)
+	req := svc.newRegisterRequest("device-1", "pub-key")
+	if req.DisplayName != "mcp-node" {
+		t.Fatalf("expected mcp display_name, got %q", req.DisplayName)
+	}
+}
+
 func TestNewLoginRequestFallsBackToProfileDisplayName(t *testing.T) {
 	store := newTestStore(t)
 	if err := store.SetCurrentProfile("work"); err != nil {
