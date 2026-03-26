@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
+	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
@@ -86,6 +87,23 @@ type fakeBackend struct {
 	configListArgs struct {
 		sourceID uint32
 		targetID uint32
+		called   bool
+	}
+	nodeEchoArgs struct {
+		sourceID uint32
+		targetID uint32
+		message  string
+		called   bool
+	}
+	listSubtreeArgs struct {
+		sourceID uint32
+		targetID uint32
+		called   bool
+	}
+	execCapQueryArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoexec.CapQueryReq
 		called   bool
 	}
 	flowSetArgs struct {
@@ -257,6 +275,15 @@ func (f *fakeBackend) ListNodes(_ context.Context, sourceID, targetID uint32) (p
 func (f *fakeBackend) NodeInfo(context.Context, uint32, uint32) (protomanagement.NodeInfoResp, error) {
 	return protomanagement.NodeInfoResp{Code: 1}, nil
 }
+func (f *fakeBackend) NodeEcho(_ context.Context, sourceID, targetID uint32, message string) (protomanagement.NodeEchoResp, error) {
+	f.nodeEchoArgs = struct {
+		sourceID uint32
+		targetID uint32
+		message  string
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, message: message, called: true}
+	return protomanagement.NodeEchoResp{Code: 1, Echo: message}, nil
+}
 func (f *fakeBackend) ConfigGet(_ context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error) {
 	f.configGetArgs = struct {
 		sourceID uint32
@@ -286,6 +313,23 @@ func (f *fakeBackend) ConfigList(_ context.Context, sourceID, targetID uint32) (
 		keys = append(keys, key)
 	}
 	return protomanagement.ConfigListResp{Code: 1, Keys: keys}, nil
+}
+func (f *fakeBackend) ListSubtree(_ context.Context, sourceID, targetID uint32) (protomanagement.ListSubtreeResp, error) {
+	f.listSubtreeArgs = struct {
+		sourceID uint32
+		targetID uint32
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, called: true}
+	return protomanagement.ListSubtreeResp{Code: 1, Nodes: []protomanagement.NodeInfo{{NodeID: targetID}}}, nil
+}
+func (f *fakeBackend) ExecCapQuery(_ context.Context, sourceID, targetID uint32, req protoexec.CapQueryReq) (protoexec.CapQueryResp, error) {
+	f.execCapQueryArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoexec.CapQueryReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoexec.CapQueryResp{Code: 1, ReqID: req.ReqID, ResponderNode: targetID, Total: 1, Routes: []protoexec.CapabilityRoute{{Method: req.Method, ProviderNode: req.ProviderNode}}}, nil
 }
 func (f *fakeBackend) FlowSet(_ context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error) {
 	f.flowSetArgs = struct {
@@ -377,6 +421,83 @@ func TestFlowToolsRegistered(t *testing.T) {
 		if !names[name] {
 			t.Fatalf("expected tool %q to be registered", name)
 		}
+	}
+}
+
+func TestExecAndManagementReadToolsRegistered(t *testing.T) {
+	tools := NewTools(&fakeBackend{})
+	names := map[string]bool{}
+	for _, tool := range tools {
+		names[tool.Name] = true
+	}
+	for _, name := range []string{
+		"myflowhub_exec_cap_query",
+		"myflowhub_management_node_echo",
+		"myflowhub_management_list_subtree",
+	} {
+		if !names[name] {
+			t.Fatalf("expected tool %q to be registered", name)
+		}
+	}
+}
+
+func TestExecCapQueryFallsBackToSnapshotAndGeneratesReqID(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_exec_cap_query").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.execCapQueryArgs.called {
+		t.Fatal("expected ExecCapQuery() called")
+	}
+	if backend.execCapQueryArgs.sourceID != 7 || backend.execCapQueryArgs.targetID != 9 {
+		t.Fatalf("unexpected exec route: %+v", backend.execCapQueryArgs)
+	}
+	if backend.execCapQueryArgs.req.RequesterNode != 7 {
+		t.Fatalf("expected requester_node fallback to source_id, got %+v", backend.execCapQueryArgs.req)
+	}
+	if strings.TrimSpace(backend.execCapQueryArgs.req.ReqID) == "" {
+		t.Fatalf("expected generated req_id, got %+v", backend.execCapQueryArgs.req)
+	}
+}
+
+func TestExecCapQueryPassesExplicitFilters(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	raw := json.RawMessage(`{
+		"req_id":"req-1",
+		"source_id":5,
+		"target_id":55,
+		"requester_node":12,
+		"method":"demo::run",
+		"prefix":true,
+		"provider_node":88,
+		"limit":2,
+		"include_schema":true
+	}`)
+	result := findTool(t, NewTools(backend), "myflowhub_exec_cap_query").Handler(context.Background(), raw)
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.execCapQueryArgs.called {
+		t.Fatal("expected ExecCapQuery() called")
+	}
+	if backend.execCapQueryArgs.sourceID != 5 || backend.execCapQueryArgs.targetID != 55 {
+		t.Fatalf("unexpected exec route: %+v", backend.execCapQueryArgs)
+	}
+	req := backend.execCapQueryArgs.req
+	if req.ReqID != "req-1" || req.RequesterNode != 12 || req.Method != "demo::run" {
+		t.Fatalf("unexpected exec request identity fields: %+v", req)
+	}
+	if !req.Prefix || req.ProviderNode != 88 || req.Limit != 2 || !req.IncludeSchema {
+		t.Fatalf("unexpected exec request filters: %+v", req)
 	}
 }
 
@@ -523,6 +644,49 @@ func TestManagementListNodesFallsBackToAuthSnapshot(t *testing.T) {
 	}
 	if backend.listNodesArgs.sourceID != 7 || backend.listNodesArgs.targetID != 9 {
 		t.Fatalf("unexpected route: %+v", backend.listNodesArgs)
+	}
+}
+
+func TestManagementNodeEchoRequiresNonEmptyMessage(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_node_echo").Handler(context.Background(), json.RawMessage(`{"message":"   "}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	if backend.nodeEchoArgs.called {
+		t.Fatal("expected NodeEcho() not called")
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "invalid_arguments" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
+func TestManagementListSubtreeFallsBackToStartupDefaults(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		defaults: mcpapp.Defaults{
+			NodeID:        11,
+			DefaultTarget: 99,
+		},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_list_subtree").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.listSubtreeArgs.called {
+		t.Fatal("expected ListSubtree() called")
+	}
+	if backend.listSubtreeArgs.sourceID != 11 || backend.listSubtreeArgs.targetID != 99 {
+		t.Fatalf("unexpected subtree route: %+v", backend.listSubtreeArgs)
 	}
 }
 

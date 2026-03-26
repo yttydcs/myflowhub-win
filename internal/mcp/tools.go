@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
+	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
@@ -38,8 +39,11 @@ type Backend interface {
 	CompleteAuth(resp protoauth.RespData, deviceID string) error
 	ListNodes(ctx context.Context, sourceID, targetID uint32) (protomanagement.ListNodesResp, error)
 	NodeInfo(ctx context.Context, sourceID, targetID uint32) (protomanagement.NodeInfoResp, error)
+	NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) (protomanagement.NodeEchoResp, error)
 	ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error)
 	ConfigList(ctx context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error)
+	ListSubtree(ctx context.Context, sourceID, targetID uint32) (protomanagement.ListSubtreeResp, error)
+	ExecCapQuery(ctx context.Context, sourceID, targetID uint32, req protoexec.CapQueryReq) (protoexec.CapQueryResp, error)
 	FlowSet(ctx context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error)
 	FlowDelete(ctx context.Context, sourceID, targetID uint32, req flowsvc.DeleteReq) (flowsvc.DeleteResp, error)
 	FlowRun(ctx context.Context, sourceID, targetID uint32, req protoflow.RunReq) (protoflow.RunResp, error)
@@ -140,6 +144,24 @@ type managementConfigGetArgs struct {
 	Key      string  `json:"key"`
 	SourceID *uint32 `json:"source_id,omitempty"`
 	TargetID *uint32 `json:"target_id,omitempty"`
+}
+
+type managementNodeEchoArgs struct {
+	Message  string  `json:"message"`
+	SourceID *uint32 `json:"source_id,omitempty"`
+	TargetID *uint32 `json:"target_id,omitempty"`
+}
+
+type execCapQueryArgs struct {
+	ReqID         string  `json:"req_id,omitempty"`
+	SourceID      *uint32 `json:"source_id,omitempty"`
+	TargetID      *uint32 `json:"target_id,omitempty"`
+	RequesterNode *uint32 `json:"requester_node,omitempty"`
+	Method        string  `json:"method,omitempty"`
+	Prefix        bool    `json:"prefix,omitempty"`
+	ProviderNode  *uint32 `json:"provider_node,omitempty"`
+	Limit         *int    `json:"limit,omitempty"`
+	IncludeSchema bool    `json:"include_schema,omitempty"`
 }
 
 type flowListArgs struct {
@@ -254,6 +276,12 @@ type flowRoute struct {
 	SourceID     uint32
 	TargetID     uint32
 	ExecutorNode uint32
+}
+
+type execQueryRoute struct {
+	SourceID      uint32
+	TargetID      uint32
+	RequesterNode uint32
 }
 
 const authorityNodeIDConfigKey = "authority.node_id"
@@ -424,6 +452,41 @@ func NewTools(backend Backend) []Tool {
 				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
 			}),
 			Handler: set.managementConfigList,
+		},
+		{
+			Name:        "myflowhub_management_node_echo",
+			Description: "Round-trip a message through management routing to verify a node responds.",
+			InputSchema: objectSchema(map[string]any{
+				"message":   stringSchema("Non-empty message echoed back by the target node."),
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
+			}, "message"),
+			Handler: set.managementNodeEcho,
+		},
+		{
+			Name:        "myflowhub_management_list_subtree",
+			Description: "List the subtree visible from the selected management target.",
+			InputSchema: objectSchema(map[string]any{
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
+			}),
+			Handler: set.managementListSubtree,
+		},
+		{
+			Name:        "myflowhub_exec_cap_query",
+			Description: "Query exec capability routes from a hub or routing node.",
+			InputSchema: objectSchema(map[string]any{
+				"req_id":         stringSchema("Optional request correlation ID. Generated automatically when omitted."),
+				"source_id":      positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":      positiveIntegerSchema("Transport target used to route the exec query. Falls back to hub_id or default_target."),
+				"requester_node": positiveIntegerSchema("Requester node written into the exec payload. Falls back to source_id when omitted."),
+				"method":         stringSchema("Optional exact method filter."),
+				"prefix":         booleanSchema("Treat method as a prefix filter when true."),
+				"provider_node":  positiveIntegerSchema("Optional provider node filter."),
+				"limit":          nonNegativeIntegerSchema("Optional result limit."),
+				"include_schema": booleanSchema("Include input/output schema blobs in the response when true."),
+			}),
+			Handler: set.execCapQuery,
 		},
 		{
 			Name:        "myflowhub_flow_list",
@@ -936,6 +999,71 @@ func (s toolSet) managementConfigList(ctx context.Context, raw json.RawMessage) 
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
 }
 
+func (s toolSet) managementNodeEcho(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[managementNodeEchoArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with message and optional source_id and target_id.", nil)
+	}
+	message := strings.TrimSpace(args.Message)
+	if message == "" {
+		return invalidArgumentsResult("message is required", "Pass a non-empty message.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_management_node_echo")
+	}
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
+	}
+	resp, err := s.backend.NodeEcho(ctx, sourceID, targetID, message)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the selected target can answer management echo requests.", map[string]any{"source_id": sourceID, "target_id": targetID, "message": message})
+	}
+	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "message": message, "response": resp})
+}
+
+func (s toolSet) managementListSubtree(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[managementArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional source_id and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_management_list_subtree")
+	}
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
+	}
+	resp, err := s.backend.ListSubtree(ctx, sourceID, targetID)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can inspect the target subtree.", map[string]any{"source_id": sourceID, "target_id": targetID})
+	}
+	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
+}
+
+func (s toolSet) execCapQuery(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[execCapQueryArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional req_id, source_id, target_id, requester_node, method, prefix, provider_node, limit, and include_schema.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_exec_cap_query")
+	}
+	route, err := s.resolveExecQueryRoute(args.SourceID, args.TargetID, args.RequesterNode)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id, target_id, and requester_node explicitly.")
+	}
+	req, err := normalizeExecCapQueryReq(args, route)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass positive requester/provider node IDs and a non-negative limit when set.", nil)
+	}
+	resp, err := s.backend.ExecCapQuery(ctx, route.SourceID, route.TargetID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the selected routing target can answer exec capability queries.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "requester_node": route.RequesterNode, "request": req})
+	}
+	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "requester_node": route.RequesterNode, "request": req, "response": resp})
+}
+
 func (s toolSet) flowList(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[flowListArgs](raw)
 	if err != nil {
@@ -1288,6 +1416,28 @@ func (s toolSet) resolveFlowRoute(sourceID, targetID, executorNode *uint32) (flo
 	}, nil
 }
 
+func (s toolSet) resolveExecQueryRoute(sourceID, targetID, requesterNode *uint32) (execQueryRoute, error) {
+	source, target, err := s.resolveManagementRoute(sourceID, targetID)
+	if err != nil {
+		return execQueryRoute{}, err
+	}
+	requester, explicit, err := positiveNodeID(requesterNode, "requester_node")
+	if err != nil {
+		return execQueryRoute{}, err
+	}
+	if !explicit || requester == 0 {
+		requester = source
+	}
+	if requester == 0 {
+		return execQueryRoute{}, errors.New("requester_node is required; login first or pass requester_node")
+	}
+	return execQueryRoute{
+		SourceID:      source,
+		TargetID:      target,
+		RequesterNode: requester,
+	}, nil
+}
+
 func (s toolSet) resolveAuthorityRoute(ctx context.Context, sourceID, targetID, authorityID *uint32) (authorityRoute, error) {
 	source, hubTarget, err := s.resolveManagementRoute(sourceID, targetID)
 	if err != nil {
@@ -1463,9 +1613,32 @@ func normalizeIssueRegisterPermitArgs(args authIssueRegisterPermitArgs) (authsvc
 	return req, nil
 }
 
+func normalizeExecCapQueryReq(args execCapQueryArgs, route execQueryRoute) (protoexec.CapQueryReq, error) {
+	req := protoexec.CapQueryReq{
+		ReqID:         ensureReqID(args.ReqID),
+		RequesterNode: route.RequesterNode,
+		Method:        strings.TrimSpace(args.Method),
+		Prefix:        args.Prefix,
+		IncludeSchema: args.IncludeSchema,
+	}
+	if args.ProviderNode != nil {
+		if *args.ProviderNode == 0 {
+			return protoexec.CapQueryReq{}, errors.New("provider_node must be greater than 0")
+		}
+		req.ProviderNode = *args.ProviderNode
+	}
+	if args.Limit != nil {
+		if *args.Limit < 0 {
+			return protoexec.CapQueryReq{}, errors.New("limit must be greater than or equal to 0")
+		}
+		req.Limit = *args.Limit
+	}
+	return req, nil
+}
+
 func normalizeFlowListReq(args flowListArgs, route flowRoute) protoflow.ListReq {
 	return protoflow.ListReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 	}
@@ -1477,7 +1650,7 @@ func normalizeFlowGetReq(args flowGetArgs, route flowRoute) (protoflow.GetReq, e
 		return protoflow.GetReq{}, errors.New("flow_id is required")
 	}
 	return protoflow.GetReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
@@ -1503,7 +1676,7 @@ func normalizeFlowSetReq(args flowSetArgs, route flowRoute) (protoflow.SetReq, e
 		return protoflow.SetReq{}, errors.New("graph is required")
 	}
 	return protoflow.SetReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
@@ -1519,7 +1692,7 @@ func normalizeFlowRunReq(args flowRunArgs, route flowRoute) (protoflow.RunReq, e
 		return protoflow.RunReq{}, errors.New("flow_id is required")
 	}
 	return protoflow.RunReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
@@ -1532,7 +1705,7 @@ func normalizeFlowStatusReq(args flowStatusArgs, route flowRoute) (protoflow.Sta
 		return protoflow.StatusReq{}, errors.New("flow_id is required")
 	}
 	return protoflow.StatusReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
@@ -1546,14 +1719,14 @@ func normalizeFlowDeleteReq(args flowDeleteArgs, route flowRoute) (flowsvc.Delet
 		return flowsvc.DeleteReq{}, errors.New("flow_id is required")
 	}
 	return flowsvc.DeleteReq{
-		ReqID:        ensureFlowReqID(args.ReqID),
+		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
 	}, nil
 }
 
-func ensureFlowReqID(value string) string {
+func ensureReqID(value string) string {
 	if trimmed := strings.TrimSpace(value); trimmed != "" {
 		return trimmed
 	}
@@ -1647,7 +1820,7 @@ func (s toolSet) buildSessionStatus() sessionStatusPayload {
 func statusHints(status sessionStatusPayload) []string {
 	hints := make([]string, 0, 3)
 	if !status.Connected {
-		hints = append(hints, "Call myflowhub_session_connect before invoking auth, management, flow, or varstore tools.")
+		hints = append(hints, "Call myflowhub_session_connect before invoking auth, management, exec, flow, or varstore tools.")
 		return hints
 	}
 	if !status.Auth.LoggedIn {
@@ -1661,7 +1834,7 @@ func statusHints(status sessionStatusPayload) []string {
 		hints = append(hints, "Restart the MCP process with --allow-write to enable myflowhub_flow_set, myflowhub_flow_run, myflowhub_flow_delete, myflowhub_varstore_set, and myflowhub_varstore_revoke.")
 	}
 	if len(hints) == 0 {
-		hints = append(hints, "Session is ready for management, flow, and varstore read operations.")
+		hints = append(hints, "Session is ready for management, exec, flow, and varstore read operations.")
 	}
 	return hints
 }
@@ -1729,6 +1902,13 @@ func objectSchema(properties map[string]any, required ...string) map[string]any 
 func stringSchema(description string) map[string]any {
 	return map[string]any{
 		"type":        "string",
+		"description": description,
+	}
+}
+
+func booleanSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "boolean",
 		"description": description,
 	}
 }

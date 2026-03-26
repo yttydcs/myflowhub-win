@@ -3,8 +3,8 @@
 ## Scope
 
 - 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端首版的模块边界、运行时约束和工具契约。
-- 本规范不修改 `auth`、`management`、`varstore` 协议本身。
-- 本规范不新增 `ExecCapQuery` 等 exec 能力发现工具；相关能力后续按 `exec` 工作流单独规划。
+- 本规范不修改 `auth`、`management`、`exec`、`varstore` 协议本身。
+- 本规范新增 `exec_cap_query` 只读工具，但不新增 `exec.call` 等写/执行能力。
 - 本规范不涉及 GUI 页面、Wails bindings 或第三方 MCP client 能力。
 - 本规范默认 Hub 角色权限模型是真实授权边界；本地仅保留显式写 gate 与安装/运行时保护。
 
@@ -63,8 +63,11 @@
 - `myflowhub_auth_revoke_register_permit`
 - `myflowhub_management_list_nodes`
 - `myflowhub_management_node_info`
+- `myflowhub_management_node_echo`
+- `myflowhub_management_list_subtree`
 - `myflowhub_management_config_get`
 - `myflowhub_management_config_list`
+- `myflowhub_exec_cap_query`
 - `myflowhub_flow_list`
 - `myflowhub_flow_get`
 - `myflowhub_flow_set`
@@ -191,7 +194,32 @@
   - 输出:
     - 原始 auth revoke_register_permit 结果
 
-### 7. Flow 工具契约
+### 7. Exec 工具契约
+
+- `myflowhub_exec_cap_query`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `requester_node?`
+    - `req_id?`
+    - `method?`
+    - `prefix?`
+    - `provider_node?`
+    - `limit?`
+    - `include_schema?`
+  - 行为:
+    - `target_id` 是传输目标，用于把 exec query 路由到 hub 或目标 routing 节点
+    - `requester_node` 写入 exec payload，未传时默认回退到解析后的 `source_id`
+    - `req_id` 未传时，由 MCP 本地生成 UUID
+    - 本地校验 `requester_node > 0`、`provider_node > 0`、`limit >= 0`
+  - 输出:
+    - 解析后的 `source_id`
+    - 解析后的 `target_id`
+    - 解析后的 `requester_node`
+    - 规范化后的 `request`
+    - 原始 exec cap query `response`
+
+### 8. Flow 工具契约
 
 - 通用路由约束:
   - `target_id` 是传输目标，用于把 flow 请求路由到 hub 或目标 transport 节点。
@@ -264,13 +292,24 @@
   - 行为:
     - `flow_id` 必须为非空字符串
 
-### 8. 管理与变量工具契约
+### 9. 管理与变量工具契约
 
 - `myflowhub_management_list_nodes`
   - 输入:
     - `source_id?`
     - `target_id?`
 - `myflowhub_management_node_info`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+- `myflowhub_management_node_echo`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `message`
+  - 行为:
+    - `message` 必须为非空字符串
+- `myflowhub_management_list_subtree`
   - 输入:
     - `source_id?`
     - `target_id?`
@@ -310,14 +349,15 @@
     - `name`
     - `owner?`
 
-### 9. 写操作 gate
+### 10. 写操作 gate
 
 - `myflowhub_flow_set`、`myflowhub_flow_run`、`myflowhub_flow_delete` 属于写工具。
 - `myflowhub_varstore_set` 与 `myflowhub_varstore_revoke` 属于写工具。
+- `myflowhub_exec_cap_query`、`myflowhub_management_node_echo`、`myflowhub_management_list_subtree` 属于只读工具，不受本地 `allow_write` gate 约束。
 - 当 runtime `allow_write=false` 时，写工具必须在本地返回明确错误。
 - 该 gate 发生在协议发送前。
 
-### 10. 启动与安装链路
+### 11. 启动与安装链路
 
 - `scripts/start-myflowhub-mcp.ps1` 必须优先尝试已构建的 `myflowhub-mcp.exe`，找不到时再 fallback 到 `go run ./cmd/myflowhub-mcp`。
 - 启动脚本至少应检查以下候选路径：
@@ -350,6 +390,7 @@
   - `internal/services/management`
   - `internal/services/flow`
   - `internal/services/varpool`
+- `exec_cap_query` 在 MCP 命名上归属 `exec`，但 runtime 当前通过 `internal/services/flow` 复用已有 `ExecCapQuery` 封装，不改变底层协议边界。
 - MCP 入口不得依赖 Wails `runtime.EventsEmit` 或 GUI 页面状态。
 
 ### 2. 状态模型
@@ -409,6 +450,8 @@ type StatusReadiness struct {
 - 参数非法:
   - 在 tool 层优先校验，避免把明显非法请求发往 Hub
   - `flow_id`、`run_id` 等字符串参数必须在本地校验非空
+  - `exec_cap_query` 的 `requester_node` / `provider_node` 必须为正整数，`limit` 必须大于等于 0
+  - `management_node_echo.message` 必须为非空字符串
 - 写操作被禁:
   - 使用独立错误码或明确消息区分于普通协议失败
 - 协议失败:
@@ -431,6 +474,7 @@ MCP tool 结构化错误至少包含：
 - MCP 本地配置目录默认独立于 GUI。
 - 写操作默认关闭。
 - 首版不开放 `config_set`，避免 AI 与用户手动配置互相覆盖。
+- exec 工具必须明确区分 `target_id` 与 `requester_node`，避免把 transport 路由和请求身份语义混为一谈。
 - flow 工具必须明确区分 `target_id` 与 `executor_node`，避免把 transport 路由和执行节点语义混为一谈。
 - Hub 角色权限仍是真实授权边界，本地不额外实现 owner/target 白名单。
 - `auth_get_perms` / `auth_list_roles` 不增加本地权限层，只复用现有 session、路由回退和结构化错误模型。
