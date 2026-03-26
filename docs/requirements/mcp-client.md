@@ -11,6 +11,7 @@
 - 为 `MyFlowHub-Win` 提供一个可被 MCP host 以 `stdio` 方式拉起的无界面客户端。
 - 该客户端以独立节点身份连接 Hub，并向 AI 暴露首版 `session`、`auth`、`management`、`varstore` 工具。
 - 首版默认只开放读能力与受控写能力，不与现有 GUI 本地配置互相污染。
+- MCP 返回结果应足够稳定，让 AI 能直接判断当前阻塞类型和下一步动作。
 
 ## Scope
 
@@ -43,9 +44,11 @@
 ## Scenarios
 
 - AI host 启动 `myflowhub-mcp`，连接 Hub 并执行 `register/login`。
+- AI 在调用写工具前先通过 `session_status` 判断是否已连接、是否已登录、写 gate 是否开启。
 - AI 列出当前节点，定位 Hub 或目标节点。
 - AI 读取某个变量、列出变量名、创建变量、修改变量、撤销变量。
 - 用户同时运行 GUI Win 客户端和 MCP 客户端，两者互不干扰。
+- 用户通过脚本把 MCP 安装到 Codex，而不是手动编辑 host 配置。
 
 ## Functional Requirements
 
@@ -60,7 +63,10 @@
 5. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
 6. `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
 7. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
-8. 错误必须能明确区分未连接、未认证、参数非法、权限不足、目标未找到和超时。
+8. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
+9. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
+10. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
+11. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
 
 ## Non-functional Requirements
 
@@ -70,6 +76,7 @@
 - 可维护性:
   - 默认身份状态、参数回退和本地配置路径必须集中实现。
   - 不要把 GUI 偏好键直接当成 MCP 运行时真相来源。
+  - 启动脚本应优先复用已构建二进制，缺失时再退回开发态启动。
 - 安全性:
   - `stdout` 只保留给 MCP JSON-RPC。
   - 写工具默认关闭。
@@ -85,6 +92,7 @@
 - 默认 `target_id` 缺失。
 - 本地配置目录不存在或不可写。
 - 写工具在 `allow_write=false` 时被调用。
+- host 配置中已存在同名 MCP server，需要覆盖而不是重复追加。
 
 ## Acceptance Criteria
 
@@ -93,7 +101,9 @@
 3. 在真实 Hub 上可完成 `connect -> register/login -> list_nodes/node_info -> varstore list/get/set/revoke` 的基础链路。
 4. MCP 客户端作为独立节点身份出现在 Hub 中。
 5. MCP 客户端的 settings 与 node keys 不写入 GUI Win 默认配置目录。
-6. `allow_write=false` 时，写工具被本地拒绝且错误可读。
+6. `allow_write=false` 时，写工具被本地拒绝且错误结构可读。
+7. `session_status` 可直接暴露 auth/readiness/permissions/hints。
+8. `scripts/install-codex-myflowhub-mcp.ps1 -WhatIf` 可成功预演安装结果。
 
 ## Related Specs
 

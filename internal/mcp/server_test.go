@@ -56,6 +56,14 @@ func TestServerInitializeAndToolsList(t *testing.T) {
 	if got := result["protocolVersion"]; got != latestProtocolVersion {
 		t.Fatalf("protocolVersion = %v", got)
 	}
+	capabilities, ok := result["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing capabilities: %#v", result)
+	}
+	toolsCapability, ok := capabilities["tools"].(map[string]any)
+	if !ok || toolsCapability["listChanged"] != false {
+		t.Fatalf("unexpected tools capability: %#v", capabilities["tools"])
+	}
 
 	var listResp map[string]any
 	if err := json.Unmarshal([]byte(lines[1]), &listResp); err != nil {
@@ -68,5 +76,49 @@ func TestServerInitializeAndToolsList(t *testing.T) {
 	tools, ok := listResult["tools"].([]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("unexpected tools payload: %#v", listResult["tools"])
+	}
+}
+
+func TestServerUnknownToolReturnsStructuredToolError(t *testing.T) {
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"missing_tool","arguments":{}}}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+		"",
+	}, "\n")
+
+	var output bytes.Buffer
+	server, err := NewServer(ServerConfig{
+		Name:    "myflowhub-mcp",
+		Version: "test",
+		Reader:  strings.NewReader(input),
+		Writer:  &output,
+	})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 response line, got %d: %q", len(lines), output.String())
+	}
+
+	var resp struct {
+		Result CallToolResult `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &resp); err != nil {
+		t.Fatalf("unmarshal tools/call response: %v", err)
+	}
+	if !resp.Result.IsError {
+		t.Fatalf("expected tool error, got %#v", resp.Result)
+	}
+	payload, ok := resp.Result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured content map, got %#v", resp.Result.StructuredContent)
+	}
+	if payload["code"] != "unknown_tool" {
+		t.Fatalf("unexpected error payload: %#v", payload)
 	}
 }

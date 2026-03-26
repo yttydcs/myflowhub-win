@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-26_win-mcp-hardening.md](2026-03-26_win-mcp-hardening.md)
   - [2026-03-25_win-embed-dist-placeholder.md](2026-03-25_win-embed-dist-placeholder.md)
   - [2026-03-25_win-mcp-start-script.md](2026-03-25_win-mcp-start-script.md)
   - [2026-03-25_win-mcp-ai-client.md](2026-03-25_win-mcp-ai-client.md)

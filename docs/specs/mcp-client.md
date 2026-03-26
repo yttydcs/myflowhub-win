@@ -5,6 +5,7 @@
 - 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端首版的模块边界、运行时约束和工具契约。
 - 本规范不修改 `auth`、`management`、`varstore` 协议本身。
 - 本规范不涉及 GUI 页面、Wails bindings 或第三方 MCP client 能力。
+- 本规范默认 Hub 角色权限模型是真实授权边界；本地仅保留显式写 gate 与安装/运行时保护。
 
 ## Interfaces / Contracts
 
@@ -76,7 +77,11 @@
     - `connected`
     - `endpoint`
     - `auth`
+    - `defaults`
     - `config`
+    - `permissions`
+    - `readiness`
+    - `hints`
 
 ### 6. 认证工具契约
 
@@ -141,6 +146,17 @@
 - 当 runtime `allow_write=false` 时，写工具必须在本地返回明确错误。
 - 该 gate 发生在协议发送前。
 
+### 9. 启动与安装链路
+
+- `scripts/start-myflowhub-mcp.ps1` 必须优先尝试已构建的 `myflowhub-mcp.exe`，找不到时再 fallback 到 `go run ./cmd/myflowhub-mcp`。
+- 启动脚本至少应检查以下候选路径：
+  - `MYFLOWHUB_MCP_EXE`
+  - `build/bin/myflowhub-mcp.exe`
+  - repo root 下的 `myflowhub-mcp.exe`
+  - repo root 下的 `bin/myflowhub-mcp.exe`
+- `scripts/install-codex-myflowhub-mcp.ps1` 必须能够以幂等方式更新 Codex `config.toml` 中对应的 `mcp_servers.<name>` 配置块。
+- 安装脚本必须支持 `-WhatIf` 预演。
+
 ## Data Model or Protocol
 
 ### 1. Runtime 组装边界
@@ -172,6 +188,26 @@ type SessionSnapshot struct {
 }
 ```
 
+`session_status` 额外返回的运行摘要建议满足：
+
+```go
+type StatusPermissions struct {
+    AuthorizationModel string
+    LocalWriteGate     bool
+}
+
+type StatusReadiness struct {
+    Authenticated bool
+    HasIdentity   bool
+    HasTarget     bool
+    CanRegister   bool
+    CanLogin      bool
+    CanManage     bool
+    CanVarRead    bool
+    CanVarWrite   bool
+}
+```
+
 ### 3. Store 构造能力
 
 - `internal/storage` 必须提供可显式指定 base dir 的构造入口。
@@ -182,7 +218,7 @@ type SessionSnapshot struct {
 
 - 未连接:
   - 非 `session/auth` 工具调用时本地失败
-- 未认证:
+- 缺省身份:
   - 当业务工具无法得到可用默认 `source_id` / `hub_id` 时本地失败
 - 参数非法:
   - 在 tool 层优先校验，避免把明显非法请求发往 Hub
@@ -191,12 +227,24 @@ type SessionSnapshot struct {
 - 协议失败:
   - 保留原有服务返回的 `code/msg`
 
+MCP tool 结构化错误至少包含：
+
+```json
+{
+  "code": "invalid_arguments | not_connected | missing_identity | write_disabled | upstream_error",
+  "message": "human readable summary",
+  "hint": "next action for the AI or user",
+  "details": {}
+}
+```
+
 ## Security / Safety
 
 - `stdout` 只承载协议，`stderr` 只承载日志。
 - MCP 本地配置目录默认独立于 GUI。
 - 写操作默认关闭。
 - 首版不开放 `config_set`，避免 AI 与用户手动配置互相覆盖。
+- Hub 角色权限仍是真实授权边界，本地不额外实现 owner/target 白名单。
 
 ## Performance Constraints
 
