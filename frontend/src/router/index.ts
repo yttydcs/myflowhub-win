@@ -10,7 +10,9 @@ import Presets from "@/pages/Presets.vue"
 import Settings from "@/pages/Settings.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
-import Permissions from "@/pages/Permissions.vue"
+import AccessPolicy from "@/pages/AccessPolicy.vue"
+import RegistrationApprovals from "@/pages/RegistrationApprovals.vue"
+import PermitIssuance from "@/pages/PermitIssuance.vue"
 import ShowcaseCenter from "@/pages/ShowcaseCenter.vue"
 import { readStartupRoutePath } from "@/stores/appSettings"
 import FileTasks from "@/windows/FileTasks.vue"
@@ -142,13 +144,43 @@ const routes = [
     }
   },
   {
-    path: "/permissions",
-    name: "permissions",
-    component: Permissions,
+    path: "/access-policy",
+    name: "accessPolicy",
+    component: AccessPolicy,
     meta: {
-      title: "Permissions",
-      subtitle: "Manage authority role/perms policy and runtime snapshot."
+      title: "Access Policy",
+      subtitle: "Manage authority roles, permissions, and runtime policy validation."
     }
+  },
+  {
+    path: "/registration-approvals",
+    name: "registrationApprovals",
+    component: RegistrationApprovals,
+    meta: {
+      title: "Registration Approvals",
+      subtitle: "Review and decide pending first-register requests."
+    }
+  },
+  {
+    path: "/permit-issuance",
+    name: "permitIssuance",
+    component: PermitIssuance,
+    meta: {
+      title: "Permit Issuance",
+      subtitle: "Issue and revoke join permits for expected devices."
+    }
+  },
+  {
+    path: "/permissions",
+    redirect: "/access-policy"
+  },
+  {
+    path: "/approvals",
+    redirect: "/registration-approvals"
+  },
+  {
+    path: "/permits",
+    redirect: "/permit-issuance"
   },
   {
     path: "/settings",

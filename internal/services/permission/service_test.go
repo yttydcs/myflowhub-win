@@ -3,6 +3,8 @@ package permission
 import (
 	"slices"
 	"testing"
+
+	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
 )
 
 func TestNormalizePolicySortsAndDedupes(t *testing.T) {
@@ -72,5 +74,50 @@ func TestParseRawPolicyDefaultsToNodeRole(t *testing.T) {
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+}
+
+func TestToPendingRegistersPreservesFields(t *testing.T) {
+	got := toPendingRegisters([]authsvc.PendingRegisterInfo{
+		{
+			RequestID:     " req-1 ",
+			DeviceID:      " dev-1 ",
+			RequestedRole: " worker ",
+			DisplayName:   " node-a ",
+			CreatedAt:     10,
+			ExpiresAt:     20,
+		},
+	})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(got))
+	}
+	if got[0].RequestID != "req-1" || got[0].DeviceID != "dev-1" {
+		t.Fatalf("unexpected ids: %#v", got[0])
+	}
+	if got[0].RequestedRole != "worker" || got[0].DisplayName != "node-a" {
+		t.Fatalf("unexpected role/display: %#v", got[0])
+	}
+	if got[0].CreatedAt != 10 || got[0].ExpiresAt != 20 {
+		t.Fatalf("unexpected timestamps: %#v", got[0])
+	}
+}
+
+func TestAuthorityActionValidation(t *testing.T) {
+	svc := New(nil, nil, nil)
+
+	if _, err := svc.ListPendingRegisters(ListPendingRegistersRequest{}); err == nil {
+		t.Fatal("expected source_id validation error")
+	}
+	if _, err := svc.ApproveRegister(ApproveRegisterRequest{SourceID: 1, AuthorityID: 2}); err == nil {
+		t.Fatal("expected request_id validation error")
+	}
+	if _, err := svc.RejectRegister(RejectRegisterRequest{SourceID: 1, AuthorityID: 2}); err == nil {
+		t.Fatal("expected reject request_id validation error")
+	}
+	if _, err := svc.IssueRegisterPermit(IssueRegisterPermitRequest{SourceID: 1, AuthorityID: 2, Role: "admin"}); err == nil {
+		t.Fatal("expected device_id validation error")
+	}
+	if _, err := svc.RevokeRegisterPermit(RevokeRegisterPermitRequest{SourceID: 1, AuthorityID: 2}); err == nil {
+		t.Fatal("expected permit validation error")
 	}
 }

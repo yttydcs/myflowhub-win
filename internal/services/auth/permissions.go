@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -54,36 +52,9 @@ func (s *AuthService) ListRoles(ctx context.Context, sourceID, targetID uint32, 
 	if err != nil {
 		return ListRolesResp{}, err
 	}
-	if s.session == nil {
-		return ListRolesResp{}, errors.New("session service not initialized")
-	}
-	resp, err := s.session.SendCommandAndAwait(ctx, protoauth.SubProtoAuth, sourceID, targetID, payload, protoauth.ActionListRolesResp)
-	if err != nil {
-		if s.logs != nil {
-			s.logs.Appendf("error", "auth %s await failed: %v", strings.TrimSpace(protoauth.ActionListRoles), err)
-		}
-		return ListRolesResp{}, fmt.Errorf("auth %s: %w", strings.TrimSpace(protoauth.ActionListRoles), toUIError(err))
-	}
-
 	var data ListRolesResp
-	if err := json.Unmarshal(resp.Message.Data, &data); err != nil {
-		if s.logs != nil {
-			s.logs.Appendf("error", "auth %s decode failed: %v", strings.TrimSpace(protoauth.ActionListRoles), err)
-		}
+	if err := s.sendAndAwaitInto(ctx, sourceID, targetID, payload, protoauth.ActionListRoles, protoauth.ActionListRolesResp, &data); err != nil {
 		return ListRolesResp{}, err
-	}
-	if data.Code != 1 {
-		msg := strings.TrimSpace(data.Msg)
-		if msg != "" {
-			if s.logs != nil {
-				s.logs.Appendf("warn", "auth %s failed (code=%d msg=%q)", strings.TrimSpace(protoauth.ActionListRoles), data.Code, msg)
-			}
-			return ListRolesResp{}, fmt.Errorf("%s (code=%d)", msg, data.Code)
-		}
-		if s.logs != nil {
-			s.logs.Appendf("warn", "auth %s failed (code=%d)", strings.TrimSpace(protoauth.ActionListRoles), data.Code)
-		}
-		return ListRolesResp{}, fmt.Errorf("auth failed (code=%d)", data.Code)
 	}
 	return data, nil
 }

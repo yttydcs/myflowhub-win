@@ -21,6 +21,7 @@
 
 ## Current Docs
 
+- [authority-admin-console.md](authority-admin-console.md)
 - [mcp-client.md](mcp-client.md)
 - [flow-editor-accessibility.md](flow-editor-accessibility.md)
 - [flow-editor-draft-reliability.md](flow-editor-draft-reliability.md)
