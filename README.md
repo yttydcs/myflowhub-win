@@ -96,10 +96,12 @@ Notes:
 - `scripts/test-myflowhub-mcp-smoke.ps1` drives the MCP process over line-delimited JSON-RPC and verifies `connect -> auth -> auth_get_perms -> auth_list_roles -> management_list_nodes`.
 - `myflowhub_auth_get_perms` and `myflowhub_auth_list_roles` expose Hub-side permission self-check and role listing to AI hosts.
 - `myflowhub_auth_list_pending_registers`, `myflowhub_auth_approve_register`, `myflowhub_auth_reject_register`, `myflowhub_auth_issue_register_permit`, and `myflowhub_auth_revoke_register_permit` expose authority approval flow to AI hosts.
+- `myflowhub_management_node_echo` and `myflowhub_management_list_subtree` expose read-only management reachability and subtree discovery.
 - `myflowhub_management_config_get` and `myflowhub_management_config_list` expose read-only management config lookup; `config_set` remains intentionally unavailable.
+- `myflowhub_exec_cap_query` exposes read-only exec capability discovery; `exec.call` remains intentionally unavailable.
 - `myflowhub_flow_list`, `myflowhub_flow_get`, `myflowhub_flow_status`, `myflowhub_flow_set`, `myflowhub_flow_run`, and `myflowhub_flow_delete` expose flow deployment and run control to AI hosts.
+- For exec tools, `target_id` is the transport route target while `requester_node` is the identity written into the exec payload; omitted `requester_node` falls back to `source_id`.
 - For flow tools, `target_id` is the transport route target while `executor_node` is the actual flow executor; omitted `executor_node` falls back to `target_id`.
-- `ExecCapQuery` is intentionally not part of the current MCP surface and should be added later under a separate exec-focused contract.
 - Use a dedicated `--config-dir` so the MCP node keeps separate `settings.json` and node keys from the GUI client.
 - `login` smoke should use an existing dedicated `-ConfigDir`; `register` smoke will preserve any generated config dir so the same node keys can be reused after approval.
 - Authority auth tools accept explicit `authority_id`; if omitted, the MCP layer first tries `authority.node_id` and then falls back to the hub target.

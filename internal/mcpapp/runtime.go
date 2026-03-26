@@ -17,6 +17,7 @@ import (
 
 	corebus "github.com/yttydcs/myflowhub-core/eventbus"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
+	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
@@ -381,6 +382,12 @@ func (r *Runtime) NodeInfo(ctx context.Context, sourceID, targetID uint32) (prot
 	return r.management.NodeInfo(timeoutCtx, sourceID, targetID)
 }
 
+func (r *Runtime) NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) (protomanagement.NodeEchoResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.management.NodeEcho(timeoutCtx, sourceID, targetID, message)
+}
+
 func (r *Runtime) ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error) {
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
@@ -391,6 +398,18 @@ func (r *Runtime) ConfigList(ctx context.Context, sourceID, targetID uint32) (pr
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
 	return r.management.ConfigList(timeoutCtx, sourceID, targetID)
+}
+
+func (r *Runtime) ListSubtree(ctx context.Context, sourceID, targetID uint32) (protomanagement.ListSubtreeResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.management.ListSubtree(timeoutCtx, sourceID, targetID)
+}
+
+func (r *Runtime) ExecCapQuery(ctx context.Context, sourceID, targetID uint32, req protoexec.CapQueryReq) (protoexec.CapQueryResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.ExecCapQuery(timeoutCtx, sourceID, targetID, req)
 }
 
 func (r *Runtime) FlowSet(ctx context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error) {
