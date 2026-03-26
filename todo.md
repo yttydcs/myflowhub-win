@@ -1,330 +1,287 @@
-# Plan - MyFlowHub-Win MCP Exec And Management Tools
+# Plan - Win Flow Detail Merge Regression
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-mcp-exec-management-tools`
+- Branch: `fix/win-flow-detail-merge-regression`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-exec-management-tools`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression`
 - Current Stage: `4 archived / awaiting workflow end confirmation`
 
-## Stage 1 - Requirements Analysis
-### 目标
-- 为 Win MCP client 增加一组轻量只读工具，让 AI 可以查询 exec 能力索引，并补齐 management 下的节点回显与子树查看能力。
+## Stage Records
 
-### 范围
-#### 必须
-- 新增 `myflowhub_exec_cap_query`
-- 新增 `myflowhub_management_node_echo`
-- 新增 `myflowhub_management_list_subtree`
-- `exec_cap_query` 支持 AI 友好的参数回退：
-  - `source_id` 继续优先走当前 auth snapshot / defaults
-  - `target_id` 作为能力查询请求的传输目标，默认回退到 hub/default target
-  - `requester_node` 未传时默认回退到 `source_id`
-  - `req_id` 未传时由 MCP 本地生成
-- `management_node_echo` 支持 `message` 非空校验
-- 更新 requirements/specs/README
-- 补对应测试
+### Initialization
+- guide.md:
+  - `D:\project\MyFlowHub3\guide.md` exists and requires Chinese commit messages, Chrome DevTools for UI tests when relevant, server docs under `repo\MyFlowHub-Server\docs`, and all worktrees under `D:\project\MyFlowHub3\worktrees`.
+- base/worktree confirmation:
+  - Control-plane repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
+  - Active execution worktree: `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression`
+  - Base branch: `main`
+  - Current main HEAD already contains merge result `4f273ad` that breaks `wails generate module` and `go test ./...`.
 
-#### 可选
-- 在 tool 返回中补充少量 MCP 本地派生字段，只要不改变原始协议语义
+### Stage 1 - Requirements Analysis
+#### Goal
+- Repair the current Win flow detail merge regression so Wails bindings and Go validation pass again without changing the stable `flow.detail` JSON contract.
 
-#### 不做
-- 本轮不接入 `exec.call`
-- 本轮不接入 `management_config_set`
-- 本轮不接入 `topicbus`
-- 本轮不接入 `file`
-- 本轮不接入 `varstore subscribe/unsubscribe`
-- 本轮不新增本地更细粒度权限层
+#### Scope
+- Must:
+  - restore a single canonical definition source for `actionDetail`, `actionDetailResp`, `DetailReq`, and `DetailResp`
+  - keep `FlowService.Detail` / `DetailSimple` signatures aligned with the stable spec
+  - restore `wails generate module` and `GOWORK=off` Go validation
+  - keep the frontend-facing `flow.detail` payload shape unchanged
+- Optional:
+  - add a focused regression test if needed to lock the canonical type path
+  - refresh generated Wails bindings if the fix changes generated output
+- Not in scope:
+  - changing runtime `flow.detail` protocol behavior
+  - upgrading shared proto
+  - expanding detail UI behavior or store semantics
 
-### 使用场景
-- AI 查询某个 hub / 聚合节点上可用的 exec capabilities，并根据 `method` 或 `provider_node` 过滤候选路由。
-- AI 用 `node_echo` 快速验证某节点 management 链路是否通畅。
-- AI 读取某节点可见子树，辅助做节点发现、能力路由和 target 决策。
+#### Use Cases
+- Developers run `wails generate module` after backend changes and need bindings generation to succeed.
+- Developers run `GOWORK=off; go test ./...` and expect the repo to compile end to end.
+- Frontend callers continue to invoke `window.go.flow.FlowService.DetailSimple(...)` with the same JSON fields.
 
-### 功能需求
-1. MCP 必须显式暴露 `myflowhub_exec_cap_query`、`myflowhub_management_node_echo`、`myflowhub_management_list_subtree` 三个工具。
-2. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
-3. `exec_cap_query` 必须支持显式传入 `requester_node`；未传时默认回退到 `source_id`。
-4. `exec_cap_query` 的 `req_id` 未传时，MCP 必须本地生成请求 ID。
-5. `management_node_echo` 必须支持透传 `message`，且空字符串在本地失败。
-6. `management_list_subtree` 必须返回目标节点视角下的子树摘要列表。
-7. 三个工具都必须延续结构化错误模型，至少区分 `invalid_arguments`、`not_connected`、`missing_identity`、`upstream_error`。
-8. 三个工具都必须沿用现有 `source_id` / `target_id` 回退逻辑，不要求 AI 每次显式传身份。
-9. 本轮不得把 `ExecCapQuery` 混入 `flow` 工具命名；它必须以 `exec` 为中心单独暴露。
-10. 本轮新增工具均为只读，不受本地 `allow_write` gate 约束。
+#### Functional Requirements
+1. `internal/services/flow` must compile without duplicate declarations.
+2. `Detail` and `DetailSimple` must continue using Win-local typed payloads rather than missing shared proto detail types.
+3. `extractCodeMsg(...)` must still recognize `*DetailResp`.
+4. The canonical local detail type source must match the stable spec and current frontend expectations.
+5. `wails generate module` must succeed from the worktree with `GOWORK=off`.
 
-### 非功能需求
-- 继续复用 Win 现有 `internal/services/flow` 与 `internal/services/management`，不引入 GUI 依赖
-- 保持与现有 MCP tools 一致的命名、参数回退、错误结构和结果包装
-- 不新增新的本地持久化状态
-- 不改变现有 `flow`、`management`、`auth` 工具语义
+#### Non-functional Requirements
+- Keep the change set minimal and localized.
+- Preserve current JSON field names and optionality unless a build-only fix is impossible.
+- Avoid introducing a second competing definition source for detail payloads.
+- Use `GOWORK=off` for Go and Wails verification in the worktree.
 
-### 输入输出
-#### 输入
-- `source_id?`
-- `target_id?`
-- `req_id?`
-- `requester_node?`
-- `method?`
-- `prefix?`
-- `provider_node?`
-- `limit?`
-- `include_schema?`
-- `message`
+#### Inputs / Outputs
+- Inputs:
+  - current broken merge state on `main`
+  - existing local detail types in `internal/services/flow/detail_types.go`
+  - existing flow detail tests and Wails bindings generation
+- Outputs:
+  - deduplicated flow detail type ownership
+  - passing Go tests / build
+  - passing Wails bindings generation
+  - archived change notes for the merge regression
 
-#### 输出
-- 各工具原始 `exec` / `management` 响应
-- 必要时补充 MCP 本地生成或解析后的上下文字段
+#### Edge Cases
+- keeping the wrong `DetailResp` shape and silently drifting from the spec
+- fixing compile errors but leaving `frontend/wailsjs` stale
+- running validation without `GOWORK=off` and masking the true state
 
-### 边界异常
-- 未连接时调用新工具
-- 缺少可用 `source_id` 或 `target_id`
-- `requester_node`、`provider_node` 传入 0
-- `limit` 传入负数
-- `node_echo` 传入空 `message`
-- 上游返回 `403/404/500`
+#### Acceptance Criteria
+1. `$env:GOWORK='off'; go test ./internal/services/flow` passes.
+2. `$env:GOWORK='off'; go test ./...` passes.
+3. `$env:GOWORK='off'; wails generate module` passes.
+4. `internal/services/flow/service.go` no longer declares duplicate detail action constants or detail payload types.
+5. The resulting `DetailReq` / `DetailResp` source remains consistent with `docs/specs/flow-editor-run-detail.md`.
 
-### 验收标准
-1. `tools/list` 中出现 3 个新的工具：`myflowhub_exec_cap_query`、`myflowhub_management_node_echo`、`myflowhub_management_list_subtree`。
-2. `go test ./internal/mcp -count=1` 通过。
-3. `go test ./... -count=1` 通过。
-4. `go build ./cmd/myflowhub-mcp` 通过。
-5. `exec_cap_query` 的 `req_id` 自动生成、`requester_node` 默认回退、参数校验均有测试覆盖。
+#### Risks
+- Choosing the wrong canonical `DetailResp` variant could reintroduce Wails or frontend shape drift.
+- Generated bindings may change and need to be included deliberately.
+- Future merges can reintroduce the regression unless the lesson/index is updated with a merge-regression cue.
 
-### 风险
-- `ExecCapQuery` 当前挂在 Win 的 `FlowService` 上，但协议语义属于 `exec`；tool 命名和文档若处理不当，容易继续把它误归到 `flow`。
-- `include_schema=true` 时返回体可能较大，tool 层不应再做额外复制或重编码。
-- `list_subtree` 与 `list_nodes` 语义接近，若返回说明不清，AI 可能误用。
-
-### 问题清单
+#### Issue List
 - none
 
-## Stage 2 - Architecture Design
-### 总体方案
-- 方案采用：在现有 MCP runtime / backend / tools 三层上新增一个 `exec` 查询入口，并补 management 的两个只读工具。
-- 选型理由：
-  - `ExecCapQuery` 已存在于 Win `FlowService`，实现成本低
-  - `NodeEcho` / `ListSubtree` 已存在于 `ManagementService`
-  - 继续保持 `internal/mcp/tools.go` 作为唯一 AI 交互契约层
+### Stage 2 - Architecture Design
+#### Overall Solution
+- Keep `internal/services/flow/detail_types.go` as the canonical source for detail payloads and action constants, and remove the duplicate `Detail*` declarations that were reintroduced into `internal/services/flow/service.go` by a later merge path.
 
-### 备选对比
-- 方案 A：直接暴露 `myflowhub_exec_cap_query`
-  - 优点：与协议语义一致，不再混入 `flow`
-  - 代价：runtime 仍需通过 `FlowService` 走到底层 `exec` 子协议
-- 方案 B：把 `ExecCapQuery` 继续塞进 `myflowhub_flow_*`
-  - 优点：复用现有 `flow` backend
-  - 代价：语义错误，会继续放大 `flow` / `exec` 边界混乱
-- 结论：采用方案 A
+#### Alternatives Considered
+- Option A: keep `detail_types.go` canonical and delete duplicate declarations from `service.go`
+  - Pros:
+    - matches the documented fix from `2026-03-26_win-flow-detail-bindings`
+    - keeps a single exported local payload definition source
+    - smallest safe repair
+  - Cons:
+    - still leaves long-term local/shared proto convergence as future work
+- Option B: delete `detail_types.go` and keep the inlined `service.go` types
+  - Pros:
+    - one less file
+  - Cons:
+    - conflicts with the archived fix and stable spec clarification
+    - drops `ExecutorNode` and changes the `Node` model away from the documented canonical local type
+- Decision:
+  - adopt Option A
 
-### 模块职责
-- `internal/mcpapp/runtime.go`
-  - 增加 `ExecCapQuery`、`NodeEcho`、`ListSubtree` runtime wrapper
-- `internal/mcp/tools.go`
-  - 增加 exec 参数模型、schema、handler、错误映射
-  - 增加 management node_echo / list_subtree 工具定义与 handler
-- `internal/mcp/tools_test.go`
-  - 为新工具补 fake backend 和回归测试
-- `docs/requirements/mcp-client.md`
-  - 更新稳定能力范围与验收
-- `docs/specs/mcp-client.md`
-  - 更新 exec / management 工具契约与 runtime 边界
-- `README.md`
-  - 更新可见能力说明
+#### Module Responsibilities
+- `internal/services/flow/detail_types.go`
+  - canonical local `DetailReq` / `DetailResp`
+  - canonical `detail` / `detail_resp` action constants
+- `internal/services/flow/service.go`
+  - transport, validation, await, and error handling logic
+  - references canonical local detail types without redefining them
+- `internal/services/flow/service_test.go`
+  - regression guard for detail validation and code/msg extraction
+- generated `frontend/wailsjs/*`
+  - refreshed only if Wails generation updates generated bindings
 
-### 数据 / 调用流
-1. AI 调用 `myflowhub_exec_cap_query` 或 `myflowhub_management_*`
-2. tool 层解析参数并完成：
-   - 连接态检查
-   - `source_id` / `target_id` / `requester_node` 回退
-   - `req_id` 自动生成
-   - 只读参数校验
-3. runtime 将请求发给 `FlowService.ExecCapQuery` 或 `ManagementService.NodeEcho/ListSubtree`
-4. tool 层返回原始响应和结构化错误
+#### Data / Call Flow
+1. frontend calls `window.go.flow.FlowService.DetailSimple(...)`
+2. `FlowService.DetailSimple` delegates to `Detail`
+3. `Detail` validates fields, encodes `actionDetail`, and awaits `actionDetailResp`
+4. response unmarshals into canonical `DetailResp`
+5. `extractCodeMsg` handles `*DetailResp`
+6. Wails module generation reflects the deduplicated public method signature and models
 
-### 接口草案
-- `myflowhub_exec_cap_query`
-  - 输入：`source_id? target_id? req_id? requester_node? method? prefix? provider_node? limit? include_schema?`
-- `myflowhub_management_node_echo`
-  - 输入：`source_id? target_id? message`
-- `myflowhub_management_list_subtree`
-  - 输入：`source_id? target_id?`
+#### Interface Drafts
+- Keep:
+  - `Detail(ctx, sourceID, targetID uint32, req DetailReq) (DetailResp, error)`
+  - `DetailSimple(sourceID, targetID uint32, req DetailReq) (DetailResp, error)`
+- Keep canonical payload fields from `detail_types.go` unchanged.
 
-### 错误与安全
-- 三个工具均为只读，不纳入 `allow_write`
-- `exec_cap_query` 不开放 `exec.call`
-- `management_node_echo` / `list_subtree` 不改变现有 management config 写边界
-- `limit`、`provider_node`、`requester_node`、`message` 做最小必要本地校验
-- 不在 tool 层重写上游 `code/msg` 语义，只补本地参数和会话错误
+#### Error Handling and Safety
+- Do not change validation rules for `req_id`, `flow_id`, or `node_id`.
+- Do not change transport error wrapping.
+- Fail fast on duplicate-definition compile issues through tests and Wails generation.
 
-### 性能与测试策略
-- `req_id` 继续本地轻量生成
-- `include_schema` 结果体直接透传，不做额外格式转换
-- 测试覆盖：
-  - 工具注册
-  - 身份回退
-  - `requester_node` 默认回退
-  - `req_id` 自动生成
-  - 参数校验
-  - backend 参数透传
+#### Performance and Testing Strategy
+- Minimal code-motion fix only.
+- Validation:
+  - `$env:GOWORK='off'; go test ./internal/services/flow`
+  - `$env:GOWORK='off'; go test ./...`
+  - `$env:GOWORK='off'; wails generate module`
+  - `git diff --check`
+- If generated bindings change, inspect only the expected `flow.Detail*` binding/model sections.
 
-### 可扩展性设计点
-- 为后续 `exec.call`、`topicbus`、`file` 接入保留同样模式：runtime wrapper + tool schema + 结构化错误
-- management 新增读工具后，`config_set` 仍单独留在后续高风险轮次，不混入当前回合
+#### Extensibility Design Points
+- Keep detail payload ownership isolated in one file so future shared proto convergence only touches one source.
+- Extend the lesson doc with merge-regression symptoms so future integration work checks for duplicate local type declarations as well as missing proto symbols.
 
-### 问题清单
-- `MyFlowHub-Server` 当前没有单独的 `management.md` 稳定 spec，本轮以 management proto types 与现有 Win service 作为技术契约来源。
+#### Issue List
+- none
 
-## Stage 3.1 - Planning
-### Project Goal And Current State
+### Stage 3.1 - Planning
+#### Project Goal and Current State
 - Goal:
-  - 让 Win MCP client 具备 exec 能力查询和更完整的 management 只读观测能力。
+  - restore the current broken `main` merge state to a compiling state without changing stable `flow.detail` behavior.
 - Current State:
-  - 当前 MCP 已覆盖 `session/auth/management(list_nodes/node_info/config_get/config_list)/flow/varstore`
-  - `FlowService` 已存在 `ExecCapQuery`
-  - `ManagementService` 已存在 `NodeEcho` 与 `ListSubtree`
-  - 当前 MCP spec 明确把 `ExecCapQuery` 排除在外
+  - `main` fails on duplicate declarations between `internal/services/flow/detail_types.go` and `internal/services/flow/service.go`.
+  - root cause points to merge result `4f273ad` combining the archived fix with earlier inlined detail types from `31cf9ee`.
 
-### Docs Governance
+#### Docs Governance Routing Decision
 - 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口。
-- Requirements impact: add
-- Specs impact: add
+- Requirements impact: none
+- Specs impact: none
 - Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-exec-management-tools\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\docs\requirements\flow-editor-run-detail.md`
 - Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-exec-management-tools\docs\specs\mcp-client.md`
-  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
-  - `C:\Users\HelloWorld\go\pkg\mod\github.com\yttydcs\myflowhub-proto@v0.1.2-0.20260318063708-7eef50dcc471\protocol\management\types.go`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\docs\specs\flow-editor-run-detail.md`
 - Related lessons:
-  - none
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\docs\lessons\wails-binding-proto-drift.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\docs\change\2026-03-26_win-flow-detail-bindings.md`
+- Stable truth routing:
+  - stable behavior and contract remain in `docs/requirements` and `docs/specs`
+  - this regression fix result goes to `docs/change`
+  - reusable merge-regression troubleshooting goes to `docs/lessons`
 
-### Parallelism Assessment
-- `internal/mcp/tools.go`、`internal/mcpapp/runtime.go`、`internal/mcp/tools_test.go` 写集重叠，不派发子 Agent。
-- Owner: 主 Agent
+#### Related Requirements / Specs / Lessons
+- Requirement:
+  - `docs/requirements/flow-editor-run-detail.md`
+- Spec:
+  - `docs/specs/flow-editor-run-detail.md`
+- Lessons:
+  - `docs/lessons/wails-binding-proto-drift.md`
+- Related prior archive:
+  - `docs/change/2026-03-26_win-flow-detail-bindings.md`
 
-### Executable Checklist
-- [x] DOCS-4 更新 MCP requirements/specs/README，纳入 exec 查询与 management 新工具契约
-- [x] IMPL-8 为 runtime/backend 增加 exec query / management wrapper
-- [x] IMPL-9 新增 exec / management MCP tools、参数解析和错误包装
-- [x] TEST-4 补回归测试并完成构建验证
-- [x] FIX-4 修复 `flow.Detail*` 对未发布 proto 契约的编译依赖，恢复 `GOWORK=off` 验证
-- [x] REVIEW-4 完成 3.3 代码复核
-- [x] ARCHIVE-4 归档到 `docs/change`
+#### Executable Task List
+- [x] FIX-1 remove duplicate detail action/type declarations from `service.go` and keep `detail_types.go` canonical
+- [x] TEST-1 run Go, Wails, and diff validation; refresh generated bindings only if generation updates files
+- [x] REVIEW-1 perform 3.3 review against requirements, architecture, stability, and test coverage
+- [x] ARCHIVE-1 archive the regression fix and update the lesson/index if merge-regression cues are worth preserving
 
-### Task Details
-#### DOCS-4 - 稳定文档更新
+#### Task Details
+##### FIX-1 - Canonical Detail Type Deduplication
+- Owner:
+  - main agent
+- Worktree:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression`
+- Plan Path:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\todo.md`
 - Goal:
-  - 将 exec 查询和 management 新读工具写入 requirements/specs/README
-- Files:
-  - `docs/requirements/mcp-client.md`
-  - `docs/specs/mcp-client.md`
-  - `README.md`
+  - remove merge-reintroduced duplicate detail declarations from `service.go` and keep the archived `detail_types.go` fix as the canonical source
+- Files / Modules:
+  - `internal/services/flow/service.go`
+  - `internal/services/flow/detail_types.go`
+- Write Set:
+  - `internal/services/flow/service.go`
+  - `internal/services/flow/detail_types.go` only if clarification is required
 - Acceptance:
-  - 稳定文档准确描述 3 个新工具、参数回退和 `config_set` / `exec.call` 不在本轮范围
-- Tests:
-  - 文档自检
+  - `internal/services/flow` compiles without duplicate declarations
+  - `FlowService.Detail` / `DetailSimple` keep using local typed payloads
+  - no stable JSON contract drift is introduced
+- Test Points:
+  - `$env:GOWORK='off'; go test ./internal/services/flow`
+  - inspect resulting `DetailResp` use path
 - Rollback:
-  - 回退文档新增内容
+  - revert this task's diff and return to the previous merge state
 
-#### IMPL-8 - Runtime Wrapper
+##### TEST-1 - Validation And Binding Refresh
+- Owner:
+  - main agent
+- Worktree:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression`
+- Plan Path:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\todo.md`
 - Goal:
-  - 让 MCP runtime 能调用 `ExecCapQuery`、`NodeEcho`、`ListSubtree`
-- Files:
-  - `internal/mcpapp/runtime.go`
-  - `internal/mcp/tools.go`
+  - verify the repo and Wails bindings path recover end to end
+- Files / Modules:
+  - generated `frontend/wailsjs/*` if changed by Wails generation
+- Write Set:
+  - generated bindings only if the tool updates them
 - Acceptance:
-  - backend interface 暴露 `ExecCapQuery`、`NodeEcho`、`ListSubtree`
-  - 继续沿用统一 timeout 和 defaults/auth snapshot 回退
-- Tests:
-  - `go test ./internal/mcp -count=1`
-- Rollback:
-  - 回退新增 wrapper
-
-#### IMPL-9 - Exec And Management Tools
-- Goal:
-  - 向 AI 暴露 exec 能力查询和 management 新读工具
-- Files:
-  - `internal/mcp/tools.go`
-  - `internal/mcp/tools_test.go`
-- Acceptance:
-  - `tools/list` 出现 `myflowhub_exec_cap_query`、`myflowhub_management_node_echo`、`myflowhub_management_list_subtree`
-  - `req_id` 支持自动生成
-  - `requester_node` 默认回退到 `source_id`
-  - `node_echo` / `list_subtree` 为只读
-- Tests:
-  - `go test ./internal/mcp -count=1`
-- Rollback:
-  - 回退新增 MCP tools
-
-#### TEST-4 - 回归验证
-- Goal:
-  - 确保 exec / management 新工具不破坏现有 MCP 工具
-- Files:
-  - `internal/mcp/tools_test.go`
-- Acceptance:
-  - 新工具注册、参数校验、身份回退、结果透传测试通过
-- Tests:
-  - `$env:GOWORK='off'; go test ./internal/mcp -count=1`
-  - `$env:GOWORK='off'; go test ./... -count=1`
-  - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+  - `GOWORK=off` Go tests pass
+  - `GOWORK=off` Wails module generation passes
+  - generated binding changes, if any, are limited to expected detail models/signatures
+- Test Points:
+  - `$env:GOWORK='off'; go test ./...`
+  - `$env:GOWORK='off'; wails generate module`
   - `git diff --check`
 - Rollback:
-  - 回退测试与实现
+  - revert generated bindings if generation proves unrelated or unstable
 
-#### FIX-4 - Flow Detail Compile Unblock
+##### ARCHIVE-1 - Change And Lesson Archive
+- Owner:
+  - main agent
+- Worktree:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression`
+- Plan Path:
+  - `D:\project\MyFlowHub3\worktrees\fix-win-flow-detail-merge-regression\todo.md`
 - Goal:
-  - 在不改变 MCP 本轮接口范围的前提下，修复 `internal/services/flow/service.go` 对未发布 `flow.Detail*` proto 契约的编译依赖，确保 `GOWORK=off` 回归可执行
-- Files:
-  - `internal/services/flow/service.go`
+  - archive this merge regression and preserve reusable troubleshooting cues
+- Files / Modules:
+  - `docs/change/YYYY-MM-DD_*.md`
+  - `docs/lessons/wails-binding-proto-drift.md`
+  - `docs/lessons/README.md` if needed
+- Write Set:
+  - archive and lesson files only
 - Acceptance:
-  - `go test ./... -count=1` 与 `go build ./cmd/myflowhub-mcp` 均可在当前依赖版本下通过
-  - `Detail` / `DetailSimple` 继续保留既有 JSON 字段契约
-- Tests:
-  - `$env:GOWORK='off'; go test ./... -count=1`
-  - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+  - archive documents the merge regression, verification, and rollback
+  - lesson mentions duplicate local-type merge regressions if warranted
+- Test Points:
+  - manual doc consistency check
 - Rollback:
-  - 待 proto 正式发布后回退到共享 proto 类型
+  - revert the new archive and lesson edits
 
-### Dependencies
-- `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
-- `C:\Users\HelloWorld\go\pkg\mod\github.com\yttydcs\myflowhub-proto@v0.1.2-0.20260318063708-7eef50dcc471\protocol\exec\types.go`
-- `C:\Users\HelloWorld\go\pkg\mod\github.com\yttydcs\myflowhub-proto@v0.1.2-0.20260318063708-7eef50dcc471\protocol\management\types.go`
+#### Dependencies
+- `FIX-1` before `TEST-1`
+- `TEST-1` before `REVIEW-1` and `ARCHIVE-1`
 
-### Risks And Notes
-- `ExecCapQuery` 挂在 `FlowService` 上只是 Win 当前封装位置，不代表它应被命名到 `flow` 工具族
-- `include_schema` 打开后返回体可能变大，但本轮不引入额外截断逻辑
-- `config_set` 仍是高风险写接口，本轮禁止顺手开放
-- 当前发布版 `myflowhub-proto` 尚未提供 `flow.Detail*`；本轮以 `internal/services/flow` 本地类型维持既有 JSON 契约，后续应在 proto 落地后收敛回共享定义
+#### Risks and Notes
+- `frontend/wailsjs` in `main` may currently be stale because bindings generation is blocked.
+- The canonical source decision must follow the prior archived fix and current spec, not whichever declaration is shorter.
+- Validation must be run from the worktree with `GOWORK=off`.
 
-## Stage 3.2 - Execution Record
-### File-Level Change Summary
-- DOCS-4
-  - 对齐 `docs/requirements/mcp-client.md`、`docs/specs/mcp-client.md`、`README.md`
-  - 将 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 纳入稳定契约，并保留 `config_set` / `exec.call` out-of-scope
-- IMPL-8
-  - `internal/mcpapp/runtime.go` 新增 `ExecCapQuery`、`NodeEcho`、`ListSubtree` wrapper
-  - `internal/mcp/tools.go` backend interface 同步扩展
-- IMPL-9
-  - `internal/mcp/tools.go` 新增 3 个 MCP tool、exec 路由解析、请求规范化、boolean schema、session hint 更新
-  - `exec_cap_query` 默认回退 `requester_node -> source_id`，`req_id` 未传时本地生成
-  - `management_node_echo` 本地校验非空 `message`
-- TEST-4
-  - `internal/mcp/tools_test.go` 扩展 fake backend
-  - 新增工具注册、默认回退、过滤参数透传和参数校验测试
-- FIX-4
-  - `internal/services/flow/service.go` 将未发布 proto 的 `DetailReq/DetailResp` 收敛为服务内本地类型
-  - 保持 `detail/detail_resp` action 与 JSON 字段契约不变，恢复当前依赖版本下的编译能力
+#### Parallelism Assessment
+- No sub-agent dispatch.
+- Reason:
+  - write set is tightly coupled around `internal/services/flow/service.go`, canonical type ownership, and a single validation pipeline
+  - this fix is small enough that delegation would add coordination overhead without reducing critical-path time
 
-### Validation Results
-- `$env:GOWORK='off'; go test ./internal/mcp -count=1`
-  - 结果：通过
-- `$env:GOWORK='off'; go test ./... -count=1`
-  - 结果：通过
-- `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
-  - 结果：通过
-- `git diff --check`
-  - 结果：通过
-
-## Stage 3.3 - Code Review
+### Stage 3.3 - Code Review
 - 需求覆盖：通过
 - 架构合理性：通过
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
@@ -334,21 +291,13 @@
 - 测试覆盖情况：通过
 - 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
 
-## Stage 4 - Change Archive
-- 使用 `$m-docs` 完成归档与索引维护
-- Archive file:
-  - `docs/change/2026-03-26_win-mcp-exec-management-tools.md`
-- Requirements impact: updated
-- Specs impact: updated
-- Lessons impact: none
-- Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-exec-management-tools\docs\requirements\mcp-client.md`
-- Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-exec-management-tools\docs\specs\mcp-client.md`
-- Related lessons:
-  - none
-- Index updates:
-  - `docs/change/README.md`
+### Stage 4 - Archive
+- `docs/change/2026-03-26_win-flow-detail-merge-regression.md` 已创建
+- `docs/lessons/wails-binding-proto-drift.md` 已补充 merge 回归线索
+- `docs/change/README.md`、`docs/lessons/README.md` 已更新
+
+#### Issue List
+- none
 
 阻塞：否
-等待用户确认是否结束 workflow
+进入 3.2
