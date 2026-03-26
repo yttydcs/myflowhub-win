@@ -10,6 +10,7 @@ import FlowNodeInspector from "@/components/flow/editor/FlowNodeInspector.vue"
 import { useI18n } from "@/i18n"
 import { normalizeFormInputText, parseNumberInput, type FormInputValue } from "@/lib/numberInput"
 import {
+  flowStatusLabelKey,
   useFlowStore,
   type ExecCapabilityRoute,
   type FlowBindingSourceKind,
@@ -47,6 +48,8 @@ const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
 const loading = ref(true)
 const loadedProjectName = ref("")
 const saveBusy = ref(false)
+const runBusy = ref(false)
+const statusBusy = ref(false)
 const addNodeOpen = ref(false)
 const methodDialogOpen = ref(false)
 const fieldBindingDialogOpen = ref(false)
@@ -66,6 +69,7 @@ const fieldBindingDraft = reactive({
   nodeId: "",
   path: "",
   field: "flow_id",
+  name: "",
   required: false
 })
 
@@ -91,6 +95,15 @@ const recoveryStorageKey = computed(() =>
 )
 const graphSignature = computed(() => flowStore.graphEditorSignature())
 const dirty = computed(() => !loading.value && graphSignature.value !== lastSavedSignature.value)
+const canRunFlow = computed(() => Boolean(flowStore.state.flowId.trim()))
+const canRefreshStatus = computed(() => Boolean(flowStore.state.flowId.trim()))
+const flowStatusLabel = computed(() => {
+  const status = flowStore.state.lastStatus.status.trim()
+  return status ? t(flowStatusLabelKey(status)) : ""
+})
+const currentRunIdLabel = computed(() =>
+  t("Current Run ID") + ": " + (flowStore.state.statusRunId.trim() || t("No run yet."))
+)
 
 const effectiveExecutorNode = computed(() => {
   const rawTarget = String(flowStore.state.targetId ?? "").trim()
@@ -108,7 +121,9 @@ const selectedTargetLabel = computed(() => {
   const node = selectedNode.value
   if (!node) return t("No target selected.")
   if (node.kind !== "call") {
-    return t("Compose nodes build local JSON output and do not call a capability.")
+    return node.kind === "set_var"
+      ? t("Set var nodes write a flow-local variable for the current run.")
+      : t("Compose nodes build local JSON output and do not call a capability.")
   }
   if (node.target > 0) {
     return t("Remote provider node {nodeId}", { nodeId: node.target })
@@ -214,6 +229,11 @@ const selectedCallVisualForm = computed<NodeVisualFormModel | null>(() => {
   const node = selectedNode.value
   if (!node || node.kind !== "call") return null
   return flowStore.getNodeVisualForm(node.id)
+})
+
+const selectedNodeOutputSchemaText = computed(() => {
+  const node = selectedNode.value
+  return node ? flowStore.getNodeOutputSchemaText(node.id) : ""
 })
 
 const activeBindingField = computed<VisualFieldModel | null>(() => {
@@ -363,6 +383,7 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
     fieldBindingDraft.nodeId = source.nodeId
     fieldBindingDraft.path = source.path
     fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.name = ""
     fieldBindingDraft.required = source.required
     return
   }
@@ -371,6 +392,7 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
     fieldBindingDraft.nodeId = ""
     fieldBindingDraft.path = source.path
     fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.name = ""
     fieldBindingDraft.required = source.required
     return
   }
@@ -379,6 +401,7 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
     fieldBindingDraft.nodeId = ""
     fieldBindingDraft.path = ""
     fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.name = ""
     fieldBindingDraft.required = source.required
     return
   }
@@ -387,6 +410,16 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
     fieldBindingDraft.nodeId = ""
     fieldBindingDraft.path = ""
     fieldBindingDraft.field = "run_id"
+    fieldBindingDraft.name = ""
+    fieldBindingDraft.required = source.required
+    return
+  }
+  if (source?.kind === "flow_var") {
+    fieldBindingDraft.sourceKind = "flow_var"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = source.path
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = source.name
     fieldBindingDraft.required = source.required
     return
   }
@@ -395,6 +428,7 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
   fieldBindingDraft.nodeId = bindableAncestorNodeOptions.value[0] ?? ""
   fieldBindingDraft.path = ""
   fieldBindingDraft.field = "flow_id"
+  fieldBindingDraft.name = ""
   fieldBindingDraft.required = false
 }
 
@@ -412,24 +446,37 @@ const openFieldBindingDialog = (field: VisualFieldModel) => {
 
 const onFieldBindingSourceKindChange = (sourceKind: string) => {
   fieldBindingDraft.sourceKind =
-    sourceKind === "node_result" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+    sourceKind === "node_result" ||
+    sourceKind === "flow_meta" ||
+    sourceKind === "run_meta" ||
+    sourceKind === "flow_var"
       ? sourceKind
       : "trigger"
   if (fieldBindingDraft.sourceKind === "node_result") {
     fieldBindingDraft.nodeId = bindableAncestorNodeOptions.value[0] ?? ""
     fieldBindingDraft.path = ""
     fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.name = ""
     return
   }
   if (fieldBindingDraft.sourceKind === "trigger") {
     fieldBindingDraft.nodeId = ""
     fieldBindingDraft.path = ""
     fieldBindingDraft.field = "flow_id"
+    fieldBindingDraft.name = ""
+    return
+  }
+  if (fieldBindingDraft.sourceKind === "flow_var") {
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = ""
     return
   }
   fieldBindingDraft.nodeId = ""
   fieldBindingDraft.path = ""
   fieldBindingDraft.field = fieldBindingDraft.sourceKind === "run_meta" ? "run_id" : "flow_id"
+  fieldBindingDraft.name = ""
 }
 
 const buildVisualBindingSource = (): VisualBindingSource => {
@@ -451,6 +498,13 @@ const buildVisualBindingSource = (): VisualBindingSource => {
       return {
         kind: "run_meta",
         field: "run_id",
+        required: fieldBindingDraft.required
+      }
+    case "flow_var":
+      return {
+        kind: "flow_var",
+        name: fieldBindingDraft.name,
+        path: fieldBindingDraft.path,
         required: fieldBindingDraft.required
       }
     case "trigger":
@@ -688,6 +742,25 @@ const commitNodeId = () => {
   }
 }
 
+const updateSelectedNodeDetailRunId = (value: string) => {
+  flowStore.state.nodeDetail.requestedRunId = String(value ?? "")
+}
+
+const updateSelectedNodeDetailPath = (value: string) => {
+  flowStore.state.nodeDetail.requestedPath = String(value ?? "")
+}
+
+const loadSelectedNodeDetail = async () => {
+  const node = selectedNode.value
+  if (!node) return
+  try {
+    await flowStore.loadNodeDetail(node.id, flowStore.state.nodeDetail.requestedRunId, flowStore.state.nodeDetail.requestedPath)
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to load node detail."))
+  }
+}
+
 const openAddNodeDialog = () => {
   nodeDraft.id = flowStore.suggestNodeId()
   nodeDraft.kind = "call"
@@ -745,7 +818,10 @@ const removeBinding = (index: number) => {
 
 const onBindingSourceKindChange = (binding: FlowInputBindingDraft, sourceKind: string) => {
   binding.sourceKind =
-    sourceKind === "trigger" || sourceKind === "flow_meta" || sourceKind === "run_meta"
+    sourceKind === "trigger" ||
+    sourceKind === "flow_meta" ||
+    sourceKind === "run_meta" ||
+    sourceKind === "flow_var"
       ? sourceKind
       : "node_result"
 
@@ -753,15 +829,24 @@ const onBindingSourceKindChange = (binding: FlowInputBindingDraft, sourceKind: s
     binding.field = "flow_id"
     binding.nodeId = ""
     binding.path = ""
+    binding.name = ""
   } else if (binding.sourceKind === "run_meta") {
     binding.field = "run_id"
     binding.nodeId = ""
     binding.path = ""
+    binding.name = ""
+  } else if (binding.sourceKind === "flow_var") {
+    binding.field = ""
+    binding.nodeId = ""
+    binding.path = ""
+    binding.name = ""
   } else if (binding.sourceKind === "trigger") {
     binding.field = ""
     binding.nodeId = ""
+    binding.name = ""
   } else {
     binding.field = ""
+    binding.name = ""
   }
 
   flowStore.commitHistory()
@@ -807,6 +892,30 @@ const autoLayout = () => {
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to auto layout."))
+  }
+}
+
+const runCurrentFlow = async () => {
+  runBusy.value = true
+  try {
+    await flowStore.runFlow()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Flow run failed."))
+  } finally {
+    runBusy.value = false
+  }
+}
+
+const refreshFlowStatus = async () => {
+  statusBusy.value = true
+  try {
+    await flowStore.statusFlow(flowStore.state.statusRunId.trim())
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Flow status failed."))
+  } finally {
+    statusBusy.value = false
   }
 }
 
@@ -948,6 +1057,7 @@ watch(
   () => selectedNode.value?.id ?? "",
   () => {
     nodeIdDraft.value = selectedNode.value?.id ?? ""
+    flowStore.resetNodeDetail(selectedNode.value?.id ?? "")
     closeFieldBindingDialog()
     if (!methodDialogOpen.value) {
       syncPendingCapability()
@@ -1042,11 +1152,17 @@ onUnmounted(() => {
       :dirty="dirty"
       :last-saved-label="lastSavedLabel"
       :save-busy="saveBusy"
+      :run-busy="runBusy"
+      :status-busy="statusBusy"
       :loading="loading"
       :can-undo="canUndo"
       :can-redo="canRedo"
       :has-selected-node="flowStore.state.selectedNodeIndex >= 0"
       :has-selected-edge="flowStore.state.selectedEdgeIndex >= 0"
+      :can-run-flow="canRunFlow"
+      :can-refresh-status="canRefreshStatus"
+      :flow-status-label="flowStatusLabel"
+      :current-run-id-label="currentRunIdLabel"
       @add-node="openAddNodeDialog"
       @remove-node="removeNode"
       @remove-edge="removeEdge"
@@ -1054,6 +1170,8 @@ onUnmounted(() => {
       @redo="flowStore.redo()"
       @auto-layout="autoLayout"
       @save-project="saveProject"
+      @run-flow="runCurrentFlow"
+      @refresh-status="refreshFlowStatus"
     />
 
     <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
@@ -1068,7 +1186,7 @@ onUnmounted(() => {
             :edges="flowStore.state.edges"
             :selected-node-id="selectedNode?.id ?? null"
             :selected-edge="selectedEdge"
-            :status-nodes="[]"
+            :status-nodes="flowStore.state.lastStatus.nodes"
             @connect="onCanvasConnect"
             @select-node="onCanvasSelectNode"
             @select-edge="onCanvasSelectEdge"
@@ -1089,12 +1207,17 @@ onUnmounted(() => {
           :selected-target-label="selectedTargetLabel"
           :selected-call-visual-form="selectedCallVisualForm"
           :ancestor-node-options="ancestorNodeOptions"
+          :node-detail="flowStore.state.nodeDetail"
+          :selected-node-output-schema-text="selectedNodeOutputSchemaText"
           :field-drafts="fieldDrafts"
           @close="closeNodeDetail"
           @update:node-id-draft="nodeIdDraft = $event"
           @commit-node-id="commitNodeId"
           @node-kind-change="setSelectedNodeKind"
           @toggle-spec-mode="setSelectedNodeSpecMode"
+          @update:node-detail-run-id="updateSelectedNodeDetailRunId"
+          @update:node-detail-path="updateSelectedNodeDetailPath"
+          @load-node-detail="loadSelectedNodeDetail"
           @open-method="openMethodDialog"
           @open-field-binding="openFieldBindingDialog"
           @clear-field-binding="clearVisualFieldBinding"

@@ -30,7 +30,9 @@ const kindGroupLabelId = "flow-add-node-kind-label"
 const kindDescription = computed(() =>
   props.nodeKind === "call"
     ? t("Call nodes execute a capability and can bind ancestor outputs into args.")
-    : t("Compose nodes build local JSON output from template + bindings.")
+    : props.nodeKind === "compose"
+      ? t("Compose nodes build local JSON output from template + bindings.")
+      : t("Set var nodes materialize a value and write it to a flow-local variable for this run.")
 )
 </script>
 
@@ -66,7 +68,7 @@ const kindDescription = computed(() =>
           <p :id="kindGroupLabelId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {{ t("Kind") }}
           </p>
-          <div class="mt-2 grid grid-cols-2 gap-2" role="group" :aria-labelledby="kindGroupLabelId">
+          <div class="mt-2 grid grid-cols-3 gap-2" role="group" :aria-labelledby="kindGroupLabelId">
             <button
               type="button"
               class="rounded-md border px-3 py-2 text-sm transition"
@@ -92,6 +94,19 @@ const kindDescription = computed(() =>
               @click="emit('update:nodeKind', 'compose')"
             >
               {{ t("Compose") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-2 text-sm transition"
+              :aria-pressed="props.nodeKind === 'set_var'"
+              :class="
+                props.nodeKind === 'set_var'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background text-foreground'
+              "
+              @click="emit('update:nodeKind', 'set_var')"
+            >
+              {{ t("Set Var") }}
             </button>
           </div>
           <p :id="dialogDescriptionId" class="mt-1 text-[11px] text-muted-foreground">

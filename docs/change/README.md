@@ -24,6 +24,10 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-26_win-flow-schema-followup.md](2026-03-26_win-flow-schema-followup.md)
+  - [2026-03-26_win-flow-status-wiring.md](2026-03-26_win-flow-status-wiring.md)
+  - [2026-03-26_win-flow-run-detail.md](2026-03-26_win-flow-run-detail.md)
+  - [2026-03-26_win-flow-local-vars-authoring.md](2026-03-26_win-flow-local-vars-authoring.md)
   - [2026-03-25_win-embed-dist-placeholder.md](2026-03-25_win-embed-dist-placeholder.md)
   - [2026-03-25_win-mcp-start-script.md](2026-03-25_win-mcp-start-script.md)
   - [2026-03-25_win-mcp-ai-client.md](2026-03-25_win-mcp-ai-client.md)

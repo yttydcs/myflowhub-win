@@ -16,6 +16,8 @@ export type CapabilityRouteSchemaSource = {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
+const SUPPORTED_SCHEMA_TYPES = new Set(["string", "number", "integer", "boolean", "object"])
+
 const cloneSchema = (schema: MethodVisualSchema): MethodVisualSchema => ({
   ...schema,
   fields: schema.fields.map((field) => ({
@@ -47,13 +49,32 @@ const parseSchemaPayload = (raw: unknown): Record<string, unknown> | null => {
   return isPlainObject(raw) ? raw : null
 }
 
+const normalizeSchemaType = (schema: Record<string, unknown>) => {
+  if (typeof schema.type === "string") {
+    return schema.type
+  }
+  if (!Array.isArray(schema.type)) {
+    return ""
+  }
+  const rawTypes = schema.type.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+  if (rawTypes.length !== 2) {
+    return ""
+  }
+  const uniqueTypes = Array.from(new Set(rawTypes))
+  if (uniqueTypes.length !== 2 || !uniqueTypes.includes("null")) {
+    return ""
+  }
+  const resolvedType = uniqueTypes.find((item) => item !== "null") ?? ""
+  return SUPPORTED_SCHEMA_TYPES.has(resolvedType) ? resolvedType : ""
+}
+
 const hasUnsupportedSchemaFeature = (schema: Record<string, unknown>) =>
   "oneOf" in schema ||
   "anyOf" in schema ||
   "allOf" in schema ||
   "$ref" in schema ||
-  schema.type === "array" ||
-  Array.isArray(schema.type)
+  normalizeSchemaType(schema) === "array" ||
+  (Array.isArray(schema.type) && !normalizeSchemaType(schema))
 
 const getEnumOptions = (schema: Record<string, unknown>): MethodFieldOption[] | null => {
   const values = schema.enum
@@ -75,7 +96,7 @@ const getUiControlOverride = (schema: Record<string, unknown>): MethodFieldContr
   if (!raw) {
     return null
   }
-  if (raw === "textarea" && schema.type === "string") {
+  if (raw === "textarea" && normalizeSchemaType(schema) === "string") {
     return "textarea"
   }
   return null
@@ -92,7 +113,7 @@ const inferFieldControl = (schema: Record<string, unknown>): { control: MethodFi
     return { control: uiControl }
   }
 
-  const type = typeof schema.type === "string" ? schema.type : ""
+  const type = normalizeSchemaType(schema)
   switch (type) {
     case "string":
       return { control: "text" }
@@ -117,7 +138,7 @@ const collectFieldsFromSchema = (
   if (hasUnsupportedSchemaFeature(schema)) {
     return false
   }
-  const schemaType = typeof schema.type === "string" ? schema.type : ""
+  const schemaType = normalizeSchemaType(schema)
   const properties = isPlainObject(schema.properties) ? schema.properties : null
 
   if (schemaType === "object" || properties) {
@@ -152,7 +173,7 @@ const collectFieldsFromSchema = (
       }
       const pointer = appendJsonPointer(basePointer, rawKey)
       const childProperties = isPlainObject(childValue.properties) ? childValue.properties : null
-      const childType = typeof childValue.type === "string" ? childValue.type : ""
+      const childType = normalizeSchemaType(childValue)
       const description = typeof childValue.description === "string" ? childValue.description.trim() : undefined
       const label = typeof childValue.title === "string" && childValue.title.trim() ? childValue.title.trim() : humanizeKey(rawKey)
 
@@ -190,7 +211,7 @@ const buildCapabilitySchema = (method: string, inputSchema: unknown): MethodVisu
   if (!parsed || hasUnsupportedSchemaFeature(parsed)) {
     return null
   }
-  if (parsed.type !== "object" && !isPlainObject(parsed.properties)) {
+  if (normalizeSchemaType(parsed) !== "object" && !isPlainObject(parsed.properties)) {
     return null
   }
   const fields: MethodFieldSchema[] = []

@@ -24,5 +24,7 @@
 - [mcp-client.md](mcp-client.md)
 - [flow-editor-accessibility.md](flow-editor-accessibility.md)
 - [flow-editor-draft-reliability.md](flow-editor-draft-reliability.md)
+- [flow-editor-run-detail.md](flow-editor-run-detail.md)
+- [flow-editor-status-wiring.md](flow-editor-status-wiring.md)
 - [flow-editor-visual-form.md](flow-editor-visual-form.md)
 - [showcase-display-widgets.md](showcase-display-widgets.md)

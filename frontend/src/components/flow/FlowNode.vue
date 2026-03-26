@@ -38,8 +38,21 @@ const statusTone = computed(() => {
       return "border-sky-200 bg-sky-50 text-sky-800"
     case "queued":
       return "border-amber-200 bg-amber-50 text-amber-800"
+    case "cancelled":
+      return "border-slate-200 bg-slate-100 text-slate-800"
     default:
       return "border-border/60 bg-muted/40 text-muted-foreground"
+  }
+})
+
+const kindLabel = computed(() => {
+  switch (kind.value) {
+    case "compose":
+      return t("Compose")
+    case "set_var":
+      return t("Set Var")
+    default:
+      return t("Call")
   }
 })
 </script>
@@ -71,7 +84,7 @@ const statusTone = computed(() => {
       <div class="min-w-0">
         <p class="truncate text-xs font-semibold text-foreground">{{ label }}</p>
         <p class="mt-1 truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          {{ kind === "compose" ? t("Compose") : t("Call") }}<span v-if="meta"> · {{ meta }}</span>
+          {{ kindLabel }}<span v-if="meta"> · {{ meta }}</span>
         </p>
       </div>
       <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold" :class="statusTone">

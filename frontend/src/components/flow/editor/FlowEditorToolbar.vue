@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { LayoutGrid, Link2Off, Plus, Redo2, Save, Trash2, Undo2 } from "lucide-vue-next"
+import { LayoutGrid, Link2Off, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -16,6 +16,12 @@ interface Props {
   saveBusy: boolean
   hasSelectedNode: boolean
   hasSelectedEdge: boolean
+  runBusy: boolean
+  statusBusy: boolean
+  canRunFlow: boolean
+  canRefreshStatus: boolean
+  flowStatusLabel: string
+  currentRunIdLabel: string
 }
 
 const props = defineProps<Props>()
@@ -28,11 +34,14 @@ const emit = defineEmits<{
   (e: "redo"): void
   (e: "auto-layout"): void
   (e: "save-project"): void
+  (e: "run-flow"): void
+  (e: "refresh-status"): void
 }>()
 
 const { t } = useI18n()
 
 const statusVariant = computed(() => (props.dirty ? "outline" : "muted"))
+const hasRuntimeSummary = computed(() => Boolean(props.flowStatusLabel) || Boolean(props.currentRunIdLabel))
 </script>
 
 <template>
@@ -44,6 +53,12 @@ const statusVariant = computed(() => (props.dirty ? "outline" : "muted"))
           <Badge :variant="statusVariant">
             {{ props.dirty ? t("Unsaved changes") : t("Saved") }}
           </Badge>
+          <Badge v-if="props.flowStatusLabel" variant="outline">
+            {{ t("Flow Status") }} · {{ props.flowStatusLabel }}
+          </Badge>
+          <p v-if="hasRuntimeSummary && props.currentRunIdLabel" class="text-xs text-muted-foreground">
+            {{ props.currentRunIdLabel }}
+          </p>
           <p v-if="props.lastSavedLabel" class="text-xs text-muted-foreground">
             {{ props.lastSavedLabel }}
           </p>
@@ -51,6 +66,28 @@ const statusVariant = computed(() => (props.dirty ? "outline" : "muted"))
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
+        <Tooltip :content="t('Run Flow')" side="bottom">
+          <Button
+            size="icon"
+            variant="outline"
+            :disabled="props.runBusy || props.loading || !props.canRunFlow"
+            @click="emit('run-flow')"
+          >
+            <Play class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">{{ t("Run Flow") }}</span>
+          </Button>
+        </Tooltip>
+        <Tooltip :content="t('Refresh Status')" side="bottom">
+          <Button
+            size="icon"
+            variant="outline"
+            :disabled="props.statusBusy || props.loading || !props.canRefreshStatus"
+            @click="emit('refresh-status')"
+          >
+            <RefreshCw class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">{{ t("Refresh Status") }}</span>
+          </Button>
+        </Tooltip>
         <Tooltip :content="t('Add Node')" side="bottom">
           <Button size="icon" variant="outline" @click="emit('add-node')">
             <Plus class="h-4 w-4" aria-hidden="true" />

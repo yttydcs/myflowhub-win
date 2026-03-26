@@ -2,7 +2,7 @@
 
 ## Scope
 
-- 本规范限定 Win Flow 编辑器在 `call` 节点上的普通模式行为。
+- 本规范限定 Win Flow 编辑器在 `call` 节点上的普通模式行为，以及 `set_var` 节点的最小 authoring 行为。
 - 本规范不修改 Flow 运行时协议、DAG 校验规则或 `args_template + inputs` 的执行语义。
 
 ## Interfaces / Contracts
@@ -10,9 +10,26 @@
 ### 1. 普通模式适用范围
 
 - 仅 `kind=call` 节点允许进入本规范定义的普通模式。
-- `compose` 节点继续沿用现有编辑方式。
+- `compose` 节点继续沿用现有 template + bindings 编辑方式。
+- `set_var` 节点使用最小 authoring 模式，而不是 schema-driven 字段表单。
 
-### 2. 方法 schema 解析优先级
+### 2. 节点类型 authoring 契约
+
+- Add Node 对话框必须支持：
+  - `call`
+  - `compose`
+  - `set_var`
+- Inspector 的 `kind` 选择器必须支持上述三类节点。
+- 节点切换时沿用现有最小迁移策略：
+  - `compose` / `set_var` 共享 `template + inputs`
+  - `call` 与 `compose` / `set_var` 切换时，尽量复用已有 JSON 模板内容
+- `set_var` 节点在普通模式下至少暴露：
+  - `name`
+  - `template`
+  - `inputs`
+- `set_var` 的 `template` 可为任意合法 JSON 值，不限制为 object。
+
+### 3. 方法 schema 解析优先级
 
 - 编辑器按以下顺序解析普通模式 schema：
   1. 本地 override schema
@@ -20,7 +37,7 @@
   3. 无 schema
 - 若最终无法解析出合法视觉 schema，则隐藏普通模式，只显示 `Advanced JSON`。
 
-### 3. 能力查询要求
+### 4. 能力查询要求
 
 - `cap_query` 请求应设置 `include_schema=true`，以便前端获取 `input_schema/output_schema`。
 - 前端 capability route 模型必须保留：
@@ -34,7 +51,7 @@
   - `input_schema`
   - `output_schema`
 
-### 4. 视觉 schema 契约
+### 5. 视觉 schema 契约
 
 建议统一为以下结构：
 
@@ -67,7 +84,7 @@ type MethodVisualSchema = {
 }
 ```
 
-### 5. 字段与底层 spec 的映射
+### 6. 字段与底层 spec 的映射
 
 - 每个普通模式字段对应一个固定的 JSON Pointer。
 - 字段固定值写入 `args_template`。
@@ -75,7 +92,7 @@ type MethodVisualSchema = {
 - 同一个字段 pointer 在普通模式下最多允许一条 binding。
 - 字段从“引用模式”切回“固定值模式”时，只删除对应 binding，不清除 `args_template` 中的 literal 值。
 
-### 6. 引用来源契约
+### 7. 引用来源契约
 
 普通模式允许的字段引用来源：
 
@@ -89,6 +106,12 @@ type MethodVisualSchema = {
   - 当前仅允许 `field=flow_id`
 - `run_meta`
   - 当前仅允许 `field=run_id`
+- `flow_var`
+  - 必须填写 `name`
+  - `path` 可选，默认根变量值
+  - UI 需明确提示其语义为“当前 flow run 的局部变量”，不是 `varstore`
+
+`flow_var` 不仅用于 `call` 字段级绑定，也必须用于 `compose` / `set_var` 的手工 binding 编辑器。
 
 ## Data Model or Protocol
 
@@ -108,11 +131,21 @@ type MethodVisualSchema = {
 - 隐藏普通模式
 - 仅显示 `Advanced JSON`
 
+### 1.1 `set_var` authoring 判定
+
+`set_var` 节点不依赖 capability schema，也不复用 `call` 普通模式兼容性判定。其普通模式始终基于最小 authoring 结构：
+
+- `name` 文本输入
+- `template` JSON 文本区
+- `inputs` 列表
+
+若用户需要超出该结构的能力，仍可退回 `Advanced JSON`。
+
 ### 2. JSON Schema 子集约束
 
 对于 capability 返回的 `input_schema`，前端仅接受受限 JSON Schema 子集：
 
-- 顶层必须是 `type=object`
+- 顶层必须是 `type=object`，或 `type=["object","null"]` / `["null","object"]`
 - 支持：
   - `title`
   - `description`
@@ -120,6 +153,10 @@ type MethodVisualSchema = {
   - `required`
   - `properties`
   - 基础类型：`string` / `number` / `integer` / `boolean` / `object`
+  - nullable 包装：
+    - `type=[T, "null"]`
+    - `type=["null", T]`
+    - 其中 `T` 仅允许上述受支持基础类型
   - `enum`
 - 支持的受限 vendor extension：
   - 属性级 `x-ui-control`
@@ -131,6 +168,7 @@ type MethodVisualSchema = {
   - `allOf`
   - `$ref`
   - 数组驱动的复杂动态表单
+  - 除“单一受支持类型 + `null`”之外的多类型 union
 
 出现不支持特性时：
 
@@ -146,11 +184,32 @@ type VisualBindingSource =
   | { kind: "trigger"; path: string; required: boolean }
   | { kind: "flow_meta"; field: "flow_id"; required: boolean }
   | { kind: "run_meta"; field: "run_id"; required: boolean }
+  | { kind: "flow_var"; name: string; path: string; required: boolean }
 
 type FieldVisualState = {
   mode: "literal" | "binding"
   literalValue: unknown
   binding: VisualBindingSource | null
+}
+
+type FlowInputBindingDraft = {
+  to: string
+  sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var"
+  nodeId: string
+  path: string
+  field: string
+  name: string
+  required: boolean
+}
+
+type FlowNodeDraft = {
+  kind: "call" | "compose" | "set_var"
+  method: string
+  target: number
+  argsTemplate: string
+  composeTemplate: string
+  setVarName: string
+  inputs: FlowInputBindingDraft[]
 }
 ```
 
@@ -164,6 +223,8 @@ type FieldVisualState = {
   - 前端立即提示，不写回无效配置
 - `node_result` 非祖先引用：
   - 前端立即拦截
+- `flow_var.name` 为空：
+  - 前端立即提示，不写回无效配置
 - 当前节点 spec 超出普通模式表达范围：
   - 给出明确原因
   - 仅保留 `Advanced JSON`
@@ -173,6 +234,7 @@ type FieldVisualState = {
 - capability 返回的 schema 只作为前端展示元数据使用，不得驱动任意代码执行。
 - 不支持的 schema 特性必须被显式拒绝，不做宽松猜测。
 - 普通模式不得静默删改高级模式中未覆盖的字段。
+- nullable 包装只能作为单一基础类型的只读兼容层使用，不得被扩展成任意 union 推断。
 
 ## Performance Constraints
 

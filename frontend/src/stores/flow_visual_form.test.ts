@@ -48,6 +48,15 @@ describe("flow_visual_form", () => {
         required: true
       })
     ).toBe("Trigger payload")
+
+    expect(
+      describeFieldBinding({
+        kind: "flow_var",
+        name: "session_token",
+        path: "/payload/id",
+        required: false
+      })
+    ).toBe("Flow local var session_token at /payload/id")
   })
 
   it("returns structured compatibility reasons for unsupported bindings and extra fields", () => {
@@ -65,6 +74,7 @@ describe("flow_visual_form", () => {
           nodeId: "",
           path: "/payload/value",
           field: "",
+          name: "",
           required: false
         },
         {
@@ -73,6 +83,7 @@ describe("flow_visual_form", () => {
           nodeId: "",
           path: "",
           field: "",
+          name: "",
           required: false
         },
         {
@@ -81,6 +92,7 @@ describe("flow_visual_form", () => {
           nodeId: "",
           path: "",
           field: "run_id",
+          name: "",
           required: false
         }
       ],

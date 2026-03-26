@@ -4,9 +4,10 @@ import { X } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
-import { describeVisualCompatibilityReason } from "@/stores/flow"
+import { buildDetailStructuredFields, describeVisualCompatibilityReason, flowStatusLabelKey } from "@/stores/flow"
 import type {
   FlowInputBindingDraft,
+  FlowNodeDetailState,
   FlowNodeDraft,
   FlowNodeKind,
   NodeVisualFormModel,
@@ -21,6 +22,8 @@ const props = defineProps<{
   selectedTargetLabel: string
   selectedCallVisualForm: NodeVisualFormModel | null
   ancestorNodeOptions: string[]
+  nodeDetail: FlowNodeDetailState
+  selectedNodeOutputSchemaText: string
   fieldDrafts: Record<string, any>
 }>()
 
@@ -30,6 +33,9 @@ const emit = defineEmits<{
   (event: "commit-node-id"): void
   (event: "node-kind-change", value: FlowNodeKind): void
   (event: "toggle-spec-mode", value: "form" | "json"): void
+  (event: "update:nodeDetailRunId", value: string): void
+  (event: "update:nodeDetailPath", value: string): void
+  (event: "load-node-detail"): void
   (event: "open-method"): void
   (event: "open-field-binding", field: VisualFieldModel): void
   (event: "clear-field-binding", pointer: string): void
@@ -47,9 +53,17 @@ const updateNodeIdDraft = (event: Event) => {
   emit("update:nodeIdDraft", String((event.target as HTMLInputElement | null)?.value ?? ""))
 }
 
+const updateNodeDetailRunId = (event: Event) => {
+  emit("update:nodeDetailRunId", String((event.target as HTMLInputElement | null)?.value ?? ""))
+}
+
+const updateNodeDetailPath = (event: Event) => {
+  emit("update:nodeDetailPath", String((event.target as HTMLInputElement | null)?.value ?? ""))
+}
+
 const emitNodeKindChange = (event: Event) => {
   const value = String((event.target as HTMLSelectElement | null)?.value ?? "call")
-  emit("node-kind-change", value === "compose" ? "compose" : "call")
+  emit("node-kind-change", value === "compose" || value === "set_var" ? value : "call")
 }
 
 const emitBindingSourceKindChange = (binding: FlowInputBindingDraft, event: Event) => {
@@ -121,6 +135,25 @@ const visualCompatibilityReasonHelp = (reason: VisualCompatibilityReason) => {
 const visibleVisualCompatibilityReasons = computed(() =>
   (props.selectedCallVisualForm?.compatibility.reasons ?? []).filter((reason) => reason.code !== "missing_schema")
 )
+
+const hasLoadedNodeDetail = computed(
+  () =>
+    Boolean(props.nodeDetail.runId) ||
+    Boolean(props.nodeDetail.path) ||
+    Boolean(props.nodeDetail.node) ||
+    Boolean(props.nodeDetail.resultText)
+)
+
+const nodeDetailStatusLabel = computed(() => t(flowStatusLabelKey(props.nodeDetail.node?.status ?? "")))
+const nodeDetailResolvedPathLabel = computed(() => props.nodeDetail.path || t("Root result"))
+const selectedNodeOutputSchemaLabel = computed(() => props.selectedNodeOutputSchemaText || t("No schema"))
+const structuredDetailFields = computed(() =>
+  buildDetailStructuredFields(
+    props.selectedNodeOutputSchemaText,
+    props.nodeDetail.resultValue,
+    props.nodeDetail.path
+  )
+)
 </script>
 
 <template>
@@ -191,6 +224,7 @@ const visibleVisualCompatibilityReasons = computed(() =>
               >
                 <option value="call">{{ t("Call") }}</option>
                 <option value="compose">{{ t("Compose") }}</option>
+                <option value="set_var">{{ t("Set Var") }}</option>
               </select>
             </div>
 
@@ -501,10 +535,30 @@ const visibleVisualCompatibilityReasons = computed(() =>
             <div v-else class="space-y-4">
               <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  {{ t("Compose Node") }}
+                  {{ selectedNode.kind === "set_var" ? t("Set Var Node") : t("Compose Node") }}
                 </p>
                 <p class="mt-2 text-sm text-muted-foreground">
-                  {{ t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.") }}
+                  {{
+                    selectedNode.kind === "set_var"
+                      ? t("Set var nodes materialize a JSON value, write it to a flow-local variable for the current run, and mirror it as the node result.")
+                      : t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.")
+                  }}
+                </p>
+              </div>
+
+              <div v-if="selectedNode.kind === 'set_var'">
+                <label :for="inspectorFieldId('set-var-name')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Flow Local Var Name") }}
+                </label>
+                <input
+                  :id="inspectorFieldId('set-var-name')"
+                  v-model="selectedNode.setVarName"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="session_token"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("This name is only visible inside the current flow run. It does not read or write varstore.") }}
                 </p>
               </div>
 
@@ -520,7 +574,11 @@ const visibleVisualCompatibilityReasons = computed(() =>
                   @blur="emit('commit-history')"
                 />
                 <p class="mt-1 text-[11px] text-muted-foreground">
-                  {{ t("Compose starts from this JSON template and applies the same binding list as call nodes.") }}
+                  {{
+                    selectedNode.kind === "set_var"
+                      ? t("Set var starts from this JSON template, applies bindings, then writes the result into the flow-local variable.")
+                      : t("Compose starts from this JSON template and applies the same binding list as call nodes.")
+                  }}
                 </p>
               </div>
 
@@ -531,7 +589,7 @@ const visibleVisualCompatibilityReasons = computed(() =>
                       {{ t("Input Bindings") }}
                     </p>
                     <p class="mt-1 text-[11px] text-muted-foreground">
-                      {{ t("Bindings can read trigger data, flow/run metadata, or ancestor node results.") }}
+                      {{ t("Bindings can read trigger data, flow/run metadata, ancestor node results, or flow-local vars from the same run.") }}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" @click="emit('add-binding')">{{ t("Add Binding") }}</Button>
@@ -590,6 +648,7 @@ const visibleVisualCompatibilityReasons = computed(() =>
                           <option value="trigger">{{ t("Trigger") }}</option>
                           <option value="flow_meta">{{ t("Flow Meta") }}</option>
                           <option value="run_meta">{{ t("Run Meta") }}</option>
+                          <option value="flow_var">{{ t("Flow Local Var") }}</option>
                         </select>
                       </div>
                     </div>
@@ -659,6 +718,34 @@ const visibleVisualCompatibilityReasons = computed(() =>
                       </select>
                     </div>
 
+                    <div v-else-if="binding.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label :for="composeBindingInputId(index, 'flow-var-name')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Local Var Name") }}
+                        </label>
+                        <input
+                          :id="composeBindingInputId(index, 'flow-var-name')"
+                          v-model="binding.name"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="session_token"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+
+                      <div>
+                        <label :for="composeBindingInputId(index, 'flow-var-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Value Path") }}
+                        </label>
+                        <input
+                          :id="composeBindingInputId(index, 'flow-var-path')"
+                          v-model="binding.path"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="/payload/id"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+                    </div>
+
                     <label class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                       <input
                         :id="composeBindingInputId(index, 'required')"
@@ -689,6 +776,164 @@ const visibleVisualCompatibilityReasons = computed(() =>
                 class="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
                 @blur="emit('commit-history')"
               />
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Result Detail") }}
+                </p>
+                <p class="mt-2 text-[11px] text-muted-foreground">
+                  {{ t("Query the selected node result for a specific run and optional path.") }}
+                </p>
+              </div>
+              <Button size="sm" :disabled="nodeDetail.loading" @click="emit('load-node-detail')">
+                {{ nodeDetail.loading ? t("Refreshing...") : t("Load Detail") }}
+              </Button>
+            </div>
+
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label :for="inspectorFieldId('detail-run-id')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Run ID (Optional)") }}
+                </label>
+                <input
+                  :id="inspectorFieldId('detail-run-id')"
+                  :value="nodeDetail.requestedRunId"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @input="updateNodeDetailRunId"
+                  @keydown.enter.prevent="emit('load-node-detail')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Leave run ID blank to query the latest run.") }}
+                </p>
+              </div>
+
+              <div>
+                <label :for="inspectorFieldId('detail-path')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Result Path (Optional)") }}
+                </label>
+                <input
+                  :id="inspectorFieldId('detail-path')"
+                  :value="nodeDetail.requestedPath"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="/payload/id"
+                  @input="updateNodeDetailPath"
+                  @keydown.enter.prevent="emit('load-node-detail')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Result path must be a valid JSON Pointer.") }}
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-if="nodeDetail.error"
+              class="mt-4 rounded-lg border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-700"
+              role="status"
+              aria-live="polite"
+            >
+              <p class="font-semibold uppercase tracking-[0.18em]">{{ t("Failed to load node detail.") }}</p>
+              <p class="mt-2 break-words">{{ nodeDetail.error }}</p>
+            </div>
+
+            <div v-if="hasLoadedNodeDetail" class="mt-4 space-y-3">
+              <div class="grid gap-3 md:grid-cols-2">
+                <div class="rounded-lg border border-border/70 bg-background/90 p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Resolved Run ID") }}
+                  </p>
+                  <p class="mt-2 break-all text-sm font-medium">
+                    {{ nodeDetail.runId || t("Unknown") }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-border/70 bg-background/90 p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Resolved Path") }}
+                  </p>
+                  <p class="mt-2 break-all text-sm font-medium">
+                    {{ nodeDetailResolvedPathLabel }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-border/70 bg-background/90 p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Node ID") }}
+                  </p>
+                  <p class="mt-2 break-all text-sm font-medium">
+                    {{ nodeDetail.node?.id || selectedNode.id }}
+                  </p>
+                </div>
+
+                <div class="rounded-lg border border-border/70 bg-background/90 p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Node Status") }}
+                  </p>
+                  <p class="mt-2 text-sm font-medium">
+                    {{ nodeDetailStatusLabel }}
+                  </p>
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    {{ t("Code {code}", { code: nodeDetail.node?.code ?? 0 }) }}
+                  </p>
+                  <p v-if="nodeDetail.node?.msg" class="mt-1 break-words text-[11px] text-muted-foreground">
+                    {{ nodeDetail.node.msg }}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <div v-if="structuredDetailFields.length" class="mb-4">
+                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ t("Structured Result") }}
+                  </p>
+                  <div class="mt-2 space-y-3">
+                    <div
+                      v-for="field in structuredDetailFields"
+                      :key="field.key"
+                      class="rounded-lg border border-border/70 bg-background/90 p-3"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="text-sm font-semibold">{{ field.label }}</p>
+                        <span class="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          {{ field.pointer }}
+                        </span>
+                      </div>
+                      <p v-if="field.description" class="mt-1 text-[11px] text-muted-foreground">
+                        {{ field.description }}
+                      </p>
+                      <pre
+                        v-if="field.multiline"
+                        class="mt-2 overflow-x-auto rounded-lg border border-border/70 bg-muted/20 p-3 text-xs leading-5"
+                      >{{ field.missing ? t("Not set") : field.valueText }}</pre>
+                      <p v-else class="mt-2 break-all text-sm font-medium">
+                        {{ field.missing ? t("Not set") : field.valueText }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Result") }}
+                </p>
+                <pre class="mt-2 overflow-x-auto rounded-lg border border-border/70 bg-background/90 p-3 text-xs leading-5">{{ nodeDetail.resultText }}</pre>
+              </div>
+            </div>
+
+            <div
+              v-else-if="!nodeDetail.loading && !nodeDetail.error"
+              class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground"
+            >
+              {{ t("No detail loaded yet.") }}
+            </div>
+
+            <div v-if="selectedNode.kind === 'call'" class="mt-4">
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Output schema") }}
+              </p>
+              <pre class="mt-2 overflow-x-auto rounded-lg border border-border/70 bg-background/90 p-3 text-xs leading-5">{{ selectedNodeOutputSchemaLabel }}</pre>
             </div>
           </div>
         </div>

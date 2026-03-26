@@ -45,9 +45,9 @@ export type FlowSummary = {
   lastStatus: string
 }
 
-export type FlowNodeKind = "call" | "compose"
+export type FlowNodeKind = "call" | "compose" | "set_var"
 export type FlowSpecEditorMode = "form" | "json"
-export type FlowBindingSourceKind = "node_result" | "trigger" | "flow_meta" | "run_meta" | ""
+export type FlowBindingSourceKind = "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var" | ""
 
 export type FlowInputBindingDraft = {
   to: string
@@ -55,6 +55,7 @@ export type FlowInputBindingDraft = {
   nodeId: string
   path: string
   field: string
+  name: string
   required: boolean
 }
 
@@ -68,6 +69,7 @@ export type FlowNodeDraft = {
   target: number
   argsTemplate: string
   composeTemplate: string
+  setVarName: string
   inputs: FlowInputBindingDraft[]
   specEditorMode: FlowSpecEditorMode
   specJson: string
@@ -106,11 +108,36 @@ export type FlowStatus = {
   nodes: FlowStatusNode[]
 }
 
+export type FlowNodeDetailState = {
+  loading: boolean
+  error: string
+  requestedNodeId: string
+  requestedRunId: string
+  requestedPath: string
+  runId: string
+  path: string
+  node: FlowStatusNode | null
+  resultValue: unknown
+  resultText: string
+}
+
+export type FlowDetailStructuredField = {
+  key: string
+  label: string
+  pointer: string
+  description?: string
+  valueText: string
+  missing: boolean
+  multiline: boolean
+}
+
 export type FlowMessageLevel = "" | "success" | "error" | "info"
 
 export const flowStatusLabelKey = (status: string) => {
   const normalized = String(status ?? "").trim().toLowerCase()
   switch (normalized) {
+    case "cancelled":
+      return "Cancelled"
     case "succeeded":
       return "Succeeded"
     case "failed":
@@ -209,6 +236,7 @@ type FlowState = {
   selectedEdgeIndex: number
   statusRunId: string
   lastStatus: FlowStatus
+  nodeDetail: FlowNodeDetailState
   execCapabilities: ExecCapabilityRoute[]
   execCapabilitiesLoading: boolean
   message: string
@@ -216,6 +244,13 @@ type FlowState = {
   historyIndex: number
   historyLength: number
 }
+
+const createEmptyFlowStatus = (): FlowStatus => ({
+  status: "",
+  runId: "",
+  executorNode: 0,
+  nodes: []
+})
 
 const state = reactive<FlowState>({
   targetId: "",
@@ -236,11 +271,18 @@ const state = reactive<FlowState>({
   selectedNodeIndex: -1,
   selectedEdgeIndex: -1,
   statusRunId: "",
-  lastStatus: {
-    status: "",
+  lastStatus: createEmptyFlowStatus(),
+  nodeDetail: {
+    loading: false,
+    error: "",
+    requestedNodeId: "",
+    requestedRunId: "",
+    requestedPath: "",
     runId: "",
-    executorNode: 0,
-    nodes: []
+    path: "",
+    node: null,
+    resultValue: undefined,
+    resultText: ""
   },
   execCapabilities: [],
   execCapabilitiesLoading: false,
@@ -250,6 +292,11 @@ const state = reactive<FlowState>({
   historyLength: 1
 })
 
+const resetStatusState = () => {
+  state.statusRunId = ""
+  state.lastStatus = createEmptyFlowStatus()
+}
+
 const MAX_HISTORY = 120
 let draftHistory: FlowDraftSnapshot[] = []
 let draftHistoryIndex = 0
@@ -257,6 +304,7 @@ let execCapabilityLoadCount = 0
 let execCapabilityLoadEpoch = 0
 let execCapabilityCacheVersion = 0
 const pendingCapabilityHydrations = new Map<string, Promise<boolean>>()
+const FLOW_LOCAL_VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const cloneBindingDraft = (binding: FlowInputBindingDraft): FlowInputBindingDraft => ({ ...binding })
 
@@ -377,6 +425,8 @@ const applyGraphEditorState = (snapshot: FlowGraphEditorState) => {
     Number(snapshot.selectedEdgeIndex) < state.edges.length
       ? Number(snapshot.selectedEdgeIndex)
       : -1
+  resetStatusState()
+  state.nodeDetail = createNodeDetailState()
   resetExecCapabilityState()
   resetHistory()
 }
@@ -481,9 +531,243 @@ const formatJSONText = (value: any, fallback: any = {}) => {
   }
 }
 
+const formatStructuredText = (value: unknown, emptyFallback = "") => {
+  if (value === undefined) {
+    return emptyFallback
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return emptyFallback
+    }
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      return JSON.stringify(value, null, 2)
+    }
+  }
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value ?? emptyFallback)
+  }
+}
+
+const isJSONObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+type DetailSchemaFieldKind = "inline" | "json"
+
+type DetailSchemaField = {
+  key: string
+  label: string
+  pointer: string
+  description?: string
+  kind: DetailSchemaFieldKind
+}
+
+const DETAIL_SCHEMA_SUPPORTED_TYPES = new Set(["string", "number", "integer", "boolean", "object"])
+
+const humanizeSchemaKey = (key: string) =>
+  String(key ?? "")
+    .replaceAll(/[_-]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+
+const parseStructuredSchemaText = (rawText: string): Record<string, unknown> | null => {
+  const trimmed = String(rawText ?? "").trim()
+  if (!trimmed) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(trimmed)
+    return isJSONObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const normalizeDetailSchemaType = (schema: Record<string, unknown>) => {
+  if (typeof schema.type === "string") {
+    return schema.type.trim()
+  }
+  if (!Array.isArray(schema.type)) {
+    return ""
+  }
+  const rawTypes = schema.type.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+  if (rawTypes.length !== 2) {
+    return ""
+  }
+  const uniqueTypes = Array.from(new Set(rawTypes))
+  if (uniqueTypes.length !== 2 || !uniqueTypes.includes("null")) {
+    return ""
+  }
+  const resolvedType = uniqueTypes.find((item) => item !== "null") ?? ""
+  return DETAIL_SCHEMA_SUPPORTED_TYPES.has(resolvedType) ? resolvedType : ""
+}
+
+const hasUnsupportedDetailSchemaFeature = (schema: Record<string, unknown>) =>
+  "oneOf" in schema ||
+  "anyOf" in schema ||
+  "allOf" in schema ||
+  "$ref" in schema ||
+  normalizeDetailSchemaType(schema) === "array" ||
+  (Array.isArray(schema.type) && !normalizeDetailSchemaType(schema))
+
+const collectDetailSchemaFields = (
+  schema: Record<string, unknown>,
+  basePointer: string,
+  out: DetailSchemaField[]
+): boolean => {
+  if (hasUnsupportedDetailSchemaFeature(schema)) {
+    return false
+  }
+
+  const schemaType = normalizeDetailSchemaType(schema)
+  const properties = isJSONObject(schema.properties) ? schema.properties : null
+  if (schemaType !== "object" && !properties) {
+    return false
+  }
+  if (!properties || Object.keys(properties).length === 0) {
+    if (!basePointer) {
+      return false
+    }
+    out.push({
+      key: `detail:${basePointer}`,
+      label:
+        typeof schema.title === "string" && schema.title.trim()
+          ? schema.title.trim()
+          : basePointer.split("/").at(-1) ?? "Value",
+      pointer: basePointer,
+      description: typeof schema.description === "string" ? schema.description.trim() : undefined,
+      kind: "json"
+    })
+    return true
+  }
+
+  for (const [rawKey, childValue] of Object.entries(properties)) {
+    if (!isJSONObject(childValue) || hasUnsupportedDetailSchemaFeature(childValue)) {
+      return false
+    }
+    const pointer = `/${basePointer ? `${basePointer.slice(1)}/` : ""}${rawKey.replaceAll("~", "~0").replaceAll("/", "~1")}`
+    const label =
+      typeof childValue.title === "string" && childValue.title.trim() ? childValue.title.trim() : humanizeSchemaKey(rawKey)
+    const description = typeof childValue.description === "string" ? childValue.description.trim() : undefined
+    const childType = normalizeDetailSchemaType(childValue)
+    const childProperties = isJSONObject(childValue.properties) ? childValue.properties : null
+
+    if ((childType === "object" || childProperties) && childProperties && Object.keys(childProperties).length > 0) {
+      if (!collectDetailSchemaFields(childValue, pointer, out)) {
+        return false
+      }
+      continue
+    }
+
+    if (childType === "object" || childProperties) {
+      out.push({
+        key: `detail:${pointer}`,
+        label,
+        pointer,
+        description,
+        kind: "json"
+      })
+      continue
+    }
+
+    switch (childType) {
+      case "string":
+      case "number":
+      case "integer":
+      case "boolean":
+        out.push({
+          key: `detail:${pointer}`,
+          label,
+          pointer,
+          description,
+          kind: "inline"
+        })
+        break
+      default:
+        return false
+    }
+  }
+
+  return true
+}
+
+const formatDetailFieldValue = (value: unknown) => {
+  if (typeof value === "string") {
+    return value
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return String(value)
+  }
+  return formatStructuredText(value, "")
+}
+
+export const buildDetailStructuredFields = (
+  outputSchemaText: string,
+  resultValue: unknown,
+  detailPath = ""
+): FlowDetailStructuredField[] => {
+  if (String(detailPath ?? "").trim() || !isJSONObject(resultValue)) {
+    return []
+  }
+
+  const schemaDoc = parseStructuredSchemaText(outputSchemaText)
+  if (!schemaDoc || hasUnsupportedDetailSchemaFeature(schemaDoc)) {
+    return []
+  }
+  if (normalizeDetailSchemaType(schemaDoc) !== "object" && !isJSONObject(schemaDoc.properties)) {
+    return []
+  }
+
+  const schemaFields: DetailSchemaField[] = []
+  if (!collectDetailSchemaFields(schemaDoc, "", schemaFields) || !schemaFields.length) {
+    return []
+  }
+
+  return schemaFields.map((field) => {
+    const resolved = readValueAtPointer(resultValue, field.pointer)
+    const multiline =
+      resolved.found &&
+      (field.kind === "json" || (typeof resolved.value === "object" && resolved.value !== null))
+    return {
+      key: field.key,
+      label: field.label,
+      pointer: field.pointer,
+      description: field.description,
+      valueText: resolved.found ? formatDetailFieldValue(resolved.value) : "",
+      missing: !resolved.found,
+      multiline
+    }
+  })
+}
+
+const createNodeDetailState = (nodeId = "", runId = ""): FlowNodeDetailState => ({
+  loading: false,
+  error: "",
+  requestedNodeId: nodeId.trim(),
+  requestedRunId: runId.trim(),
+  requestedPath: "",
+  runId: "",
+  path: "",
+  node: null,
+  resultValue: undefined,
+  resultText: ""
+})
+
 const normalizeNodeKind = (raw: any): FlowNodeKind => {
   const normalized = String(raw ?? "").trim().toLowerCase()
-  return normalized === "compose" ? "compose" : "call"
+  switch (normalized) {
+    case "compose":
+      return "compose"
+    case "set_var":
+      return "set_var"
+    default:
+      return "call"
+  }
 }
 
 const normalizeBindingSourceKind = (raw: any): FlowBindingSourceKind => {
@@ -493,6 +777,7 @@ const normalizeBindingSourceKind = (raw: any): FlowBindingSourceKind => {
     case "trigger":
     case "flow_meta":
     case "run_meta":
+    case "flow_var":
       return normalized
     default:
       return ""
@@ -505,6 +790,7 @@ const defaultInputBinding = (): FlowInputBindingDraft => ({
   nodeId: "",
   path: "",
   field: "",
+  name: "",
   required: false
 })
 
@@ -535,6 +821,7 @@ const parseInputBindings = (raw: any): FlowInputBindingDraft[] => {
       nodeId: String(source?.node_id ?? "").trim(),
       path: String(source?.path ?? "").trim(),
       field: String(source?.field ?? "").trim(),
+      name: String(source?.name ?? "").trim(),
       required: Boolean(binding?.required ?? false)
     }
   })
@@ -551,6 +838,20 @@ const parseSpecDraft = (kind: FlowNodeKind, spec: any) => {
       target: 0,
       argsTemplate: "{}",
       composeTemplate: formatJSONText(parsed?.template, {}),
+      setVarName: "",
+      inputs: parseInputBindings(parsed?.inputs),
+      specJson: formatJSONText(parsed, {}),
+      x: Number.isFinite(x) ? x : undefined,
+      y: Number.isFinite(y) ? y : undefined
+    }
+  }
+  if (kind === "set_var") {
+    return {
+      method: "",
+      target: 0,
+      argsTemplate: "{}",
+      composeTemplate: formatJSONText("template" in parsed ? parsed.template : null, null),
+      setVarName: String(parsed?.name ?? "").trim(),
       inputs: parseInputBindings(parsed?.inputs),
       specJson: formatJSONText(parsed, {}),
       x: Number.isFinite(x) ? x : undefined,
@@ -564,6 +865,7 @@ const parseSpecDraft = (kind: FlowNodeKind, spec: any) => {
     target,
     argsTemplate: formatJSONText(parsed?.args_template ?? parsed?.args, {}),
     composeTemplate: "{}",
+    setVarName: "",
     inputs: parseInputBindings(parsed?.inputs),
     specJson: formatJSONText(parsed, {}),
     x: Number.isFinite(x) ? x : undefined,
@@ -579,6 +881,13 @@ const defaultNodePosition = (index: number) => {
 
 const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNodeDraft => {
   const pos = defaultNodePosition(index)
+  const composeTemplate = kind === "set_var" ? "null" : "{}"
+  const initialSpec =
+    kind === "compose"
+      ? { template: {} }
+      : kind === "set_var"
+        ? { name: "", template: null }
+        : { method: "", args_template: {} }
   return {
     id,
     kind,
@@ -588,10 +897,11 @@ const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNod
     method: "",
     target: 0,
     argsTemplate: "{}",
-    composeTemplate: "{}",
+    composeTemplate,
+    setVarName: "",
     inputs: [],
     specEditorMode: "form",
-    specJson: formatJSONText(kind === "compose" ? { template: {} } : { method: "", args_template: {} }, {}),
+    specJson: formatJSONText(initialSpec, {}),
     x: pos.x,
     y: pos.y
   }
@@ -600,7 +910,10 @@ const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNod
 const mapNode = (input: any, index: number): FlowNodeDraft => {
   const sourceKind = String(input?.kind ?? "").toLowerCase()
   const kind = normalizeNodeKind(sourceKind)
-  const { method, target, argsTemplate, composeTemplate, inputs, specJson, x, y } = parseSpecDraft(kind, input?.spec)
+  const { method, target, argsTemplate, composeTemplate, setVarName, inputs, specJson, x, y } = parseSpecDraft(
+    kind,
+    input?.spec
+  )
   let mappedTarget = Number.isFinite(target) ? Number(target) : 0
   if (mappedTarget < 0) mappedTarget = 0
   if (sourceKind === "local") {
@@ -617,6 +930,7 @@ const mapNode = (input: any, index: number): FlowNodeDraft => {
     target: mappedTarget,
     argsTemplate,
     composeTemplate,
+    setVarName,
     inputs,
     specEditorMode: "form",
     specJson,
@@ -724,7 +1038,8 @@ const newDraft = () => {
   state.edges = []
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
-  state.statusRunId = ""
+  resetStatusState()
+  state.nodeDetail = createNodeDetailState()
   resetExecCapabilityState()
   resetHistory()
 }
@@ -1010,10 +1325,56 @@ const parseArgsTemplateObject = (node: FlowNodeDraft) => {
     node.argsTemplate,
     t("Node {nodeId} args template must be valid JSON.", { nodeId })
   )
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isJSONObject(parsed)) {
     throw new Error(t("Node {nodeId} args template must be a JSON object.", { nodeId }))
   }
   return parsed as Record<string, unknown>
+}
+
+const parseTemplateValue = (raw: string, errorMessage: string, blankFallback = "{}") => {
+  try {
+    return JSON.parse(String(raw ?? "").trim() || blankFallback)
+  } catch {
+    throw new Error(errorMessage)
+  }
+}
+
+const parseComposeTemplateObject = (node: FlowNodeDraft) => {
+  const nodeId = node.id.trim() || t("Unnamed")
+  const parsed = parseTemplateValue(
+    node.composeTemplate,
+    t("Node {nodeId} template must be valid JSON.", { nodeId }),
+    "{}"
+  )
+  if (!isJSONObject(parsed)) {
+    throw new Error(t("Node {nodeId} template must be a JSON object.", { nodeId }))
+  }
+  return parsed as Record<string, unknown>
+}
+
+const normalizeFlowLocalVarName = (raw: unknown) => String(raw ?? "").trim()
+
+const assertValidFlowLocalVarName = (name: string, requiredMessage: string, invalidMessage: string) => {
+  if (!name) {
+    throw new Error(requiredMessage)
+  }
+  if (!FLOW_LOCAL_VAR_NAME_PATTERN.test(name)) {
+    throw new Error(invalidMessage)
+  }
+  return name
+}
+
+const preferObjectTemplateText = (raw: string, fallback = "{}") => {
+  const trimmed = String(raw ?? "").trim()
+  if (!trimmed) {
+    return fallback
+  }
+  try {
+    const parsed = JSON.parse(trimmed)
+    return isJSONObject(parsed) ? formatJSONText(parsed, {}) : fallback
+  } catch {
+    return trimmed
+  }
 }
 
 const isBindingBlank = (binding: FlowInputBindingDraft) =>
@@ -1022,6 +1383,7 @@ const isBindingBlank = (binding: FlowInputBindingDraft) =>
   !binding.nodeId.trim() &&
   !binding.path.trim() &&
   !binding.field.trim() &&
+  !binding.name.trim() &&
   !binding.required
 
 const buildInputBindings = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
@@ -1084,6 +1446,25 @@ const buildInputBindings = (node: FlowNodeDraft, ancestors: Map<string, Set<stri
         }
         source = { kind: "run_meta", field: "run_id" }
         break
+      case "flow_var": {
+        const name = assertValidFlowLocalVarName(
+          normalizeFlowLocalVarName(binding.name),
+          t("Node {nodeId} binding row {rowNo}: flow local var name is required.", { nodeId, rowNo }),
+          t("Node {nodeId} binding row {rowNo}: flow local var name is invalid.", { nodeId, rowNo })
+        )
+        validateJSONPointer(
+          binding.path,
+          t("Node {nodeId} binding row {rowNo}: flow local var path must be a valid JSON Pointer.", {
+            nodeId,
+            rowNo
+          })
+        )
+        source = { kind: "flow_var", name }
+        if (binding.path.trim()) {
+          source.path = binding.path.trim()
+        }
+        break
+      }
       default:
         throw new Error(t("Node {nodeId} binding row {rowNo}: source kind is required.", { nodeId, rowNo }))
     }
@@ -1108,6 +1489,9 @@ const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
       if (binding.path.trim()) source.path = binding.path.trim()
     } else if (sourceKind === "flow_meta" || sourceKind === "run_meta") {
       if (binding.field.trim()) source.field = binding.field.trim()
+    } else if (sourceKind === "flow_var") {
+      if (binding.name.trim()) source.name = binding.name.trim()
+      if (binding.path.trim()) source.path = binding.path.trim()
     }
     return {
       to: binding.to.trim(),
@@ -1119,6 +1503,14 @@ const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
   if (node.kind === "compose") {
     return {
       template: tryParseJSONText(node.composeTemplate, {}),
+      ...(looseInputs.length ? { inputs: looseInputs } : {}),
+      _ui: ui
+    }
+  }
+  if (node.kind === "set_var") {
+    return {
+      name: node.setVarName.trim(),
+      template: tryParseJSONText(node.composeTemplate, null),
       ...(looseInputs.length ? { inputs: looseInputs } : {}),
       _ui: ui
     }
@@ -1221,9 +1613,23 @@ const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>)
   const inputs = buildInputBindings(node, ancestors)
   if (node.kind === "compose") {
     return {
-      template: parseJSONText(
+      template: parseComposeTemplateObject(node),
+      ...(inputs.length ? { inputs } : {}),
+      _ui: ui
+    }
+  }
+  if (node.kind === "set_var") {
+    const name = assertValidFlowLocalVarName(
+      normalizeFlowLocalVarName(node.setVarName),
+      t("Node {nodeId} requires a flow local var name.", { nodeId }),
+      t("Node {nodeId} flow local var name is invalid.", { nodeId })
+    )
+    return {
+      name,
+      template: parseTemplateValue(
         node.composeTemplate,
-        t("Node {nodeId} template must be valid JSON.", { nodeId })
+        t("Node {nodeId} template must be valid JSON.", { nodeId }),
+        "null"
       ),
       ...(inputs.length ? { inputs } : {}),
       _ui: ui
@@ -1382,6 +1788,23 @@ const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<strin
       _ui: ui
     }
   }
+  if (node.kind === "set_var") {
+    const name = assertValidFlowLocalVarName(
+      normalizeFlowLocalVarName(parsed.name),
+      t("Node {nodeId} set_var spec requires name.", { nodeId }),
+      t("Node {nodeId} flow local var name is invalid.", { nodeId })
+    )
+    const normalizedSpec: Record<string, any> = { ...parsed, name, _ui: ui }
+    if (!("template" in normalizedSpec)) {
+      normalizedSpec.template = null
+    }
+    if (inputs.length) {
+      normalizedSpec.inputs = inputs
+    } else {
+      delete normalizedSpec.inputs
+    }
+    return normalizedSpec
+  }
 
   const method = String(parsed.method ?? "").trim()
   if (!method) {
@@ -1514,6 +1937,19 @@ const setNodeFieldBinding = (nodeId: string, pointer: string, source: VisualBind
     if (source.field !== "run_id") {
       throw new Error(t("Run meta field must be run_id."))
     }
+  } else if (source.kind === "flow_var") {
+    const name = assertValidFlowLocalVarName(
+      normalizeFlowLocalVarName(source.name),
+      t("Flow local var name is required."),
+      t("Flow local var name is invalid.")
+    )
+    if (name !== source.name) {
+      source = {
+        ...source,
+        name
+      }
+    }
+    validateJSONPointer(source.path, t("Flow local var path must be a valid JSON Pointer."))
   }
 
   node.inputs = setBindingForPointer(node.inputs, pointer, source).map((binding) => ({
@@ -1534,11 +1970,15 @@ const setNodeKind = (nodeId: string, kind: FlowNodeKind) => {
     return false
   }
   if (kind === "compose") {
-    node.composeTemplate = node.composeTemplate.trim() || node.argsTemplate.trim() || "{}"
+    node.composeTemplate = node.composeTemplate.trim() || preferObjectTemplateText(node.argsTemplate, "{}")
+    node.method = ""
+    node.target = 0
+  } else if (kind === "set_var") {
+    node.composeTemplate = node.composeTemplate.trim() || node.argsTemplate.trim() || "null"
     node.method = ""
     node.target = 0
   } else {
-    node.argsTemplate = node.argsTemplate.trim() || node.composeTemplate.trim() || "{}"
+    node.argsTemplate = node.argsTemplate.trim() || preferObjectTemplateText(node.composeTemplate, "{}")
   }
   node.kind = kind
   node.specEditorMode = "form"
@@ -1571,6 +2011,7 @@ const setNodeSpecEditorMode = (nodeId: string, mode: FlowSpecEditorMode) => {
   node.target = Number.isFinite(next.target) && next.target > 0 ? Math.trunc(next.target) : 0
   node.argsTemplate = next.argsTemplate
   node.composeTemplate = next.composeTemplate
+  node.setVarName = next.setVarName
   node.inputs = next.inputs.map((binding) => ({ ...binding }))
   node.specJson = formatJSONText(normalizedSpec, {})
   node.specEditorMode = "form"
@@ -1721,6 +2162,71 @@ const statusFlow = async (runId?: string) => {
   handleStatusResp(resp)
 }
 
+const loadNodeDetail = async (nodeId: string, runId?: string, path?: string) => {
+  const { sourceID, hubID } = ensureIdentity()
+  const executorNode = resolveTargetNode()
+  const flowId = state.flowId.trim()
+  const requestedNodeId = nodeId.trim()
+  const requestedRunId = String(runId ?? state.nodeDetail.requestedRunId ?? "").trim()
+  const requestedPath = String(path ?? state.nodeDetail.requestedPath ?? "").trim()
+
+  if (!flowId) {
+    state.nodeDetail = {
+      ...createNodeDetailState(requestedNodeId, requestedRunId),
+      requestedPath,
+      error: t("Flow ID is required.")
+    }
+    return false
+  }
+  if (!requestedNodeId) {
+    state.nodeDetail = {
+      ...createNodeDetailState("", requestedRunId),
+      requestedPath,
+      error: t("Node ID is required.")
+    }
+    return false
+  }
+
+  try {
+    validateJSONPointer(requestedPath, t("Result path must be a valid JSON Pointer."))
+  } catch (err) {
+    state.nodeDetail = {
+      ...createNodeDetailState(requestedNodeId, requestedRunId),
+      requestedPath,
+      error: String((err as Error)?.message ?? err ?? t("Result path must be a valid JSON Pointer."))
+    }
+    return false
+  }
+
+  state.nodeDetail = {
+    ...createNodeDetailState(requestedNodeId, requestedRunId),
+    requestedPath,
+    loading: true
+  }
+
+  try {
+    const req = {
+      req_id: newReqId(),
+      origin_node: sourceID,
+      executor_node: executorNode,
+      flow_id: flowId,
+      run_id: requestedRunId || undefined,
+      node_id: requestedNodeId,
+      path: requestedPath || undefined
+    }
+    const resp = await callFlow<any>("DetailSimple", sourceID, hubID, req)
+    handleDetailResp(resp, requestedNodeId, requestedRunId, requestedPath)
+    return true
+  } catch (err) {
+    state.nodeDetail = {
+      ...createNodeDetailState(requestedNodeId, requestedRunId),
+      requestedPath,
+      error: String((err as Error)?.message ?? err ?? t("Failed to load node detail."))
+    }
+    return false
+  }
+}
+
 const handleListResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
@@ -1751,6 +2257,8 @@ const applyGraphDraft = (graphSource: any, successMessage: string) => {
   state.edges = edges.map(mapEdge)
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
+  resetStatusState()
+  state.nodeDetail = createNodeDetailState()
   resetExecCapabilityState()
   setMessage(successMessage, "success")
   resetHistory()
@@ -2014,8 +2522,65 @@ const handleStatusResp = (data: any) => {
   }
   if (state.lastStatus.runId) {
     state.statusRunId = state.lastStatus.runId
+    if (state.nodeDetail.requestedNodeId && !state.nodeDetail.requestedRunId) {
+      state.nodeDetail.requestedRunId = state.lastStatus.runId
+    }
   }
   setMessage(t("Status updated."), "success")
+}
+
+const handleDetailResp = (data: any, requestedNodeId: string, requestedRunId: string, requestedPath: string) => {
+  const code = Number(data?.code ?? 0)
+  const msg = String(data?.msg ?? "")
+  if (code !== 1) {
+    state.nodeDetail = {
+      ...createNodeDetailState(requestedNodeId, requestedRunId),
+      requestedPath,
+      error: msg || t("Flow detail failed.")
+    }
+    return
+  }
+
+  const detailNode = data?.node
+  state.nodeDetail = {
+    loading: false,
+    error: "",
+    requestedNodeId,
+    requestedRunId,
+    requestedPath,
+    runId: String(data?.run_id ?? "").trim(),
+    path: String(data?.path ?? "").trim(),
+    node:
+      detailNode && typeof detailNode === "object"
+        ? {
+            id: String(detailNode?.id ?? requestedNodeId).trim(),
+            status: String(detailNode?.status ?? "").trim(),
+            code: Number(detailNode?.code ?? 0),
+            msg: String(detailNode?.msg ?? "").trim()
+          }
+        : null,
+    resultValue: data?.result,
+    resultText: formatStructuredText(data?.result, "")
+  }
+  if (state.nodeDetail.runId) {
+    state.statusRunId = state.nodeDetail.runId
+  }
+}
+
+const resetNodeDetail = (nodeId = "", runId = "") => {
+  state.nodeDetail = createNodeDetailState(nodeId, runId || state.statusRunId)
+}
+
+const getNodeOutputSchemaText = (nodeId: string) => {
+  const node = state.nodes.find((item) => item.id.trim() === nodeId.trim())
+  if (!node || node.kind !== "call") {
+    return ""
+  }
+  const route = findCapabilityRouteForNode(node)
+  if (!route || route.outputSchema === undefined || route.outputSchema === null) {
+    return ""
+  }
+  return formatStructuredText(route.outputSchema, "")
 }
 
 export const useFlowStore = () => {
@@ -2036,6 +2601,7 @@ export const useFlowStore = () => {
     clearSelection: () => {
       state.selectedNodeIndex = -1
       state.selectedEdgeIndex = -1
+      state.nodeDetail = createNodeDetailState()
     },
     getFlow,
     listFlows,
@@ -2061,6 +2627,7 @@ export const useFlowStore = () => {
     getNodeValidation,
     listAncestorNodeIds,
     listBindableAncestorNodeIds: listAncestorNodeIds,
+    getNodeOutputSchemaText,
     normalizeCallTarget,
     queryExecCapabilities,
     ensureNodeCapabilityLoaded,
@@ -2070,6 +2637,8 @@ export const useFlowStore = () => {
     setFieldBinding: setNodeFieldBinding,
     clearFieldBinding: clearNodeFieldBinding,
     describeFieldBinding: describeVisualFieldBinding,
+    loadNodeDetail,
+    resetNodeDetail,
     setNodeKind,
     setNodeSpecEditorMode,
     undo,
@@ -2079,6 +2648,7 @@ export const useFlowStore = () => {
       const idx = state.edges.findIndex((edge) => edge.from === fromId && edge.to === toId)
       state.selectedEdgeIndex = idx
       state.selectedNodeIndex = -1
+      state.nodeDetail = createNodeDetailState()
     },
     selectNodeById: (nodeId: string) => {
       const trimmed = nodeId.trim()
