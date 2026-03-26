@@ -24,6 +24,8 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-26_win-mcp-authority-config-read.md](2026-03-26_win-mcp-authority-config-read.md)
+  - [2026-03-26_win-mcp-auth-perms-smoke.md](2026-03-26_win-mcp-auth-perms-smoke.md)
   - [2026-03-26_win-mcp-hardening.md](2026-03-26_win-mcp-hardening.md)
   - [2026-03-26_win-authority-console-refactor.md](2026-03-26_win-authority-console-refactor.md)
   - [2026-03-25_win-embed-dist-placeholder.md](2026-03-25_win-embed-dist-placeholder.md)

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
 	"github.com/yttydcs/myflowhub-win/internal/mcpapp"
+	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
 )
 
 type fakeBackend struct {
@@ -31,12 +33,69 @@ type fakeBackend struct {
 		targetID uint32
 		called   bool
 	}
+	getPermsArgs struct {
+		sourceID uint32
+		targetID uint32
+		nodeID   uint32
+		called   bool
+	}
+	listRolesArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoauth.ListRolesReq
+		called   bool
+	}
+	listPendingArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.ListPendingRegistersReq
+		called   bool
+	}
+	approveArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.ApproveRegisterReq
+		called   bool
+	}
+	rejectArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.RejectRegisterReq
+		called   bool
+	}
+	issuePermitArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.IssueRegisterPermitReq
+		called   bool
+	}
+	revokePermitArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.RevokeRegisterPermitReq
+		called   bool
+	}
+	configGetArgs struct {
+		sourceID uint32
+		targetID uint32
+		key      string
+		called   bool
+	}
+	configListArgs struct {
+		sourceID uint32
+		targetID uint32
+		called   bool
+	}
 	varSetArgs struct {
 		sourceID uint32
 		targetID uint32
 		req      protovarstore.SetReq
 		called   bool
 	}
+
+	configValues  map[string]string
+	configGetErr  error
+	configListErr error
 }
 
 func (f *fakeBackend) Status() mcpapp.Status  { return f.status }
@@ -68,6 +127,77 @@ func (f *fakeBackend) Login(_ context.Context, sourceID, targetID uint32, device
 	}{sourceID: sourceID, targetID: targetID, deviceID: deviceID, nodeID: nodeID, called: true}
 	return protoauth.RespData{Code: 1, DeviceID: deviceID, NodeID: nodeID, HubID: targetID}, nil
 }
+func (f *fakeBackend) GetPerms(_ context.Context, sourceID, targetID, nodeID uint32) (protoauth.RespData, error) {
+	f.getPermsArgs = struct {
+		sourceID uint32
+		targetID uint32
+		nodeID   uint32
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, nodeID: nodeID, called: true}
+	return protoauth.RespData{Code: 1, NodeID: nodeID, HubID: targetID, Role: "admin", Perms: []string{"var.read", "auth.list_roles"}}, nil
+}
+func (f *fakeBackend) ListRoles(_ context.Context, sourceID, targetID uint32, req protoauth.ListRolesReq) (authsvc.ListRolesResp, error) {
+	f.listRolesArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoauth.ListRolesReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.ListRolesResp{
+		Code:  1,
+		Total: len(req.NodeIDs),
+		Roles: []protoauth.RolePermEntry{{NodeID: 7, Role: "admin", Perms: []string{"var.read"}}},
+	}, nil
+}
+func (f *fakeBackend) ListPendingRegisters(_ context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error) {
+	f.listPendingArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.ListPendingRegistersReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.ListPendingRegistersResp{
+		Code:  1,
+		Total: 1,
+		Items: []authsvc.PendingRegisterInfo{{RequestID: "req-1", DeviceID: "dev-1"}},
+	}, nil
+}
+func (f *fakeBackend) ApproveRegister(_ context.Context, sourceID, targetID uint32, req authsvc.ApproveRegisterReq) (authsvc.ApproveRegisterResp, error) {
+	f.approveArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.ApproveRegisterReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.ApproveRegisterResp{Code: 1, RequestID: req.RequestID, DeviceID: "dev-1", NodeID: 88, Role: req.Role, Status: "approved"}, nil
+}
+func (f *fakeBackend) RejectRegister(_ context.Context, sourceID, targetID uint32, req authsvc.RejectRegisterReq) (authsvc.RejectRegisterResp, error) {
+	f.rejectArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.RejectRegisterReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.RejectRegisterResp{Code: 1, RequestID: req.RequestID, DeviceID: "dev-1", Status: "rejected", Reason: req.Reason}, nil
+}
+func (f *fakeBackend) IssueRegisterPermit(_ context.Context, sourceID, targetID uint32, req authsvc.IssueRegisterPermitReq) (authsvc.IssueRegisterPermitResp, error) {
+	f.issuePermitArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.IssueRegisterPermitReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.IssueRegisterPermitResp{Code: 1, Permit: "permit-1", DeviceID: req.DeviceID, Role: req.Role, ExpiresAt: req.ExpiresAt}, nil
+}
+func (f *fakeBackend) RevokeRegisterPermit(_ context.Context, sourceID, targetID uint32, req authsvc.RevokeRegisterPermitReq) (authsvc.RevokeRegisterPermitResp, error) {
+	f.revokePermitArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      authsvc.RevokeRegisterPermitReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return authsvc.RevokeRegisterPermitResp{Code: 1, Permit: req.Permit, DeviceID: "dev-1", Role: "admin"}, nil
+}
 func (f *fakeBackend) CompleteAuth(resp protoauth.RespData, deviceID string) error {
 	f.auth = mcpapp.AuthSnapshot{
 		DeviceID: deviceID,
@@ -88,6 +218,36 @@ func (f *fakeBackend) ListNodes(_ context.Context, sourceID, targetID uint32) (p
 }
 func (f *fakeBackend) NodeInfo(context.Context, uint32, uint32) (protomanagement.NodeInfoResp, error) {
 	return protomanagement.NodeInfoResp{Code: 1}, nil
+}
+func (f *fakeBackend) ConfigGet(_ context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error) {
+	f.configGetArgs = struct {
+		sourceID uint32
+		targetID uint32
+		key      string
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, key: key, called: true}
+	if f.configGetErr != nil {
+		return protomanagement.ConfigResp{}, f.configGetErr
+	}
+	if value, ok := f.configValues[key]; ok {
+		return protomanagement.ConfigResp{Code: 1, Key: key, Value: value}, nil
+	}
+	return protomanagement.ConfigResp{}, errors.New("not found (code=404)")
+}
+func (f *fakeBackend) ConfigList(_ context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error) {
+	f.configListArgs = struct {
+		sourceID uint32
+		targetID uint32
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, called: true}
+	if f.configListErr != nil {
+		return protomanagement.ConfigListResp{}, f.configListErr
+	}
+	keys := make([]string, 0, len(f.configValues))
+	for key := range f.configValues {
+		keys = append(keys, key)
+	}
+	return protomanagement.ConfigListResp{Code: 1, Keys: keys}, nil
 }
 func (f *fakeBackend) VarList(context.Context, uint32, uint32, protovarstore.ListReq) (protovarstore.VarResp, error) {
 	return protovarstore.VarResp{Code: 1}, nil
@@ -177,6 +337,129 @@ func TestAuthLoginFallsBackToStartupDefaults(t *testing.T) {
 	}
 }
 
+func TestAuthGetPermsFallsBackToSnapshotNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_get_perms").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.getPermsArgs.called {
+		t.Fatal("expected GetPerms() called")
+	}
+	if backend.getPermsArgs.sourceID != 7 || backend.getPermsArgs.targetID != 9 || backend.getPermsArgs.nodeID != 7 {
+		t.Fatalf("unexpected auth get_perms args: %+v", backend.getPermsArgs)
+	}
+}
+
+func TestAuthGetPermsUsesResolvedAuthorityNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		configValues:     map[string]string{authorityNodeIDConfigKey: "88"},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_get_perms").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.configGetArgs.called {
+		t.Fatal("expected ConfigGet() called for authority resolution")
+	}
+	if backend.getPermsArgs.targetID != 88 {
+		t.Fatalf("expected authority target 88, got %+v", backend.getPermsArgs)
+	}
+}
+
+func TestAuthListRolesPassesFilters(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_list_roles").Handler(context.Background(), json.RawMessage(`{"offset":1,"limit":2,"role":"admin","node_ids":[7,9]}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.listRolesArgs.called {
+		t.Fatal("expected ListRoles() called")
+	}
+	if backend.listRolesArgs.sourceID != 7 || backend.listRolesArgs.targetID != 9 {
+		t.Fatalf("unexpected auth list_roles route: %+v", backend.listRolesArgs)
+	}
+	if backend.listRolesArgs.req.Offset != 1 || backend.listRolesArgs.req.Limit != 2 || backend.listRolesArgs.req.Role != "admin" {
+		t.Fatalf("unexpected auth list_roles req: %+v", backend.listRolesArgs.req)
+	}
+	if len(backend.listRolesArgs.req.NodeIDs) != 2 || backend.listRolesArgs.req.NodeIDs[0] != 7 || backend.listRolesArgs.req.NodeIDs[1] != 9 {
+		t.Fatalf("unexpected auth list_roles node_ids: %+v", backend.listRolesArgs.req.NodeIDs)
+	}
+}
+
+func TestAuthListPendingRegistersResolvesAuthorityNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		configValues:     map[string]string{authorityNodeIDConfigKey: "55"},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_list_pending_registers").Handler(context.Background(), json.RawMessage(`{"offset":1,"limit":2,"device_id":"dev-1"}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.listPendingArgs.called {
+		t.Fatal("expected ListPendingRegisters() called")
+	}
+	if backend.listPendingArgs.targetID != 55 {
+		t.Fatalf("unexpected authority route: %+v", backend.listPendingArgs)
+	}
+	if backend.listPendingArgs.req.Offset != 1 || backend.listPendingArgs.req.Limit != 2 || backend.listPendingArgs.req.DeviceID != "dev-1" {
+		t.Fatalf("unexpected list pending req: %+v", backend.listPendingArgs.req)
+	}
+}
+
+func TestAuthApproveRegisterUsesExplicitAuthorityID(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_approve_register").Handler(context.Background(), json.RawMessage(`{"authority_id":77,"request_id":"req-1","role":"admin"}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.approveArgs.called {
+		t.Fatal("expected ApproveRegister() called")
+	}
+	if backend.approveArgs.targetID != 77 {
+		t.Fatalf("unexpected approve route: %+v", backend.approveArgs)
+	}
+	if backend.configGetArgs.called {
+		t.Fatal("did not expect ConfigGet() when authority_id is explicit")
+	}
+}
+
+func TestAuthIssueRegisterPermitRejectsNegativeExpiry(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_issue_register_permit").Handler(context.Background(), json.RawMessage(`{"device_id":"dev-1","role":"admin","expires_at":-1}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "invalid_arguments" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
 func TestSessionStatusIncludesPermissionsAndReadiness(t *testing.T) {
 	backend := &fakeBackend{
 		status: mcpapp.Status{
@@ -242,6 +525,63 @@ func TestManagementListNodesWithoutIdentityReturnsMissingIdentity(t *testing.T) 
 	}
 	if !strings.Contains(payload.Hint, "Login first") {
 		t.Fatalf("expected login hint, got %#v", payload)
+	}
+}
+
+func TestAuthListRolesRejectsZeroNodeIDFilter(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_list_roles").Handler(context.Background(), json.RawMessage(`{"node_ids":[0]}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "invalid_arguments" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
+func TestManagementConfigGetUsesRouteAndKey(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		configValues:     map[string]string{"authority.node_id": "55"},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_config_get").Handler(context.Background(), json.RawMessage(`{"key":"authority.node_id"}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.configGetArgs.called {
+		t.Fatal("expected ConfigGet() called")
+	}
+	if backend.configGetArgs.sourceID != 7 || backend.configGetArgs.targetID != 9 || backend.configGetArgs.key != "authority.node_id" {
+		t.Fatalf("unexpected config get args: %+v", backend.configGetArgs)
+	}
+}
+
+func TestManagementConfigListFallsBackToAuthSnapshot(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		configValues:     map[string]string{"authority.node_id": "55"},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_config_list").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.configListArgs.called {
+		t.Fatal("expected ConfigList() called")
+	}
+	if backend.configListArgs.sourceID != 7 || backend.configListArgs.targetID != 9 {
+		t.Fatalf("unexpected config list args: %+v", backend.configListArgs)
 	}
 }
 

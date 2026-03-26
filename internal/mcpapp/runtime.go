@@ -284,6 +284,48 @@ func (r *Runtime) Login(ctx context.Context, sourceID, targetID uint32, deviceID
 	return r.auth.Login(timeoutCtx, sourceID, targetID, deviceID, nodeID)
 }
 
+func (r *Runtime) GetPerms(ctx context.Context, sourceID, targetID, nodeID uint32) (protoauth.RespData, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.GetPerms(timeoutCtx, sourceID, targetID, nodeID)
+}
+
+func (r *Runtime) ListRoles(ctx context.Context, sourceID, targetID uint32, req protoauth.ListRolesReq) (authsvc.ListRolesResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.ListRoles(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) ListPendingRegisters(ctx context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.ListPendingRegisters(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) ApproveRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.ApproveRegisterReq) (authsvc.ApproveRegisterResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.ApproveRegister(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) RejectRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.RejectRegisterReq) (authsvc.RejectRegisterResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.RejectRegister(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) IssueRegisterPermit(ctx context.Context, sourceID, targetID uint32, req authsvc.IssueRegisterPermitReq) (authsvc.IssueRegisterPermitResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.IssueRegisterPermit(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) RevokeRegisterPermit(ctx context.Context, sourceID, targetID uint32, req authsvc.RevokeRegisterPermitReq) (authsvc.RevokeRegisterPermitResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.RevokeRegisterPermit(timeoutCtx, sourceID, targetID, req)
+}
+
 func (r *Runtime) CompleteAuth(resp protoauth.RespData, deviceID string) error {
 	if resp.Code != 1 {
 		return nil
@@ -332,6 +374,18 @@ func (r *Runtime) NodeInfo(ctx context.Context, sourceID, targetID uint32) (prot
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
 	return r.management.NodeInfo(timeoutCtx, sourceID, targetID)
+}
+
+func (r *Runtime) ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.management.ConfigGet(timeoutCtx, sourceID, targetID, key)
+}
+
+func (r *Runtime) ConfigList(ctx context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.management.ConfigList(timeoutCtx, sourceID, targetID)
 }
 
 func (r *Runtime) VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error) {

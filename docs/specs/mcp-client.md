@@ -53,8 +53,17 @@
 - `myflowhub_session_disconnect`
 - `myflowhub_auth_register`
 - `myflowhub_auth_login`
+- `myflowhub_auth_get_perms`
+- `myflowhub_auth_list_roles`
+- `myflowhub_auth_list_pending_registers`
+- `myflowhub_auth_approve_register`
+- `myflowhub_auth_reject_register`
+- `myflowhub_auth_issue_register_permit`
+- `myflowhub_auth_revoke_register_permit`
 - `myflowhub_management_list_nodes`
 - `myflowhub_management_node_info`
+- `myflowhub_management_config_get`
+- `myflowhub_management_config_list`
 - `myflowhub_varstore_list`
 - `myflowhub_varstore_get`
 - `myflowhub_varstore_set`
@@ -102,6 +111,78 @@
   - 输出:
     - 原始 auth login 结果
     - 若 `code=1`，同步刷新 auth snapshot
+- `myflowhub_auth_get_perms`
+  - 输入:
+    - `authority_id?`
+    - `node_id?`
+    - `source_id?`
+    - `target_id?`
+  - 行为:
+    - `node_id` 未传时，优先回退到当前 auth snapshot，再回退到启动默认值
+    - `authority_id` 未传时，先按 management 路由拿到 hub target，再尝试读取 `authority.node_id`
+  - 输出:
+    - 原始 auth get_perms 结果
+- `myflowhub_auth_list_roles`
+  - 输入:
+    - `authority_id?`
+    - `offset?`
+    - `limit?`
+    - `role?`
+    - `node_ids?`
+    - `source_id?`
+    - `target_id?`
+  - 行为:
+    - 透传 Hub `list_roles` 过滤能力
+    - 本地校验 `offset/limit >= 0`、`node_ids > 0`
+    - `authority_id` 未传时，先按 management 路由拿到 hub target，再尝试读取 `authority.node_id`
+  - 输出:
+    - 原始 auth list_roles 结果
+- `myflowhub_auth_list_pending_registers`
+  - 输入:
+    - `authority_id?`
+    - `offset?`
+    - `limit?`
+    - `device_id?`
+    - `source_id?`
+    - `target_id?`
+  - 输出:
+    - 原始 auth list_pending_registers 结果
+- `myflowhub_auth_approve_register`
+  - 输入:
+    - `authority_id?`
+    - `request_id`
+    - `role?`
+    - `source_id?`
+    - `target_id?`
+  - 输出:
+    - 原始 auth approve_register 结果
+- `myflowhub_auth_reject_register`
+  - 输入:
+    - `authority_id?`
+    - `request_id`
+    - `reason?`
+    - `source_id?`
+    - `target_id?`
+  - 输出:
+    - 原始 auth reject_register 结果
+- `myflowhub_auth_issue_register_permit`
+  - 输入:
+    - `authority_id?`
+    - `device_id`
+    - `role`
+    - `expires_at?`
+    - `source_id?`
+    - `target_id?`
+  - 输出:
+    - 原始 auth issue_register_permit 结果
+- `myflowhub_auth_revoke_register_permit`
+  - 输入:
+    - `authority_id?`
+    - `permit`
+    - `source_id?`
+    - `target_id?`
+  - 输出:
+    - 原始 auth revoke_register_permit 结果
 
 ### 7. 管理与变量工具契约
 
@@ -110,6 +191,15 @@
     - `source_id?`
     - `target_id?`
 - `myflowhub_management_node_info`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+- `myflowhub_management_config_get`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `key`
+- `myflowhub_management_config_list`
   - 输入:
     - `source_id?`
     - `target_id?`
@@ -156,6 +246,18 @@
   - repo root 下的 `bin/myflowhub-mcp.exe`
 - `scripts/install-codex-myflowhub-mcp.ps1` 必须能够以幂等方式更新 Codex `config.toml` 中对应的 `mcp_servers.<name>` 配置块。
 - 安装脚本必须支持 `-WhatIf` 预演。
+- `scripts/test-myflowhub-mcp-smoke.ps1` 必须复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程，并通过 stdio 逐条发送 JSON-RPC。
+- smoke 脚本固定覆盖：
+  - `initialize`
+  - `tools/list`
+  - `myflowhub_session_connect`
+  - `myflowhub_auth_register` 或 `myflowhub_auth_login`
+  - `myflowhub_auth_get_perms`
+  - `myflowhub_auth_list_roles`
+  - `myflowhub_management_list_nodes`
+- `login` 模式必须要求显式 `config_dir`，且该目录必须已存在，避免误用 GUI 默认目录或空目录。
+- `register` 模式在未显式传 `config_dir` 时，可创建独立临时目录，但必须把目录路径打印给用户。
+- 当 register 返回 `code=202` 或 `status=pending` 时，脚本必须显式失败并提示“保留当前 config_dir，待审批完成后再 login”。
 
 ## Data Model or Protocol
 
@@ -245,6 +347,11 @@ MCP tool 结构化错误至少包含：
 - 写操作默认关闭。
 - 首版不开放 `config_set`，避免 AI 与用户手动配置互相覆盖。
 - Hub 角色权限仍是真实授权边界，本地不额外实现 owner/target 白名单。
+- `auth_get_perms` / `auth_list_roles` 不增加本地权限层，只复用现有 session、路由回退和结构化错误模型。
+- authority 类 auth 工具的目标解析顺序为：
+  - 显式 `authority_id`
+  - `config_get("authority.node_id")`
+  - hub target 回退
 
 ## Performance Constraints
 

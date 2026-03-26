@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
 	"github.com/yttydcs/myflowhub-win/internal/mcpapp"
+	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
 )
 
 type Backend interface {
@@ -23,9 +25,18 @@ type Backend interface {
 	AllowWrite() bool
 	Register(ctx context.Context, sourceID, targetID uint32, deviceID string) (protoauth.RespData, error)
 	Login(ctx context.Context, sourceID, targetID uint32, deviceID string, nodeID uint32) (protoauth.RespData, error)
+	GetPerms(ctx context.Context, sourceID, targetID, nodeID uint32) (protoauth.RespData, error)
+	ListRoles(ctx context.Context, sourceID, targetID uint32, req protoauth.ListRolesReq) (authsvc.ListRolesResp, error)
+	ListPendingRegisters(ctx context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error)
+	ApproveRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.ApproveRegisterReq) (authsvc.ApproveRegisterResp, error)
+	RejectRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.RejectRegisterReq) (authsvc.RejectRegisterResp, error)
+	IssueRegisterPermit(ctx context.Context, sourceID, targetID uint32, req authsvc.IssueRegisterPermitReq) (authsvc.IssueRegisterPermitResp, error)
+	RevokeRegisterPermit(ctx context.Context, sourceID, targetID uint32, req authsvc.RevokeRegisterPermitReq) (authsvc.RevokeRegisterPermitResp, error)
 	CompleteAuth(resp protoauth.RespData, deviceID string) error
 	ListNodes(ctx context.Context, sourceID, targetID uint32) (protomanagement.ListNodesResp, error)
 	NodeInfo(ctx context.Context, sourceID, targetID uint32) (protomanagement.NodeInfoResp, error)
+	ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error)
+	ConfigList(ctx context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error)
 	VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error)
 	VarGet(ctx context.Context, sourceID, targetID uint32, req protovarstore.GetReq) (protovarstore.VarResp, error)
 	VarSet(ctx context.Context, sourceID, targetID uint32, req protovarstore.SetReq) (protovarstore.VarResp, error)
@@ -53,7 +64,71 @@ type authLoginArgs struct {
 	TargetID *uint32 `json:"target_id,omitempty"`
 }
 
+type authGetPermsArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	NodeID      *uint32 `json:"node_id,omitempty"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
+type authListRolesArgs struct {
+	AuthorityID *uint32  `json:"authority_id,omitempty"`
+	Offset      *int     `json:"offset,omitempty"`
+	Limit       *int     `json:"limit,omitempty"`
+	Role        string   `json:"role,omitempty"`
+	NodeIDs     []uint32 `json:"node_ids,omitempty"`
+	SourceID    *uint32  `json:"source_id,omitempty"`
+	TargetID    *uint32  `json:"target_id,omitempty"`
+}
+
+type authListPendingRegistersArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	Offset      *int    `json:"offset,omitempty"`
+	Limit       *int    `json:"limit,omitempty"`
+	DeviceID    string  `json:"device_id,omitempty"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
+type authApproveRegisterArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	RequestID   string  `json:"request_id"`
+	Role        string  `json:"role,omitempty"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
+type authRejectRegisterArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	RequestID   string  `json:"request_id"`
+	Reason      string  `json:"reason,omitempty"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
+type authIssueRegisterPermitArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	DeviceID    string  `json:"device_id"`
+	Role        string  `json:"role"`
+	ExpiresAt   *int64  `json:"expires_at,omitempty"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
+type authRevokeRegisterPermitArgs struct {
+	AuthorityID *uint32 `json:"authority_id,omitempty"`
+	Permit      string  `json:"permit"`
+	SourceID    *uint32 `json:"source_id,omitempty"`
+	TargetID    *uint32 `json:"target_id,omitempty"`
+}
+
 type managementArgs struct {
+	SourceID *uint32 `json:"source_id,omitempty"`
+	TargetID *uint32 `json:"target_id,omitempty"`
+}
+
+type managementConfigGetArgs struct {
+	Key      string  `json:"key"`
 	SourceID *uint32 `json:"source_id,omitempty"`
 	TargetID *uint32 `json:"target_id,omitempty"`
 }
@@ -108,6 +183,15 @@ type statusReadiness struct {
 	CanVarWrite   bool `json:"can_var_write"`
 }
 
+type authorityRoute struct {
+	SourceID    uint32
+	HubTargetID uint32
+	AuthorityID uint32
+	Resolution  string
+}
+
+const authorityNodeIDConfigKey = "authority.node_id"
+
 func NewTools(backend Backend) []Tool {
 	set := toolSet{backend: backend}
 	return []Tool{
@@ -153,6 +237,92 @@ func NewTools(backend Backend) []Tool {
 			Handler: set.authLogin,
 		},
 		{
+			Name:        "myflowhub_auth_get_perms",
+			Description: "Query the effective role and permission set of a node.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"node_id":      positiveIntegerSchema("Node ID to inspect. Falls back to the current auth snapshot or startup defaults."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}),
+			Handler: set.authGetPerms,
+		},
+		{
+			Name:        "myflowhub_auth_list_roles",
+			Description: "List role and permission assignments known to the authority.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"offset":       nonNegativeIntegerSchema("Optional result offset."),
+				"limit":        nonNegativeIntegerSchema("Optional page size."),
+				"role":         stringSchema("Optional role filter."),
+				"node_ids":     integerArraySchema("Optional node ID filter list.", 1),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}),
+			Handler: set.authListRoles,
+		},
+		{
+			Name:        "myflowhub_auth_list_pending_registers",
+			Description: "List register requests waiting for authority approval.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"offset":       nonNegativeIntegerSchema("Optional result offset."),
+				"limit":        nonNegativeIntegerSchema("Optional page size."),
+				"device_id":    stringSchema("Optional device ID filter."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}),
+			Handler: set.authListPendingRegisters,
+		},
+		{
+			Name:        "myflowhub_auth_approve_register",
+			Description: "Approve a pending register request and reserve its node identity.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"request_id":   stringSchema("Pending register request ID."),
+				"role":         stringSchema("Optional role override."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}, "request_id"),
+			Handler: set.authApproveRegister,
+		},
+		{
+			Name:        "myflowhub_auth_reject_register",
+			Description: "Reject a pending register request.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"request_id":   stringSchema("Pending register request ID."),
+				"reason":       stringSchema("Optional rejection reason."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}, "request_id"),
+			Handler: set.authRejectRegister,
+		},
+		{
+			Name:        "myflowhub_auth_issue_register_permit",
+			Description: "Issue a one-time register permit for a device and role.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"device_id":    stringSchema("Device ID bound to the permit."),
+				"role":         stringSchema("Role granted by the permit."),
+				"expires_at":   nonNegativeIntegerSchema("Optional Unix timestamp expiration."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}, "device_id", "role"),
+			Handler: set.authIssueRegisterPermit,
+		},
+		{
+			Name:        "myflowhub_auth_revoke_register_permit",
+			Description: "Revoke a previously issued register permit.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"permit":       stringSchema("Permit token to revoke."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}, "permit"),
+			Handler: set.authRevokeRegisterPermit,
+		},
+		{
 			Name:        "myflowhub_management_list_nodes",
 			Description: "List nodes under the current hub.",
 			InputSchema: objectSchema(map[string]any{
@@ -169,6 +339,25 @@ func NewTools(backend Backend) []Tool {
 				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
 			}),
 			Handler: set.managementNodeInfo,
+		},
+		{
+			Name:        "myflowhub_management_config_get",
+			Description: "Read a management config key from the current hub or node.",
+			InputSchema: objectSchema(map[string]any{
+				"key":       stringSchema("Management config key."),
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
+			}, "key"),
+			Handler: set.managementConfigGet,
+		},
+		{
+			Name:        "myflowhub_management_config_list",
+			Description: "List management config keys from the current hub or node.",
+			InputSchema: objectSchema(map[string]any{
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
+			}),
+			Handler: set.managementConfigList,
 		},
 		{
 			Name:        "myflowhub_varstore_list",
@@ -310,6 +499,222 @@ func (s toolSet) authLogin(ctx context.Context, raw json.RawMessage) CallToolRes
 	})
 }
 
+func (s toolSet) authGetPerms(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authGetPermsArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional authority_id, node_id, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_get_perms")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	nodeID, err := s.resolveQueryNodeID(args.NodeID)
+	if err != nil {
+		return identityErrorResult(err, "Pass node_id explicitly or login first so the MCP client has a default identity.")
+	}
+	resp, err := s.backend.GetPerms(ctx, route.SourceID, route.AuthorityID, nodeID)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can query permissions.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "node_id": nodeID})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"node_id":           nodeID,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authListRoles(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authListRolesArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional authority_id, offset, limit, role, node_ids, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_list_roles")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req, err := normalizeListRolesArgs(args)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Use non-negative offset/limit values and positive node_ids.", nil)
+	}
+	resp, err := s.backend.ListRoles(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can list authority roles.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authListPendingRegisters(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authListPendingRegistersArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional authority_id, offset, limit, device_id, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_list_pending_registers")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req, err := normalizeListPendingRegistersArgs(args)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Use non-negative offset/limit values.", nil)
+	}
+	resp, err := s.backend.ListPendingRegisters(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can list pending register requests.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authApproveRegister(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authApproveRegisterArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with request_id and optional authority_id, role, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_approve_register")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req := authsvc.ApproveRegisterReq{
+		RequestID: strings.TrimSpace(args.RequestID),
+		Role:      strings.TrimSpace(args.Role),
+	}
+	if req.RequestID == "" {
+		return invalidArgumentsResult("request_id is required", "Pass a non-empty request_id.", nil)
+	}
+	resp, err := s.backend.ApproveRegister(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can approve register requests.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authRejectRegister(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authRejectRegisterArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with request_id and optional authority_id, reason, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_reject_register")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req := authsvc.RejectRegisterReq{
+		RequestID: strings.TrimSpace(args.RequestID),
+		Reason:    strings.TrimSpace(args.Reason),
+	}
+	if req.RequestID == "" {
+		return invalidArgumentsResult("request_id is required", "Pass a non-empty request_id.", nil)
+	}
+	resp, err := s.backend.RejectRegister(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can reject register requests.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authIssueRegisterPermit(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authIssueRegisterPermitArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with device_id, role, and optional authority_id, expires_at, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_issue_register_permit")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req, err := normalizeIssueRegisterPermitArgs(args)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass non-empty device_id and role, and use a non-negative expires_at.", nil)
+	}
+	resp, err := s.backend.IssueRegisterPermit(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can issue register permits.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
+func (s toolSet) authRevokeRegisterPermit(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authRevokeRegisterPermitArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with permit and optional authority_id, source_id, and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_revoke_register_permit")
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	req := authsvc.RevokeRegisterPermitReq{Permit: strings.TrimSpace(args.Permit)}
+	if req.Permit == "" {
+		return invalidArgumentsResult("permit is required", "Pass a non-empty permit token.", nil)
+	}
+	resp, err := s.backend.RevokeRegisterPermit(ctx, route.SourceID, route.AuthorityID, req)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can revoke register permits.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID, "request": req})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"request":           req,
+		"response":          resp,
+	})
+}
+
 func (s toolSet) managementListNodes(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[managementArgs](raw)
 	if err != nil {
@@ -344,6 +749,48 @@ func (s toolSet) managementNodeInfo(ctx context.Context, raw json.RawMessage) Ca
 	resp, err := s.backend.NodeInfo(ctx, sourceID, targetID)
 	if err != nil {
 		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read node information.", map[string]any{"source_id": sourceID, "target_id": targetID})
+	}
+	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
+}
+
+func (s toolSet) managementConfigGet(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[managementConfigGetArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with key and optional source_id and target_id.", nil)
+	}
+	key := strings.TrimSpace(args.Key)
+	if key == "" {
+		return invalidArgumentsResult("key is required", "Pass a non-empty config key.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_management_config_get")
+	}
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
+	}
+	resp, err := s.backend.ConfigGet(ctx, sourceID, targetID, key)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read management config.", map[string]any{"source_id": sourceID, "target_id": targetID, "key": key})
+	}
+	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "key": key, "response": resp})
+}
+
+func (s toolSet) managementConfigList(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[managementArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional source_id and target_id.", nil)
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_management_config_list")
+	}
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
+	}
+	resp, err := s.backend.ConfigList(ctx, sourceID, targetID)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can list management config keys.", map[string]any{"source_id": sourceID, "target_id": targetID})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
 }
@@ -534,6 +981,39 @@ func (s toolSet) resolveManagementRoute(sourceID, targetID *uint32) (uint32, uin
 	return source, target, nil
 }
 
+func (s toolSet) resolveAuthorityRoute(ctx context.Context, sourceID, targetID, authorityID *uint32) (authorityRoute, error) {
+	source, hubTarget, err := s.resolveManagementRoute(sourceID, targetID)
+	if err != nil {
+		return authorityRoute{}, err
+	}
+	if authorityID != nil {
+		if *authorityID == 0 {
+			return authorityRoute{}, errors.New("authority_id must be greater than 0")
+		}
+		return authorityRoute{
+			SourceID:    source,
+			HubTargetID: hubTarget,
+			AuthorityID: *authorityID,
+			Resolution:  "authority_id",
+		}, nil
+	}
+	authorityTarget := hubTarget
+	resolution := "hub_target"
+	resp, err := s.backend.ConfigGet(ctx, source, hubTarget, authorityNodeIDConfigKey)
+	if err == nil {
+		if parsed, ok := parsePositiveUint32String(resp.Value); ok {
+			authorityTarget = parsed
+			resolution = "authority.node_id"
+		}
+	}
+	return authorityRoute{
+		SourceID:    source,
+		HubTargetID: hubTarget,
+		AuthorityID: authorityTarget,
+		Resolution:  resolution,
+	}, nil
+}
+
 func (s toolSet) resolveVarRoute(sourceID, ownerID, targetID *uint32) (uint32, uint32, uint32, error) {
 	source, err := s.resolveVarSource(sourceID)
 	if err != nil {
@@ -590,6 +1070,92 @@ func (s toolSet) resolveVarSource(sourceID *uint32) (uint32, error) {
 	return source, nil
 }
 
+func (s toolSet) resolveQueryNodeID(nodeID *uint32) (uint32, error) {
+	resolved, explicit, err := positiveNodeID(nodeID, "node_id")
+	if err != nil {
+		return 0, err
+	}
+	if !explicit {
+		if snap := s.backend.AuthSnapshot(); snap.LoggedIn && snap.NodeID != 0 {
+			resolved = snap.NodeID
+		} else if defaults := s.backend.Defaults(); defaults.NodeID != 0 {
+			resolved = defaults.NodeID
+		}
+	}
+	if resolved == 0 {
+		return 0, errors.New("node_id is required; login first or pass node_id")
+	}
+	return resolved, nil
+}
+
+func normalizeListRolesArgs(args authListRolesArgs) (protoauth.ListRolesReq, error) {
+	req := protoauth.ListRolesReq{
+		Role: strings.TrimSpace(args.Role),
+	}
+	if args.Offset != nil {
+		if *args.Offset < 0 {
+			return protoauth.ListRolesReq{}, errors.New("offset must be greater than or equal to 0")
+		}
+		req.Offset = *args.Offset
+	}
+	if args.Limit != nil {
+		if *args.Limit < 0 {
+			return protoauth.ListRolesReq{}, errors.New("limit must be greater than or equal to 0")
+		}
+		req.Limit = *args.Limit
+	}
+	if len(args.NodeIDs) > 0 {
+		nodeIDs := make([]uint32, 0, len(args.NodeIDs))
+		for _, nodeID := range args.NodeIDs {
+			if nodeID == 0 {
+				return protoauth.ListRolesReq{}, errors.New("node_ids entries must be greater than 0")
+			}
+			nodeIDs = append(nodeIDs, nodeID)
+		}
+		req.NodeIDs = nodeIDs
+	}
+	return req, nil
+}
+
+func normalizeListPendingRegistersArgs(args authListPendingRegistersArgs) (authsvc.ListPendingRegistersReq, error) {
+	req := authsvc.ListPendingRegistersReq{
+		DeviceID: strings.TrimSpace(args.DeviceID),
+	}
+	if args.Offset != nil {
+		if *args.Offset < 0 {
+			return authsvc.ListPendingRegistersReq{}, errors.New("offset must be greater than or equal to 0")
+		}
+		req.Offset = *args.Offset
+	}
+	if args.Limit != nil {
+		if *args.Limit < 0 {
+			return authsvc.ListPendingRegistersReq{}, errors.New("limit must be greater than or equal to 0")
+		}
+		req.Limit = *args.Limit
+	}
+	return req, nil
+}
+
+func normalizeIssueRegisterPermitArgs(args authIssueRegisterPermitArgs) (authsvc.IssueRegisterPermitReq, error) {
+	req := authsvc.IssueRegisterPermitReq{
+		DeviceID: strings.TrimSpace(args.DeviceID),
+		Role:     strings.TrimSpace(args.Role),
+	}
+	if req.DeviceID == "" {
+		return authsvc.IssueRegisterPermitReq{}, errors.New("device_id is required")
+	}
+	if req.Role == "" {
+		return authsvc.IssueRegisterPermitReq{}, errors.New("role is required")
+	}
+	if args.ExpiresAt != nil {
+		if *args.ExpiresAt < 0 {
+			return authsvc.IssueRegisterPermitReq{}, errors.New("expires_at must be greater than or equal to 0")
+		}
+		req.ExpiresAt = *args.ExpiresAt
+	}
+	return req, nil
+}
+
 func authRouteID(explicit *uint32, snapshot uint32, fallback uint32) (uint32, error) {
 	if explicit != nil {
 		return *explicit, nil
@@ -623,6 +1189,18 @@ func positiveNodeID(value *uint32, field string) (uint32, bool, error) {
 		return 0, true, fmt.Errorf("%s must be greater than 0", field)
 	}
 	return *value, true, nil
+}
+
+func parsePositiveUint32String(value string) (uint32, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil || parsed == 0 {
+		return 0, false
+	}
+	return uint32(parsed), true
 }
 
 func normalizeVisibility(value string) string {
@@ -756,5 +1334,24 @@ func positiveIntegerSchema(description string) map[string]any {
 		"type":        "integer",
 		"minimum":     0,
 		"description": description,
+	}
+}
+
+func nonNegativeIntegerSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "integer",
+		"minimum":     0,
+		"description": description,
+	}
+}
+
+func integerArraySchema(description string, minimum int) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items": map[string]any{
+			"type":    "integer",
+			"minimum": minimum,
+		},
 	}
 }

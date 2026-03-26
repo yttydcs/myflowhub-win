@@ -1,123 +1,162 @@
-# Plan - MyFlowHub-Win MCP Client Hardening
+# Plan - MyFlowHub-Win MCP Authority Flow And Config Read
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-mcp-hardening`
+- Branch: `feat/win-mcp-perms-smoke`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-hardening`
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke`
 - Current Stage: `4 completed / waiting workflow end confirmation`
 
 ## Goal And Current State
 - Goal:
-  - 在不改变 Hub 角色权限模型的前提下，补强 Win MCP client 的可判读错误、状态自检、启动链路和 Codex 安装体验。
+  - 为 Win MCP client 增加 authority 审批流工具，并补充只读 management config 查询。
 - Current State:
-  - 首版 MCP client 已可完成 `connect/login/management/varstore` 基础链路。
-  - 当前本地写保护仅有 `allow_write` 总开关，且这符合当前“服务端 RBAC 为真相、本地只做默认只读 gate”的边界。
-  - 当前 tool 错误主要是字符串消息，不利于 AI 稳定判断阻塞类型。
-  - 当前启动脚本固定依赖 `go run`，Codex 安装也依赖手动编辑配置。
+  - 上一轮已完成 `auth_get_perms/auth_list_roles` 与真实 Hub smoke 脚本。
+  - 当前 MCP 仍缺 authority 管理动作，AI 无法直接查看 pending register 或发放 permit。
+  - 当前 `management` 只暴露 `list_nodes/node_info`，还不能直接查询 `authority.node_id` 等配置。
+  - `localhub` 已明确排除，不纳入本轮范围。
 
 ## Docs Governance
-- Requirements impact: clarify
-- Specs impact: clarify
+- Requirements impact: updated
+- Specs impact: updated
 - Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-hardening\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\requirements\mcp-client.md`
 - Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-hardening\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+  - `D:\project\MyFlowHub3\docs\specs\management-config-layering.md`
 - Related lessons:
   - none
 
 ## Scope
 - Must:
-  - 为 MCP tools 返回统一结构化错误，明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`
-  - 强化 `myflowhub_session_status`，明确暴露 auth/readiness/local write gate
-  - 将 `scripts/start-myflowhub-mcp.ps1` 改为优先启动已编译二进制，缺失时再 fallback 到 `go run`
-  - 在 `scripts/` 下新增 Codex MCP 安装脚本
+  - 新增 `myflowhub_auth_list_pending_registers`
+  - 新增 `myflowhub_auth_approve_register`
+  - 新增 `myflowhub_auth_reject_register`
+  - 新增 `myflowhub_auth_issue_register_permit`
+  - 新增 `myflowhub_auth_revoke_register_permit`
+  - 新增 `myflowhub_management_config_get`
+  - 新增 `myflowhub_management_config_list`
+  - 为 authority 类 auth 工具增加 authority 路由解析
   - 更新 requirements/specs/README
+  - 补相关测试
 - Optional:
-  - 对 MCP server 做最小兼容性补强，但不引入完整 SDK 迁移
+  - 让既有 `auth_get_perms/auth_list_roles` 也复用 authority 路由解析
 - Out of scope:
-  - 新增本地 owner/target 白名单
-  - 改动 Hub 角色权限系统
-  - 扩展新的协议工具集
+  - `localhub` 接入 MCP
+  - `management_config_set`
+  - `topicbus` / `flow` / `file` 接入
+  - 新增本地额外权限层
 
 ## Parallelism Assessment
-- 本轮实现写集高度重叠在 `internal/mcp/*`、`scripts/*`、`docs/*`，不适合派发子 Agent。
+- 写集集中在 `internal/mcp/*`、`internal/mcpapp/*`、`docs/*`、`README.md`，并且 authority 路由设计会影响多个 auth 工具，不派发子 Agent。
 - Owner: 主 Agent
 
 ## Executable Checklist
-- [x] DOCS-1 更新 `docs/requirements/mcp-client.md` 与 `docs/specs/mcp-client.md`
-- [x] IMPL-1 统一 MCP tool 错误模型与状态摘要
-- [x] IMPL-2 增强启动脚本并新增 Codex 安装脚本
-- [x] IMPL-3 更新 README 与必要测试/验证
-- [x] REVIEW-1 完成 3.3 代码复核
-- [x] ARCHIVE-1 归档到 `docs/change`
+- [x] DOCS-2 更新 requirements/specs/README，补 authority 工具与 config read 契约
+- [x] IMPL-4 暴露 authority 审批流 MCP 工具
+- [x] IMPL-5 暴露 management config 只读 MCP 工具并补 authority 路由解析
+- [x] TEST-2 补工具测试并完成回归验证
+- [x] REVIEW-2 完成 3.3 代码复核
+- [x] ARCHIVE-2 归档到 `docs/change`
 
 ## Task Details
-### DOCS-1 - 文档契约更新
+### DOCS-2 - 稳定文档更新
 - Goal:
-  - 把结构化错误、状态摘要、二进制优先启动和安装脚本写入稳定文档。
+  - 将 authority 审批流和 management config read 写入 requirements/specs/README。
 - Files:
   - `docs/requirements/mcp-client.md`
   - `docs/specs/mcp-client.md`
   - `README.md`
 - Acceptance:
-  - 文档能准确描述新的 AI 使用与安装链路
+  - 文档能描述新工具、参数、authority 路由回退和不开放 `config_set` 的边界
 - Tests:
   - 文档自检
 - Rollback:
-  - 回退文档到增强前状态
+  - 回退文档更新
 
-### IMPL-1 - Tool 错误模型与状态摘要
+### IMPL-4 - Authority 审批流工具
 - Goal:
-  - 让 AI 能从 MCP 结果稳定判断阻塞类型，并从 `session_status` 获取下一步行动线索。
+  - 让 AI 能查看 pending register、批准/拒绝注册、发放/撤销 permit。
 - Files:
-  - `internal/mcp/server.go`
   - `internal/mcp/tools.go`
   - `internal/mcp/tools_test.go`
-  - `internal/mcp/server_test.go`
+  - `internal/mcpapp/runtime.go`
 - Acceptance:
-  - `session_status` 返回额外 readiness/permissions 摘要
-  - tool 失败返回结构化 `code/message/hint/details`
-  - 未连接、缺省身份、写入关闭、上游失败可区分
+  - `tools/list` 包含 5 个新的 authority auth 工具
+  - 支持参数校验与结构化错误
+  - 支持显式 `authority_id` 或 authority 自动解析
 - Tests:
   - `go test ./internal/mcp -count=1`
 - Rollback:
-  - 回退错误模型与状态摘要实现
+  - 回退新增工具与 runtime wrapper
 
-### IMPL-2 - 启动与安装链路
+### IMPL-5 - Management Config Read And Authority Routing
 - Goal:
-  - 降低对开发环境 Go 的强依赖，并提供可复用的 Codex 安装入口。
+  - 让 AI 能读取目标节点 config，并让 auth authority 工具能优先命中真实 authority。
 - Files:
-  - `scripts/start-myflowhub-mcp.ps1`
-  - `scripts/install-codex-myflowhub-mcp.ps1`
+  - `internal/mcp/tools.go`
+  - `internal/mcp/tools_test.go`
+  - `internal/mcpapp/runtime.go`
 - Acceptance:
-  - 启动脚本优先寻找本地 exe，缺失时 fallback 到 `go run`
-  - 安装脚本可把 MCP 配置写入 Codex `config.toml`
+  - `tools/list` 包含 `myflowhub_management_config_get` / `myflowhub_management_config_list`
+  - authority 路由优先 `authority_id`，否则尝试读取 `authority.node_id`，失败时回退 hub target
+  - 不开放 `management_config_set`
 - Tests:
-  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --version`
-  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -WhatIf`
+  - `go test ./internal/mcp -count=1`
 - Rollback:
-  - 删除新增安装脚本并恢复启动脚本
+  - 回退 management config 工具与 authority 路由改动
 
-### IMPL-3 - 回归验证与说明
+### TEST-2 - 回归验证
 - Goal:
-  - 保证 README、脚本和 MCP 行为一致，并覆盖关键路径回归。
+  - 确保新增 authority/config 工具不破坏现有 MCP 行为。
 - Files:
-  - `README.md`
-  - 受影响测试文件
+  - `internal/mcp/tools_test.go`
+  - 如有必要的 README 验证说明
 - Acceptance:
-  - README 能直接指导 build / start / install
-  - 关键测试与 smoke 通过
+  - 单测覆盖 authority 参数校验与 authority 解析路径
+  - 构建与全量回归通过
 - Tests:
+  - `$env:GOWORK='off'; go test ./internal/mcp -count=1`
   - `$env:GOWORK='off'; go test ./... -count=1`
   - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
 - Rollback:
-  - 回退说明与测试补充
+  - 回退新增测试与验证说明
 
 ## Risks And Notes
-- PowerShell 下原地更新 TOML 需避免误删其他 MCP server 配置。
-- 启动脚本的二进制查找路径必须可预测，避免与 GUI 产物混淆。
-- 结构化错误要保持向后兼容：`content.text` 仍需可读，`structuredContent` 需更稳定。
+- authority 可能不是 hub 自身；路由回退必须清晰，避免把 authority 类请求错误打到普通 hub target。
+- `config_get` 可能返回本地 404 或上游权限错误；MCP 错误提示要保留下一步动作。
+- `config_set` 虽然 Win service 已支持，但本轮继续保持关闭，避免把读配置和写配置一起放开。
+
+## Stage 3.3 Review
+- 需求覆盖：通过
+  - authority 审批流工具、management config read、authority 路由回退、README/requirements/specs 更新均已落地。
+- 架构合理性：通过
+  - 继续复用现有 auth/management/runtime，不引入本地额外权限层。
+- 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
+  - authority 自动解析最多增加一次 `config_get`，其余为薄封装。
+- 可读性与一致性：通过
+  - 新工具命名、错误结构、返回模型与既有 MCP 工具保持一致。
+- 可扩展性与配置化：通过
+  - authority 支持显式 override，也支持自动读取 `authority.node_id`；`config_set` 仍保持关闭。
+- 稳定性与安全：通过
+  - `localhub` 未接入；`config_get/list` 为只读；真实授权边界仍在 Hub。
+- 测试覆盖情况：通过
+  - `go test ./internal/mcp -count=1`
+  - `$env:GOWORK='off'; go test ./... -count=1`
+  - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+  - `git diff --check`
+- 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
+  - 本轮未派发子 Agent。
+
+## Archive Output
+- Change:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\change\2026-03-26_win-mcp-authority-config-read.md`
+- Index updated:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\change\README.md`
+- Lessons impact:
+  - none
 
 阻塞：否
-已完成 Stage 4，等待用户确认是否结束 workflow
+Stage 4 已完成
+等待用户确认是否结束 workflow
