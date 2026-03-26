@@ -2,10 +2,11 @@
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-mcp-flow-tools`
+- Branch: `main`
+- Source Branch: `feat/win-mcp-flow-tools` (merged and deleted)
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools`
-- Current Stage: `4 archive completed`
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools` (removed after merge)
+- Current Stage: `workflow ended / merged to main / worktree removed`
 
 ## Stage 1 - Requirements Analysis
 ### 目标
@@ -199,9 +200,9 @@
 - Requirements impact: add
 - Specs impact: add
 - Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\requirements\mcp-client.md`
 - Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\specs\mcp-client.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\flow.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\requirements\flow_data_dag.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
@@ -359,9 +360,9 @@
 - Specs impact: updated
 - Lessons impact: none
 - Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\requirements\mcp-client.md`
 - Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\specs\mcp-client.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\flow.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\requirements\flow_data_dag.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
@@ -378,4 +379,18 @@
 
 ### Workflow Status
 - Stage 4 已完成归档
-- 等待用户确认是否结束当前 workflow
+- 用户已确认结束当前 workflow
+
+## Workflow End Record
+- User confirmation:
+  - `2026-03-26` confirmed ending the workflow
+- Merge result:
+  - source branch merged into `main` at commit `e63f09d`
+- Cleanup:
+  - removed worktree `D:\project\MyFlowHub3\worktrees\win-mcp-flow-tools`
+  - ran `git worktree prune`
+  - deleted local branch `feat/win-mcp-flow-tools`
+
+阻塞：否
+Workflow 已结束并已合并到 `main`
+worktree 已移除并完成清理
