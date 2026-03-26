@@ -163,28 +163,28 @@ func (s *FlowService) GetSimple(sourceID, targetID uint32, req flow.GetReq) (flo
 	return s.Get(ctx, sourceID, targetID, req)
 }
 
-func (s *FlowService) Detail(ctx context.Context, sourceID, targetID uint32, req flow.DetailReq) (flow.DetailResp, error) {
+func (s *FlowService) Detail(ctx context.Context, sourceID, targetID uint32, req DetailReq) (DetailResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
-		return flow.DetailResp{}, errors.New("req_id is required")
+		return DetailResp{}, errors.New("req_id is required")
 	}
 	if strings.TrimSpace(req.FlowID) == "" {
-		return flow.DetailResp{}, errors.New("flow_id is required")
+		return DetailResp{}, errors.New("flow_id is required")
 	}
 	if strings.TrimSpace(req.NodeID) == "" {
-		return flow.DetailResp{}, errors.New("node_id is required")
+		return DetailResp{}, errors.New("node_id is required")
 	}
-	payload, err := transport.EncodeMessage(flow.ActionDetail, req)
+	payload, err := transport.EncodeMessage(actionDetail, req)
 	if err != nil {
-		return flow.DetailResp{}, err
+		return DetailResp{}, err
 	}
-	var resp flow.DetailResp
-	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, flow.ActionDetail, flow.ActionDetailResp, &resp, req.FlowID); err != nil {
-		return flow.DetailResp{}, err
+	var resp DetailResp
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, actionDetail, actionDetailResp, &resp, req.FlowID); err != nil {
+		return DetailResp{}, err
 	}
 	return resp, nil
 }
 
-func (s *FlowService) DetailSimple(sourceID, targetID uint32, req flow.DetailReq) (flow.DetailResp, error) {
+func (s *FlowService) DetailSimple(sourceID, targetID uint32, req DetailReq) (DetailResp, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Detail(ctx, sourceID, targetID, req)
@@ -415,7 +415,7 @@ func extractCodeMsg(v any) (int, string) {
 			return 0, ""
 		}
 		return t.Code, t.Msg
-	case *flow.DetailResp:
+	case *DetailResp:
 		if t == nil {
 			return 0, ""
 		}
