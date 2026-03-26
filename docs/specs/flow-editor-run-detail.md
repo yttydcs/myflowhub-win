@@ -20,8 +20,9 @@
 ### 2. 请求契约
 
 - Win `FlowService` 必须新增：
-  - `Detail(ctx, sourceID, targetID uint32, req flow.DetailReq) (flow.DetailResp, error)`
-  - `DetailSimple(sourceID, targetID uint32, req flow.DetailReq) (flow.DetailResp, error)`
+  - `Detail(ctx, sourceID, targetID uint32, req DetailReq) (DetailResp, error)`
+  - `DetailSimple(sourceID, targetID uint32, req DetailReq) (DetailResp, error)`
+- `DetailReq` / `DetailResp` 可以是 Win 本地 typed payload，只要保持 `flow.detail` 的 JSON 字段契约一致；不得强依赖当前仓库基线中不存在的 shared proto detail 类型。
 - 前端 store 必须通过 `window.go.flow.FlowService.DetailSimple(...)` 发起请求。
 - 请求字段映射：
   - `flow_id` <- 当前编辑中的 flow ID

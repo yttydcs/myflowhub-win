@@ -25,6 +25,7 @@
 
 - 最新归档：
   - [2026-03-26_win-mcp-exec-management-tools.md](2026-03-26_win-mcp-exec-management-tools.md)
+  - [2026-03-26_win-flow-detail-bindings.md](2026-03-26_win-flow-detail-bindings.md)
   - [2026-03-26_win-flow-schema-followup.md](2026-03-26_win-flow-schema-followup.md)
   - [2026-03-26_win-flow-status-wiring.md](2026-03-26_win-flow-status-wiring.md)
   - [2026-03-26_win-flow-run-detail.md](2026-03-26_win-flow-run-detail.md)
