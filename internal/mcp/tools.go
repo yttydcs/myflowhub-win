@@ -81,6 +81,33 @@ type varSetArgs struct {
 	Type       string  `json:"type,omitempty"`
 }
 
+type sessionStatusPayload struct {
+	Connected   bool                `json:"connected"`
+	Endpoint    string              `json:"endpoint,omitempty"`
+	Auth        mcpapp.AuthSnapshot `json:"auth"`
+	Defaults    mcpapp.Defaults     `json:"defaults"`
+	Config      mcpapp.ConfigState  `json:"config"`
+	Permissions statusPermissions   `json:"permissions"`
+	Readiness   statusReadiness     `json:"readiness"`
+	Hints       []string            `json:"hints,omitempty"`
+}
+
+type statusPermissions struct {
+	AuthorizationModel string `json:"authorization_model"`
+	LocalWriteGate     bool   `json:"local_write_gate"`
+}
+
+type statusReadiness struct {
+	Authenticated bool `json:"authenticated"`
+	HasIdentity   bool `json:"has_identity"`
+	HasTarget     bool `json:"has_target"`
+	CanRegister   bool `json:"can_register"`
+	CanLogin      bool `json:"can_login"`
+	CanManage     bool `json:"can_manage"`
+	CanVarRead    bool `json:"can_var_read"`
+	CanVarWrite   bool `json:"can_var_write"`
+}
+
 func NewTools(backend Backend) []Tool {
 	set := toolSet{backend: backend}
 	return []Tool{
@@ -193,85 +220,85 @@ func NewTools(backend Backend) []Tool {
 }
 
 func (s toolSet) sessionStatus(_ context.Context, _ json.RawMessage) CallToolResult {
-	return successResult(s.backend.Status())
+	return successResult(s.buildSessionStatus())
 }
 
 func (s toolSet) sessionConnect(_ context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[sessionConnectArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object such as {\"endpoint\":\"127.0.0.1:9000\"}.", nil)
 	}
 	if err := s.backend.Connect(args.Endpoint); err != nil {
-		return errorResult(err.Error(), nil)
+		return upstreamErrorResult(err, "Check the endpoint and that the hub is reachable.", nil)
 	}
-	return successResult(s.backend.Status())
+	return successResult(s.buildSessionStatus())
 }
 
 func (s toolSet) sessionDisconnect(_ context.Context, _ json.RawMessage) CallToolResult {
 	if err := s.backend.Disconnect(); err != nil {
-		return errorResult(err.Error(), nil)
+		return upstreamErrorResult(err, "Check whether the session is still healthy before retrying disconnect.", nil)
 	}
-	return successResult(s.backend.Status())
+	return successResult(s.buildSessionStatus())
 }
 
 func (s toolSet) authRegister(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[authRegisterArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional device_id, source_id, and target_id.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_auth_register")
 	}
 	deviceID, err := s.resolveDeviceID(args.DeviceID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return identityErrorResult(err, "Pass device_id explicitly or configure --device-id for the MCP process.")
 	}
 	sourceID, targetID, err := s.resolveAuthRoute(args.SourceID, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Pass source_id and target_id explicitly for the auth flow if login defaults are not ready.")
 	}
 	resp, err := s.backend.Register(ctx, sourceID, targetID, deviceID)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "device_id": deviceID})
+		return upstreamErrorResult(err, "Check hub connectivity and role permissions for auth/register.", map[string]any{"source_id": sourceID, "target_id": targetID, "device_id": deviceID})
 	}
 	if err := s.backend.CompleteAuth(resp, deviceID); err != nil {
-		return errorResult(err.Error(), nil)
+		return upstreamErrorResult(err, "The auth response succeeded but the local MCP state could not be persisted.", nil)
 	}
 	return successResult(map[string]any{
 		"source_id": sourceID,
 		"target_id": targetID,
 		"device_id": deviceID,
 		"response":  resp,
-		"status":    s.backend.Status(),
+		"status":    s.buildSessionStatus(),
 	})
 }
 
 func (s toolSet) authLogin(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[authLoginArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional device_id, node_id, source_id, and target_id.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_auth_login")
 	}
 	deviceID, err := s.resolveDeviceID(args.DeviceID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return identityErrorResult(err, "Pass device_id explicitly or configure --device-id for the MCP process.")
 	}
 	nodeID, err := s.resolveLoginNodeID(args.NodeID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return identityErrorResult(err, "Pass node_id explicitly or login after a successful register response.")
 	}
 	sourceID, targetID, err := s.resolveAuthRoute(args.SourceID, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Pass source_id and target_id explicitly for the auth flow if login defaults are not ready.")
 	}
 	resp, err := s.backend.Login(ctx, sourceID, targetID, deviceID, nodeID)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "device_id": deviceID, "node_id": nodeID})
+		return upstreamErrorResult(err, "Check hub connectivity, node keys, and role permissions for auth/login.", map[string]any{"source_id": sourceID, "target_id": targetID, "device_id": deviceID, "node_id": nodeID})
 	}
 	if err := s.backend.CompleteAuth(resp, deviceID); err != nil {
-		return errorResult(err.Error(), nil)
+		return upstreamErrorResult(err, "The auth response succeeded but the local MCP state could not be persisted.", nil)
 	}
 	return successResult(map[string]any{
 		"source_id": sourceID,
@@ -279,25 +306,25 @@ func (s toolSet) authLogin(ctx context.Context, raw json.RawMessage) CallToolRes
 		"device_id": deviceID,
 		"node_id":   nodeID,
 		"response":  resp,
-		"status":    s.backend.Status(),
+		"status":    s.buildSessionStatus(),
 	})
 }
 
 func (s toolSet) managementListNodes(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[managementArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional source_id and target_id.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_management_list_nodes")
 	}
 	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
 	}
 	resp, err := s.backend.ListNodes(ctx, sourceID, targetID)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read management data.", map[string]any{"source_id": sourceID, "target_id": targetID})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
 }
@@ -305,18 +332,18 @@ func (s toolSet) managementListNodes(ctx context.Context, raw json.RawMessage) C
 func (s toolSet) managementNodeInfo(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[managementArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional source_id and target_id.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_management_node_info")
 	}
 	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
 	}
 	resp, err := s.backend.NodeInfo(ctx, sourceID, targetID)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read node information.", map[string]any{"source_id": sourceID, "target_id": targetID})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "response": resp})
 }
@@ -324,18 +351,18 @@ func (s toolSet) managementNodeInfo(ctx context.Context, raw json.RawMessage) Ca
 func (s toolSet) varstoreList(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[varListArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional source_id, owner, and target_id.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_varstore_list")
 	}
 	sourceID, owner, targetID, err := s.resolveVarRoute(args.SourceID, args.Owner, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id, owner, and target_id explicitly.")
 	}
 	resp, err := s.backend.VarList(ctx, sourceID, targetID, protovarstore.ListReq{Owner: owner})
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read varstore data.", map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "response": resp})
 }
@@ -343,22 +370,22 @@ func (s toolSet) varstoreList(ctx context.Context, raw json.RawMessage) CallTool
 func (s toolSet) varstoreGet(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[varGetArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with name and optional source_id, owner, and target_id.", nil)
 	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
-		return errorResult("name is required", nil)
+		return invalidArgumentsResult("name is required", "Provide a non-empty variable name.", nil)
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_varstore_get")
 	}
 	sourceID, owner, targetID, err := s.resolveVarRoute(args.SourceID, args.Owner, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id, owner, and target_id explicitly.")
 	}
 	resp, err := s.backend.VarGet(ctx, sourceID, targetID, protovarstore.GetReq{Name: name, Owner: owner})
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read the requested variable.", map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name, "response": resp})
 }
@@ -366,24 +393,21 @@ func (s toolSet) varstoreGet(ctx context.Context, raw json.RawMessage) CallToolR
 func (s toolSet) varstoreSet(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[varSetArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with name, value, and optional source_id, owner, target_id, visibility, and type.", nil)
 	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
-		return errorResult("name is required", nil)
-	}
-	if strings.TrimSpace(args.Value) == "" {
-		return errorResult("value is required", nil)
+		return invalidArgumentsResult("name is required", "Provide a non-empty variable name.", nil)
 	}
 	if !s.backend.AllowWrite() {
-		return errorResult("write operations are disabled; restart with --allow-write=true to enable myflowhub_varstore_set", nil)
+		return writeDisabledResult("myflowhub_varstore_set")
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_varstore_set")
 	}
 	sourceID, owner, targetID, err := s.resolveVarRoute(args.SourceID, args.Owner, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id, owner, and target_id explicitly.")
 	}
 	req := protovarstore.SetReq{
 		Name:       name,
@@ -394,7 +418,7 @@ func (s toolSet) varstoreSet(ctx context.Context, raw json.RawMessage) CallToolR
 	}
 	resp, err := s.backend.VarSet(ctx, sourceID, targetID, req)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can modify the requested variable.", map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "request": req, "response": resp})
 }
@@ -402,26 +426,26 @@ func (s toolSet) varstoreSet(ctx context.Context, raw json.RawMessage) CallToolR
 func (s toolSet) varstoreRevoke(ctx context.Context, raw json.RawMessage) CallToolResult {
 	args, err := decodeArgs[varGetArgs](raw)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with name and optional source_id, owner, and target_id.", nil)
 	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
-		return errorResult("name is required", nil)
+		return invalidArgumentsResult("name is required", "Provide a non-empty variable name.", nil)
 	}
 	if !s.backend.AllowWrite() {
-		return errorResult("write operations are disabled; restart with --allow-write=true to enable myflowhub_varstore_revoke", nil)
+		return writeDisabledResult("myflowhub_varstore_revoke")
 	}
 	if !s.backend.SessionConnected() {
-		return errorResult("not connected", nil)
+		return notConnectedResult("myflowhub_varstore_revoke")
 	}
 	sourceID, owner, targetID, err := s.resolveVarRoute(args.SourceID, args.Owner, args.TargetID)
 	if err != nil {
-		return errorResult(err.Error(), nil)
+		return routeErrorResult(err, "Login first or pass source_id, owner, and target_id explicitly.")
 	}
 	req := protovarstore.GetReq{Name: name, Owner: owner}
 	resp, err := s.backend.VarRevoke(ctx, sourceID, targetID, req)
 	if err != nil {
-		return errorResult(err.Error(), map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can delete the requested variable.", map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "name": name})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "owner": owner, "request": req, "response": resp})
 }
@@ -607,6 +631,102 @@ func normalizeVisibility(value string) string {
 		return "private"
 	}
 	return "public"
+}
+
+func (s toolSet) buildSessionStatus() sessionStatusPayload {
+	status := s.backend.Status()
+	hasIdentity := status.Auth.NodeID != 0 || status.Defaults.NodeID != 0
+	hasTarget := status.Auth.HubID != 0 || status.Defaults.DefaultTarget != 0 || status.Defaults.HubID != 0
+	payload := sessionStatusPayload{
+		Connected: status.Connected,
+		Endpoint:  status.Endpoint,
+		Auth:      status.Auth,
+		Defaults:  status.Defaults,
+		Config:    status.Config,
+		Permissions: statusPermissions{
+			AuthorizationModel: "hub_role_based",
+			LocalWriteGate:     status.Config.AllowWrite,
+		},
+		Readiness: statusReadiness{
+			Authenticated: status.Auth.LoggedIn,
+			HasIdentity:   hasIdentity,
+			HasTarget:     hasTarget,
+			CanRegister:   status.Connected,
+			CanLogin:      status.Connected && hasIdentity,
+			CanManage:     status.Connected && hasIdentity && hasTarget,
+			CanVarRead:    status.Connected && hasIdentity,
+			CanVarWrite:   status.Connected && hasIdentity && status.Config.AllowWrite,
+		},
+	}
+	payload.Hints = statusHints(payload)
+	return payload
+}
+
+func statusHints(status sessionStatusPayload) []string {
+	hints := make([]string, 0, 3)
+	if !status.Connected {
+		hints = append(hints, "Call myflowhub_session_connect before invoking auth, management, or varstore tools.")
+		return hints
+	}
+	if !status.Auth.LoggedIn {
+		if !status.Readiness.HasIdentity {
+			hints = append(hints, "Call myflowhub_auth_register for a new node or pass explicit device_id/node_id values to myflowhub_auth_login.")
+		} else {
+			hints = append(hints, "Call myflowhub_auth_login to refresh an authenticated session before management or varstore operations.")
+		}
+	}
+	if !status.Permissions.LocalWriteGate {
+		hints = append(hints, "Restart the MCP process with --allow-write to enable myflowhub_varstore_set and myflowhub_varstore_revoke.")
+	}
+	if len(hints) == 0 {
+		hints = append(hints, "Session is ready for management and varstore read operations.")
+	}
+	return hints
+}
+
+func invalidArgumentsResult(message, hint string, details any) CallToolResult {
+	return errorResult("invalid_arguments", message, hint, details)
+}
+
+func notConnectedResult(toolName string) CallToolResult {
+	return errorResult(
+		"not_connected",
+		"not connected",
+		fmt.Sprintf("Call myflowhub_session_connect before %s.", strings.TrimSpace(toolName)),
+		nil,
+	)
+}
+
+func identityErrorResult(err error, hint string) CallToolResult {
+	if err == nil {
+		return errorResult("missing_identity", "missing identity", strings.TrimSpace(hint), nil)
+	}
+	msg := strings.TrimSpace(err.Error())
+	if strings.Contains(msg, "must be greater than 0") {
+		return invalidArgumentsResult(msg, "Pass a positive node_id, source_id, target_id, or owner value.", nil)
+	}
+	return errorResult("missing_identity", msg, strings.TrimSpace(hint), nil)
+}
+
+func routeErrorResult(err error, hint string) CallToolResult {
+	return identityErrorResult(err, hint)
+}
+
+func writeDisabledResult(toolName string) CallToolResult {
+	return errorResult(
+		"write_disabled",
+		"write operations are disabled",
+		fmt.Sprintf("Restart the MCP process with --allow-write to enable %s.", strings.TrimSpace(toolName)),
+		nil,
+	)
+}
+
+func upstreamErrorResult(err error, hint string, details any) CallToolResult {
+	message := "upstream request failed"
+	if err != nil && strings.TrimSpace(err.Error()) != "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	return errorResult("upstream_error", message, strings.TrimSpace(hint), details)
 }
 
 func objectSchema(properties map[string]any, required ...string) map[string]any {

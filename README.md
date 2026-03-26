@@ -47,12 +47,18 @@ Notes:
 
 ## MCP CLI
 - Build:
-  - `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+  - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe ./cmd/myflowhub-mcp`
 - Start via script:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
+- Force source mode:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 -PreferSource --version`
 - Run directly:
-  - `.\myflowhub-mcp.exe --endpoint 127.0.0.1:9000 --config-dir "$env:APPDATA\\MyFlowHub\\mcp-client" --device-id ai-node --display-name "AI MCP" --allow-write`
-- Typical MCP host config:
+  - `.\build\bin\myflowhub-mcp.exe --endpoint 127.0.0.1:9000 --config-dir "$env:APPDATA\\myflowhub\\mcp-codex" --device-id ai-node --display-name "AI MCP" --allow-write`
+- Install into Codex (recommended):
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000`
+- Preview the Codex config change:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000 -WhatIf`
+- Manual MCP host config:
 
 ```json
 {
@@ -60,14 +66,15 @@ Notes:
     "myflowhub": {
       "command": "powershell.exe",
       "args": [
+        "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "D:\\project\\MyFlowHub3\\worktrees\\win-mcp-ai-client\\scripts\\start-myflowhub-mcp.ps1",
+        "D:\\path\\to\\MyFlowHub-Win\\scripts\\start-myflowhub-mcp.ps1",
         "--endpoint",
         "127.0.0.1:9000",
         "--config-dir",
-        "C:\\Users\\<user>\\AppData\\Roaming\\MyFlowHub\\mcp-client",
+        "C:\\Users\\<user>\\AppData\\Roaming\\myflowhub\\mcp-codex",
         "--device-id",
         "ai-node",
         "--display-name",
@@ -80,7 +87,10 @@ Notes:
 
 Notes:
 - The MCP process uses `stdio`; `stdout` is reserved for JSON-RPC and logs go to `stderr`.
-- `scripts/start-myflowhub-mcp.ps1` is a thin wrapper around `go run ./cmd/myflowhub-mcp` and forwards any extra CLI flags unchanged.
+- `scripts/start-myflowhub-mcp.ps1` first checks `MYFLOWHUB_MCP_EXE`, `build/bin/myflowhub-mcp.exe`, `.\myflowhub-mcp.exe`, and `.\bin\myflowhub-mcp.exe`; if none exist, it falls back to `go run ./cmd/myflowhub-mcp`.
+- `scripts/install-codex-myflowhub-mcp.ps1` updates `~/.codex/config.toml` in place and supports `-WhatIf`.
 - Use a dedicated `--config-dir` so the MCP node keeps separate `settings.json` and node keys from the GUI client.
 - Write tools such as `myflowhub_varstore_set` and `myflowhub_varstore_revoke` stay disabled unless `--allow-write` is set.
+- `myflowhub_session_status` returns auth/defaults/config plus `permissions`, `readiness`, and `hints`.
+- Tool failures return structured `code` / `message` / `hint` / `details`, which is the preferred machine-readable contract for AI hosts.
 

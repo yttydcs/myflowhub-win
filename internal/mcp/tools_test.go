@@ -43,10 +43,12 @@ func (f *fakeBackend) Status() mcpapp.Status  { return f.status }
 func (f *fakeBackend) SessionConnected() bool { return f.sessionConnected }
 func (f *fakeBackend) Connect(endpoint string) error {
 	f.status.Endpoint = endpoint
+	f.status.Connected = true
 	f.sessionConnected = true
 	return nil
 }
 func (f *fakeBackend) Disconnect() error {
+	f.status.Connected = false
 	f.sessionConnected = false
 	return nil
 }
@@ -138,8 +140,15 @@ func TestVarstoreSetBlockedWhenWriteDisabled(t *testing.T) {
 	if backend.varSetArgs.called {
 		t.Fatal("expected VarSet() not called when allow_write=false")
 	}
-	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "disabled") {
-		t.Fatalf("expected disabled message, got %#v", result.Content)
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "write_disabled" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+	if !strings.Contains(payload.Hint, "--allow-write") {
+		t.Fatalf("expected allow-write hint, got %#v", payload)
 	}
 }
 
@@ -165,6 +174,74 @@ func TestAuthLoginFallsBackToStartupDefaults(t *testing.T) {
 	}
 	if backend.loginArgs.sourceID != 11 || backend.loginArgs.targetID != 99 {
 		t.Fatalf("unexpected route: %+v", backend.loginArgs)
+	}
+}
+
+func TestSessionStatusIncludesPermissionsAndReadiness(t *testing.T) {
+	backend := &fakeBackend{
+		status: mcpapp.Status{
+			Connected: true,
+			Endpoint:  "127.0.0.1:9000",
+			Auth: mcpapp.AuthSnapshot{
+				DeviceID: "ai-node",
+				NodeID:   7,
+				HubID:    9,
+				Role:     "operator",
+				LoggedIn: true,
+			},
+			Defaults: mcpapp.Defaults{
+				DeviceID:      "ai-node",
+				NodeID:        7,
+				HubID:         9,
+				DefaultTarget: 9,
+				AllowWrite:    true,
+			},
+			Config: mcpapp.ConfigState{
+				AllowWrite: true,
+			},
+		},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_session_status").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(sessionStatusPayload)
+	if !ok {
+		t.Fatalf("expected sessionStatusPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Permissions.AuthorizationModel != "hub_role_based" {
+		t.Fatalf("unexpected permissions payload: %#v", payload.Permissions)
+	}
+	if !payload.Readiness.CanVarWrite || !payload.Readiness.CanManage {
+		t.Fatalf("unexpected readiness payload: %#v", payload.Readiness)
+	}
+	if len(payload.Hints) == 0 {
+		t.Fatalf("expected hints, got %#v", payload)
+	}
+}
+
+func TestManagementListNodesWithoutIdentityReturnsMissingIdentity(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		status: mcpapp.Status{
+			Connected: true,
+		},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_list_nodes").Handler(context.Background(), json.RawMessage(`{}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "missing_identity" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+	if !strings.Contains(payload.Hint, "Login first") {
+		t.Fatalf("expected login hint, got %#v", payload)
 	}
 }
 

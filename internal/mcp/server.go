@@ -122,6 +122,13 @@ type toolContent struct {
 	Text string `json:"text"`
 }
 
+type toolErrorPayload struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
+	Details any    `json:"details,omitempty"`
+}
+
 func NewServer(config ServerConfig) (*Server, error) {
 	if config.Reader == nil {
 		return nil, errors.New("reader is required")
@@ -264,7 +271,9 @@ func (s *Server) handleInitialize(raw json.RawMessage) (initializeResult, bool, 
 	return initializeResult{
 		ProtocolVersion: version,
 		Capabilities: map[string]any{
-			"tools": map[string]any{},
+			"tools": map[string]any{
+				"listChanged": false,
+			},
 		},
 		ServerInfo: serverInfo{
 			Name:    s.name,
@@ -300,7 +309,12 @@ func (s *Server) handleToolsCall(ctx context.Context, raw json.RawMessage) (Call
 	}
 	tool, ok := s.toolByID[name]
 	if !ok {
-		return errorResult(fmt.Sprintf("unknown tool: %s", name), map[string]any{"tool": name}), true, nil
+		return errorResult(
+			"unknown_tool",
+			fmt.Sprintf("unknown tool: %s", name),
+			"Call tools/list to inspect the available tool set.",
+			map[string]any{"tool": name},
+		), true, nil
 	}
 	if len(params.Arguments) == 0 {
 		params.Arguments = json.RawMessage("{}")
@@ -344,12 +358,14 @@ func successResult(value any) CallToolResult {
 	}
 }
 
-func errorResult(message string, value any) CallToolResult {
-	payload := map[string]any{
-		"error": strings.TrimSpace(message),
+func errorResult(code, message, hint string, value any) CallToolResult {
+	payload := toolErrorPayload{
+		Code:    strings.TrimSpace(code),
+		Message: strings.TrimSpace(message),
+		Hint:    strings.TrimSpace(hint),
 	}
 	if value != nil {
-		payload["details"] = value
+		payload.Details = value
 	}
 	return CallToolResult{
 		Content:           []toolContent{{Type: "text", Text: renderText(payload)}},
