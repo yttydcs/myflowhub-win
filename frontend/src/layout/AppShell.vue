@@ -3,10 +3,12 @@ import { computed, ref, watch, watchEffect, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import {
   Bug,
+  ClipboardList,
   Database,
   FileText,
   Folder,
   Home as HomeIcon,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   Menu,
@@ -242,13 +244,6 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         tone: "bg-violet-500/15 text-violet-700"
       },
       {
-        label: "Permissions",
-        description: "Authority role/perms",
-        to: "/permissions",
-        icon: ShieldCheck,
-        tone: "bg-emerald-500/15 text-emerald-700"
-      },
-      {
         label: "File Console",
         description: "Browse and transfer",
         to: "/file",
@@ -261,6 +256,32 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         to: "/flow",
         icon: Share2,
         tone: "bg-indigo-500/15 text-indigo-700"
+      }
+    ]
+  },
+  {
+    title: "Authority",
+    items: [
+      {
+        label: "Access Policy",
+        description: "Roles and permissions",
+        to: "/access-policy",
+        icon: ShieldCheck,
+        tone: "bg-emerald-500/15 text-emerald-700"
+      },
+      {
+        label: "Registration Approvals",
+        description: "Pending registrations",
+        to: "/registration-approvals",
+        icon: ClipboardList,
+        tone: "bg-sky-500/15 text-sky-700"
+      },
+      {
+        label: "Permit Issuance",
+        description: "Issue and revoke permits",
+        to: "/permit-issuance",
+        icon: KeyRound,
+        tone: "bg-amber-500/15 text-amber-700"
       }
     ]
   },

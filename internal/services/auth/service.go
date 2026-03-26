@@ -250,8 +250,16 @@ func (s *AuthService) send(_ context.Context, sourceID, targetID uint32, payload
 }
 
 func (s *AuthService) sendAndAwait(ctx context.Context, sourceID, targetID uint32, payload []byte, reqAction, respAction string) (auth.RespData, error) {
+	var data auth.RespData
+	if err := s.sendAndAwaitInto(ctx, sourceID, targetID, payload, reqAction, respAction, &data); err != nil {
+		return auth.RespData{}, err
+	}
+	return data, nil
+}
+
+func (s *AuthService) sendAndAwaitInto(ctx context.Context, sourceID, targetID uint32, payload []byte, reqAction, respAction string, out any) error {
 	if s.session == nil {
-		return auth.RespData{}, errors.New("session service not initialized")
+		return errors.New("session service not initialized")
 	}
 	trimmedAction := strings.TrimSpace(reqAction)
 	resp, err := s.session.SendCommandAndAwait(ctx, auth.SubProtoAuth, sourceID, targetID, payload, respAction)
@@ -259,29 +267,74 @@ func (s *AuthService) sendAndAwait(ctx context.Context, sourceID, targetID uint3
 		if s.logs != nil {
 			s.logs.Appendf("error", "auth %s await failed: %v", trimmedAction, err)
 		}
-		return auth.RespData{}, fmt.Errorf("auth %s: %w", trimmedAction, toUIError(err))
+		return fmt.Errorf("auth %s: %w", trimmedAction, toUIError(err))
 	}
-	var data auth.RespData
-	if err := json.Unmarshal(resp.Message.Data, &data); err != nil {
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(resp.Message.Data, out); err != nil {
 		if s.logs != nil {
 			s.logs.Appendf("error", "auth %s decode failed: %v", trimmedAction, err)
 		}
-		return auth.RespData{}, err
+		return err
 	}
-	if data.Code != 1 {
-		msg := strings.TrimSpace(data.Msg)
+	code, msg := extractAuthCodeMsg(out)
+	if code != 1 {
+		msg = strings.TrimSpace(msg)
 		if msg != "" {
 			if s.logs != nil {
-				s.logs.Appendf("warn", "auth %s failed (code=%d msg=%q)", trimmedAction, data.Code, msg)
+				s.logs.Appendf("warn", "auth %s failed (code=%d msg=%q)", trimmedAction, code, msg)
 			}
-			return auth.RespData{}, fmt.Errorf("%s (code=%d)", msg, data.Code)
+			return fmt.Errorf("%s (code=%d)", msg, code)
 		}
 		if s.logs != nil {
-			s.logs.Appendf("warn", "auth %s failed (code=%d)", trimmedAction, data.Code)
+			s.logs.Appendf("warn", "auth %s failed (code=%d)", trimmedAction, code)
 		}
-		return auth.RespData{}, fmt.Errorf("auth failed (code=%d)", data.Code)
+		return fmt.Errorf("auth failed (code=%d)", code)
 	}
-	return data, nil
+	return nil
+}
+
+func extractAuthCodeMsg(v any) (int, string) {
+	switch t := v.(type) {
+	case *auth.RespData:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *ListRolesResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *ListPendingRegistersResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *ApproveRegisterResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *RejectRegisterResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *IssueRegisterPermitResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *RevokeRegisterPermitResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	default:
+		return 0, ""
+	}
 }
 
 func toUIError(err error) error {

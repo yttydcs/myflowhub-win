@@ -1,16 +1,6 @@
 import { reactive } from "vue"
 import { t } from "@/i18n"
-
-type WailsBinding = (...args: any[]) => Promise<any>
-
-const callPermission = async <T>(method: string, ...args: any[]): Promise<T> => {
-  const api = (window as any)?.go?.permission?.PermissionService
-  const fn: WailsBinding | undefined = api?.[method]
-  if (!fn) {
-    throw new Error(t("Permission binding '{method}' unavailable", { method }))
-  }
-  return fn(...args)
-}
+import { callPermission, useAuthorityStore } from "@/stores/authority"
 
 export type NodeRole = {
   nodeId: number
@@ -33,11 +23,6 @@ export type RuntimeRole = {
   nodeId: number
   role: string
   perms: string[]
-}
-
-type ResolveAuthorityResp = {
-  authorityId: number
-  reason: string
 }
 
 type LoadPolicyResp = {
@@ -81,12 +66,7 @@ type NodePermsResp = {
   perms: string[]
 }
 
-type PermissionState = {
-  sourceId: number
-  hubId: number
-  authorityOverride: string
-  authorityId: number
-  authorityReason: string
+type AccessPolicyState = {
   loading: boolean
   saving: boolean
   policy: Policy
@@ -104,12 +84,7 @@ const emptyPolicy = (): Policy => ({
   rolePerms: []
 })
 
-const state = reactive<PermissionState>({
-  sourceId: 0,
-  hubId: 0,
-  authorityOverride: "",
-  authorityId: 0,
-  authorityReason: "",
+const state = reactive<AccessPolicyState>({
   loading: false,
   saving: false,
   policy: emptyPolicy(),
@@ -120,25 +95,7 @@ const state = reactive<PermissionState>({
   lastSave: undefined
 })
 
-const ensureIdentity = () => {
-  if (!state.sourceId) {
-    throw new Error(t("Login required."))
-  }
-  if (!state.hubId) {
-    throw new Error(t("Hub ID missing."))
-  }
-  return { sourceId: state.sourceId, hubId: state.hubId }
-}
-
-const parseOverride = () => {
-  const raw = state.authorityOverride.trim()
-  if (!raw) return 0
-  const parsed = Number.parseInt(raw, 10)
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new Error(t("Authority override must be a positive number."))
-  }
-  return parsed
-}
+const authority = useAuthorityStore()
 
 const setPolicy = (policy: Policy | undefined) => {
   const next = policy || emptyPolicy()
@@ -158,35 +115,27 @@ const setPolicy = (policy: Policy | undefined) => {
     : []
 }
 
-const resolveAuthority = async () => {
-  const { sourceId, hubId } = ensureIdentity()
-  const overrideId = parseOverride()
-  const resp = await callPermission<ResolveAuthorityResp>("ResolveAuthority", sourceId, hubId, overrideId)
-  state.authorityId = Number(resp?.authorityId || 0)
-  state.authorityReason = String(resp?.reason || "")
-  if (!state.authorityOverride && state.authorityId) {
-    state.authorityOverride = String(state.authorityId)
-  }
-  return state.authorityId
+const reset = () => {
+  setPolicy(undefined)
+  state.loading = false
+  state.saving = false
+  state.runtime = []
+  state.runtimeTotal = 0
+  state.runtimeError = ""
+  state.warnings = []
+  state.lastSave = undefined
 }
 
 const loadPolicy = async () => {
-  const { sourceId } = ensureIdentity()
-  if (!state.authorityId) {
-    await resolveAuthority()
-  }
-  if (!state.authorityId) {
-    throw new Error(t("Authority ID unresolved."))
-  }
+  const { sourceId, authorityId } = await authority.requireAuthority()
   state.loading = true
   try {
-    const resp = await callPermission<LoadPolicyResp>("LoadPolicy", sourceId, state.authorityId)
-    state.authorityId = Number(resp?.authorityId || state.authorityId)
-    setPolicy(resp?.policy)
+    const resp = await callPermission<LoadPolicyResp>("LoadPolicy", sourceId, authorityId)
     state.runtime = Array.isArray(resp?.runtime) ? resp.runtime : []
     state.runtimeTotal = Number(resp?.runtimeTotal || 0)
     state.runtimeError = String(resp?.runtimeError || "")
     state.warnings = Array.isArray(resp?.warnings) ? resp.warnings.map((item) => String(item || "")) : []
+    setPolicy(resp?.policy)
   } finally {
     state.loading = false
   }
@@ -199,13 +148,10 @@ const savePolicy = async (options: {
   refresh: boolean
   verifyRuntime: boolean
 }) => {
-  const { sourceId } = ensureIdentity()
-  if (!state.authorityId) {
-    throw new Error(t("Authority ID unresolved."))
-  }
+  const { sourceId, authorityId } = await authority.requireAuthority()
   const req: SavePolicyReq = {
     sourceId,
-    authorityId: state.authorityId,
+    authorityId,
     policy: {
       defaultRole: state.policy.defaultRole,
       defaultPerms: [...state.policy.defaultPerms],
@@ -229,11 +175,11 @@ const savePolicy = async (options: {
   try {
     const resp = await callPermission<SavePolicyResp>("SavePolicy", req)
     state.lastSave = resp
-    setPolicy(resp?.policy)
-    state.warnings = Array.isArray(resp?.warnings) ? resp.warnings.map((item) => String(item || "")) : []
     state.runtime = Array.isArray(resp?.runtime) ? resp.runtime : []
     state.runtimeTotal = Number(resp?.runtimeTotal || 0)
     state.runtimeError = String(resp?.runtimeError || "")
+    state.warnings = Array.isArray(resp?.warnings) ? resp.warnings.map((item) => String(item || "")) : []
+    setPolicy(resp?.policy)
     if (!resp?.success) {
       throw new Error(
         resp?.errorMessage ||
@@ -247,15 +193,12 @@ const savePolicy = async (options: {
 }
 
 const getNodePerms = async (nodeId: number) => {
-  const { sourceId } = ensureIdentity()
-  if (!state.authorityId) {
-    throw new Error(t("Authority ID unresolved."))
-  }
+  const { sourceId, authorityId } = await authority.requireAuthority()
   const parsed = Number(nodeId || 0)
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(t("Node ID must be a positive number."))
   }
-  const resp = await callPermission<NodePermsResp>("GetNodePerms", sourceId, state.authorityId, parsed)
+  const resp = await callPermission<NodePermsResp>("GetNodePerms", sourceId, authorityId, parsed)
   return {
     nodeId: Number(resp?.nodeId || 0),
     role: String(resp?.role || ""),
@@ -263,46 +206,12 @@ const getNodePerms = async (nodeId: number) => {
   }
 }
 
-export const usePermissionsStore = () => {
+export const useAccessPolicyStore = () => {
   return {
     state,
-    setIdentity: (sourceId: number, hubId: number) => {
-      const nextSourceId = Number(sourceId || 0)
-      const nextHubId = Number(hubId || 0)
-      const prevSourceId = state.sourceId
-      const prevHubId = state.hubId
-      const changed = prevSourceId !== nextSourceId || prevHubId !== nextHubId
-
-      const overrideRaw = state.authorityOverride.trim()
-      let overrideNumber = 0
-      if (overrideRaw) {
-        const parsed = Number.parseInt(overrideRaw, 10)
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          overrideNumber = parsed
-        }
-      }
-      const overrideMatchesPrevHub = overrideNumber > 0 && overrideNumber === prevHubId
-
-      state.sourceId = nextSourceId
-      state.hubId = nextHubId
-
-      if (changed) {
-        state.authorityId = 0
-        state.authorityReason = ""
-        state.runtime = []
-        state.runtimeTotal = 0
-        state.runtimeError = ""
-        state.warnings = []
-        state.lastSave = undefined
-      }
-
-      if (!overrideRaw || overrideMatchesPrevHub) {
-        state.authorityOverride = state.hubId ? String(state.hubId) : ""
-      }
-    },
-    resolveAuthority,
     loadPolicy,
     savePolicy,
-    getNodePerms
+    getNodePerms,
+    reset
   }
 }

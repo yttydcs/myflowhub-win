@@ -110,6 +110,85 @@ type NodePermsResult struct {
 	Perms  []string `json:"perms"`
 }
 
+type ListPendingRegistersRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	Offset      int    `json:"offset,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	DeviceID    string `json:"deviceId,omitempty"`
+}
+
+type PendingRegister struct {
+	RequestID     string `json:"requestId"`
+	DeviceID      string `json:"deviceId"`
+	RequestedRole string `json:"requestedRole,omitempty"`
+	DisplayName   string `json:"displayName,omitempty"`
+	CreatedAt     int64  `json:"createdAt,omitempty"`
+	ExpiresAt     int64  `json:"expiresAt,omitempty"`
+}
+
+type ListPendingRegistersResult struct {
+	AuthorityID uint32            `json:"authorityId"`
+	Total       int               `json:"total"`
+	Items       []PendingRegister `json:"items,omitempty"`
+}
+
+type ApproveRegisterRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	RequestID   string `json:"requestId"`
+	Role        string `json:"role,omitempty"`
+}
+
+type ApproveRegisterResult struct {
+	RequestID string `json:"requestId"`
+	DeviceID  string `json:"deviceId,omitempty"`
+	NodeID    uint32 `json:"nodeId,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Status    string `json:"status,omitempty"`
+}
+
+type RejectRegisterRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	RequestID   string `json:"requestId"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type RejectRegisterResult struct {
+	RequestID string `json:"requestId"`
+	DeviceID  string `json:"deviceId,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+type IssueRegisterPermitRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	DeviceID    string `json:"deviceId"`
+	Role        string `json:"role"`
+	ExpiresAt   int64  `json:"expiresAt,omitempty"`
+}
+
+type PermitIssueResult struct {
+	Permit    string `json:"permit,omitempty"`
+	DeviceID  string `json:"deviceId,omitempty"`
+	Role      string `json:"role,omitempty"`
+	ExpiresAt int64  `json:"expiresAt,omitempty"`
+}
+
+type RevokeRegisterPermitRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	Permit      string `json:"permit"`
+}
+
+type RevokeRegisterPermitResult struct {
+	Permit   string `json:"permit,omitempty"`
+	DeviceID string `json:"deviceId,omitempty"`
+	Role     string `json:"role,omitempty"`
+}
+
 func New(auth *authsvc.AuthService, mgmt *mgmtsvc.ManagementService, logs *logssvc.LogService) *PermissionService {
 	return &PermissionService{auth: auth, mgmt: mgmt, logs: logs}
 }
@@ -333,6 +412,175 @@ func (s *PermissionService) GetNodePerms(sourceID, authorityID, nodeID uint32) (
 		NodeID: nodeID,
 		Role:   strings.TrimSpace(resp.Role),
 		Perms:  cloneSortedTokens(resp.Perms),
+	}, nil
+}
+
+func (s *PermissionService) ListPendingRegisters(req ListPendingRegistersRequest) (ListPendingRegistersResult, error) {
+	if req.SourceID == 0 {
+		return ListPendingRegistersResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return ListPendingRegistersResult{}, errors.New("authority_id is required")
+	}
+	if req.Offset < 0 {
+		return ListPendingRegistersResult{}, errors.New("offset must be non-negative")
+	}
+	if req.Limit < 0 {
+		return ListPendingRegistersResult{}, errors.New("limit must be non-negative")
+	}
+	if s.auth == nil {
+		return ListPendingRegistersResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.ListPendingRegisters(ctx, req.SourceID, req.AuthorityID, authsvc.ListPendingRegistersReq{
+		Offset:   req.Offset,
+		Limit:    req.Limit,
+		DeviceID: strings.TrimSpace(req.DeviceID),
+	})
+	if err != nil {
+		return ListPendingRegistersResult{}, err
+	}
+	return ListPendingRegistersResult{
+		AuthorityID: req.AuthorityID,
+		Total:       resp.Total,
+		Items:       toPendingRegisters(resp.Items),
+	}, nil
+}
+
+func (s *PermissionService) ApproveRegister(req ApproveRegisterRequest) (ApproveRegisterResult, error) {
+	if req.SourceID == 0 {
+		return ApproveRegisterResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return ApproveRegisterResult{}, errors.New("authority_id is required")
+	}
+	if strings.TrimSpace(req.RequestID) == "" {
+		return ApproveRegisterResult{}, errors.New("request_id is required")
+	}
+	if s.auth == nil {
+		return ApproveRegisterResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.ApproveRegister(ctx, req.SourceID, req.AuthorityID, authsvc.ApproveRegisterReq{
+		RequestID: strings.TrimSpace(req.RequestID),
+		Role:      strings.TrimSpace(req.Role),
+	})
+	if err != nil {
+		return ApproveRegisterResult{}, err
+	}
+	return ApproveRegisterResult{
+		RequestID: strings.TrimSpace(resp.RequestID),
+		DeviceID:  strings.TrimSpace(resp.DeviceID),
+		NodeID:    resp.NodeID,
+		Role:      strings.TrimSpace(resp.Role),
+		Status:    strings.TrimSpace(resp.Status),
+	}, nil
+}
+
+func (s *PermissionService) RejectRegister(req RejectRegisterRequest) (RejectRegisterResult, error) {
+	if req.SourceID == 0 {
+		return RejectRegisterResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return RejectRegisterResult{}, errors.New("authority_id is required")
+	}
+	if strings.TrimSpace(req.RequestID) == "" {
+		return RejectRegisterResult{}, errors.New("request_id is required")
+	}
+	if s.auth == nil {
+		return RejectRegisterResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.RejectRegister(ctx, req.SourceID, req.AuthorityID, authsvc.RejectRegisterReq{
+		RequestID: strings.TrimSpace(req.RequestID),
+		Reason:    strings.TrimSpace(req.Reason),
+	})
+	if err != nil {
+		return RejectRegisterResult{}, err
+	}
+	return RejectRegisterResult{
+		RequestID: strings.TrimSpace(resp.RequestID),
+		DeviceID:  strings.TrimSpace(resp.DeviceID),
+		Status:    strings.TrimSpace(resp.Status),
+		Reason:    strings.TrimSpace(resp.Reason),
+	}, nil
+}
+
+func (s *PermissionService) IssueRegisterPermit(req IssueRegisterPermitRequest) (PermitIssueResult, error) {
+	if req.SourceID == 0 {
+		return PermitIssueResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return PermitIssueResult{}, errors.New("authority_id is required")
+	}
+	if strings.TrimSpace(req.DeviceID) == "" {
+		return PermitIssueResult{}, errors.New("device_id is required")
+	}
+	if strings.TrimSpace(req.Role) == "" {
+		return PermitIssueResult{}, errors.New("role is required")
+	}
+	if req.ExpiresAt < 0 {
+		return PermitIssueResult{}, errors.New("expires_at must be non-negative")
+	}
+	if s.auth == nil {
+		return PermitIssueResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.IssueRegisterPermit(ctx, req.SourceID, req.AuthorityID, authsvc.IssueRegisterPermitReq{
+		DeviceID:  strings.TrimSpace(req.DeviceID),
+		Role:      strings.TrimSpace(req.Role),
+		ExpiresAt: req.ExpiresAt,
+	})
+	if err != nil {
+		return PermitIssueResult{}, err
+	}
+	return PermitIssueResult{
+		Permit:    strings.TrimSpace(resp.Permit),
+		DeviceID:  strings.TrimSpace(resp.DeviceID),
+		Role:      strings.TrimSpace(resp.Role),
+		ExpiresAt: resp.ExpiresAt,
+	}, nil
+}
+
+func (s *PermissionService) RevokeRegisterPermit(req RevokeRegisterPermitRequest) (RevokeRegisterPermitResult, error) {
+	if req.SourceID == 0 {
+		return RevokeRegisterPermitResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return RevokeRegisterPermitResult{}, errors.New("authority_id is required")
+	}
+	if strings.TrimSpace(req.Permit) == "" {
+		return RevokeRegisterPermitResult{}, errors.New("permit is required")
+	}
+	if s.auth == nil {
+		return RevokeRegisterPermitResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.RevokeRegisterPermit(ctx, req.SourceID, req.AuthorityID, authsvc.RevokeRegisterPermitReq{
+		Permit: strings.TrimSpace(req.Permit),
+	})
+	if err != nil {
+		return RevokeRegisterPermitResult{}, err
+	}
+	return RevokeRegisterPermitResult{
+		Permit:   strings.TrimSpace(resp.Permit),
+		DeviceID: strings.TrimSpace(resp.DeviceID),
+		Role:     strings.TrimSpace(resp.Role),
 	}, nil
 }
 
@@ -600,6 +848,29 @@ func toRuntimeRoles(items []protoauth.RolePermEntry) []RuntimeRole {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].NodeID < out[j].NodeID })
+	return out
+}
+
+func toPendingRegisters(items []authsvc.PendingRegisterInfo) []PendingRegister {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]PendingRegister, 0, len(items))
+	for _, item := range items {
+		requestID := strings.TrimSpace(item.RequestID)
+		deviceID := strings.TrimSpace(item.DeviceID)
+		if requestID == "" && deviceID == "" {
+			continue
+		}
+		out = append(out, PendingRegister{
+			RequestID:     requestID,
+			DeviceID:      deviceID,
+			RequestedRole: strings.TrimSpace(item.RequestedRole),
+			DisplayName:   strings.TrimSpace(item.DisplayName),
+			CreatedAt:     item.CreatedAt,
+			ExpiresAt:     item.ExpiresAt,
+		})
+	}
 	return out
 }
 
