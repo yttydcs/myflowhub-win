@@ -4,7 +4,7 @@ export const shellZhCN: LocaleMessages = {
   "Session": "会话",
   "Signals": "信号",
   "Operations": "操作",
-  "Authority": "准入管理",
+  "Authority": "访问控制",
   "Tools": "工具",
   "Other": "其他",
   "Home": "主页",
