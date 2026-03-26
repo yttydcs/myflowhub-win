@@ -2,10 +2,11 @@
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-mcp-perms-smoke`
+- Branch: `main`
+- Source Branch: `feat/win-mcp-perms-smoke` (merged and deleted)
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke`
-- Current Stage: `4 completed / waiting workflow end confirmation`
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke` (removed after merge)
+- Current Stage: `workflow ended / merged to main / worktree removed`
 
 ## Goal And Current State
 - Goal:
@@ -20,9 +21,9 @@
 - Requirements impact: updated
 - Specs impact: updated
 - Related requirements:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\requirements\mcp-client.md`
 - Related specs:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\specs\mcp-client.md`
   - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
   - `D:\project\MyFlowHub3\docs\specs\management-config-layering.md`
 - Related lessons:
@@ -151,12 +152,23 @@
 
 ## Archive Output
 - Change:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\change\2026-03-26_win-mcp-authority-config-read.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\change\2026-03-26_win-mcp-auth-perms-smoke.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\change\2026-03-26_win-mcp-authority-config-read.md`
 - Index updated:
-  - `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke\docs\change\README.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Win\docs\change\README.md`
 - Lessons impact:
   - none
 
+## Workflow End Record
+- User confirmation:
+  - `2026-03-26` confirmed ending the workflow
+- Merge result:
+  - source branch fast-forwarded into `main` at commit `4643062`
+- Cleanup:
+  - removed worktree `D:\project\MyFlowHub3\worktrees\win-mcp-perms-smoke`
+  - ran `git worktree prune`
+  - deleted local branch `feat/win-mcp-perms-smoke`
+
 阻塞：否
-Stage 4 已完成
-等待用户确认是否结束 workflow
+Workflow 已结束并已合并到 `main`
+worktree 已移除并完成清理
