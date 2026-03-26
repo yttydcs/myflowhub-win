@@ -22,8 +22,8 @@
 ## Current Docs
 
 - [wails-binding-proto-drift.md](wails-binding-proto-drift.md)
-  - 症状：`wails generate module` / `go test` 报 `undefined: flow.DetailReq` 等 shared proto 缺失符号
-  - 关键词：`GOWORK=off`、`flow.DetailReq`、`wails generate module`、`myflowhub-proto`
+  - 症状：`wails generate module` / `go test` 报 `undefined: flow.DetailReq`，或 `actionDetail redeclared in this block` 等 detail 定义漂移错误
+  - 关键词：`GOWORK=off`、`flow.DetailReq`、`actionDetail redeclared`、`wails generate module`、`myflowhub-proto`
 - [wails-embed-dist-placeholder.md](wails-embed-dist-placeholder.md)
   - 症状：`pattern all:frontend/dist: cannot embed directory frontend/dist: contains no embeddable files`
   - 关键词：`go:embed all:frontend/dist`、`go mod tidy`、`Generating bindings`

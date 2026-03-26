@@ -19,8 +19,6 @@ const defaultFlowTimeout = 8 * time.Second
 const defaultExecCapQueryTimeout = 8 * time.Second
 
 const (
-	actionDetail     = "detail"
-	actionDetailResp = "detail_resp"
 	actionDelete     = "delete"
 	actionDeleteResp = "delete_resp"
 )
@@ -37,34 +35,6 @@ type DeleteResp struct {
 	Code   int    `json:"code"`
 	Msg    string `json:"msg,omitempty"`
 	FlowID string `json:"flow_id,omitempty"`
-}
-
-type DetailReq struct {
-	ReqID        string `json:"req_id"`
-	OriginNode   uint32 `json:"origin_node,omitempty"`
-	ExecutorNode uint32 `json:"executor_node,omitempty"`
-	FlowID       string `json:"flow_id"`
-	RunID        string `json:"run_id,omitempty"`
-	NodeID       string `json:"node_id"`
-	Path         string `json:"path,omitempty"`
-}
-
-type DetailNode struct {
-	ID     string `json:"id,omitempty"`
-	Status string `json:"status,omitempty"`
-	Code   int    `json:"code,omitempty"`
-	Msg    string `json:"msg,omitempty"`
-}
-
-type DetailResp struct {
-	ReqID  string     `json:"req_id,omitempty"`
-	Code   int        `json:"code"`
-	Msg    string     `json:"msg,omitempty"`
-	FlowID string     `json:"flow_id,omitempty"`
-	RunID  string     `json:"run_id,omitempty"`
-	Path   string     `json:"path,omitempty"`
-	Node   DetailNode `json:"node,omitempty"`
-	Result any        `json:"result,omitempty"`
 }
 
 type FlowService struct {
