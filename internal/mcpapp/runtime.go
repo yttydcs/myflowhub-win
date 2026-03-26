@@ -17,9 +17,11 @@ import (
 
 	corebus "github.com/yttydcs/myflowhub-core/eventbus"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
+	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
 	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
+	flowsvc "github.com/yttydcs/myflowhub-win/internal/services/flow"
 	logssvc "github.com/yttydcs/myflowhub-win/internal/services/logs"
 	mgmtsvc "github.com/yttydcs/myflowhub-win/internal/services/management"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
@@ -98,6 +100,7 @@ type Runtime struct {
 	logs       *logssvc.LogService
 	session    *sessionsvc.SessionService
 	auth       *authsvc.AuthService
+	flow       *flowsvc.FlowService
 	management *mgmtsvc.ManagementService
 	varpool    *varpoolsvc.VarPoolService
 	store      *storagesvc.Store
@@ -140,6 +143,7 @@ func New(config Config) (*Runtime, error) {
 	logs := logssvc.New(bus, 2000)
 	session := sessionsvc.New(ctx, bus, logs)
 	auth := authsvc.New(session, logs, store)
+	flow := flowsvc.New(session, logs)
 	management := mgmtsvc.New(session, logs, store)
 	varpool := varpoolsvc.New(session, logs, bus)
 
@@ -153,6 +157,7 @@ func New(config Config) (*Runtime, error) {
 		logs:       logs,
 		session:    session,
 		auth:       auth,
+		flow:       flow,
 		management: management,
 		varpool:    varpool,
 		store:      store,
@@ -386,6 +391,42 @@ func (r *Runtime) ConfigList(ctx context.Context, sourceID, targetID uint32) (pr
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
 	return r.management.ConfigList(timeoutCtx, sourceID, targetID)
+}
+
+func (r *Runtime) FlowSet(ctx context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.Set(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowDelete(ctx context.Context, sourceID, targetID uint32, req flowsvc.DeleteReq) (flowsvc.DeleteResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.Delete(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowRun(ctx context.Context, sourceID, targetID uint32, req protoflow.RunReq) (protoflow.RunResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.Run(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowStatus(ctx context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.Status(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowList(ctx context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.List(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowGet(ctx context.Context, sourceID, targetID uint32, req protoflow.GetReq) (protoflow.GetResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.Get(timeoutCtx, sourceID, targetID, req)
 }
 
 func (r *Runtime) VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error) {

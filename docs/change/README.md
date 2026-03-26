@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-26_win-mcp-flow-tools.md](2026-03-26_win-mcp-flow-tools.md)
   - [2026-03-26_win-mcp-authority-config-read.md](2026-03-26_win-mcp-authority-config-read.md)
   - [2026-03-26_win-mcp-auth-perms-smoke.md](2026-03-26_win-mcp-auth-perms-smoke.md)
   - [2026-03-26_win-mcp-hardening.md](2026-03-26_win-mcp-hardening.md)
