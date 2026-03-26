@@ -149,7 +149,7 @@ const routes = [
     component: AccessPolicy,
     meta: {
       title: "Access Policy",
-      subtitle: "Manage authority roles, permissions, and runtime policy validation."
+      subtitle: "Manage authority access rules, role catalog, and runtime policy validation."
     }
   },
   {
