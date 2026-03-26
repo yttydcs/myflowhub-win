@@ -264,7 +264,7 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
     items: [
       {
         label: "Access Policy",
-        description: "Roles and permissions",
+        description: "Defaults, roles, and overrides",
         to: "/access-policy",
         icon: ShieldCheck,
         tone: "bg-emerald-500/15 text-emerald-700"
