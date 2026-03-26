@@ -8,6 +8,7 @@ export type FlowInputBindingLike = {
   nodeId: string
   path: string
   field: string
+  name: string
   required: boolean
 }
 
@@ -16,6 +17,7 @@ export type VisualBindingSource =
   | { kind: "trigger"; path: string; required: boolean }
   | { kind: "flow_meta"; field: "flow_id"; required: boolean }
   | { kind: "run_meta"; field: "run_id"; required: boolean }
+  | { kind: "flow_var"; name: string; path: string; required: boolean }
 
 export type FieldVisualState = {
   mode: "literal" | "binding"
@@ -64,6 +66,7 @@ const isBindingBlank = (binding: FlowInputBindingLike) =>
   !String(binding.nodeId ?? "").trim() &&
   !String(binding.path ?? "").trim() &&
   !String(binding.field ?? "").trim() &&
+  !String(binding.name ?? "").trim() &&
   !binding.required
 
 const normalizeBindings = (inputs: FlowInputBindingLike[]) =>
@@ -73,6 +76,7 @@ const normalizeBindings = (inputs: FlowInputBindingLike[]) =>
     nodeId: String(binding.nodeId ?? "").trim(),
     path: String(binding.path ?? "").trim(),
     field: String(binding.field ?? "").trim(),
+    name: String(binding.name ?? "").trim(),
     required: Boolean(binding.required)
   }))
 
@@ -118,6 +122,13 @@ const toVisualBindingSource = (binding: FlowInputBindingLike): VisualBindingSour
         field: "run_id",
         required: binding.required
       }
+    case "flow_var":
+      return {
+        kind: "flow_var",
+        name: binding.name,
+        path: binding.path,
+        required: binding.required
+      }
     default:
       return null
   }
@@ -138,6 +149,10 @@ export const describeFieldBinding = (source: VisualBindingSource | null) => {
       return t("Flow metadata · {field}", { field: source.field })
     case "run_meta":
       return t("Run metadata · {field}", { field: source.field })
+    case "flow_var":
+      return source.path
+        ? t("Flow local var {name} at {path}", { name: source.name || "?", path: source.path })
+        : t("Flow local var {name}", { name: source.name || "?" })
     default:
       return ""
   }
@@ -307,6 +322,7 @@ export const setBindingForPointer = (
         nodeId: source.nodeId,
         path: source.path,
         field: "",
+        name: "",
         required: source.required
       })
       break
@@ -317,6 +333,7 @@ export const setBindingForPointer = (
         nodeId: "",
         path: source.path,
         field: "",
+        name: "",
         required: source.required
       })
       break
@@ -327,6 +344,7 @@ export const setBindingForPointer = (
         nodeId: "",
         path: "",
         field: source.field,
+        name: "",
         required: source.required
       })
       break
@@ -337,6 +355,18 @@ export const setBindingForPointer = (
         nodeId: "",
         path: "",
         field: source.field,
+        name: "",
+        required: source.required
+      })
+      break
+    case "flow_var":
+      next.push({
+        to: pointer,
+        sourceKind: "flow_var",
+        nodeId: "",
+        path: source.path,
+        field: "",
+        name: source.name,
         required: source.required
       })
       break

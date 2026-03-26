@@ -402,6 +402,85 @@ describe("flow_schema_resolver", () => {
     ])
   })
 
+  it("accepts nullable wrappers around the supported schema subset", () => {
+    const schema = resolveMethodVisualSchema("demo::nullable", {
+      method: "demo::nullable",
+      inputSchema: {
+        title: "Nullable Demo",
+        type: ["null", "object"],
+        required: ["name"],
+        properties: {
+          name: {
+            type: ["string", "null"],
+            description: "Display name"
+          },
+          notes: {
+            type: ["null", "string"],
+            "x-ui-control": "textarea"
+          },
+          enabled: {
+            type: ["boolean", "null"],
+            default: true
+          },
+          retry_count: {
+            type: ["null", "integer"],
+            default: 2
+          },
+          metadata: {
+            type: ["object", "null"],
+            properties: {}
+          },
+          config: {
+            type: ["null", "object"],
+            properties: {
+              threshold: {
+                type: ["number", "null"]
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(schema).toMatchObject({
+      method: "demo::nullable",
+      title: "Nullable Demo",
+      supportsVisualForm: true,
+      source: "capability"
+    })
+    expect(schema?.fields).toEqual([
+      expect.objectContaining({
+        pointer: "/name",
+        control: "text",
+        required: true,
+        description: "Display name"
+      }),
+      expect.objectContaining({
+        pointer: "/notes",
+        control: "textarea",
+        required: false
+      }),
+      expect.objectContaining({
+        pointer: "/enabled",
+        control: "switch",
+        defaultValue: true
+      }),
+      expect.objectContaining({
+        pointer: "/retry_count",
+        control: "number",
+        defaultValue: 2
+      }),
+      expect.objectContaining({
+        pointer: "/metadata",
+        control: "json"
+      }),
+      expect.objectContaining({
+        pointer: "/config/threshold",
+        control: "number"
+      })
+    ])
+  })
+
   it("returns null for unsupported or mismatched capability schemas", () => {
     expect(
       resolveMethodVisualSchema("demo::call", {
@@ -435,6 +514,30 @@ describe("flow_schema_resolver", () => {
           type: "object",
           oneOf: []
         })
+      })
+    ).toBeNull()
+
+    expect(
+      resolveMethodVisualSchema("demo::call", {
+        method: "demo::call",
+        inputSchema: {
+          type: ["object", "null", "string"],
+          properties: {
+            name: { type: "string" }
+          }
+        }
+      })
+    ).toBeNull()
+
+    expect(
+      resolveMethodVisualSchema("demo::call", {
+        method: "demo::call",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: ["string", "number"] }
+          }
+        }
       })
     ).toBeNull()
   })

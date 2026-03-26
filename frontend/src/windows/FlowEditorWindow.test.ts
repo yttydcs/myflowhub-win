@@ -21,6 +21,8 @@ const toastStore = {
 
 const queryExecCapabilities = vi.fn(async () => undefined)
 const ensureNodeCapabilityLoaded = vi.fn(async () => false)
+const runFlow = vi.fn(async () => undefined)
+const statusFlow = vi.fn(async () => undefined)
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({
@@ -55,7 +57,9 @@ vi.mock("@/stores/flow", async () => {
     useFlowStore: () => ({
       ...store,
       queryExecCapabilities,
-      ensureNodeCapabilityLoaded
+      ensureNodeCapabilityLoaded,
+      runFlow,
+      statusFlow
     })
   }
 })
@@ -64,11 +68,24 @@ import FlowEditorWindow from "./FlowEditorWindow.vue"
 import { useFlowStore } from "@/stores/flow"
 
 const FlowEditorToolbarStub = defineComponent({
-  template: `<div data-test="toolbar" />`
+  props: {
+    flowStatusLabel: { type: String, default: "" },
+    currentRunIdLabel: { type: String, default: "" }
+  },
+  emits: ["run-flow", "refresh-status"],
+  template: `
+    <div data-test="toolbar" :data-flow-status-label="flowStatusLabel" :data-current-run-id-label="currentRunIdLabel">
+      <button data-test="run-flow" type="button" @click="$emit('run-flow')">Run</button>
+      <button data-test="refresh-status" type="button" @click="$emit('refresh-status')">Refresh</button>
+    </div>
+  `
 })
 
 const FlowCanvasStub = defineComponent({
-  template: `<div data-test="canvas" />`
+  props: {
+    statusNodes: { type: Array, default: () => [] }
+  },
+  template: `<div data-test="canvas" :data-status-count="String(statusNodes.length)" />`
 })
 
 const FlowNodeInspectorStub = defineComponent({
@@ -107,6 +124,8 @@ describe("FlowEditorWindow", () => {
     vi.clearAllMocks()
     queryExecCapabilities.mockResolvedValue(undefined)
     ensureNodeCapabilityLoaded.mockResolvedValue(false)
+    runFlow.mockResolvedValue(undefined)
+    statusFlow.mockResolvedValue(undefined)
     flowStore.newDraft()
     flowStore.loadGraphEditorState({
       nodes: [],
@@ -205,5 +224,70 @@ describe("FlowEditorWindow", () => {
     await flushAsync()
 
     expect(ensureNodeCapabilityLoaded).toHaveBeenCalledWith("call1")
+  })
+
+  it("refreshes status with the current run id and passes status nodes into the canvas", async () => {
+    const flowStore = useFlowStore()
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    flowStore.state.statusRunId = "run-1"
+    flowStore.state.lastStatus = {
+      status: "running",
+      runId: "run-1",
+      executorNode: 100,
+      nodes: [
+        {
+          id: "call1",
+          status: "running",
+          code: 0,
+          msg: ""
+        }
+      ]
+    }
+    await nextTick()
+
+    await wrapper.get('[data-test="refresh-status"]').trigger("click")
+    await flushAsync()
+
+    expect(statusFlow).toHaveBeenCalledWith("run-1")
+    expect(wrapper.get('[data-test="canvas"]').attributes("data-status-count")).toBe("1")
+    expect(wrapper.get('[data-test="toolbar"]').attributes("data-flow-status-label")).toBe("Running")
+    expect(wrapper.get('[data-test="toolbar"]').attributes("data-current-run-id-label")).toContain("run-1")
+  })
+
+  it("runs the current flow from the toolbar", async () => {
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    await wrapper.get('[data-test="run-flow"]').trigger("click")
+    await flushAsync()
+
+    expect(runFlow).toHaveBeenCalled()
   })
 })

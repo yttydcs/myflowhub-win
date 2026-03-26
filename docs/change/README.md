@@ -24,6 +24,10 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-26_win-flow-schema-followup.md](2026-03-26_win-flow-schema-followup.md)
+  - [2026-03-26_win-flow-status-wiring.md](2026-03-26_win-flow-status-wiring.md)
+  - [2026-03-26_win-flow-run-detail.md](2026-03-26_win-flow-run-detail.md)
+  - [2026-03-26_win-flow-local-vars-authoring.md](2026-03-26_win-flow-local-vars-authoring.md)
   - [2026-03-26_win-mcp-flow-tools.md](2026-03-26_win-mcp-flow-tools.md)
   - [2026-03-26_win-authority-group-label.md](2026-03-26_win-authority-group-label.md)
   - [2026-03-26_win-mcp-authority-config-read.md](2026-03-26_win-mcp-authority-config-read.md)

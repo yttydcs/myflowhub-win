@@ -15,6 +15,7 @@ const props = defineProps<{
     nodeId: string
     path: string
     field: string
+    name: string
     required: boolean
   }
 }>()
@@ -33,6 +34,8 @@ const sourceKindInputId = "flow-field-binding-source-kind"
 const ancestorNodeInputId = "flow-field-binding-ancestor-node"
 const nodeResultPathInputId = "flow-field-binding-result-path"
 const triggerPathInputId = "flow-field-binding-trigger-path"
+const flowVarNameInputId = "flow-field-binding-flow-var-name"
+const flowVarPathInputId = "flow-field-binding-flow-var-path"
 const requiredBindingInputId = "flow-field-binding-required"
 
 const draftSourcePreview = computed(() => {
@@ -56,6 +59,13 @@ const draftSourcePreview = computed(() => {
         field: "run_id",
         required: props.fieldBindingDraft.required
       })
+    case "flow_var":
+      return describeFieldBinding({
+        kind: "flow_var",
+        name: props.fieldBindingDraft.name.trim(),
+        path: props.fieldBindingDraft.path.trim(),
+        required: props.fieldBindingDraft.required
+      })
     case "trigger":
     default:
       return describeFieldBinding({
@@ -74,6 +84,8 @@ const sourceHelpText = computed(() => {
       return t("Read stable flow metadata without a JSON path.")
     case "run_meta":
       return t("Read stable run metadata without a JSON path.")
+    case "flow_var":
+      return t("Read a flow-local variable from the current run. This is not varstore.")
     case "trigger":
     default:
       return t("Read from the trigger payload for this flow run.")
@@ -84,10 +96,13 @@ const canApply = computed(() => {
   if (!props.activeBindingField) {
     return false
   }
-  if (props.fieldBindingDraft.sourceKind !== "node_result") {
-    return true
+  if (props.fieldBindingDraft.sourceKind === "node_result") {
+    return Boolean(props.fieldBindingDraft.nodeId.trim())
   }
-  return Boolean(props.fieldBindingDraft.nodeId.trim())
+  if (props.fieldBindingDraft.sourceKind === "flow_var") {
+    return Boolean(props.fieldBindingDraft.name.trim())
+  }
+  return true
 })
 </script>
 
@@ -149,6 +164,7 @@ const canApply = computed(() => {
             <option value="trigger">{{ t("Trigger") }}</option>
             <option value="flow_meta">{{ t("Flow Meta") }}</option>
             <option value="run_meta">{{ t("Run Meta") }}</option>
+            <option value="flow_var">{{ t("Flow Local Var") }}</option>
           </select>
         </div>
 
@@ -214,11 +230,45 @@ const canApply = computed(() => {
           </p>
         </div>
 
+        <div v-else-if="fieldBindingDraft.sourceKind === 'flow_var'" class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label :for="flowVarNameInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Local Var Name") }}
+            </label>
+            <input
+              :id="flowVarNameInputId"
+              v-model="fieldBindingDraft.name"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="session_token"
+            />
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("Reads from a flow-local variable in the current run only.") }}
+            </p>
+          </div>
+
+          <div>
+            <label :for="flowVarPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Value Path (Optional)") }}
+            </label>
+            <input
+              :id="flowVarPathInputId"
+              v-model="fieldBindingDraft.path"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="/payload/id"
+            />
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("Path can stay empty to read the whole local var value.") }}
+            </p>
+          </div>
+        </div>
+
         <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
           {{
             fieldBindingDraft.sourceKind === "flow_meta"
               ? t("This field will read from flow meta: flow_id.")
-              : t("This field will read from run meta: run_id.")
+              : fieldBindingDraft.sourceKind === "run_meta"
+                ? t("This field will read from run meta: run_id.")
+                : t("This field will read from a flow-local variable in the current run.")
           }}
         </div>
 

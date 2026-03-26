@@ -53,7 +53,12 @@ const canvasNodes = computed(() =>
       data: {
         label: node.id,
         kind: node.kind,
-        meta: node.kind === "call" ? node.method.trim() || "call" : "compose",
+        meta:
+          node.kind === "call"
+            ? node.method.trim() || "call"
+            : node.kind === "set_var"
+              ? node.setVarName.trim() || "set_var"
+              : "compose",
         status: statusByNodeId.value.get(node.id)
       },
       type: "flowNode",
