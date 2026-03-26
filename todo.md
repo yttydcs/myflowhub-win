@@ -3,10 +3,10 @@
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
 - Branch: `main`
-- Source Branch: `feat/local-vars-win`
+- Source Branch: `feat/local-vars-win` (merged and deleted)
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\win-local-vars-ui`
-- Current Stage: `merge in progress`
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-local-vars-ui` (removed after merge)
+- Current Stage: `workflow ended / merged to main / worktree removed`
 
 ## Goal
 - 为 Win Flow 编辑器补齐 `flow_var` 来源、`set_var` 节点最小 authoring，并按顺序完成 detail、status、schema follow-up 收口。
@@ -62,9 +62,12 @@
 - User confirmation:
   - `2026-03-26` confirmed ending the workflow
 - Merge result:
-  - pending final merge commit
+  - source branch merged into `main` at commit `df48da9`
 - Cleanup:
-  - pending worktree removal and branch deletion
+  - removed worktree `D:\project\MyFlowHub3\worktrees\win-local-vars-ui`
+  - ran `git worktree prune`
+  - deleted local branch `feat/local-vars-win`
 
 阻塞：否
-正在结束 workflow
+Workflow 已结束并已合并到 `main`
+worktree 已移除并完成清理
