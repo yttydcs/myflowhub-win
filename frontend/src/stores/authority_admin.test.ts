@@ -60,16 +60,14 @@ describe("authority admin stores", () => {
   it("resolves authority using the shared authority store", async () => {
     authority.setIdentity(7, 9)
     resolveAuthorityMock.mockResolvedValue({
-      authorityId: 11,
-      reason: "authority_node_id"
+      authorityId: 11
     })
 
     const authorityId = await authority.resolveAuthority()
 
-    expect(resolveAuthorityMock).toHaveBeenCalledWith(7, 9, 9)
+    expect(resolveAuthorityMock).toHaveBeenCalledWith(7, 9, 0)
     expect(authorityId).toBe(11)
     expect(authority.state.authorityId).toBe(11)
-    expect(authority.state.authorityReason).toBe("authority_node_id")
   })
 
   it("loads access policy through the resolved authority", async () => {

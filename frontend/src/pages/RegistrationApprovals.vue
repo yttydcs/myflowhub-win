@@ -40,9 +40,7 @@ const identityLabel = computed(() => {
 })
 
 const authorityLabel = computed(() => {
-  if (!authorityStore.state.authorityId) return "-"
-  if (!authorityStore.state.authorityReason) return String(authorityStore.state.authorityId)
-  return `${authorityStore.state.authorityId} (${authorityStore.state.authorityReason})`
+  return authorityStore.state.authorityId ? String(authorityStore.state.authorityId) : "-"
 })
 
 const summaryCards = computed(() => {
@@ -235,22 +233,7 @@ onMounted(() => {
         </template>
       </CardHeader>
 
-      <div class="mt-5 grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_auto_auto]">
-        <div>
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Authority Override") }}
-          </label>
-          <input
-            v-model="authorityStore.state.authorityOverride"
-            :class="inputClass"
-            :placeholder="t('Default: hubId')"
-          />
-        </div>
-        <div class="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-xs text-muted-foreground">
-          <p class="font-semibold text-foreground">{{ t("Resolve Rule") }}</p>
-          <p class="mt-1">{{ t("manual override -> authority.node_id -> hubId fallback") }}</p>
-          <p class="mt-1">{{ t("Reason: {reason}", { reason: authorityStore.state.authorityReason || "-" }) }}</p>
-        </div>
+      <div class="mt-5 flex flex-wrap gap-2">
         <div class="self-end">
           <Button
             variant="outline"
