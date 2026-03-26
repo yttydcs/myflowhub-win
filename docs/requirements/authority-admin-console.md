@@ -53,14 +53,15 @@
 
 1. 应用左侧必须出现 3 个独立 Authority 管理入口。
 2. 权限编排页面必须支持 authority 解析，并清楚展示当前登录身份、authority 和运行时校验状态。
-3. 权限编排页面必须支持编辑 `auth.default_role`、`auth.default_perms`、`auth.node_roles`、`auth.role_perms`。
-4. 权限编排页面保存后必须能可选执行持久化、运行时应用、失效广播和运行时校验。
-5. 注册审批页面必须能展示每条 pending request 的 `request_id`、`device_id`、申请角色、显示名、创建时间和过期时间。
-6. 注册审批页面必须允许管理员对单条 pending request 执行 approve 或 reject。
-7. approve 时允许角色留空，由 authority 协议自行决定默认行为；前端不得强行填充默认角色替代空值。
-8. 准入许可页面必须允许管理员输入 `device_id`、`role` 和可选过期时间来签发 permit。
-9. 准入许可页面必须允许管理员通过 permit token 撤销 permit。
-10. permit 页面至少要展示当前会话最近一次成功签发的结果，方便立即复制或回收。
+3. 3 个 authority 页面都必须使用当前 session 自动解析 authority，并且不得暴露手动 authority override 输入或内部解析原因。
+4. 权限编排页面必须支持编辑 `auth.default_role`、`auth.default_perms`、`auth.node_roles`、`auth.role_perms`。
+5. 权限编排页面保存后必须能可选执行持久化、运行时应用、失效广播和运行时校验。
+6. 注册审批页面必须能展示每条 pending request 的 `request_id`、`device_id`、申请角色、显示名、创建时间和过期时间。
+7. 注册审批页面必须允许管理员对单条 pending request 执行 approve 或 reject。
+8. approve 时允许角色留空，由 authority 协议自行决定默认行为；前端不得强行填充默认角色替代空值。
+9. 准入许可页面必须允许管理员输入 `device_id`、`role` 和可选过期时间来签发 permit。
+10. 准入许可页面必须允许管理员通过 permit token 撤销 permit。
+11. permit 页面至少要展示当前会话最近一次成功签发的结果，方便立即复制或回收。
 
 ## Non-functional Requirements
 
@@ -72,7 +73,7 @@
 
 ## Edge Cases
 
-- authority override 非法或 authority 无法解析。
+- authority 无法解析。
 - 待审批列表为空。
 - approve 的 role 为空字符串。
 - reject 的 reason 为空。

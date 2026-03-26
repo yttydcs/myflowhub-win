@@ -15,6 +15,7 @@
   - `Permit Issuance`
 - 左侧导航必须把这 3 个页面放在同一组下。
 - 原单页 policy 能力迁移到 `Access Policy` 页面后，不得丢失 authority 解析、policy 读写和 runtime 校验链路。
+- 页面不得暴露手动 authority override 输入，也不展示内部 authority 解析 reason。
 
 ### 2. Wails authority orchestration 契约
 
@@ -74,9 +75,8 @@
 - 3 个 authority 页面都依赖同一组本地上下文字段：
   - `sourceId`
   - `hubId`
-  - `authorityOverride`
   - `authorityId`
-  - `authorityReason`
+- authority 由共享 store 基于当前 session 自动解析；页面只读展示最终 `authorityId`。
 - 身份变化时，页面 store 必须清空与上一次 authority 绑定的数据，避免跨身份脏状态。
 
 ### 2. 待审批注册模型
