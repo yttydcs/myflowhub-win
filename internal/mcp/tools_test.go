@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
+	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	protomanagement "github.com/yttydcs/myflowhub-proto/protocol/management"
 	protovarstore "github.com/yttydcs/myflowhub-proto/protocol/varstore"
 	"github.com/yttydcs/myflowhub-win/internal/mcpapp"
 	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
+	flowsvc "github.com/yttydcs/myflowhub-win/internal/services/flow"
 )
 
 type fakeBackend struct {
@@ -84,6 +86,42 @@ type fakeBackend struct {
 	configListArgs struct {
 		sourceID uint32
 		targetID uint32
+		called   bool
+	}
+	flowSetArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.SetReq
+		called   bool
+	}
+	flowDeleteArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.DeleteReq
+		called   bool
+	}
+	flowRunArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.RunReq
+		called   bool
+	}
+	flowStatusArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.StatusReq
+		called   bool
+	}
+	flowListArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.ListReq
+		called   bool
+	}
+	flowGetArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.GetReq
 		called   bool
 	}
 	varSetArgs struct {
@@ -249,6 +287,60 @@ func (f *fakeBackend) ConfigList(_ context.Context, sourceID, targetID uint32) (
 	}
 	return protomanagement.ConfigListResp{Code: 1, Keys: keys}, nil
 }
+func (f *fakeBackend) FlowSet(_ context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error) {
+	f.flowSetArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.SetReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoflow.SetResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID}, nil
+}
+func (f *fakeBackend) FlowDelete(_ context.Context, sourceID, targetID uint32, req flowsvc.DeleteReq) (flowsvc.DeleteResp, error) {
+	f.flowDeleteArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.DeleteReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return flowsvc.DeleteResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID}, nil
+}
+func (f *fakeBackend) FlowRun(_ context.Context, sourceID, targetID uint32, req protoflow.RunReq) (protoflow.RunResp, error) {
+	f.flowRunArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.RunReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoflow.RunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: "run-1"}, nil
+}
+func (f *fakeBackend) FlowStatus(_ context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error) {
+	f.flowStatusArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.StatusReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoflow.StatusResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "succeeded"}, nil
+}
+func (f *fakeBackend) FlowList(_ context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error) {
+	f.flowListArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.ListReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoflow.ListResp{Code: 1, ReqID: req.ReqID, ExecutorNode: req.ExecutorNode, Flows: []protoflow.FlowSummary{{FlowID: "flow-1"}}}, nil
+}
+func (f *fakeBackend) FlowGet(_ context.Context, sourceID, targetID uint32, req protoflow.GetReq) (protoflow.GetResp, error) {
+	f.flowGetArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      protoflow.GetReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return protoflow.GetResp{Code: 1, ReqID: req.ReqID, ExecutorNode: req.ExecutorNode, FlowID: req.FlowID, Name: "demo"}, nil
+}
 func (f *fakeBackend) VarList(context.Context, uint32, uint32, protovarstore.ListReq) (protovarstore.VarResp, error) {
 	return protovarstore.VarResp{Code: 1}, nil
 }
@@ -266,6 +358,154 @@ func (f *fakeBackend) VarSet(_ context.Context, sourceID, targetID uint32, req p
 }
 func (f *fakeBackend) VarRevoke(context.Context, uint32, uint32, protovarstore.GetReq) (protovarstore.VarResp, error) {
 	return protovarstore.VarResp{Code: 1}, nil
+}
+
+func TestFlowToolsRegistered(t *testing.T) {
+	tools := NewTools(&fakeBackend{})
+	names := map[string]bool{}
+	for _, tool := range tools {
+		names[tool.Name] = true
+	}
+	for _, name := range []string{
+		"myflowhub_flow_list",
+		"myflowhub_flow_get",
+		"myflowhub_flow_set",
+		"myflowhub_flow_run",
+		"myflowhub_flow_status",
+		"myflowhub_flow_delete",
+	} {
+		if !names[name] {
+			t.Fatalf("expected tool %q to be registered", name)
+		}
+	}
+}
+
+func TestFlowListFallsBackToSnapshotAndGeneratesReqID(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_list").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.flowListArgs.called {
+		t.Fatal("expected FlowList() called")
+	}
+	if backend.flowListArgs.sourceID != 7 || backend.flowListArgs.targetID != 9 {
+		t.Fatalf("unexpected flow list route: %+v", backend.flowListArgs)
+	}
+	if backend.flowListArgs.req.OriginNode != 7 || backend.flowListArgs.req.ExecutorNode != 9 {
+		t.Fatalf("unexpected flow list request: %+v", backend.flowListArgs.req)
+	}
+	if strings.TrimSpace(backend.flowListArgs.req.ReqID) == "" {
+		t.Fatalf("expected generated req_id, got %+v", backend.flowListArgs.req)
+	}
+}
+
+func TestFlowSetUsesExplicitExecutorAndTransportTarget(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	raw := json.RawMessage(`{
+		"target_id":55,
+		"executor_node":88,
+		"flow_id":"flow-1",
+		"name":"demo",
+		"trigger":{"type":"interval","every_ms":1000},
+		"graph":{"nodes":[{"id":"n1","kind":"call","spec":{"method":"demo::run"}}],"edges":[]}
+	}`)
+	result := findTool(t, NewTools(backend), "myflowhub_flow_set").Handler(context.Background(), raw)
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.flowSetArgs.called {
+		t.Fatal("expected FlowSet() called")
+	}
+	if backend.flowSetArgs.sourceID != 7 || backend.flowSetArgs.targetID != 55 {
+		t.Fatalf("unexpected flow set route: %+v", backend.flowSetArgs)
+	}
+	if backend.flowSetArgs.req.OriginNode != 7 || backend.flowSetArgs.req.ExecutorNode != 88 {
+		t.Fatalf("unexpected flow set request route fields: %+v", backend.flowSetArgs.req)
+	}
+	if backend.flowSetArgs.req.FlowID != "flow-1" || backend.flowSetArgs.req.Name != "demo" {
+		t.Fatalf("unexpected flow set request payload: %+v", backend.flowSetArgs.req)
+	}
+}
+
+func TestFlowSetBlockedWhenWriteDisabled(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       false,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	raw := json.RawMessage(`{
+		"flow_id":"flow-1",
+		"trigger":{"type":"interval","every_ms":1000},
+		"graph":{"nodes":[{"id":"n1","kind":"call","spec":{"method":"demo::run"}}],"edges":[]}
+	}`)
+	result := findTool(t, NewTools(backend), "myflowhub_flow_set").Handler(context.Background(), raw)
+	if !result.IsError {
+		t.Fatalf("expected error result, got %#v", result)
+	}
+	if backend.flowSetArgs.called {
+		t.Fatal("expected FlowSet() not called when allow_write=false")
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "write_disabled" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+	if !strings.Contains(payload.Hint, "myflowhub_flow_set") {
+		t.Fatalf("expected flow write hint, got %#v", payload)
+	}
+}
+
+func TestFlowGetRequiresFlowID(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_get").Handler(context.Background(), json.RawMessage(`{}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "invalid_arguments" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
+func TestFlowStatusUsesExplicitExecutorNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_status").Handler(context.Background(), json.RawMessage(`{"flow_id":"flow-1","executor_node":88,"run_id":"run-9"}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.flowStatusArgs.called {
+		t.Fatal("expected FlowStatus() called")
+	}
+	if backend.flowStatusArgs.sourceID != 7 || backend.flowStatusArgs.targetID != 9 {
+		t.Fatalf("unexpected flow status transport route: %+v", backend.flowStatusArgs)
+	}
+	if backend.flowStatusArgs.req.ExecutorNode != 88 || backend.flowStatusArgs.req.RunID != "run-9" {
+		t.Fatalf("unexpected flow status request: %+v", backend.flowStatusArgs.req)
+	}
 }
 
 func TestManagementListNodesFallsBackToAuthSnapshot(t *testing.T) {

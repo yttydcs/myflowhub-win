@@ -4,6 +4,7 @@
 
 - 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端首版的模块边界、运行时约束和工具契约。
 - 本规范不修改 `auth`、`management`、`varstore` 协议本身。
+- 本规范不新增 `ExecCapQuery` 等 exec 能力发现工具；相关能力后续按 `exec` 工作流单独规划。
 - 本规范不涉及 GUI 页面、Wails bindings 或第三方 MCP client 能力。
 - 本规范默认 Hub 角色权限模型是真实授权边界；本地仅保留显式写 gate 与安装/运行时保护。
 
@@ -64,6 +65,12 @@
 - `myflowhub_management_node_info`
 - `myflowhub_management_config_get`
 - `myflowhub_management_config_list`
+- `myflowhub_flow_list`
+- `myflowhub_flow_get`
+- `myflowhub_flow_set`
+- `myflowhub_flow_run`
+- `myflowhub_flow_status`
+- `myflowhub_flow_delete`
 - `myflowhub_varstore_list`
 - `myflowhub_varstore_get`
 - `myflowhub_varstore_set`
@@ -184,7 +191,80 @@
   - 输出:
     - 原始 auth revoke_register_permit 结果
 
-### 7. 管理与变量工具契约
+### 7. Flow 工具契约
+
+- 通用路由约束:
+  - `target_id` 是传输目标，用于把 flow 请求路由到 hub 或目标 transport 节点。
+  - `executor_node` 是 flow payload 中的实际执行节点。
+  - `executor_node` 未传时，默认回退到 `target_id`。
+  - `req_id` 未传时，由 MCP 本地生成 UUID。
+- `myflowhub_flow_list`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+  - 输出:
+    - 解析后的 `source_id`
+    - 解析后的 `target_id`
+    - 解析后的 `executor_node`
+    - 规范化后的 `request`
+    - 原始 flow list `response`
+- `myflowhub_flow_get`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+    - `flow_id`
+  - 行为:
+    - `flow_id` 必须为非空字符串
+- `myflowhub_flow_set`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+    - `flow_id`
+    - `name?`
+    - `trigger`
+    - `graph`
+  - 行为:
+    - `flow_id` 必须为非空字符串
+    - `trigger.type` 必须存在
+    - `graph` 必须存在
+- `myflowhub_flow_run`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+    - `flow_id`
+  - 行为:
+    - `flow_id` 必须为非空字符串
+- `myflowhub_flow_status`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+    - `flow_id`
+    - `run_id?`
+  - 行为:
+    - `flow_id` 必须为非空字符串
+    - `run_id` 仅在非空时允许透传
+    - 未传 `run_id` 时，读取最近一次运行状态
+- `myflowhub_flow_delete`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `executor_node?`
+    - `req_id?`
+    - `flow_id`
+  - 行为:
+    - `flow_id` 必须为非空字符串
+
+### 8. 管理与变量工具契约
 
 - `myflowhub_management_list_nodes`
   - 输入:
@@ -230,13 +310,14 @@
     - `name`
     - `owner?`
 
-### 8. 写操作 gate
+### 9. 写操作 gate
 
+- `myflowhub_flow_set`、`myflowhub_flow_run`、`myflowhub_flow_delete` 属于写工具。
 - `myflowhub_varstore_set` 与 `myflowhub_varstore_revoke` 属于写工具。
 - 当 runtime `allow_write=false` 时，写工具必须在本地返回明确错误。
 - 该 gate 发生在协议发送前。
 
-### 9. 启动与安装链路
+### 10. 启动与安装链路
 
 - `scripts/start-myflowhub-mcp.ps1` 必须优先尝试已构建的 `myflowhub-mcp.exe`，找不到时再 fallback 到 `go run ./cmd/myflowhub-mcp`。
 - 启动脚本至少应检查以下候选路径：
@@ -267,6 +348,7 @@
   - `internal/services/session`
   - `internal/services/auth`
   - `internal/services/management`
+  - `internal/services/flow`
   - `internal/services/varpool`
 - MCP 入口不得依赖 Wails `runtime.EventsEmit` 或 GUI 页面状态。
 
@@ -322,8 +404,11 @@ type StatusReadiness struct {
   - 非 `session/auth` 工具调用时本地失败
 - 缺省身份:
   - 当业务工具无法得到可用默认 `source_id` / `hub_id` 时本地失败
+- flow 路由缺失:
+  - 当 flow 工具既拿不到显式 `executor_node`，也拿不到可回退的 `target_id` 时本地失败
 - 参数非法:
   - 在 tool 层优先校验，避免把明显非法请求发往 Hub
+  - `flow_id`、`run_id` 等字符串参数必须在本地校验非空
 - 写操作被禁:
   - 使用独立错误码或明确消息区分于普通协议失败
 - 协议失败:
@@ -346,6 +431,7 @@ MCP tool 结构化错误至少包含：
 - MCP 本地配置目录默认独立于 GUI。
 - 写操作默认关闭。
 - 首版不开放 `config_set`，避免 AI 与用户手动配置互相覆盖。
+- flow 工具必须明确区分 `target_id` 与 `executor_node`，避免把 transport 路由和执行节点语义混为一谈。
 - Hub 角色权限仍是真实授权边界，本地不额外实现 owner/target 白名单。
 - `auth_get_perms` / `auth_list_roles` 不增加本地权限层，只复用现有 session、路由回退和结构化错误模型。
 - authority 类 auth 工具的目标解析顺序为：
@@ -366,5 +452,7 @@ MCP tool 结构化错误至少包含：
 ## Related Specs
 
 - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+- `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\flow.md`
+- `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
 - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`
 - `D:\project\MyFlowHub3\docs\specs\management-config-layering.md`
