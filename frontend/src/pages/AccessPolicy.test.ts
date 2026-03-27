@@ -286,5 +286,12 @@ describe("AccessPolicy", () => {
 
     expect(wrapper.text()).toContain("编辑角色")
     expect(wrapper.text()).toContain("custom.observe")
+
+    const roleDialog = wrapper.find("[data-role-editor-dialog]")
+    const roleDialogScroll = wrapper.find("[data-role-editor-scroll]")
+    expect(roleDialog.exists()).toBe(true)
+    expect(roleDialog.classes()).toContain("max-h-[85vh]")
+    expect(roleDialogScroll.exists()).toBe(true)
+    expect(roleDialogScroll.classes()).toContain("overflow-y-auto")
   })
 })
