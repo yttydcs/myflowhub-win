@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-27_win-permit-ui-refine.md](2026-03-27_win-permit-ui-refine.md)
   - [2026-03-27_win-approval-filter-button-height.md](2026-03-27_win-approval-filter-button-height.md)
   - [2026-03-27_win-approval-actions-layout.md](2026-03-27_win-approval-actions-layout.md)
   - [2026-03-27_win-access-policy-save-loading.md](2026-03-27_win-access-policy-save-loading.md)

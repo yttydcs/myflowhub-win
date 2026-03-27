@@ -187,6 +187,7 @@ describe("PermitIssuance", () => {
 
     expect(wrapper.text()).toContain("准入许可")
     expect(wrapper.text()).toContain("许可动作")
+    expect(wrapper.text()).not.toContain("解析")
     expect(wrapper.find("[data-permit-issue-dialog]").exists()).toBe(false)
     expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(false)
 
@@ -234,7 +235,10 @@ describe("PermitIssuance", () => {
     await nextTick()
 
     expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(true)
-    expect((wrapper.get("[data-revoke-permit-input]").element as HTMLTextAreaElement).value).toBe("permit_123")
+    const revokeInput = wrapper.get("[data-revoke-permit-input]")
+    expect(revokeInput.element.tagName).toBe("INPUT")
+    expect((revokeInput.element as HTMLInputElement).value).toBe("permit_123")
+    expect(wrapper.find("[data-latest-permit-details]").exists()).toBe(true)
 
     await wrapper.get("[data-revoke-submit]").trigger("click")
     await Promise.resolve()

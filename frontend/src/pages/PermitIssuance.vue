@@ -34,8 +34,6 @@ const revokeForm = reactive({
 
 const inputClass =
   "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-const textAreaClass =
-  "mt-2 min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
 const ready = computed(() => {
   return Boolean(
@@ -67,6 +65,19 @@ const latestPermitStateLabel = computed(() => {
     return t("Active")
   }
   return t("Idle")
+})
+
+const latestPermitDetails = computed(() => {
+  const latest = permitStore.state.lastIssued
+  if (!latest) {
+    return []
+  }
+  return [
+    { label: t("Device ID"), value: latest.deviceId || "-" },
+    { label: t("Role"), value: latest.role || "-" },
+    { label: t("Expires At"), value: formatTimestamp(latest.expiresAt) },
+    { label: t("Issued At"), value: formatTimestamp(Date.parse(latest.issuedAt)) }
+  ]
 })
 
 const ensureReady = () => {
@@ -133,23 +144,6 @@ const openRevokeDialog = (permitOverride?: string) => {
   ).trim()
   revokeForm.permit = nextPermit
   dialogs.revokeOpen = true
-}
-
-const resolveAuthorityAction = async () => {
-  try {
-    ensureReady()
-    const authorityId = await authorityStore.resolveAuthority()
-    if (!authorityId) {
-      throw new Error(t("Authority ID unresolved."))
-    }
-    toast.success(
-      t("Authority resolved."),
-      t("authority={authorityId}", { authorityId })
-    )
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, t("Failed to resolve authority."))
-  }
 }
 
 const issuePermit = async () => {
@@ -273,22 +267,10 @@ onMounted(() => {
         </template>
       </CardHeader>
 
-      <div class="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
-        <div class="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-xs text-muted-foreground">
+      <div class="mt-5 rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-xs text-muted-foreground">
           <p class="font-semibold text-foreground">{{ t("Protocol Boundary") }}</p>
           <p class="mt-1">{{ t("Current auth protocol supports issue + revoke, but not permit history listing.") }}</p>
           <p class="mt-1">{{ t("The console only keeps the latest successful issuance in memory for quick copy or revoke.") }}</p>
-        </div>
-        <div class="self-end">
-          <Button
-            variant="outline"
-            size="sm"
-            :disabled="authorityStore.state.resolving || permitStore.state.issuing || permitStore.state.revoking"
-            @click="resolveAuthorityAction"
-          >
-            {{ t("Resolve") }}
-          </Button>
-        </div>
       </div>
     </section>
 
@@ -382,32 +364,31 @@ onMounted(() => {
 
           <div
             v-if="permitStore.state.lastIssued"
-            class="mt-4 space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-sm"
+            class="mt-4 rounded-2xl border border-border/60 bg-background/70 p-4 text-sm"
           >
             <div>
               <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Permit Token") }}</p>
-              <p class="mt-2 break-all font-mono text-xs text-foreground">{{ permitStore.state.lastIssued.permit }}</p>
+              <p class="mt-2 break-all rounded-xl border border-border/60 bg-card/80 px-3 py-2 font-mono text-xs text-foreground">
+                {{ permitStore.state.lastIssued.permit }}
+              </p>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Device ID") }}</p>
-                <p class="mt-1">{{ permitStore.state.lastIssued.deviceId }}</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Role") }}</p>
-                <p class="mt-1">{{ permitStore.state.lastIssued.role }}</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Expires At") }}</p>
-                <p class="mt-1">{{ formatTimestamp(permitStore.state.lastIssued.expiresAt) }}</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Issued At") }}</p>
-                <p class="mt-1">{{ formatTimestamp(Date.parse(permitStore.state.lastIssued.issuedAt)) }}</p>
+            <div
+              data-latest-permit-details
+              class="mt-3 overflow-hidden rounded-xl border border-border/60 bg-card/80"
+            >
+              <div
+                v-for="detail in latestPermitDetails"
+                :key="detail.label"
+                class="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2 last:border-b-0"
+              >
+                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ detail.label }}
+                </p>
+                <p class="text-right text-foreground">{{ detail.value }}</p>
               </div>
             </div>
 
-            <div class="flex flex-wrap gap-2">
+            <div class="mt-3 flex flex-wrap gap-2">
               <Button data-copy-permit size="sm" variant="outline" @click="copyPermit">{{ t("Copy Permit") }}</Button>
               <Button
                 data-open-latest-revoke-dialog
@@ -459,29 +440,28 @@ onMounted(() => {
         />
 
         <div class="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Device ID") }}
-              </label>
-              <input
-                v-model="issueForm.deviceId"
-                data-issue-device-input
-                :class="inputClass"
-                :placeholder="t('device-001')"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Role") }}
-              </label>
-              <input
-                v-model="issueForm.role"
-                data-issue-role-input
-                :class="inputClass"
-                :placeholder="t('admin')"
-              />
-            </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Device ID") }}
+            </label>
+            <input
+              v-model="issueForm.deviceId"
+              data-issue-device-input
+              :class="inputClass"
+              :placeholder="t('device-001')"
+            />
+          </div>
+
+          <div class="mt-4">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Role") }}
+            </label>
+            <input
+              v-model="issueForm.role"
+              data-issue-role-input
+              :class="inputClass"
+              :placeholder="t('admin')"
+            />
           </div>
 
           <div class="mt-4">
@@ -533,10 +513,10 @@ onMounted(() => {
           <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {{ t("Permit Token") }}
           </label>
-          <textarea
+          <input
             v-model="revokeForm.permit"
             data-revoke-permit-input
-            :class="textAreaClass"
+            :class="inputClass"
             :placeholder="t('permit_xxx')"
           />
         </div>
