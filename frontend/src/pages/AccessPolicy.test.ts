@@ -274,7 +274,8 @@ describe("AccessPolicy", () => {
     await nextTick()
 
     expect(wrapper.text()).toContain("observer")
-    expect(wrapper.text()).toContain("custom.observe")
+    expect(wrapper.text()).toContain("已选 2 项")
+    expect(wrapper.text()).toContain("1 项额外权限")
 
     const editButtons = wrapper
       .findAll("button")
@@ -293,5 +294,85 @@ describe("AccessPolicy", () => {
     expect(roleDialog.classes()).toContain("max-h-[85vh]")
     expect(roleDialogScroll.exists()).toBe(true)
     expect(roleDialogScroll.classes()).toContain("overflow-y-auto")
+    expect(roleDialog.findAll("select")).toHaveLength(0)
+  })
+
+  it("applies role presets and adds permissions through the picker list", async () => {
+    const wrapper = mount(AccessPolicy, {
+      global: {
+        stubs: {
+          PageHero: PageHeroStub,
+          CardHeader: CardHeaderStub,
+          Button: ButtonStub,
+          Badge: BadgeStub,
+          Overlay: OverlayStub
+        }
+      }
+    })
+
+    await Promise.resolve()
+    await nextTick()
+
+    const roleTab = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "角色管理")
+
+    expect(roleTab).toBeTruthy()
+    await roleTab!.trigger("click")
+    await nextTick()
+
+    let editButtons = wrapper
+      .findAll("button")
+      .filter((button) => button.text() === "编辑")
+
+    await editButtons[0].trigger("click")
+    await nextTick()
+
+    const applyPresetButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "套用内置预设")
+
+    expect(applyPresetButton).toBeTruthy()
+    await applyPresetButton!.trigger("click")
+    await nextTick()
+
+    expect(wrapper.findAll("[data-role-perm-row]").length).toBeGreaterThan(1)
+    expect(wrapper.findAll("[data-role-perm-label]").map((node) => node.text())).toContain("auth.register.approve")
+
+    const cancelButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "取消")
+
+    expect(cancelButton).toBeTruthy()
+    await cancelButton!.trigger("click")
+    await nextTick()
+
+    editButtons = wrapper
+      .findAll("button")
+      .filter((button) => button.text() === "编辑")
+
+    await editButtons[1].trigger("click")
+    await nextTick()
+
+    const addPermissionButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "添加权限")
+
+    expect(addPermissionButton).toBeTruthy()
+    await addPermissionButton!.trigger("click")
+    await nextTick()
+
+    const pickerDialog = wrapper.find("[data-role-permission-picker-dialog]")
+    expect(pickerDialog.exists()).toBe(true)
+
+    const pickFileReadButton = wrapper.find('[data-role-picker-option="file.read"] button')
+    expect(pickFileReadButton.exists()).toBe(true)
+    await pickFileReadButton.trigger("click")
+    await nextTick()
+
+    expect(wrapper.find("[data-role-permission-picker-dialog]").exists()).toBe(false)
+    expect(wrapper.findAll("[data-role-perm-label]").map((node) => node.text())).toEqual(
+      expect.arrayContaining(["exec.cap.query", "file.read"])
+    )
   })
 })

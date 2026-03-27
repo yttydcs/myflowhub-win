@@ -62,9 +62,10 @@
   - 在 operations panel 中承载 save options、runtime snapshot、node perms lookup
   - runtime details 默认折叠，仅在需要时展开
 - `Role Management` tab 负责：
-  - 紧凑 role 列表展示
-  - 通过弹窗编辑单个 role
+  - 紧凑单行 role 列表展示
+  - 通过单列弹窗编辑单个 role
   - role 权限的权限列表式 add / remove 编辑
+  - 通过独立权限选择列表追加权限，而不是直接改写现有权限行
   - role 级 unknown perms 保留展示
 - 不负责待审批注册处理或 permit 生命周期管理。
 - policy 页不得要求用户手动编辑权限 CSV；权限必须通过前端 catalog 勾选后再序列化为现有配置键。
@@ -130,12 +131,14 @@
   - 默认准入编辑弹窗
   - 节点覆盖编辑弹窗
   - 角色编辑弹窗
+  - 角色权限选择弹窗
 - `defaultPermsUnknown` 与 `rolePerms[].unknownPerms` 用于保留 catalog 之外的历史权限。
 - 页面保存时必须把上述结构重新组装为既有 `Policy`：
   - `defaultPerms = known + unknown`
   - `rolePerms[].perms = known + unknown`
 - 若已知权限集合中包含 `*`，前端应把它视为独占选择，不再同时保留其他已知权限项。
 - 权限列表编辑器必须禁止自由输入任意权限字符串；新增权限只能从内置 catalog option 中选择。
+- 角色编辑弹窗中的已选权限列表必须为只读展示，每项仅保留删除动作。
 - 节点覆盖编辑器必须校验 `nodeId > 0`、role 非空且 nodeId 不重复。
 - 删除角色时，若该角色仍被默认准入或 node override 引用，前端必须阻止删除并显式提示。
 - 编辑角色名时，前端应同步更新当前页面中 default role 与 node override 对旧角色名的引用，避免产生悬空引用。
@@ -154,6 +157,7 @@
 - reject / revoke 这类破坏性动作必须是显式按钮触发，不得在输入联动中隐式执行。
 - authority 页面只在已连接、已登录且具备本地身份时允许提交写操作。
 - catalog 外权限默认保留而不是静默丢弃，避免旧配置或未来权限点被页面误删。
+- 角色编辑弹窗的滚动容器必须预留足够内边距，避免 focus ring 被 overflow 裁切。
 
 ## Performance Constraints
 

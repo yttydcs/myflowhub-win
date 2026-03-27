@@ -64,6 +64,10 @@ type RoleEditorDialogState = {
   unknownPerms: string[]
 }
 
+type RolePermissionPickerDialogState = {
+  open: boolean
+}
+
 const tabs: Array<{ id: AccessPolicyTab; label: string }> = [
   { id: "current", label: "Current Policy" },
   { id: "roles", label: "Role Management" }
@@ -126,6 +130,10 @@ const roleEditorDialog = reactive<RoleEditorDialogState>({
   role: "",
   perms: [],
   unknownPerms: []
+})
+
+const rolePermissionPickerDialog = reactive<RolePermissionPickerDialogState>({
+  open: false
 })
 
 const inputClass =
@@ -243,6 +251,11 @@ const permissionDescription = (perm: string) => {
   return meta ? t(meta.description) : perm
 }
 
+const permissionGroupLabel = (perm: string) => {
+  const meta = permissionMeta(perm)
+  return meta ? t(meta.groupLabel) : ""
+}
+
 const roleReferenceMessages = (roleName: string) => {
   const role = String(roleName || "").trim()
   const messages: string[] = []
@@ -259,10 +272,28 @@ const roleReferenceMessages = (roleName: string) => {
   return messages
 }
 
+const roleSummaryLine = (row: EditableRolePerm) => {
+  const parts = [t("{count} selected", { count: row.perms.length + row.unknownPerms.length })]
+  if (row.unknownPerms.length) {
+    parts.push(t("{count} extra", { count: row.unknownPerms.length }))
+  }
+  return [...parts, ...roleReferenceMessages(row.role)].join(" · ")
+}
+
+const roleDialogAvailablePermissionOptions = computed(() => {
+  const current = normalizeKnownPermissionSelection(roleEditorDialog.perms)
+  if (current.includes("*")) {
+    return []
+  }
+  const selected = new Set(current)
+  return permissionOptions.filter((option) => !selected.has(option.perm))
+})
+
 const closeAllDialogs = () => {
   defaultAccessDialog.open = false
   nodeOverrideDialog.open = false
   roleEditorDialog.open = false
+  rolePermissionPickerDialog.open = false
 }
 
 const resetNodeOverrideDialog = () => {
@@ -281,6 +312,7 @@ const resetRoleEditorDialog = () => {
   roleEditorDialog.role = ""
   roleEditorDialog.perms = []
   roleEditorDialog.unknownPerms = []
+  rolePermissionPickerDialog.open = false
 }
 
 const syncFormFromStore = () => {
@@ -679,8 +711,27 @@ const onDefaultDialogPermissionChange = (index: number, event: Event) => {
   replacePermissionAt(defaultAccessDialog, index, eventValue(event))
 }
 
-const onRoleDialogPermissionChange = (index: number, event: Event) => {
-  replacePermissionAt(roleEditorDialog, index, eventValue(event))
+const openRolePermissionPickerDialog = () => {
+  if (!roleDialogAvailablePermissionOptions.value.length) {
+    return
+  }
+  rolePermissionPickerDialog.open = true
+}
+
+const closeRolePermissionPickerDialog = () => {
+  rolePermissionPickerDialog.open = false
+}
+
+const addRoleDialogPermission = (perm: string) => {
+  const nextPerm = String(perm || "").trim()
+  if (!nextPerm) {
+    return
+  }
+  if (!roleDialogAvailablePermissionOptions.value.some((option) => option.perm === nextPerm)) {
+    return
+  }
+  roleEditorDialog.perms = normalizeKnownPermissionSelection([...roleEditorDialog.perms, nextPerm])
+  closeRolePermissionPickerDialog()
 }
 
 const isPermissionOptionDisabled = (selectedPerms: string[], index: number, perm: string) => {
@@ -783,7 +834,9 @@ const applyRolePresetToDialog = () => {
   if (!preset) {
     return
   }
-  roleEditorDialog.perms = [...preset]
+  roleEditorDialog.perms = normalizeKnownPermissionSelection([...preset])
+  closeRolePermissionPickerDialog()
+  toast.success(t("Built-in preset applied."), roleEditorDialog.role.trim())
 }
 
 watch(
@@ -1192,47 +1245,16 @@ onMounted(() => {
         <article
           v-for="(row, index) in policyForm.rolePerms"
           :key="`role-row-${row.role || index}`"
-          class="border-b border-border/60 bg-background/70 px-5 py-4 last:border-b-0"
+          class="border-b border-border/60 bg-background/70 px-4 py-3 last:border-b-0"
         >
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="text-base font-semibold text-foreground">{{ row.role.trim() || t("Unnamed Role") }}</p>
-                <Badge v-if="rolePresetPerms(row.role)" variant="secondary">{{ t("Built-in Baseline") }}</Badge>
-              </div>
-              <p class="mt-1 text-sm text-muted-foreground">
-                {{ t("{count} selected", { count: row.perms.length + row.unknownPerms.length }) }}
-                <span v-if="row.unknownPerms.length">
-                  · {{ t("{count} extra", { count: row.unknownPerms.length }) }}
-                </span>
-              </p>
-              <div v-if="row.perms.length" class="mt-3 flex flex-wrap gap-2">
-                <Badge
-                  v-for="perm in knownPermPreview(row.perms, 3)"
-                  :key="`role-perm-chip-${row.role}-${perm}`"
-                  variant="secondary"
-                >
-                  {{ perm }}
-                </Badge>
-                <Badge
-                  v-if="knownPermOverflow(row.perms, 3) > 0"
-                  variant="outline"
-                >
-                  {{ t("+{count} more", { count: knownPermOverflow(row.perms, 3) }) }}
-                </Badge>
-              </div>
-              <div v-if="row.unknownPerms.length" class="mt-2 flex flex-wrap gap-2">
-                <Badge
-                  v-for="perm in row.unknownPerms.slice(0, 2)"
-                  :key="`role-extra-chip-${row.role}-${perm}`"
-                  variant="outline"
-                >
-                  {{ perm }}
-                </Badge>
-              </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <p class="truncate font-semibold text-foreground">{{ row.role.trim() || t("Unnamed Role") }}</p>
+              <Badge v-if="rolePresetPerms(row.role)" variant="secondary">{{ t("Built-in Baseline") }}</Badge>
+              <p class="text-xs text-muted-foreground">{{ roleSummaryLine(row) }}</p>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2">
               <Button size="sm" variant="outline" @click="openRoleEditor(index)">{{ t("Edit") }}</Button>
               <Button size="sm" variant="ghost" @click="removeRole(index)">{{ t("Remove") }}</Button>
             </div>
@@ -1425,22 +1447,18 @@ onMounted(() => {
     >
       <div
         data-role-editor-dialog
-        class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+        class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       >
         <CardHeader
           :title="roleEditorDialog.mode === 'create' ? t('Create Role') : t('Edit Role')"
           :description="t('Create or update one role at a time, then return to the list view.')"
           title-tag="h3"
           title-class="text-lg"
-        >
-          <template #actions>
-            <Badge v-if="rolePresetPerms(roleEditorDialog.role)" variant="secondary">{{ t("Built-in Baseline") }}</Badge>
-          </template>
-        </CardHeader>
+        />
 
-        <div data-role-editor-scroll class="mt-5 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-          <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-            <div>
+        <div data-role-editor-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-5 px-1 py-1 pr-2">
+            <section class="rounded-2xl border border-border/60 bg-background/70 p-4">
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Role") }}
               </label>
@@ -1453,89 +1471,74 @@ onMounted(() => {
               <p class="mt-2 text-xs text-muted-foreground">
                 {{ t("Role names are saved as authority identifiers.") }}
               </p>
-              <Button
-                v-if="rolePresetPerms(roleEditorDialog.role)"
-                class="mt-3"
-                size="sm"
-                variant="outline"
-                @click="applyRolePresetToDialog"
-              >
-                {{ t("Apply Built-in Preset") }}
-              </Button>
-            </div>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <Badge v-if="rolePresetPerms(roleEditorDialog.role)" variant="secondary">{{ t("Built-in Baseline") }}</Badge>
+                <Button
+                  v-if="rolePresetPerms(roleEditorDialog.role)"
+                  size="sm"
+                  variant="outline"
+                  @click="applyRolePresetToDialog"
+                >
+                  {{ t("Apply Built-in Preset") }}
+                </Button>
+              </div>
+            </section>
 
-            <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
+            <section class="rounded-2xl border border-border/60 bg-background/70 p-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p class="text-sm font-semibold text-foreground">{{ t("Permission List") }}</p>
                   <p class="mt-1 text-xs text-muted-foreground">
-                    {{ t("Permissions in this editor come from the built-in catalog only. Add rows as needed, then remove the ones you no longer want.") }}
+                    {{ t("Choose from the built-in catalog, then remove permissions from this list when they are no longer needed.") }}
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  :disabled="!canAddPermission(roleEditorDialog.perms)"
-                  @click="addPermissionRow(roleEditorDialog)"
+                  :disabled="!roleDialogAvailablePermissionOptions.length"
+                  @click="openRolePermissionPickerDialog"
                 >
                   {{ t("Add Permission") }}
                 </Button>
               </div>
 
-              <div v-if="roleEditorDialog.perms.length" class="mt-4 space-y-3">
-                <div
+              <div v-if="roleEditorDialog.perms.length" class="mt-4 space-y-2">
+                <article
                   v-for="(perm, index) in roleEditorDialog.perms"
                   :key="`role-editor-perm-${index}-${perm}`"
-                  class="grid gap-3 rounded-2xl border border-border/60 bg-card/80 p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+                  data-role-perm-row
+                  class="rounded-xl border border-border/60 bg-card/80 px-4 py-3"
                 >
-                  <div>
-                    <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      {{ t("Permission") }}
-                    </label>
-                    <select
-                      :value="perm"
-                      :class="selectClass"
-                      @change="onRoleDialogPermissionChange(index, $event)"
-                    >
-                      <option
-                        v-for="option in permissionOptions"
-                        :key="`role-option-${index}-${option.perm}`"
-                        :value="option.perm"
-                        :disabled="isPermissionOptionDisabled(roleEditorDialog.perms, index, option.perm)"
-                      >
-                        {{ permissionOptionLabel(option) }}
-                      </option>
-                    </select>
-                    <p class="mt-2 text-xs text-muted-foreground">
-                      {{ permissionDescription(perm) }}
-                    </p>
-                  </div>
-                  <div class="self-end">
-                    <Button size="sm" variant="outline" @click="removePermissionAt(roleEditorDialog, index)">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                      <p data-role-perm-label class="truncate font-semibold text-foreground">{{ perm }}</p>
+                      <p class="text-xs text-muted-foreground">{{ permissionGroupLabel(perm) }}</p>
+                    </div>
+                    <Button size="sm" variant="ghost" @click="removePermissionAt(roleEditorDialog, index)">
                       {{ t("Remove") }}
                     </Button>
                   </div>
-                </div>
+                </article>
               </div>
 
               <p v-else class="mt-4 text-sm text-muted-foreground">{{ t("No permissions selected yet.") }}</p>
-            </div>
-          </div>
+            </section>
 
-          <div
-            v-if="roleEditorDialog.unknownPerms.length"
-            class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
-          >
-            <p class="font-semibold">{{ t("Preserved extra permissions") }}</p>
-            <p class="mt-1">{{ t("These permissions come from existing policy data and stay preserved because they are outside the built-in catalog.") }}</p>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <Badge
-                v-for="perm in roleEditorDialog.unknownPerms"
-                :key="`role-dialog-extra-${perm}`"
-                variant="secondary"
-              >
-                {{ perm }}
-              </Badge>
+            <div
+              v-if="roleEditorDialog.unknownPerms.length"
+              class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+            >
+              <p class="font-semibold">{{ t("Preserved extra permissions") }}</p>
+              <p class="mt-1">{{ t("These permissions come from existing policy data and stay preserved because they are outside the built-in catalog.") }}</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <Badge
+                  v-for="perm in roleEditorDialog.unknownPerms"
+                  :key="`role-dialog-extra-${perm}`"
+                  variant="secondary"
+                >
+                  {{ perm }}
+                </Badge>
+              </div>
             </div>
           </div>
         </div>
@@ -1543,6 +1546,67 @@ onMounted(() => {
         <div class="mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="outline" @click="closeRoleEditorDialog">{{ t("Cancel") }}</Button>
           <Button @click="submitRoleEditorDialog">{{ t("Save") }}</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay
+      :open="rolePermissionPickerDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      trapFocus
+      initialFocusSelector="[data-role-picker-select]"
+      @close="closeRolePermissionPickerDialog"
+    >
+      <div
+        data-role-permission-picker-dialog
+        class="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
+        <CardHeader
+          :title="t('Select Permission')"
+          :description="t('Select one catalog permission to append to this role.')"
+          title-tag="h3"
+          title-class="text-lg"
+        />
+
+        <div class="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-2 pr-2">
+            <article
+              v-for="option in roleDialogAvailablePermissionOptions"
+              :key="`role-picker-${option.perm}`"
+              :data-role-picker-option="option.perm"
+              class="rounded-xl border border-border/60 bg-background/70 px-4 py-3"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                    <p class="truncate font-semibold text-foreground">{{ option.label }}</p>
+                    <p class="text-xs text-muted-foreground">{{ t(option.groupLabel) }}</p>
+                  </div>
+                  <p class="mt-1 text-xs text-muted-foreground">{{ t(option.description) }}</p>
+                </div>
+                <Button
+                  data-role-picker-select
+                  size="sm"
+                  variant="outline"
+                  @click="addRoleDialogPermission(option.perm)"
+                >
+                  {{ t("Select") }}
+                </Button>
+              </div>
+            </article>
+
+            <p
+              v-if="!roleDialogAvailablePermissionOptions.length"
+              class="rounded-xl border border-dashed border-border/60 bg-background/60 px-4 py-6 text-sm text-muted-foreground"
+            >
+              {{ t("No catalog permissions remain for this role.") }}
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="closeRolePermissionPickerDialog">{{ t("Cancel") }}</Button>
         </div>
       </div>
     </Overlay>
