@@ -38,7 +38,7 @@ const newReqId = () => {
 }
 
 const nowIso = () => new Date().toISOString()
-const flowIDAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type FlowTriggerDraft = {
   type: "interval" | "event" | "var_changed"
@@ -213,35 +213,59 @@ const makeProjectID = () => {
   return `prj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
-const randomToken = (length: number) => {
-  const size = Math.max(1, Math.trunc(length))
+const normalizeFlowID = (value: string) => String(value ?? "").trim().toLowerCase()
+
+const isUUIDLike = (value: string) => uuidPattern.test(String(value ?? "").trim())
+
+const makeUUID = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().toLowerCase()
+  }
+
+  const bytes = new Uint8Array(16)
   if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
-    const bytes = new Uint8Array(size)
     crypto.getRandomValues(bytes)
-    return Array.from(bytes, (value) => flowIDAlphabet[value % flowIDAlphabet.length]).join("")
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
   }
 
-  let out = ""
-  while (out.length < size) {
-    out += Math.random().toString(36).slice(2)
-  }
-  return out.slice(0, size)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0"))
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join("")
+  ].join("-")
 }
 
-const flowIDTaken = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
-  const trimmedFlowID = String(flowId ?? "").trim()
-  const trimmedProjectID = String(excludeProjectId ?? "").trim()
-  if (!trimmedFlowID) return false
-  return projects.some(
-    (item) => item.flowId === trimmedFlowID && (!trimmedProjectID || item.projectId !== trimmedProjectID)
-  )
-}
-
-const ensureUniqueFlowID = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
+const ensureFlowIDFormat = (flowId: string) => {
   const trimmedFlowID = String(flowId ?? "").trim()
   if (!trimmedFlowID) {
     throw new Error(t("Flow ID is required."))
   }
+  if (!isUUIDLike(trimmedFlowID)) {
+    throw new Error(t("Flow ID must be a UUID."))
+  }
+  return normalizeFlowID(trimmedFlowID)
+}
+
+const flowIDTaken = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
+  const trimmedFlowID = normalizeFlowID(flowId)
+  const trimmedProjectID = String(excludeProjectId ?? "").trim()
+  if (!trimmedFlowID) return false
+  return projects.some(
+    (item) => normalizeFlowID(item.flowId) === trimmedFlowID && (!trimmedProjectID || item.projectId !== trimmedProjectID)
+  )
+}
+
+const ensureUniqueFlowID = (projects: FlowProjectRecord[], flowId: string, excludeProjectId = "") => {
+  const trimmedFlowID = ensureFlowIDFormat(flowId)
   if (flowIDTaken(projects, trimmedFlowID, excludeProjectId)) {
     throw new Error(t("Flow ID already exists in local projects."))
   }
@@ -250,12 +274,12 @@ const ensureUniqueFlowID = (projects: FlowProjectRecord[], flowId: string, exclu
 
 const makeFlowID = (projects: FlowProjectRecord[]) => {
   for (let i = 0; i < 64; i += 1) {
-    const candidate = `fl_${randomToken(12)}`
+    const candidate = makeUUID()
     if (!flowIDTaken(projects, candidate)) {
       return candidate
     }
   }
-  return `fl_${randomToken(6)}${Date.now().toString(36).padStart(6, "0").slice(-6)}`
+  throw new Error(t("Unable to allocate a unique Flow ID."))
 }
 
 const normalizeProject = (input: any): FlowProjectRecord | null => {
@@ -427,10 +451,7 @@ const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
   if (!trimmedProjectID) {
     throw new Error(t("Project ID is required."))
   }
-  const normalizedPayloadFlowID = String(payload?.flow_id ?? "").trim()
-  if (!normalizedPayloadFlowID) {
-    throw new Error(t("Flow ID is required."))
-  }
+  const normalizedPayloadFlowID = ensureFlowIDFormat(String(payload?.flow_id ?? ""))
   const latest = await loadProjectsSnapshot()
   const idx = latest.findIndex((item) => item.projectId === trimmedProjectID)
   if (idx < 0) {
@@ -597,6 +618,7 @@ const deployProject = async (input: {
   if (!Array.isArray(project.graph?.nodes) || project.graph.nodes.length === 0) {
     throw new Error(t("Project graph requires at least one node."))
   }
+  const flowId = ensureFlowIDFormat(project.flowId)
   const targetNodeID = parsePositiveNodeId(input.nodeId)
   const trigger = normalizeTriggerDraft(input.trigger)
   const { sourceID, hubID } = ensureIdentity()
@@ -612,8 +634,8 @@ const deployProject = async (input: {
   }
   const existingFlows: FlowSummaryWire[] = Array.isArray(listResp?.flows) ? listResp.flows : []
   const flowExists = existingFlows
-    .map((item: FlowSummaryWire) => String(item?.flow_id ?? item?.flowId ?? "").trim())
-    .includes(project.flowId)
+    .map((item: FlowSummaryWire) => normalizeFlowID(String(item?.flow_id ?? item?.flowId ?? "")))
+    .includes(flowId)
 
   if (flowExists && !input.overwrite) {
     return { overwriteRequired: true }
@@ -623,7 +645,7 @@ const deployProject = async (input: {
     req_id: newReqId(),
     origin_node: sourceID,
     executor_node: targetNodeID,
-    flow_id: project.flowId,
+    flow_id: flowId,
     name: project.name,
     trigger: toTriggerWire(trigger, { strict: true }),
     graph: project.graph
