@@ -1,11 +1,11 @@
-# Plan - Win Approval Permit UI Refine
+# Plan - Win Access Policy Save Loading
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `refactor/win-approval-permit-ui`
+- Branch: `fix/win-access-policy-save-loading`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
-- Current Stage: `4 archive`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
+- Current Stage: `4 archived (waiting for workflow-end confirmation)`
 
 ## Stage Records
 
@@ -13,218 +13,168 @@
 - `guide.md`:
   - 已读取 workspace 根 `D:\project\MyFlowHub3\guide.md`
   - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`、`references/m-docs-integration.md`
-  - 已读取 `frontend-design` 技能说明，用于在既有产品语言内继续收敛 authority 页面层级
+  - 已读取 `frontend-design` 技能说明；本轮只在既有 authority 视觉语言内做最小交互增强，不重做整体风格
 - base/worktree confirmation:
   - implementation repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - dedicated branch: `refactor/win-approval-permit-ui`
-  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
+  - dedicated branch: `fix/win-access-policy-save-loading`
+  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
   - implementation will stay inside the worktree only
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 继续收敛 `Registration Approvals` 与 `Permit Issuance` 的页面密度和操作路径，使它们与当前 `Access Policy` 一样具备“紧凑列表 / 摘要 + 聚焦编辑”的交互节奏，而不改变现有 authority 编排能力。
+- 为 `Access Policy` 页面补上更直接的保存入口和更明确的加载反馈，降低“只有一个保存按钮”和“加载时无感知”的使用成本。
 
 #### Scope
 - 必须:
-  - 保留 `Registration Approvals` 与 `Permit Issuance` 的现有路由、authority 解析和 Wails 接口契约
-  - `Registration Approvals` 页面必须从“每条请求展开两块 approve/reject 表单”收敛为紧凑请求列表
-  - 审批单条请求时，详细输入应集中到单一聚焦编辑面，而不是在列表内同时展示 approve / reject 两组输入区
-  - 请求列表应优先保持单行或低高度摘要节奏，至少展示：
-    - `deviceId`
-    - `requestId`
-    - `requestedRole`
-    - `displayName`
-    - 时间摘要
-    - 主操作入口
-  - `Permit Issuance` 页面必须从持续展开的 `Issue / Revoke` 大表单收敛为更轻的摘要与聚焦操作结构
-  - permit 签发与撤销的详细输入应集中到单一操作面，而不是长时间占据整页首屏
-  - 最近一次签发结果仍需可见，并继续支持复制与撤销
-  - 页面需要继续明确“无历史 permit 列表”的协议边界
-  - 保持中英文 i18n 一致
-  - 前端测试需要覆盖新的结构和关键交互
+  - 保持现有 `AccessPolicy` 路由、authority 解析和 `SavePolicy` / `LoadPolicy` 后端契约不变
+  - 在访问策略主要编辑卡片附近提供可见的保存入口，不再只依赖操作面板中的单一保存按钮
+  - 各卡片保存入口应继续复用当前整份 policy 的保存链路，不能引入新的部分保存协议
+  - 页面加载策略时必须给出明确的页面内提示，而不只是按钮禁用或成功 toast
+  - 加载提示在自动首次加载和手动重新加载时都应生效
+  - 中英文文案与现有 authority 页面保持一致
+  - 前端测试需要覆盖新增保存入口和加载提示
 - 可选:
-  - 为审批列表补充更好扫读的状态摘要或剩余有效期信息
-  - 为 permit 页面补充更轻量的动作摘要文案，减少重复协议说明
+  - 在保存按钮文案上同步体现 `saving` 状态
+  - 在当前 tab 内补充更轻的加载摘要文案
 - 不做:
-  - 不修改 `MyFlowHub-Server` auth 协议
-  - 不新增 permit history list / query 能力
-  - 不改动 Access Policy 页面本轮已经稳定的交互
-  - 不引入新的后端持久化或本地缓存
+  - 不新增按卡片局部持久化的后端接口
+  - 不修改 `accessPolicy.ts` store 的基础数据结构
+  - 不改动注册审批 / 准入许可页面
+  - 不重做访问策略页面整体布局
 
 #### Use Cases
-- 管理员进入注册审批页后，先浏览一个紧凑的待处理请求列表，再点开单条请求做 approve 或 reject 决策，而不是被整页重复表单淹没
-- 管理员查看某条 pending request 时，可以在一个聚焦对话面里同时看到摘要、可选 role override 和 rejection reason
-- 管理员进入 permit 页面后，先看到当前 authority 上下文、协议边界和最近一次签发结果，再按需进入 issue 或 revoke 动作
-- 管理员签发 permit 时，只在需要时打开输入面填写 `deviceId / role / expiresAt`
-- 管理员想撤销 permit 时，可以从最近一次签发结果直接执行，也可以通过单独的 revoke 输入面提交任意 token
+- 管理员在默认准入卡片或节点覆盖卡片附近改完内容后，希望就地点击保存，而不是再滚到操作面板找唯一的保存按钮
+- 管理员在角色管理页维护角色后，希望在角色页头就能直接保存当前 policy
+- 管理员打开访问策略页或手动重新加载时，希望看到“正在加载”的明确反馈，知道页面仍在等待 authority 返回
 
 #### Functional Requirements
-- `Registration Approvals` 页面必须继续支持：
+- `Access Policy` 页面必须继续支持：
   - authority 自动解析
-  - pending list 读取与刷新
-  - 可选 `deviceId` 过滤
-  - approve 单条 request
-  - reject 单条 request
-  - 最近一次决策结果反馈
-- `Registration Approvals` 的列表主视图不得继续为每条 request 展开 approve / reject 双卡片表单
-- `Registration Approvals` 的单条 request 详细编辑必须在一个聚焦编辑面中完成，允许 role 为空、reason 为空
-- `Permit Issuance` 页面必须继续支持：
-  - authority 自动解析
-  - issue permit
-  - revoke permit
-  - 最近一次签发结果展示
-  - 复制最新 permit
-- `Permit Issuance` 的主视图不得继续长期展开大块 issue / revoke 表单
-- 最近一次签发结果必须保留：
-  - `permit`
-  - `deviceId`
-  - `role`
-  - `expiresAt`
-  - `issuedAt`
-  - `revoked` 状态
+  - policy load / save
+  - runtime list_roles 预览
+  - `auth.get_perms` 单节点查询
+- `Current Policy` tab 中至少以下区域需要提供可见的保存入口：
+  - 默认准入卡片
+  - 节点覆盖卡片
+  - 操作面板（保留现有保存入口）
+- `Role Management` tab 也必须提供可见的保存入口
+- 新增的各保存入口必须调用同一条现有 `savePolicy(saveOptions)` 链路，不得引入不同的持久化语义
+- 页面在 `loadPolicy()` 进行中时，必须展示明确的加载提示；提示不应依赖 toast
+- 页面在 `loadPolicy()` 完成后，加载提示必须消失
 
 #### Non-functional Requirements
-- 优先做前端层级收敛，不扩大到新协议或新 service
-- 列表与摘要区应延续 `Access Policy` 已稳定的轻量视觉节奏，避免重新出现厚重双栏或多块同层卡片
-- 聚焦编辑面应保证键盘关闭、遮罩关闭和焦点恢复稳定
-- 不增加额外 authority 请求；审批后仍只回刷 pending list，permit 仍只更新本页相关状态
-- 测试需要优先覆盖列表化后仍能正确执行动作的关键路径
+- 优先做最小安全改动，不扩大到新的 store 状态或后端契约
+- 保持当前 `Access Policy` 已稳定的紧凑布局和卡片层级，不把页面重新堆回大块表单
+- 保存入口的增加不能让按钮语义混乱；同名入口应共享一致禁用条件和行为
+- 加载反馈应足够醒目但不能遮挡现有编辑内容
+- 测试需覆盖“按钮存在”和“加载提示可见”这两个回归点
 
 #### Inputs / Outputs
 - 输入:
   - 当前 session 身份 `sourceId / hubId`
   - resolved `authorityId`
-  - pending request 列表
-  - approve 可选 `role`
-  - reject 可选 `reason`
-  - permit issue 输入 `deviceId / role / expiresAt`
-  - permit revoke 输入 `permit`
+  - persisted `policy`
+  - runtime snapshot
+  - 当前页面内的 `saveOptions`
 - 输出:
-  - 紧凑 pending request 列表
-  - 单条 request 的聚焦审批 / 拒绝编辑面
-  - permit 摘要页
-  - issue / revoke 聚焦操作面
-  - 最新决策反馈和最新 permit 结果
+  - 卡片附近的保存按钮
+  - 页面内明确的加载提示
+  - 现有 policy save / load 行为保持不变
 
 #### Edge Cases
 - authority 未解析
-- pending 列表为空
-- `requestedRole` / `displayName` 为空
-- approve 的 role 为空字符串
-- reject 的 reason 为空字符串
-- permit issue 时缺少 `deviceId` 或 `role`
-- permit revoke 时 token 为空
-- 最新 permit 已被撤销
-- 身份切换后页面旧数据未清空
+- 页面首次自动加载时仍未准备好身份
+- 手动 reload 与自动初次加载重叠
+- `loading` 与 `saving` 状态交叠时按钮禁用必须一致
+- 角色管理 tab 下没有任何角色，但仍需要保存入口
 
 #### Acceptance Criteria
-- 注册审批页不再为每条 request 展开 approve / reject 双表单，列表高度明显下降
-- 注册审批页可以从紧凑列表进入聚焦审批面，并完成 approve / reject 动作
-- permit 页首屏不再长期展开两块大表单，页面更接近“摘要 + 动作入口 + 最近结果”
-- permit issue / revoke 仍可完整执行，最近签发结果继续支持复制与撤销
-- 不改变现有 authority service 契约
-- 前端测试与构建通过
+- 访问策略页不再只有操作面板一个保存按钮
+- 默认准入、节点覆盖、角色管理都能在附近看到保存入口
+- 所有新增保存入口都复用现有 policy 保存链路
+- 页面在加载 policy 时有明确的页面内提示
+- `AccessPolicy` 测试和前端构建通过
 
 #### Risks
-- 若审批聚焦面设计过度，可能导致批量处理效率下降，需要在“紧凑”与“少点一步”之间平衡
-- 若 permit 动作入口收得过深，可能让常用 issue/revoke 变得不够直接
-- 新增 overlay 或对话面后，需要确认 Esc / backdrop / toast 行为不互相干扰
+- 若卡片级保存入口语义不清，用户可能误以为它们只保存局部内容
+- 若加载提示放置不当，可能与现有 Badge / Header 信息竞争视觉优先级
+- 若测试只校验文案存在，不校验状态切换，后续容易回退为“只有 disabled 没有提示”
 
 #### Issue List
 - none
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 保持 `registrationApprovals.ts`、`permitIssuance.ts` 和 authority store 契约不变，主要重构 `RegistrationApprovals.vue` 与 `PermitIssuance.vue` 的页面结构：
-  - `Registration Approvals`:
-    - 顶部保留 identity / authority 摘要与刷新动作
-    - pending queue 改为紧凑列表
-    - 单条 request 点击 `Review` 后打开聚焦编辑 dialog，在一个面里完成 approve / reject
-  - `Permit Issuance`:
-    - 顶部保留 identity / authority / protocol boundary 摘要
-    - 主视图改为动作摘要 + 最新 permit 结果
-    - issue permit / revoke permit 改为各自聚焦 dialog 或单一聚焦操作面
-- 稳定文档同步补充 `approval / permit` 页面的紧凑列表和聚焦编辑约束
+- 保持 `frontend/src/stores/accessPolicy.ts` 的 `loadPolicy()` / `savePolicy()` 契约不变，仅在 `frontend/src/pages/AccessPolicy.vue` 增加两个前端层级增强：
+  - 为主要编辑卡片补 `Save Policy` 入口，所有入口统一调用现有 `savePolicy()`
+  - 基于 `accessPolicyStore.state.loading` 增加页面内加载提示，并同步让相关按钮展示一致的 busy 状态
 
 #### Alternatives Considered
-- 方案 A（采用）：紧凑列表 + 聚焦 dialog / 操作面
-  - 优点：最贴近用户已经确认过的 `Access Policy` 收敛方向，首屏密度最低
-  - 代价：需要新增局部 dialog 状态和页面测试
-- 方案 B：只保留当前页面结构，缩小卡片和输入区尺寸
-  - 优点：改动最小
-  - 代价：本质上还是大块表单，不能解决“页面臃肿”
-- 方案 C：把审批和 permit 完全改成右侧侧栏编辑
-  - 优点：可减少遮罩层
-  - 代价：当前项目没有稳定复用的侧栏编辑模式，且容易再次占满页面纵向空间
+- 方案 A（采用）：在主要卡片动作区增加统一保存按钮，并增加页面内 loading notice
+  - 优点：改动最小，不改变保存语义
+  - 代价：多个按钮仍然保存整份 policy，需要在布局上保持语义一致
+- 方案 B：把保存拆成 default / node overrides / roles 三条局部保存链路
+  - 优点：按钮语义最直观
+  - 代价：现有后端没有局部保存契约，改动面过大
+- 方案 C：只做浮动保存条或悬浮按钮
+  - 优点：避免重复按钮
+  - 代价：用户明确要求“各个卡片里面都能有一个保存按钮”，不满足预期
 
 #### Module Responsibilities
-- `frontend/src/pages/RegistrationApprovals.vue`
-  - 负责 pending 列表、审批聚焦面、最近决策反馈和 authority 上下文展示
-- `frontend/src/pages/PermitIssuance.vue`
-  - 负责 permit 摘要、issue/revoke 聚焦面、最新 permit 结果展示和操作
-- `frontend/src/stores/registrationApprovals.ts`
-  - 保持 pending list / approve / reject 状态与回刷逻辑
-- `frontend/src/stores/permitIssuance.ts`
-  - 保持 latest permit / revoke 状态与回写逻辑
+- `frontend/src/pages/AccessPolicy.vue`
+  - 增加卡片级保存入口
+  - 增加加载提示展示和统一 busy 文案
+- `frontend/src/stores/accessPolicy.ts`
+  - 保持现有 `loading` / `saving` 状态语义不变
 - `frontend/src/i18n/messages/operations.ts`
-  - 补充新的紧凑列表、dialog 和动作反馈文案
+  - 补充加载提示与按钮 busy 文案
+- `frontend/src/pages/AccessPolicy.test.ts`
+  - 覆盖新增保存入口和加载提示
 - `docs/requirements/authority-admin-console.md`
-  - 记录审批页和 permit 页的交互收敛目标
+  - 补充访问策略保存入口和加载反馈约束
 - `docs/specs/authority-admin-console.md`
-  - 记录审批页和 permit 页的稳定 UI 约束与状态模型
+  - 记录卡片保存入口仍复用统一 policy 保存链路
 
 #### Data / Call Flow
-1. authority 页面继续基于共享 authority store 自动解析身份
-2. `Registration Approvals` 初次进入后加载 pending list
-3. 用户从列表点开单条 request，页面将摘要和草稿状态映射到审批 dialog
-4. dialog 内执行 approve 或 reject 后，继续调用 store，并在成功后回刷 pending list
-5. `Permit Issuance` 页面继续只维护本地 `issueForm / revokeForm / lastIssued / lastRevoke`
-6. 用户从摘要页点开 issue 或 revoke 操作面，提交后调用既有 store
-7. issue 成功后更新 latest permit；revoke 成功后回写 revoked 状态
+1. 页面进入后仍通过既有 watcher 调用 `loadPolicy(true)`
+2. `accessPolicyStore.state.loading = true` 时，页面渲染加载提示
+3. `loadPolicy()` 返回后，提示消失，表单与 runtime 数据按既有逻辑同步
+4. 用户在默认准入 / 节点覆盖 / 角色管理 / 操作面板任一位置点击保存
+5. 所有按钮都调用同一 `savePolicy()`，由现有 `saveOptions` 决定保存范围
 
 #### Interface Drafts
-- `Registration Approvals`
-  - 顶部摘要卡 / badge 保留
-  - `Pending Queue` 改为紧凑列表：
-    - `deviceId`
-    - `requestId`
-    - `requestedRole / displayName / time summary`
-    - `Review` 按钮
-  - 新增 `requestReviewDialog`
-    - `open`
-    - `requestId`
-    - `role`
-    - `reason`
-- `Permit Issuance`
-  - 顶部协议边界说明保持轻量摘要
-  - 动作区只保留 `Issue Permit` / `Revoke Permit` 入口
-  - 新增：
-    - `issuePermitDialog`
-    - `revokePermitDialog`
-  - `Latest Permit` 保持结果摘要卡，但进一步压缩成更清晰的信息行
+- `Current Policy` tab
+  - 顶部保留现有 header 与 summary cards
+  - `Default Access` actions:
+    - `Manage Roles`
+    - `Save Policy`
+    - `Edit Default Access`
+  - `Node Overrides` actions:
+    - `Save Policy`
+    - `Add Node Role`
+  - header 下方增加 `loading notice`
+- `Role Management` tab
+  - 页头 actions:
+    - `Save Policy`
+    - `Add Role`
+  - tab 内容顶部或 header 下方增加 `loading notice`
 
 #### Error Handling and Safety
-- 继续沿用 `ensureReady` 的本地身份校验
-- approve 时继续允许 role 为空
-- reject 时继续允许 reason 为空
-- issue / revoke dialog 提交前继续校验必填项
-- dialog 关闭不得隐式提交
-- 身份变化时，审批和 permit 的临时 dialog 状态必须随 store reset 清空
+- 各保存按钮在 `loading` 或 `saving` 时统一禁用
+- 加载提示只反映 `loadPolicy()`，不额外引入新的请求状态
+- 保存失败继续沿用现有 toast / validation 流程，不改变错误处理
 
 #### Performance and Testing Strategy
-- 所有新交互均为前端局部状态，不增加额外 authority 请求
+- 不增加任何新的 authority 请求
 - 验证重点:
-  - `frontend/src/pages/RegistrationApprovals.test.ts`（新增）
-  - `frontend/src/pages/PermitIssuance.test.ts`（新增）
-  - `frontend/src/stores/authority_admin.test.ts`
-  - `npm test -- RegistrationApprovals PermitIssuance authority_admin`
+  - `frontend/src/pages/AccessPolicy.test.ts`
+  - `npm test -- AccessPolicy`
   - `npm run build`
-- 若本地 dev host 可用，补一次 `chrome-devtools` smoke check 验证页面密度和 dialog 流程
+- 如 dev host 可用，可追加一次 `chrome-devtools` 页面冒烟，确认 loading notice 和新增保存按钮可见
 
 #### Extensibility Design Points
-- 若后续 pending request 需要更多动作，`Registration Approvals` 的 review dialog 可以继续承载而不必扩回列表内表单
-- 若未来 permit 支持 history list，摘要页可在不破坏 issue/revoke dialog 的前提下追加独立列表区
-- 页面列表行和摘要节奏后续可提炼为共享 authority row pattern，本轮先保持最小写集
+- 若未来真的需要局部保存，当前卡片级按钮位置可以保留，再把 handler 从统一保存拆成局部保存
+- 当前 loading notice 可作为 authority 页面通用模式，后续如 approvals / permit 也需要显式加载提示可复用
 
 #### Issue List
 - none
@@ -232,11 +182,10 @@
 ### Stage 3.1 - Planning
 #### Project Goal and Current State
 - Goal:
-  - 将 `Registration Approvals` 与 `Permit Issuance` 收敛为与 `Access Policy` 一致的轻量、聚焦、低密度 authority 页面
+  - 让 `Access Policy` 页面在主要编辑卡片附近就能保存，并在加载 policy 时给出明确提示
 - Current State:
-  - 注册审批页对每条 request 同时展开 approve / reject 双卡片，列表高度过高
-  - permit 页将 issue / revoke 两块表单长期铺在首屏，占用过多注意力
-  - 两个页面目前都还没有形成“先看摘要，再进入单次操作”的路径
+  - 页面目前只有操作面板内一个 `Save Policy`
+  - `loading` 只影响按钮禁用，没有稳定的页面内加载提示
 
 #### Docs Governance Routing Decision
 - 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
@@ -246,34 +195,33 @@
   - `docs/requirements/authority-admin-console.md`
   - `docs/specs/authority-admin-console.md`
 - Change archive destination:
-  - `docs/change/2026-03-27_win-approval-permit-ui.md`
+  - `docs/change/2026-03-27_win-access-policy-save-loading.md`
 - Lessons impact:
-  - none（当前属于 authority 页面交互收敛，不是排障型复盘）
+  - none
 
 #### Related Requirements / Specs / Lessons
 - Requirements:
-  - `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\docs\requirements\authority-admin-console.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\docs\requirements\authority-admin-console.md`
 - Specs:
-  - `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\docs\specs\authority-admin-console.md`
-  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\docs\specs\authority-admin-console.md`
 - Lessons:
-  - `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\docs\lessons\README.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\docs\lessons\README.md`
 
 #### Executable Task List
-- [x] DOC-API-1 更新 authority admin console 的 requirements/specs
-- [x] IMPL-API-1 收敛注册审批页为紧凑列表 + 聚焦审批面
-- [x] IMPL-API-2 收敛准入许可页为摘要 + 聚焦动作面
-- [x] TEST-API-1 补页面测试并更新 authority admin store 回归验证
-- [x] REVIEW-API-1 完成 3.3 代码复核
-- [x] ARCHIVE-API-1 归档到 `docs/change`
+- [x] DOC-APL-1 更新访问策略 requirements/specs
+- [x] IMPL-APL-1 为访问策略主要卡片增加保存入口
+- [x] IMPL-APL-2 为访问策略增加显式加载提示
+- [x] TEST-APL-1 更新访问策略页面测试
+- [x] REVIEW-APL-1 完成 3.3 代码复核
+- [x] ARCHIVE-APL-1 归档到 `docs/change`
 
 #### Task Details
-##### DOC-API-1 - 稳定文档更新
+##### DOC-APL-1 - 稳定文档更新
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\plan.md`
 - Goal:
-  - 把审批页和 permit 页的“紧凑列表 / 摘要 + 聚焦编辑”约束写入 requirements/specs
+  - 把访问策略卡片级保存入口和加载提示写入 requirements/specs
 - Files / Modules:
   - `docs/requirements/authority-admin-console.md`
   - `docs/specs/authority-admin-console.md`
@@ -281,92 +229,85 @@
   - `docs/requirements/authority-admin-console.md`
   - `docs/specs/authority-admin-console.md`
 - Acceptance:
-  - 稳定文档不再把审批和 permit 页面默认描述为大块持久展开表单
+  - 稳定文档明确说明卡片级保存入口仍复用统一 policy 保存链路
 - Test Points:
   - 文档自检
 - Rollback:
   - 回退 requirements/specs 修改
 
-##### IMPL-API-1 - 注册审批页收敛
+##### IMPL-APL-1 - 访问策略卡片级保存入口
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\plan.md`
 - Goal:
-  - 把 pending queue 改成紧凑列表，并通过单一聚焦面完成 approve / reject
+  - 在默认准入、节点覆盖、角色管理等主要编辑卡片附近提供保存按钮
 - Files / Modules:
-  - `frontend/src/pages/RegistrationApprovals.vue`
+  - `frontend/src/pages/AccessPolicy.vue`
   - `frontend/src/i18n/messages/operations.ts`
 - Write Set:
-  - `frontend/src/pages/RegistrationApprovals.vue`
+  - `frontend/src/pages/AccessPolicy.vue`
   - `frontend/src/i18n/messages/operations.ts`
 - Acceptance:
-  - 列表高度显著下降
-  - 单条 request 不再内联展开双表单
-  - approve / reject 仍完整可用
+  - 页面不再只有一个保存按钮
+  - 所有新增按钮都调用同一保存链路
 - Test Points:
-  - `npm test -- RegistrationApprovals`
+  - `npm test -- AccessPolicy`
   - `npm run build`
 - Rollback:
-  - 回退审批页列表结构和 dialog 状态
+  - 回退卡片动作区新增按钮与文案
 
-##### IMPL-API-2 - 准入许可页收敛
+##### IMPL-APL-2 - 访问策略加载提示
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\plan.md`
 - Goal:
-  - 把 permit 页改成摘要 + 聚焦操作路径，保留 latest permit 的高频动作
+  - 为 policy 加载过程增加页面内显式提示
 - Files / Modules:
-  - `frontend/src/pages/PermitIssuance.vue`
+  - `frontend/src/pages/AccessPolicy.vue`
   - `frontend/src/i18n/messages/operations.ts`
 - Write Set:
-  - `frontend/src/pages/PermitIssuance.vue`
+  - `frontend/src/pages/AccessPolicy.vue`
   - `frontend/src/i18n/messages/operations.ts`
 - Acceptance:
-  - issue / revoke 不再长期占据首屏大块表单
-  - latest permit 继续可见并支持 copy / revoke
+  - `accessPolicyStore.state.loading` 为真时，页面能看到稳定提示
 - Test Points:
-  - `npm test -- PermitIssuance`
+  - `npm test -- AccessPolicy`
   - `npm run build`
 - Rollback:
-  - 回退 permit 页结构和 dialog 状态
+  - 回退 loading notice 与相关 busy 文案
 
-##### TEST-API-1 - 前端回归验证
+##### TEST-APL-1 - 页面回归验证
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\refactor-win-approval-permit-ui\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-access-policy-save-loading\plan.md`
 - Goal:
-  - 锁定审批页和 permit 页的新结构与关键动作路径
+  - 锁定访问策略新增保存入口和加载提示
 - Files / Modules:
-  - `frontend/src/pages/RegistrationApprovals.test.ts`
-  - `frontend/src/pages/PermitIssuance.test.ts`
-  - `frontend/src/stores/authority_admin.test.ts`
+  - `frontend/src/pages/AccessPolicy.test.ts`
 - Write Set:
-  - `frontend/src/pages/RegistrationApprovals.test.ts`
-  - `frontend/src/pages/PermitIssuance.test.ts`
-  - `frontend/src/stores/authority_admin.test.ts`
+  - `frontend/src/pages/AccessPolicy.test.ts`
 - Acceptance:
-  - 测试覆盖紧凑列表、dialog 打开、approve/reject、issue/revoke、latest permit 动作
+  - 测试覆盖保存入口可见和 loading notice 可见
 - Test Points:
-  - `npm test -- RegistrationApprovals PermitIssuance authority_admin`
+  - `npm test -- AccessPolicy`
   - `npm run build`
 - Rollback:
-  - 回退新增页面测试和相关断言
+  - 回退新增断言
 
 #### Dependencies
-- `RegistrationApprovals.vue` 与 `registrationApprovals.ts`、toast、authority store 高度耦合
-- `PermitIssuance.vue` 与 `permitIssuance.ts`、clipboard 行为和 toast 文案高度耦合
-- dialog 交互依赖现有 `Overlay` 组件的焦点管理与关闭行为
-- 列表节奏会参考 `AccessPolicy.vue` / `Flow.vue` 已经稳定的紧凑行样式
+- `AccessPolicy.vue` 与 `accessPolicy.ts`、toast、authority store 高度耦合
+- 页面保存行为依赖既有 `saveOptions`
+- loading notice 依赖 `accessPolicyStore.state.loading` 的现有语义
 
 #### Risks and Notes
-- 审批页若把过多信息折叠到 dialog，可能影响批量扫读效率
-- permit 页若过度隐藏 revoke 入口，可能降低操作可发现性
-- 当前 worktree 基于 `main@99cad7d` 创建，已包含 Access Policy 角色列表样式基线的 spec 固化提交
+- 新增多个 `Save Policy` 按钮后，需避免用户误解为局部保存
+- 角色管理页当前是列表页，不存在局部弹窗外的保存入口；需要在页头动作区补齐
+- 旧 `plan.md` 来自主仓上一轮 workflow，本轮已按 worktree 新上下文重写
 
 #### Parallelism Assessment
 - 不派发子Agent
 - 原因:
-  - 两个页面都会同时改动页面结构、i18n 文案和测试，写集重叠明显
+  - 这轮写集集中在 `AccessPolicy.vue`、i18n、测试和文档，重叠明显
   - 当前会话未获得显式子Agent委派授权
 - Owner:
   - 主Agent
@@ -375,61 +316,64 @@
 - none
 
 ### Stage 3.2 - Implementation
-#### Execution Summary
-- `IMPL-API-1`
-  - `RegistrationApprovals.vue` 已改为紧凑待办队列；approve / reject 从列表内联表单收敛到单一 review dialog。
-- `IMPL-API-2`
-  - `PermitIssuance.vue` 已改为 `Permit Actions` 动作列表 + `Latest Permit` 结果卡；issue / revoke 改为 focused dialogs。
-- `DOC-API-1`
-  - `operations.ts` 已补齐新文案；requirements/specs 已同步稳定约束。
-- `TEST-API-1`
-  - 已新增 `RegistrationApprovals.test.ts`、`PermitIssuance.test.ts`。
+#### Completed Work
+- `DOC-APL-1`
+  - 计划中的 requirements/specs 澄清已落实到稳定文档修改集合中
+- `IMPL-APL-1`
+  - `frontend/src/pages/AccessPolicy.vue` 在默认准入、节点覆盖、角色管理页头补充就近 `Save Policy` 入口
+  - 所有新增入口继续调用同一条 `savePolicy(saveOptions)` 链路，没有引入局部保存协议
+- `IMPL-APL-2`
+  - `frontend/src/pages/AccessPolicy.vue` 基于既有 `accessPolicyStore.state.loading` 增加页面内加载提示
+  - 统一保存 / 重载按钮 busy 文案，保持 `loading` 与 `saving` 状态下的禁用逻辑一致
+- `TEST-APL-1`
+  - `frontend/src/pages/AccessPolicy.test.ts` 覆盖当前策略 tab、角色管理 tab 的保存按钮可见性
+  - 新增显式 loading notice 测试
 
-#### Validation
-- `npm test -- RegistrationApprovals PermitIssuance authority_admin`
-  - 通过
-- 首次 `npm run build`
-  - 失败，原因是 fresh worktree 缺少 `frontend/wailsjs/**`
-- `$env:GOWORK='off'; wails generate module`
-  - 通过
-- 再次 `npm run build`
-  - 通过
+#### Files Updated
+- `frontend/src/pages/AccessPolicy.vue`
+- `frontend/src/i18n/messages/operations.ts`
+- `frontend/src/pages/AccessPolicy.test.ts`
 
-#### Issue List
-- none
+#### Implementation Notes
+- 未修改 `frontend/src/stores/accessPolicy.ts`
+- 未修改任何后端 authority / policy 协议
+- 未新增请求或新的异步状态字段
 
 ### Stage 3.3 - Review
 #### Review Checklist
-- 需求 / 规格是否同步
-  - 是，`docs/requirements/authority-admin-console.md` 与 `docs/specs/authority-admin-console.md` 已更新
-- 页面是否回退到首屏大表单
-  - 否，approvals 与 permit 均已改为紧凑列表 / 摘要 + focused dialogs
-- 关键交互是否有测试
-  - 是，新增 approvals / permit 页面测试并复用 authority store 回归测试
-- 是否发现新增问题
-  - 未发现
+- 需求范围复核：
+  - 仅覆盖访问策略页的保存入口与加载提示，没有扩大到注册审批或准入许可
+- 契约复核：
+  - `SavePolicy` / `LoadPolicy` 仍沿用既有 store 和后端接口
+- UI 语义复核：
+  - 新按钮是额外入口，不改变“保存整份 policy”的既有语义
+- 回归复核：
+  - 页面测试通过
+  - 前端构建通过
 
-#### Findings
-- none
+#### Validation Results
+- `npm test -- AccessPolicy`
+  - passed
+- `npm run build`
+  - passed
 
-#### Issue List
-- none
+#### Review Conclusion
+- 通过，可进入归档
 
 ### Stage 4 - Archive
 #### Archive Outputs
-- `docs/change/2026-03-27_win-approval-permit-ui.md`
-  - 已创建
+- `docs/change/2026-03-27_win-access-policy-save-loading.md`
 - `docs/change/README.md`
-  - 已更新索引
+- `docs/requirements/authority-admin-console.md`
+- `docs/specs/authority-admin-console.md`
 
 #### Lessons Decision
-- `Lessons impact: none`
-- 原因：
-  - 本轮主要是 authority 页面交互收敛，没有形成新的可复用排障模型；fresh worktree 的 `wails generate module` 预检已在既有 README / change 中覆盖
+- `none`
+- 原因：本轮主要是小范围交互增强，未形成需要单独检索的通用故障模式
 
-#### Ready For Workflow End
-- 是
-- 后续如用户确认结束 workflow，可执行合并 / 清理 worktree
+#### Workflow Status
+- 已完成本轮实现、验证和归档
+- 等待用户决定是否结束当前 workflow
 
 阻塞：否
-进入 3.2
+workflow 状态：等待用户确认是否结束

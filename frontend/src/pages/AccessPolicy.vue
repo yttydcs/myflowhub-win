@@ -211,6 +211,22 @@ const runtimeDetailsPreview = computed(() => {
   return runtimePreview.value.slice(0, 12)
 })
 
+const policyLoadNotice = computed(() => {
+  return accessPolicyStore.state.loading ? t("Loading current policy from authority...") : ""
+})
+
+const savePolicyButtonLabel = computed(() => {
+  return accessPolicyStore.state.saving ? t("Saving Policy…") : t("Save Policy")
+})
+
+const reloadPolicyButtonLabel = computed(() => {
+  return accessPolicyStore.state.loading ? t("Loading…") : t("Reload Policy")
+})
+
+const policyActionBusy = computed(() => {
+  return accessPolicyStore.state.loading || accessPolicyStore.state.saving
+})
+
 const tabButtonClass = (tab: AccessPolicyTab) => [
   "rounded-full px-4 py-2 text-sm font-semibold transition",
   activeTab.value === tab
@@ -919,10 +935,10 @@ onMounted(() => {
             <Button
               size="sm"
               variant="outline"
-              :disabled="accessPolicyStore.state.loading || accessPolicyStore.state.saving"
+              :disabled="policyActionBusy"
               @click="loadPolicy(false)"
             >
-              {{ t("Reload Policy") }}
+              {{ reloadPolicyButtonLabel }}
             </Button>
           </template>
         </CardHeader>
@@ -930,6 +946,15 @@ onMounted(() => {
         <p class="mt-4 text-sm text-muted-foreground">
           {{ t("Current identity drives authority resolution automatically.") }}
         </p>
+
+        <div
+          v-if="accessPolicyStore.state.loading"
+          data-policy-loading-notice
+          class="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
+        >
+          <p class="font-semibold">{{ t("Loading…") }}</p>
+          <p class="mt-1">{{ policyLoadNotice }}</p>
+        </div>
 
         <div class="mt-5 grid gap-3 md:grid-cols-4">
           <div
@@ -956,6 +981,9 @@ onMounted(() => {
             >
               <template #actions>
                 <Button size="sm" variant="outline" @click="setActiveTab('roles')">{{ t("Manage Roles") }}</Button>
+                <Button size="sm" variant="outline" :disabled="policyActionBusy" @click="savePolicy">
+                  {{ savePolicyButtonLabel }}
+                </Button>
                 <Button size="sm" @click="openDefaultAccessDialog">{{ t("Edit Default Access") }}</Button>
               </template>
             </CardHeader>
@@ -1024,6 +1052,9 @@ onMounted(() => {
               title-class="text-base"
             >
               <template #actions>
+                <Button size="sm" variant="outline" :disabled="policyActionBusy" @click="savePolicy">
+                  {{ savePolicyButtonLabel }}
+                </Button>
                 <Button size="sm" @click="openCreateNodeOverrideDialog">{{ t("Add Node Role") }}</Button>
               </template>
             </CardHeader>
@@ -1101,13 +1132,13 @@ onMounted(() => {
                 </div>
 
                 <div class="mt-4 flex flex-wrap gap-2">
-                  <Button :disabled="accessPolicyStore.state.saving" @click="savePolicy">{{ t("Save Policy") }}</Button>
+                  <Button :disabled="policyActionBusy" @click="savePolicy">{{ savePolicyButtonLabel }}</Button>
                   <Button
                     variant="outline"
-                    :disabled="accessPolicyStore.state.loading || accessPolicyStore.state.saving"
+                    :disabled="policyActionBusy"
                     @click="loadPolicy(false)"
                   >
-                    {{ t("Reload Policy") }}
+                    {{ reloadPolicyButtonLabel }}
                   </Button>
                 </div>
 
@@ -1233,9 +1264,21 @@ onMounted(() => {
         >
           <template #actions>
             <Badge variant="secondary">{{ t("{count} roles", { count: policyForm.rolePerms.length }) }}</Badge>
+            <Button size="sm" variant="outline" :disabled="policyActionBusy" @click="savePolicy">
+              {{ savePolicyButtonLabel }}
+            </Button>
             <Button size="sm" @click="openCreateRoleDialog">{{ t("Add Role") }}</Button>
           </template>
         </CardHeader>
+      </section>
+
+      <section
+        v-if="accessPolicyStore.state.loading"
+        data-policy-loading-notice
+        class="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-800 shadow-sm"
+      >
+        <p class="font-semibold">{{ t("Loading…") }}</p>
+        <p class="mt-1">{{ policyLoadNotice }}</p>
       </section>
 
       <section

@@ -195,6 +195,7 @@ describe("AccessPolicy", () => {
     expect(wrapper.text()).toContain("操作面板")
     expect(wrapper.text()).toContain("还没有查询任何节点")
     expect(wrapper.text()).toContain("custom.scope")
+    expect(wrapper.findAll("button").filter((button) => button.text() === "保存策略")).toHaveLength(3)
 
     const runtimeToggleButton = wrapper
       .findAll("button")
@@ -276,6 +277,7 @@ describe("AccessPolicy", () => {
     expect(wrapper.text()).toContain("observer")
     expect(wrapper.text()).toContain("已选 2 项")
     expect(wrapper.text()).toContain("1 项额外权限")
+    expect(wrapper.findAll("button").filter((button) => button.text() === "保存策略")).toHaveLength(1)
 
     const editButtons = wrapper
       .findAll("button")
@@ -374,5 +376,31 @@ describe("AccessPolicy", () => {
     expect(wrapper.findAll("[data-role-perm-label]").map((node) => node.text())).toEqual(
       expect.arrayContaining(["exec.cap.query", "file.read"])
     )
+  })
+
+  it("shows an explicit loading notice while policy data is loading", async () => {
+    accessPolicyStore.loadPolicy.mockImplementation(async () => {
+      accessPolicyState.loading = true
+      seedPolicy()
+    })
+
+    const wrapper = mount(AccessPolicy, {
+      global: {
+        stubs: {
+          PageHero: PageHeroStub,
+          CardHeader: CardHeaderStub,
+          Button: ButtonStub,
+          Badge: BadgeStub,
+          Overlay: OverlayStub
+        }
+      }
+    })
+
+    await Promise.resolve()
+    await nextTick()
+
+    expect(wrapper.find("[data-policy-loading-notice]").exists()).toBe(true)
+    expect(wrapper.text()).toContain("加载中…")
+    expect(wrapper.text()).toContain("正在从 Authority 加载当前策略…")
   })
 })

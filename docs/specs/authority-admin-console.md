@@ -58,19 +58,24 @@
   - 通过弹窗编辑 default perms 权限列表
   - 紧凑 node override 列表展示
   - 通过弹窗新建或编辑单条 node override
+  - 在默认准入卡和节点覆盖卡附近提供就近保存入口
   - 紧凑 operations panel
   - 在 operations panel 中承载 save options、runtime snapshot、node perms lookup
   - runtime details 默认折叠，仅在需要时展开
+  - policy 加载中时展示页面内 loading notice
 - `Role Management` tab 负责：
   - 紧凑单行 role 列表展示
+  - 在页头提供就近保存入口
   - 通过单列弹窗编辑单个 role
   - role 权限的权限列表式 add / remove 编辑
   - 通过独立权限选择列表追加权限，而不是直接改写现有权限行
   - role 级 unknown perms 保留展示
+  - policy 加载中时展示页面内 loading notice
 - `Role Management` tab 的 role 列表与 role 权限列表必须保持当前紧凑单行风格，作为长期 UI 基线：
   - 优先保证单行扫读节奏，而不是回退为高密度多行块状卡片
   - role 列表行应把名称、基线标识、摘要信息和主要操作收敛在同一行或同一视觉节奏内
   - role 权限列表行应保持“权限名 + 分组/简述 + 删除动作”的紧凑行结构，而不是重新引入矩阵勾选或可直接改写的行内表单
+- `Current Policy` 与 `Role Management` 中的就近保存入口必须复用同一条 `savePolicy(saveOptions)` 链路，不得引入局部保存协议。
 - 不负责待审批注册处理或 permit 生命周期管理。
 - policy 页不得要求用户手动编辑权限 CSV；权限必须通过前端 catalog 勾选后再序列化为现有配置键。
 
@@ -158,6 +163,7 @@
 - 必填参数为空时，Go service 必须立即返回错误。
 - auth action 返回 `code != 1` 时，必须透传为显式失败，不得静默吞掉。
 - 页面动作失败时，必须保持当前可见状态稳定，不得因为一次失败清空已加载的全部数据。
+- `loadPolicy()` 进行中时，页面必须展示稳定的页面内 loading notice，不能只依赖按钮 disabled 状态传达反馈。
 - role 名重复、空 role、非法 node ID、非法分隔符等错误必须在前端显式校验。
 
 ## Security / Safety
