@@ -136,6 +136,13 @@ const BadgeStub = defineComponent({
   template: `<span><slot /></span>`
 })
 
+const OverlayStub = defineComponent({
+  props: {
+    open: { type: Boolean, default: false }
+  },
+  template: `<div v-if="open"><slot /></div>`
+})
+
 const seedPolicy = () => {
   accessPolicyState.policy.defaultRole = "admin"
   accessPolicyState.policy.defaultPerms = ["file.read", "custom.scope"]
@@ -172,7 +179,8 @@ describe("AccessPolicy", () => {
           PageHero: PageHeroStub,
           CardHeader: CardHeaderStub,
           Button: ButtonStub,
-          Badge: BadgeStub
+          Badge: BadgeStub,
+          Overlay: OverlayStub
         }
       }
     })
@@ -183,18 +191,73 @@ describe("AccessPolicy", () => {
     expect(wrapper.text()).toContain("访问策略")
     expect(wrapper.text()).toContain("当前策略")
     expect(wrapper.text()).not.toContain("权限编排")
-    expect(wrapper.findAll("textarea")).toHaveLength(0)
+    expect(wrapper.text()).toContain("编辑默认准入")
+    expect(wrapper.text()).toContain("操作面板")
+    expect(wrapper.text()).toContain("还没有查询任何节点")
     expect(wrapper.text()).toContain("custom.scope")
+
+    const runtimeToggleButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "显示运行时详情")
+
+    expect(runtimeToggleButton).toBeTruthy()
+    await runtimeToggleButton!.trigger("click")
+    await nextTick()
+
+    expect(wrapper.text()).toContain("暂无运行时条目")
+
+    const editDefaultButton = wrapper
+      .findAll("button")
+      .find((button) => button.text() === "编辑默认准入")
+
+    expect(editDefaultButton).toBeTruthy()
+    await editDefaultButton!.trigger("click")
+    await nextTick()
+
+    expect(wrapper.text()).toContain("权限列表")
+    expect(wrapper.text()).toContain("保留的额外权限")
   })
 
-  it("shows the dedicated role management tab with preserved extra permissions", async () => {
+  it("renders node overrides as a compact list and opens the override dialog", async () => {
     const wrapper = mount(AccessPolicy, {
       global: {
         stubs: {
           PageHero: PageHeroStub,
           CardHeader: CardHeaderStub,
           Button: ButtonStub,
-          Badge: BadgeStub
+          Badge: BadgeStub,
+          Overlay: OverlayStub
+        }
+      }
+    })
+
+    await Promise.resolve()
+    await nextTick()
+
+    expect(wrapper.text()).toContain("节点 3")
+    expect(wrapper.text()).toContain("角色：node")
+
+    const editButtons = wrapper
+      .findAll("button")
+      .filter((button) => button.text() === "编辑")
+
+    expect(editButtons.length).toBeGreaterThan(0)
+    await editButtons[0].trigger("click")
+    await nextTick()
+
+    expect(wrapper.text()).toContain("编辑节点覆盖")
+    expect(wrapper.text()).toContain("节点 ID")
+  })
+
+  it("shows the dedicated role list and opens the role editor dialog", async () => {
+    const wrapper = mount(AccessPolicy, {
+      global: {
+        stubs: {
+          PageHero: PageHeroStub,
+          CardHeader: CardHeaderStub,
+          Button: ButtonStub,
+          Badge: BadgeStub,
+          Overlay: OverlayStub
         }
       }
     })
@@ -210,8 +273,18 @@ describe("AccessPolicy", () => {
     await roleTab!.trigger("click")
     await nextTick()
 
-    expect(wrapper.text()).toContain("内置角色预设")
     expect(wrapper.text()).toContain("observer")
+    expect(wrapper.text()).toContain("custom.observe")
+
+    const editButtons = wrapper
+      .findAll("button")
+      .filter((button) => button.text() === "编辑")
+
+    expect(editButtons).toHaveLength(2)
+    await editButtons[1].trigger("click")
+    await nextTick()
+
+    expect(wrapper.text()).toContain("编辑角色")
     expect(wrapper.text()).toContain("custom.observe")
   })
 })

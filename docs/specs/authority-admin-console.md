@@ -53,14 +53,18 @@
   - runtime list_roles 预览
   - `auth.get_perms` 单节点查询
 - `Current Policy` tab 负责：
-  - default role 选择
-  - default perms 目录化勾选
-  - node role overrides
-  - save options
-  - runtime snapshot / node perms lookup
+  - 默认准入摘要展示
+  - 通过弹窗编辑 default role
+  - 通过弹窗编辑 default perms 权限列表
+  - 紧凑 node override 列表展示
+  - 通过弹窗新建或编辑单条 node override
+  - 紧凑 operations panel
+  - 在 operations panel 中承载 save options、runtime snapshot、node perms lookup
+  - runtime details 默认折叠，仅在需要时展开
 - `Role Management` tab 负责：
-  - role list 编辑
-  - role 权限目录化勾选
+  - 紧凑 role 列表展示
+  - 通过弹窗编辑单个 role
+  - role 权限的权限列表式 add / remove 编辑
   - role 级 unknown perms 保留展示
 - 不负责待审批注册处理或 permit 生命周期管理。
 - policy 页不得要求用户手动编辑权限 CSV；权限必须通过前端 catalog 勾选后再序列化为现有配置键。
@@ -122,11 +126,19 @@
   - `defaultPermsUnknown`
   - `nodeRoles`
   - `rolePerms[{ role, perms, unknownPerms }]`
+- 页面还必须维护局部弹窗编辑态：
+  - 默认准入编辑弹窗
+  - 节点覆盖编辑弹窗
+  - 角色编辑弹窗
 - `defaultPermsUnknown` 与 `rolePerms[].unknownPerms` 用于保留 catalog 之外的历史权限。
 - 页面保存时必须把上述结构重新组装为既有 `Policy`：
   - `defaultPerms = known + unknown`
   - `rolePerms[].perms = known + unknown`
 - 若已知权限集合中包含 `*`，前端应把它视为独占选择，不再同时保留其他已知权限项。
+- 权限列表编辑器必须禁止自由输入任意权限字符串；新增权限只能从内置 catalog option 中选择。
+- 节点覆盖编辑器必须校验 `nodeId > 0`、role 非空且 nodeId 不重复。
+- 删除角色时，若该角色仍被默认准入或 node override 引用，前端必须阻止删除并显式提示。
+- 编辑角色名时，前端应同步更新当前页面中 default role 与 node override 对旧角色名的引用，避免产生悬空引用。
 
 ## Error Handling
 

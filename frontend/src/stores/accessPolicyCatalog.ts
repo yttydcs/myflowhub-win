@@ -11,6 +11,12 @@ export type PermissionCatalogGroup = {
   items: PermissionCatalogItem[]
 }
 
+export type PermissionCatalogOption = PermissionCatalogItem & {
+  groupId: string
+  groupLabel: string
+  groupDescription: string
+}
+
 const adminPerms = [
   "file.read",
   "file.write",
@@ -178,11 +184,27 @@ export const accessPolicyRolePresets: Record<string, string[]> = {
 const builtinRoleOrder = ["superadmin", "admin", "node"]
 
 const permissionOrder = new Map<string, number>()
+const permissionCatalogByPerm = new Map<string, PermissionCatalogOption>()
 for (const group of accessPolicyPermissionCatalog) {
   for (const item of group.items) {
     permissionOrder.set(item.perm, permissionOrder.size)
+    permissionCatalogByPerm.set(item.perm, {
+      ...item,
+      groupId: group.id,
+      groupLabel: group.label,
+      groupDescription: group.description
+    })
   }
 }
+
+export const accessPolicyPermissionOptions = accessPolicyPermissionCatalog.flatMap((group) =>
+  group.items.map((item) => ({
+    ...item,
+    groupId: group.id,
+    groupLabel: group.label,
+    groupDescription: group.description
+  }))
+)
 
 const comparePerms = (left: string, right: string) => {
   const leftOrder = permissionOrder.get(left)
@@ -249,6 +271,10 @@ export const rolePresetPerms = (roleName: string) => {
   const normalized = String(roleName || "").trim()
   const preset = accessPolicyRolePresets[normalized]
   return preset ? normalizeKnownPermissionSelection(preset) : null
+}
+
+export const findPermissionCatalogItem = (perm: string) => {
+  return permissionCatalogByPerm.get(String(perm || "").trim()) ?? null
 }
 
 export const orderRoleOptions = (roleNames: string[]) => {

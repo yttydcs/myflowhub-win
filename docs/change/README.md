@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-27_win-access-policy-dialog-editors.md](2026-03-27_win-access-policy-dialog-editors.md)
   - [2026-03-26_win-access-policy-tabs.md](2026-03-26_win-access-policy-tabs.md)
   - [2026-03-26_win-authority-override-ui-removal.md](2026-03-26_win-authority-override-ui-removal.md)
   - [2026-03-26_win-flow-detail-merge-regression.md](2026-03-26_win-flow-detail-merge-regression.md)
