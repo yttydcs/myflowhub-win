@@ -203,6 +203,8 @@ describe("RegistrationApprovals", () => {
     expect(wrapper.findAll("[data-approval-row]")).toHaveLength(2)
     expect(wrapper.text()).not.toContain("批准请求")
     expect(wrapper.text()).not.toContain("拒绝请求")
+    expect(wrapper.find("[data-approval-refresh]").exists()).toBe(true)
+    expect(wrapper.findAll("button").some((button) => button.text() === "解析")).toBe(false)
 
     const reviewButtons = wrapper.findAll("[data-approval-review-open]")
     expect(reviewButtons).toHaveLength(2)
@@ -213,6 +215,22 @@ describe("RegistrationApprovals", () => {
     expect(wrapper.find("[data-approval-review-dialog]").exists()).toBe(true)
     expect(wrapper.text()).toContain("审阅请求")
     expect(wrapper.text()).toContain("Node A")
+  })
+
+  it("keeps a single refresh entry point in the queue header", async () => {
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    approvalsStore.loadPending.mockClear()
+
+    await wrapper.get("[data-approval-refresh]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(approvalsStore.loadPending).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll("button").filter((button) => button.text() === "刷新")).toHaveLength(1)
   })
 
   it("approves the selected request from the review dialog", async () => {

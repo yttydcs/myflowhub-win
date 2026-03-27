@@ -169,23 +169,6 @@ const clearRequestDraft = (requestId: string) => {
   draft.reason = ""
 }
 
-const resolveAuthorityAction = async () => {
-  try {
-    ensureReady()
-    const authorityId = await authorityStore.resolveAuthority()
-    if (!authorityId) {
-      throw new Error(t("Authority ID unresolved."))
-    }
-    toast.success(
-      t("Authority resolved."),
-      t("authority={authorityId}", { authorityId })
-    )
-  } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, t("Failed to resolve authority."))
-  }
-}
-
 const loadPending = async (silent = false) => {
   try {
     ensureReady()
@@ -307,28 +290,6 @@ onMounted(() => {
         </template>
       </CardHeader>
 
-      <div class="mt-5 flex flex-wrap gap-2">
-        <div class="self-end">
-          <Button
-            variant="outline"
-            size="sm"
-            :disabled="authorityStore.state.resolving || approvalsStore.state.loading || !!approvalsStore.state.busyRequestId"
-            @click="resolveAuthorityAction"
-          >
-            {{ t("Resolve") }}
-          </Button>
-        </div>
-        <div class="self-end">
-          <Button
-            size="sm"
-            :disabled="approvalsStore.state.loading || !!approvalsStore.state.busyRequestId"
-            @click="loadPending(false)"
-          >
-            {{ t("Refresh") }}
-          </Button>
-        </div>
-      </div>
-
       <div class="mt-5 grid gap-3 md:grid-cols-3">
         <div
           v-for="card in summaryCards"
@@ -347,7 +308,19 @@ onMounted(() => {
         :description="t('Use the queue as a compact inbox, then open only the request you are currently deciding.')"
         title-tag="h3"
         title-class="text-base"
-      />
+      >
+        <template #actions>
+          <Button
+            data-approval-refresh
+            variant="outline"
+            size="sm"
+            :disabled="approvalsStore.state.loading || !!approvalsStore.state.busyRequestId"
+            @click="loadPending(false)"
+          >
+            {{ t("Refresh") }}
+          </Button>
+        </template>
+      </CardHeader>
 
       <div class="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
         <div>
