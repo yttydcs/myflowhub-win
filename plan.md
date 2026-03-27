@@ -1,10 +1,10 @@
-# Plan - Win Approval Actions Layout
+# Plan - Win Approval Filter Button Height
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-approval-actions-layout`
+- Branch: `fix/win-approval-filter-button-height`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height`
 - Current Stage: `4 archived (waiting for workflow-end confirmation)`
 
 ## Stage Records
@@ -13,129 +13,103 @@
 - `guide.md`:
   - 已读取 workspace 根 `D:\project\MyFlowHub3\guide.md`
   - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`
-  - 已读取 `frontend-design` 技能说明；本轮只做注册审批页的最小视觉收敛，不重做 authority 页面语言
+  - 已读取 `frontend-design` 技能说明；本轮只做注册审批页筛选区的最小视觉修正，不改变现有 authority 页面语言
 - base/worktree confirmation:
   - implementation repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - dedicated branch: `fix/win-approval-actions-layout`
-  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout`
+  - dedicated branch: `fix/win-approval-filter-button-height`
+  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height`
   - implementation will stay inside the worktree only
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 收敛 `Registration Approvals` 页头部动作区，消除摘要卡中部突兀的 `Resolve / Refresh` 双按钮，同时保留待审批列表的刷新可达性。
+- 修正 `Registration Approvals` 页中“设备筛选”输入框右侧按钮高度偏矮的问题，让筛选区在视觉上更和谐。
 
 #### Scope
 - 必须:
-  - 保持 `Registration Approvals` 的 authority 解析、pending list 读取、approve / reject 行为不变
-  - 调整 `Resolve / Refresh` 的可见布局，不再让两个按钮悬在摘要卡正文中间
-  - 若某个动作在现有交互中已属冗余，应允许收敛掉冗余入口，但不能破坏 authority 自动解析链路
-  - 页面测试需要覆盖新的动作布局或入口存在性
+  - 保持注册审批页的筛选、刷新、approve / reject 行为不变
+  - 调整筛选区按钮高度，使其与左侧输入框在视觉上对齐
+  - 改动应局限在注册审批页筛选区和必要的页面测试
 - 可选:
-  - 同步统一刷新按钮的禁用条件或文案
-  - 在更合适的 header 区域承载刷新动作
+  - 为按钮补一个更稳定的测试定位属性
 - 不做:
-  - 不修改后端 `ResolveAuthority` / `ListPendingRegisters` / `ApproveRegister` / `RejectRegister` 契约
-  - 不重构注册审批列表、review dialog 或 store 数据结构
+  - 不修改注册审批 store 或 authority store 契约
+  - 不调整其他按钮尺寸体系
   - 不改动访问策略、准入许可页面
 
 #### Use Cases
-- 管理员进入注册审批页后，希望先看到身份和 pending 摘要，而不是被居中的控制按钮打断视线
-- 管理员需要手动回刷待审批列表时，希望动作入口自然附着在列表或页头上
-- 管理员不需要单独理解“先解析再刷新”的两步心智，页面应优先呈现单一可用动作
+- 管理员在注册审批页使用设备 ID 筛选时，希望输入框和右侧动作按钮看起来像同一组控件，而不是右边明显矮一截
 
 #### Functional Requirements
-- `Registration Approvals` 页面必须继续支持：
-  - authority 自动解析
-  - pending list 读取与刷新
-  - approve 单条 request
-  - reject 单条 request
-- 手动刷新入口必须保留
-- 若移除单独 `Resolve` 入口，`Refresh` 仍必须通过既有 authority store 在需要时自动完成 authority 解析
-- 页面主体摘要区不应继续出现孤立的双按钮动作行
+- 设备筛选输入框右侧的 `Apply Filter` 按钮必须保持可用
+- `Apply Filter` 点击后仍需调用现有 `loadPending(false)` 链路
+- 筛选按钮高度应与筛选输入框保持一致
 
 #### Non-functional Requirements
-- 优先做最小安全改动，不新增状态字段或重复请求
-- 保持当前 authority 页面紧凑、轻量的视觉语言
-- 动作层级必须更清晰，避免让次要控制抢占摘要区视觉中心
-- 测试至少要覆盖新布局下的主动作可达性
+- 优先做最小安全改动，不新增状态或额外请求
+- 保持当前 authority 页面紧凑、克制的视觉语言
+- 测试至少覆盖筛选按钮入口仍存在且具备新的高度类
 
 #### Inputs / Outputs
 - 输入:
-  - 当前 session 身份 `sourceId / hubId`
-  - authority store 当前 `authorityId`
-  - pending request 列表
+  - `approvalsStore.state.filterDeviceId`
+  - 现有 `inputClass`
+  - 现有 `Apply Filter` 按钮配置
 - 输出:
-  - 更自然的刷新入口布局
-  - 保持不变的 authority 解析与 pending 刷新行为
+  - 对齐后的筛选按钮尺寸
+  - 不变的筛选刷新行为
 
 #### Edge Cases
-- authority 尚未解析，但用户点击刷新
-- 页面首次自动加载尚未完成时手动刷新
-- 有 request 正在 approve / reject 时，刷新按钮禁用逻辑仍需稳定
-- 身份切换后 authorityId 清空，刷新入口仍应走既有重解析路径
+- 按钮在 `loading` 或 `busyRequestId` 非空时仍需保持既有禁用行为
+- 小屏下筛选区换行后，按钮高度仍需与输入控件一致
 
 #### Acceptance Criteria
-- 注册审批页不再在摘要卡正文中部显示 `Resolve / Refresh` 双按钮
-- 页面仍然存在明确的手动刷新入口
-- `Refresh` 在 authority 未解析时仍能正常工作
+- 注册审批页中设备筛选按钮不再明显矮于输入框
+- `Apply Filter` 仍可正常触发 pending list 刷新
 - `RegistrationApprovals` 测试和前端构建通过
 
 #### Risks
-- 若直接删除 `Resolve` 但没有清楚保留 `Refresh`，用户可能误以为失去手动控制
-- 若把刷新入口放得过深，可能降低操作可发现性
+- 若直接复用全局默认按钮尺寸，仍可能与输入框高度不完全一致
+- 若只改样式但不加测试，后续容易被 `size="sm"` 回退
 
 #### Issue List
 - none
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 采用最小前端收敛方案：
-  - 从摘要卡正文移除独立的 `Resolve / Refresh` 按钮行
-  - 删除冗余的显式 `Resolve` 操作
-  - 将单一 `Refresh` 收敛到 `Pending Queue` 的 header actions 中
-- 不触碰 `registrationApprovals` store，也不修改 authority store 的自动解析链路；`loadPending()` 继续通过 `requireAuthority()` 在需要时自动解析 authority。
+- 继续沿用注册审批页当前筛选区结构，仅把 `Apply Filter` 按钮从 `size="sm"` 调整为显式 `h-10` 高度，并补一个测试定位属性。
+- 不修改共享 `Button` 组件的全局 size 规则，避免影响全站其它 `sm` 按钮。
 
 #### Alternatives Considered
-- 方案 A（采用）：删除显式 `Resolve`，只保留 `Refresh`，并把它移到 `Pending Queue` header
-  - 优点：心智最简单，布局也最自然
-  - 代价：失去单独“只解析不刷新”的显式按钮
-- 方案 B：保留 `Resolve` 和 `Refresh`，但整体移到 header actions
-  - 优点：不改功能面
-  - 代价：仍然保留冗余动作，只是位置更好
-- 方案 C：保留主体按钮行，只改样式弱化
-  - 优点：改动更小
-  - 代价：仍然会打断摘要区节奏，不能真正解决突兀感
+- 方案 A（采用）：只在当前 `Apply Filter` 按钮上增加局部高度类
+  - 优点：写集最小，不会波及其它页面
+  - 代价：高度对齐规则保留在页面局部
+- 方案 B：把全局 `Button` 的 `sm` 尺寸改成 `h-10`
+  - 优点：统一
+  - 代价：会影响大量现有小按钮，风险过大
+- 方案 C：把输入框改矮去适配 `sm` 按钮
+  - 优点：理论上也能对齐
+  - 代价：会破坏现有输入控件基线，不如只调按钮安全
 
 #### Module Responsibilities
 - `frontend/src/pages/RegistrationApprovals.vue`
-  - 收敛动作区布局
-  - 移除冗余的 `Resolve` UI 入口
-  - 保留并重定位 `Refresh`
-- `frontend/src/stores/registrationApprovals.ts`
-  - 保持现有 pending list 加载与 approve / reject 逻辑不变
-- `frontend/src/stores/authority.ts`
-  - 保持 `requireAuthority()` 自动解析行为不变
+  - 调整筛选按钮局部尺寸和测试定位属性
 - `frontend/src/pages/RegistrationApprovals.test.ts`
-  - 覆盖新动作入口和页面仍可加载的关键断言
+  - 校验筛选按钮存在且带有对齐高度类
 
 #### Data / Call Flow
-1. 页面 ready 后仍自动调用 `loadPending(true)`
-2. `loadPending()` 内部继续走 `approvalsStore.loadPending()`
-3. `approvalsStore.loadPending()` 继续通过 `authority.requireAuthority()` 自动确保 authority 可用
-4. 用户需要手动更新时，从 `Pending Queue` header 触发 `Refresh`
-5. approve / reject 成功后仍由 store 内部回刷 pending list
+1. 用户输入 `filterDeviceId`
+2. 点击 `Apply Filter`
+3. 页面继续调用现有 `loadPending(false)`
+4. `approvalsStore.loadPending()` 按既有逻辑刷新列表
 
 #### Interface Drafts
-- 顶部摘要卡:
-  - 保留连接状态、登录状态、identity、authority badges
-  - 不再在正文中部放置独立按钮行
-- `Pending Queue` header actions:
-  - `Refresh`
+- `Device Filter` 行：
+  - 左侧输入框保持 `h-10`
+  - 右侧 `Apply Filter` 按钮改为同高 `h-10`
 
 #### Error Handling and Safety
-- `Refresh` 继续复用现有 `loadPending(false)`，沿用既有 toast / error handling
-- `busyRequestId` 非空或 `loading` 时，刷新按钮继续禁用
-- 不新增任何可能绕开 `ensureReady()` 的路径
+- 不更改 `loadPending()` 的错误处理
+- 不更改筛选按钮的禁用条件
 
 #### Performance and Testing Strategy
 - 不增加任何新的 authority 请求
@@ -143,11 +117,10 @@
   - `frontend/src/pages/RegistrationApprovals.test.ts`
   - `npm test -- RegistrationApprovals`
   - `npm run build`
-- 如本地 dev host 可用，可追加一次 `chrome-devtools` 页面冒烟，确认按钮位置更自然
+- fresh worktree 如缺 `node_modules` 或 `wailsjs`，按既有预热流程补齐后再验证
 
 #### Extensibility Design Points
-- 若后续注册审批页也需要显式 loading notice，可复用当前 header actions 的承载方式
-- 若将来真的需要“只解析 authority 不拉列表”的诊断入口，更适合放到开发/诊断语境，而不是页面主体
+- 若后续 authority 页面也有“输入框 + 动作按钮”组合，可考虑抽离统一的 filter action pattern；本轮先不扩 scope
 
 #### Issue List
 - none
@@ -155,10 +128,10 @@
 ### Stage 3.1 - Planning
 #### Project Goal and Current State
 - Goal:
-  - 让 `Registration Approvals` 的手动动作入口更自然，不再打断摘要区
+  - 让注册审批页的设备筛选区在视觉上更对齐
 - Current State:
-  - 顶部摘要卡正文中间存在独立 `Resolve / Refresh` 按钮行
-  - `Refresh` 实际已经能在需要时自动解析 authority，`Resolve` 在页面主路径中较冗余
+  - 输入框使用 `h-10`
+  - 右侧 `Apply Filter` 按钮使用 `size="sm"`，只有 `h-8`
 
 #### Docs Governance Routing Decision
 - 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
@@ -167,57 +140,57 @@
 - Stable docs destination:
   - none
 - Change archive destination:
-  - `docs/change/2026-03-27_win-approval-actions-layout.md`
+  - `docs/change/2026-03-27_win-approval-filter-button-height.md`
 - Lessons impact:
   - none
 
 #### Related Requirements / Specs / Lessons
 - Requirements:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout\docs\requirements\authority-admin-console.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height\docs\requirements\authority-admin-console.md`
 - Specs:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout\docs\specs\authority-admin-console.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height\docs\specs\authority-admin-console.md`
 - Lessons:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout\docs\lessons\README.md`
+  - `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height\docs\lessons\README.md`
 
 #### Executable Task List
-- [x] IMPL-RAA-1 收敛注册审批页动作入口布局
-- [x] TEST-RAA-1 更新注册审批页面测试
-- [x] REVIEW-RAA-1 完成 3.3 代码复核
-- [x] ARCHIVE-RAA-1 归档到 `docs/change`
+- [x] IMPL-RAF-1 调整注册审批页筛选按钮高度
+- [x] TEST-RAF-1 更新注册审批页面测试
+- [x] REVIEW-RAF-1 完成 3.3 代码复核
+- [x] ARCHIVE-RAF-1 归档到 `docs/change`
 
 #### Task Details
-##### IMPL-RAA-1 - 收敛注册审批页动作入口布局
+##### IMPL-RAF-1 - 调整注册审批页筛选按钮高度
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height\plan.md`
 - Goal:
-  - 去掉摘要卡中间突兀的双按钮，只保留自然的刷新入口
+  - 让设备筛选按钮与左侧输入框同高
 - Files / Modules:
   - `frontend/src/pages/RegistrationApprovals.vue`
 - Write Set:
   - `frontend/src/pages/RegistrationApprovals.vue`
 - Acceptance:
-  - 页面主体不再出现 `Resolve / Refresh` 双按钮行
-  - `Refresh` 仍可用且布局更自然
+  - 按钮不再明显矮于输入框
+  - 点击行为保持不变
 - Test Points:
   - `npm test -- RegistrationApprovals`
   - `npm run build`
 - Rollback:
-  - 回退注册审批页按钮布局与 handler 引用
+  - 回退注册审批页筛选按钮的局部类名调整
 
-##### TEST-RAA-1 - 注册审批页回归验证
+##### TEST-RAF-1 - 注册审批页筛选区回归验证
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-approval-actions-layout\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-approval-filter-button-height\plan.md`
 - Goal:
-  - 锁定页面新动作布局和手动刷新入口存在性
+  - 锁定筛选按钮入口和对齐高度类
 - Files / Modules:
   - `frontend/src/pages/RegistrationApprovals.test.ts`
 - Write Set:
   - `frontend/src/pages/RegistrationApprovals.test.ts`
 - Acceptance:
-  - 测试覆盖主体不再渲染 `Resolve`
-  - 测试覆盖 `Refresh` 仍可见
+  - 测试覆盖筛选按钮存在
+  - 测试覆盖筛选按钮包含 `h-10`
 - Test Points:
   - `npm test -- RegistrationApprovals`
   - `npm run build`
@@ -225,17 +198,16 @@
   - 回退新增断言
 
 #### Dependencies
-- `RegistrationApprovals.vue` 与 `registrationApprovals.ts`、`authority.ts`、toast 高度耦合
-- `loadPending()` 当前通过 `requireAuthority()` 隐式依赖 authority 自动解析链路
+- `RegistrationApprovals.vue` 与 `registrationApprovals.ts` 的筛选刷新链路耦合
+- 共享 `Button` 组件的 `sm` size 当前固定为 `h-8`
 
 #### Risks and Notes
-- 本轮是现有交互的收敛，不涉及服务接口或数据结构变化
-- `Resolve` 若仍被某些诊断路径依赖，后续应放到更合适的位置，而不是恢复到摘要区正文
+- 本轮只做页面局部样式修正，不应回退为全局按钮体系调整
 
 #### Parallelism Assessment
 - 不派发子Agent
 - 原因:
-  - 写集集中在单个页面和对应测试，规模小且高度耦合
+  - 写集集中在单个页面和其测试，规模小且高度耦合
   - 当前会话未获得显式子Agent委派授权
 - Owner:
   - 主Agent
@@ -248,39 +220,37 @@
 
 ### Stage 3.2 - Implementation
 #### Completed Work
-- `IMPL-RAA-1`
-  - 删除注册审批页摘要卡正文中的独立 `Resolve / Refresh` 按钮行
-  - 移除显式 `Resolve` UI 入口，保留 `Refresh` 并收敛到 `Pending Queue` header
-  - 保持 `loadPending()` 与 authority 自动解析链路不变
-- `TEST-RAA-1`
-  - 更新 `frontend/src/pages/RegistrationApprovals.test.ts`
-  - 新增“无 `Resolve`、保留单一 `Refresh` 入口”的断言
+- `IMPL-RAF-1`
+  - 为注册审批页 `Apply Filter` 按钮增加局部 `h-10` 高度类
+  - 补充 `data-approval-filter-apply` 定位属性，便于后续测试和排查
+- `TEST-RAF-1`
+  - 为注册审批页新增筛选按钮高度对齐测试
+  - 保持原有刷新与审阅路径测试不变
 
 #### Files Updated
 - `frontend/src/pages/RegistrationApprovals.vue`
 - `frontend/src/pages/RegistrationApprovals.test.ts`
 
 #### Implementation Notes
-- 未修改 `frontend/src/stores/registrationApprovals.ts`
-- 未修改 `frontend/src/stores/authority.ts`
-- `Refresh` 继续通过 `requireAuthority()` 隐式确保 authority 已解析
+- 未修改共享 `Button` 组件
+- 未修改注册审批 store、authority store 或任何后端协议
 
 ### Stage 3.3 - Review
 #### Review Checklist
 - 需求覆盖：
-  - 通过，页面仍保留手动刷新，且去除了突兀的中部双按钮
+  - 通过，设备筛选按钮已与输入框同高
 - 架构合理性：
-  - 通过，仅收敛页面动作布局，不触碰 store / service 契约
+  - 通过，仅调整页面局部样式，不影响共享按钮体系
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：
-  - 通过，没有新增请求或重复解析
+  - 通过，无新增请求或重复计算
 - 可读性与一致性：
-  - 通过，动作入口更贴近列表语境
+  - 通过，筛选控件组更一致，且保留稳定测试定位点
 - 可扩展性与配置化：
-  - 通过，未来若有更多列表动作可继续挂在 `Pending Queue` header
+  - 通过，本轮避免修改全局尺寸体系，影响面最小
 - 稳定性与安全：
-  - 通过，仍复用既有 `ensureReady()` 与 `requireAuthority()`
+  - 通过，按钮禁用和点击行为未改
 - 测试覆盖情况：
-  - 通过，页面测试与前端构建通过
+  - 通过，定向测试与前端构建通过
 - 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：
   - 通过，未使用子Agent
 
@@ -299,12 +269,12 @@
 
 ### Stage 4 - Archive
 #### Archive Outputs
-- `docs/change/2026-03-27_win-approval-actions-layout.md`
+- `docs/change/2026-03-27_win-approval-filter-button-height.md`
 - `docs/change/README.md`
 
 #### Lessons Decision
 - `none`
-- 原因：本轮属于局部界面收敛，没有新增可复用的排障模式
+- 原因：本轮是局部视觉修正，没有形成新的通用排障经验
 
 #### Workflow Status
 - 已完成本轮实现、验证和归档

@@ -335,8 +335,9 @@ onMounted(() => {
         </div>
         <div class="self-end">
           <Button
+            data-approval-filter-apply
+            class="h-10"
             variant="outline"
-            size="sm"
             :disabled="approvalsStore.state.loading || !!approvalsStore.state.busyRequestId"
             @click="loadPending(false)"
           >

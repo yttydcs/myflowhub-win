@@ -233,6 +233,22 @@ describe("RegistrationApprovals", () => {
     expect(wrapper.findAll("button").filter((button) => button.text() === "刷新")).toHaveLength(1)
   })
 
+  it("aligns the filter apply button height with the device filter input", async () => {
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    const filterButton = wrapper.get("[data-approval-filter-apply]")
+
+    expect(filterButton.classes()).toContain("h-10")
+    await filterButton.trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(approvalsStore.loadPending).toHaveBeenCalled()
+  })
+
   it("approves the selected request from the review dialog", async () => {
     const wrapper = mountPage()
 
