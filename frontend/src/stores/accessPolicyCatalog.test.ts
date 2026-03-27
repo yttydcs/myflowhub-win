@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
+  accessPolicyPermissionOptions,
+  findPermissionCatalogItem,
   mergeSelectedAndUnknownPerms,
   rolePresetPerms,
   splitKnownAndUnknownPerms
@@ -32,5 +34,21 @@ describe("accessPolicyCatalog", () => {
     expect(rolePresetPerms("admin")).toContain("auth.register.approve")
     expect(rolePresetPerms("node")).toContain("exec.call")
     expect(rolePresetPerms("observer")).toBeNull()
+  })
+
+  it("exposes flattened options and permission metadata for dialog editors", () => {
+    expect(accessPolicyPermissionOptions.find((item) => item.perm === "file.read")).toMatchObject({
+      perm: "file.read",
+      groupId: "file",
+      groupLabel: "File"
+    })
+
+    expect(findPermissionCatalogItem("auth.register.approve")).toMatchObject({
+      perm: "auth.register.approve",
+      groupId: "auth",
+      label: "auth.register.approve"
+    })
+
+    expect(findPermissionCatalogItem("custom.scope")).toBeNull()
   })
 })
