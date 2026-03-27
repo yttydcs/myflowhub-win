@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import CardHeader from "@/components/CardHeader.vue"
 import { useI18n } from "@/i18n"
 import { useAuthorityStore } from "@/stores/authority"
@@ -17,9 +18,17 @@ const { t } = useI18n()
 
 const drafts = reactive<Record<string, { role: string; reason: string }>>({})
 const autoLoaded = reactive({ value: false })
+const reviewDialog = reactive({
+  open: false,
+  requestId: "",
+  role: "",
+  reason: ""
+})
 
 const inputClass =
   "mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+const textAreaClass =
+  "mt-2 min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
 const ready = computed(() => {
   return Boolean(
@@ -62,6 +71,14 @@ const summaryCards = computed(() => {
   ]
 })
 
+const activeReviewItem = computed(() => {
+  const requestId = reviewDialog.requestId.trim()
+  if (!requestId) {
+    return null
+  }
+  return approvalsStore.state.items.find((item) => item.requestId === requestId) || null
+})
+
 const ensureReady = () => {
   if (!sessionStore.connected) {
     throw new Error(t("Connect to a session first."))
@@ -96,6 +113,14 @@ const formatTimestamp = (value: number) => {
   return date.toLocaleString()
 }
 
+const requestMetaLine = (item: PendingRegister) => {
+  return [
+    item.requestId,
+    `${t("Created At")}: ${formatTimestamp(item.createdAt)}`,
+    `${t("Expires At")}: ${formatTimestamp(item.expiresAt)}`
+  ].join(" · ")
+}
+
 const syncDrafts = () => {
   const active = new Set(approvalsStore.state.items.map((item) => item.requestId))
   for (const requestId of Object.keys(drafts)) {
@@ -106,6 +131,42 @@ const syncDrafts = () => {
   for (const item of approvalsStore.state.items) {
     ensureDraft(item.requestId)
   }
+}
+
+const persistReviewDraft = () => {
+  const requestId = reviewDialog.requestId.trim()
+  if (!requestId) {
+    return
+  }
+  const draft = ensureDraft(requestId)
+  draft.role = reviewDialog.role
+  draft.reason = reviewDialog.reason
+}
+
+const resetReviewDialog = () => {
+  reviewDialog.open = false
+  reviewDialog.requestId = ""
+  reviewDialog.role = ""
+  reviewDialog.reason = ""
+}
+
+const closeReviewDialog = () => {
+  persistReviewDraft()
+  resetReviewDialog()
+}
+
+const openReviewDialog = (item: PendingRegister) => {
+  const draft = ensureDraft(item.requestId)
+  reviewDialog.open = true
+  reviewDialog.requestId = item.requestId
+  reviewDialog.role = draft.role
+  reviewDialog.reason = draft.reason
+}
+
+const clearRequestDraft = (requestId: string) => {
+  const draft = ensureDraft(requestId)
+  draft.role = ""
+  draft.reason = ""
 }
 
 const resolveAuthorityAction = async () => {
@@ -147,10 +208,12 @@ const loadPending = async (silent = false) => {
 const approveRegister = async (item: PendingRegister) => {
   try {
     ensureReady()
-    const draft = ensureDraft(item.requestId)
-    const resp = await approvalsStore.approveRegister(item.requestId, draft.role.trim())
-    draft.role = ""
-    draft.reason = ""
+    const role = item.requestId === reviewDialog.requestId ? reviewDialog.role.trim() : ensureDraft(item.requestId).role.trim()
+    const resp = await approvalsStore.approveRegister(item.requestId, role)
+    clearRequestDraft(item.requestId)
+    if (item.requestId === reviewDialog.requestId) {
+      resetReviewDialog()
+    }
     toast.success(
       t("Registration approved."),
       t("node={nodeId}", { nodeId: Number(resp?.nodeId || 0) || "-" })
@@ -164,10 +227,13 @@ const approveRegister = async (item: PendingRegister) => {
 const rejectRegister = async (item: PendingRegister) => {
   try {
     ensureReady()
-    const draft = ensureDraft(item.requestId)
-    await approvalsStore.rejectRegister(item.requestId, draft.reason.trim())
-    draft.role = ""
-    draft.reason = ""
+    const reason =
+      item.requestId === reviewDialog.requestId ? reviewDialog.reason.trim() : ensureDraft(item.requestId).reason.trim()
+    await approvalsStore.rejectRegister(item.requestId, reason)
+    clearRequestDraft(item.requestId)
+    if (item.requestId === reviewDialog.requestId) {
+      resetReviewDialog()
+    }
     toast.success(t("Registration rejected."), item.deviceId || item.requestId)
   } catch (err) {
     console.warn(err)
@@ -183,6 +249,7 @@ watch(
     if (Number(nodeId || 0) !== Number(prevNodeId || 0) || Number(hubId || 0) !== Number(prevHubId || 0)) {
       approvalsStore.reset()
       autoLoaded.value = false
+      resetReviewDialog()
       for (const key of Object.keys(drafts)) {
         delete drafts[key]
       }
@@ -197,6 +264,7 @@ watch(
     if (!isReady) {
       autoLoaded.value = false
       approvalsStore.reset()
+      resetReviewDialog()
       return
     }
     if (autoLoaded.value) {
@@ -207,6 +275,12 @@ watch(
   },
   { immediate: true }
 )
+
+watch(activeReviewItem, (item) => {
+  if (reviewDialog.open && !item) {
+    resetReviewDialog()
+  }
+})
 
 onMounted(() => {
   if (ready.value && !autoLoaded.value) {
@@ -270,7 +344,7 @@ onMounted(() => {
     <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
       <CardHeader
         :title="t('Pending Queue')"
-        :description="t('Approve only when the device identity is expected. Leave role blank to let authority apply its configured default path.')"
+        :description="t('Use the queue as a compact inbox, then open only the request you are currently deciding.')"
         title-tag="h3"
         title-class="text-base"
       />
@@ -319,98 +393,136 @@ onMounted(() => {
         </p>
       </div>
 
-      <div class="mt-5 space-y-4">
-        <div
+      <div
+        v-if="approvalsStore.state.items.length"
+        class="mt-5 overflow-hidden rounded-2xl border border-border/60 bg-background/70"
+      >
+        <article
           v-for="item in approvalsStore.state.items"
           :key="item.requestId"
-          class="rounded-2xl border border-border/60 bg-background/70 p-4"
+          data-approval-row
+          class="border-b border-border/60 px-4 py-3 last:border-b-0"
         >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Request") }}
-              </p>
-              <h4 class="mt-1 text-base font-semibold text-foreground">{{ item.deviceId || "-" }}</h4>
-              <p class="mt-1 text-sm text-muted-foreground">{{ item.requestId }}</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <p class="truncate font-semibold text-foreground">{{ item.deviceId || "-" }}</p>
               <Badge variant="secondary">{{ item.requestedRole || t("No requested role") }}</Badge>
               <Badge variant="secondary">{{ item.displayName || t("No display name") }}</Badge>
+              <p class="w-full text-xs text-muted-foreground">{{ requestMetaLine(item) }}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                data-approval-review-open
+                size="sm"
+                variant="outline"
+                :disabled="approvalsStore.state.busyRequestId === item.requestId"
+                @click="openReviewDialog(item)"
+              >
+                {{ t("Review") }}
+              </Button>
             </div>
           </div>
+        </article>
+      </div>
 
-          <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div class="rounded-xl border border-border/60 bg-card/80 px-3 py-2 text-sm">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Requested Role") }}</p>
-              <p class="mt-1">{{ item.requestedRole || "-" }}</p>
-            </div>
-            <div class="rounded-xl border border-border/60 bg-card/80 px-3 py-2 text-sm">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Display Name") }}</p>
-              <p class="mt-1">{{ item.displayName || "-" }}</p>
-            </div>
-            <div class="rounded-xl border border-border/60 bg-card/80 px-3 py-2 text-sm">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Created At") }}</p>
-              <p class="mt-1">{{ formatTimestamp(item.createdAt) }}</p>
-            </div>
-            <div class="rounded-xl border border-border/60 bg-card/80 px-3 py-2 text-sm">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Expires At") }}</p>
-              <p class="mt-1">{{ formatTimestamp(item.expiresAt) }}</p>
-            </div>
-          </div>
+      <div
+        v-else-if="!approvalsStore.state.loading"
+        class="mt-5 rounded-2xl border border-dashed border-border/60 bg-background/50 px-5 py-8 text-center text-sm text-muted-foreground"
+      >
+        {{ t("No pending registrations.") }}
+      </div>
+    </section>
 
-          <div class="mt-4 grid gap-4 lg:grid-cols-2">
-            <div class="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+    <Overlay
+      :open="reviewDialog.open"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      trapFocus
+      initialFocusSelector="[data-review-role-input]"
+      @close="closeReviewDialog"
+    >
+      <div
+        data-approval-review-dialog
+        class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
+        <CardHeader
+          :title="t('Review Request')"
+          :description="t('Approve or reject from one focused panel after checking the request summary.')"
+          title-tag="h3"
+          title-class="text-lg"
+        />
+
+        <div v-if="activeReviewItem" class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <section class="rounded-2xl border border-border/60 bg-background/70 px-4 py-4 text-sm">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="font-semibold text-foreground">{{ activeReviewItem.deviceId || "-" }}</p>
+              <Badge variant="secondary">{{ activeReviewItem.requestedRole || t("No requested role") }}</Badge>
+              <Badge variant="secondary">{{ activeReviewItem.displayName || t("No display name") }}</Badge>
+            </div>
+            <p class="mt-2 break-all text-xs text-muted-foreground">{{ activeReviewItem.requestId }}</p>
+
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Created At") }}</p>
+                <p class="mt-1">{{ formatTimestamp(activeReviewItem.createdAt) }}</p>
+              </div>
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Expires At") }}</p>
+                <p class="mt-1">{{ formatTimestamp(activeReviewItem.expiresAt) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <div class="mt-5 space-y-4">
+            <section class="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
               <p class="text-sm font-semibold text-emerald-800">{{ t("Approve Request") }}</p>
               <p class="mt-1 text-xs text-emerald-700">
                 {{ t("Leave role blank to keep authority-side default approval behavior.") }}
               </p>
               <input
-                v-model="ensureDraft(item.requestId).role"
-                class="mt-3 h-10 w-full rounded-md border border-emerald-300 bg-white px-3 text-sm"
+                v-model="reviewDialog.role"
+                data-review-role-input
+                :class="inputClass"
                 :placeholder="t('Optional role override')"
               />
-              <div class="mt-3 flex justify-end">
-                <Button
-                  size="sm"
-                  :disabled="approvalsStore.state.busyRequestId === item.requestId"
-                  @click="approveRegister(item)"
-                >
-                  {{ t("Approve") }}
-                </Button>
-              </div>
-            </div>
+            </section>
 
-            <div class="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+            <section class="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
               <p class="text-sm font-semibold text-rose-800">{{ t("Reject Request") }}</p>
               <p class="mt-1 text-xs text-rose-700">
                 {{ t("Reason is optional but recommended for audit clarity.") }}
               </p>
-              <input
-                v-model="ensureDraft(item.requestId).reason"
-                class="mt-3 h-10 w-full rounded-md border border-rose-300 bg-white px-3 text-sm"
+              <textarea
+                v-model="reviewDialog.reason"
+                data-review-reason-input
+                :class="textAreaClass"
                 :placeholder="t('Optional rejection reason')"
               />
-              <div class="mt-3 flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  :disabled="approvalsStore.state.busyRequestId === item.requestId"
-                  @click="rejectRegister(item)"
-                >
-                  {{ t("Reject") }}
-                </Button>
-              </div>
-            </div>
+            </section>
           </div>
         </div>
 
-        <div
-          v-if="!approvalsStore.state.loading && !approvalsStore.state.items.length"
-          class="rounded-2xl border border-dashed border-border/60 bg-background/50 px-5 py-8 text-center text-sm text-muted-foreground"
-        >
-          {{ t("No pending registrations.") }}
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" @click="closeReviewDialog">{{ t("Cancel") }}</Button>
+          <Button
+            v-if="activeReviewItem"
+            data-review-reject
+            variant="outline"
+            :disabled="approvalsStore.state.busyRequestId === activeReviewItem.requestId"
+            @click="rejectRegister(activeReviewItem)"
+          >
+            {{ t("Reject") }}
+          </Button>
+          <Button
+            v-if="activeReviewItem"
+            data-review-approve
+            :disabled="approvalsStore.state.busyRequestId === activeReviewItem.requestId"
+            @click="approveRegister(activeReviewItem)"
+          >
+            {{ t("Approve") }}
+          </Button>
         </div>
       </div>
-    </section>
+    </Overlay>
   </section>
 </template>

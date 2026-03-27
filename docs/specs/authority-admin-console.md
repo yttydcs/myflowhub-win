@@ -80,6 +80,8 @@
   - authority 解析
   - pending list 读取
   - approve / reject 动作
+- pending request 主视图必须是紧凑摘要列表，不得为每条 request 持续展开 approve / reject 输入区。
+- 审批详细输入必须集中在单个 `review dialog` 中；`role` 与 `reason` 共享同一聚焦面，避免拆成两个并列编辑块。
 - approve 的 `role` 可以为空字符串；前端只做显式字段校验，不改变空值语义。
 - approve / reject 成功后必须回刷 pending list。
 
@@ -90,6 +92,8 @@
   - issue permit
   - revoke permit
   - 展示当前会话最近一次成功签发的 permit 结果
+- 主视图必须采用“动作入口 + 最新结果”结构，不得长期保留 issue / revoke 大表单。
+- issue / revoke 的详细输入必须放在按需打开的独立 dialog 中；最新 permit 卡允许把 token 送入 revoke 流程，但不应把撤销表单重新铺回页面主体。
 - 页面不得假装支持“历史 permit 列表”；若协议没有该能力，文案必须明确边界。
 
 ## Data Model or Protocol

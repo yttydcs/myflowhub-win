@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Overlay } from "@/components/ui/overlay"
 import CardHeader from "@/components/CardHeader.vue"
 import { useI18n } from "@/i18n"
 import { useAuthorityStore } from "@/stores/authority"
@@ -16,6 +17,10 @@ const toast = useToastStore()
 const { t } = useI18n()
 
 const autoLoaded = reactive({ value: false })
+const dialogs = reactive({
+  issueOpen: false,
+  revokeOpen: false
+})
 
 const issueForm = reactive({
   deviceId: "",
@@ -54,6 +59,16 @@ const authorityLabel = computed(() => {
   return authorityStore.state.authorityId ? String(authorityStore.state.authorityId) : "-"
 })
 
+const latestPermitStateLabel = computed(() => {
+  if (permitStore.state.lastIssued?.revoked) {
+    return t("Revoked")
+  }
+  if (permitStore.state.lastIssued?.permit) {
+    return t("Active")
+  }
+  return t("Idle")
+})
+
 const ensureReady = () => {
   if (!sessionStore.connected) {
     throw new Error(t("Connect to a session first."))
@@ -67,6 +82,18 @@ const ensureReady = () => {
   if (!Number(sessionStore.auth.hubId || 0)) {
     throw new Error(t("Hub ID missing."))
   }
+}
+
+const resetDialogs = () => {
+  dialogs.issueOpen = false
+  dialogs.revokeOpen = false
+}
+
+const resetForms = () => {
+  issueForm.deviceId = ""
+  issueForm.role = ""
+  issueForm.expiresAt = ""
+  revokeForm.permit = ""
 }
 
 const formatTimestamp = (value: number) => {
@@ -86,6 +113,26 @@ const parseExpiresAt = () => {
     throw new Error(t("Expires at must be a valid date time."))
   }
   return Math.floor(millis / 1000)
+}
+
+const closeIssueDialog = () => {
+  dialogs.issueOpen = false
+}
+
+const openIssueDialog = () => {
+  dialogs.issueOpen = true
+}
+
+const closeRevokeDialog = () => {
+  dialogs.revokeOpen = false
+}
+
+const openRevokeDialog = (permitOverride?: string) => {
+  const nextPermit = String(
+    permitOverride ?? revokeForm.permit ?? permitStore.state.lastIssued?.permit ?? ""
+  ).trim()
+  revokeForm.permit = nextPermit
+  dialogs.revokeOpen = true
 }
 
 const resolveAuthorityAction = async () => {
@@ -122,6 +169,7 @@ const issuePermit = async () => {
       expiresAt: parseExpiresAt()
     })
     revokeForm.permit = lastIssued.permit
+    closeIssueDialog()
     toast.success(
       t("Permit issued."),
       t("device={deviceId} role={role}", { deviceId: lastIssued.deviceId, role: lastIssued.role })
@@ -132,10 +180,10 @@ const issuePermit = async () => {
   }
 }
 
-const revokePermit = async (permitOverride?: string) => {
+const revokePermit = async () => {
   try {
     ensureReady()
-    const permit = String(permitOverride ?? revokeForm.permit).trim()
+    const permit = String(revokeForm.permit).trim()
     if (!permit) {
       throw new Error(t("Permit token is required."))
     }
@@ -143,6 +191,7 @@ const revokePermit = async (permitOverride?: string) => {
     if (result.permit === revokeForm.permit.trim()) {
       revokeForm.permit = ""
     }
+    closeRevokeDialog()
     toast.success(t("Permit revoked."), result.permit)
   } catch (err) {
     console.warn(err)
@@ -175,7 +224,8 @@ watch(
     if (Number(nodeId || 0) !== Number(prevNodeId || 0) || Number(hubId || 0) !== Number(prevHubId || 0)) {
       permitStore.reset()
       autoLoaded.value = false
-      revokeForm.permit = ""
+      resetDialogs()
+      resetForms()
     }
   },
   { immediate: true }
@@ -187,6 +237,8 @@ watch(
     if (!isReady) {
       autoLoaded.value = false
       permitStore.reset()
+      resetDialogs()
+      resetForms()
       return
     }
     if (autoLoaded.value) {
@@ -244,84 +296,87 @@ onMounted(() => {
       <div class="space-y-6">
         <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
           <CardHeader
-            :title="t('Issue Permit')"
-            :description="t('Bind the token to a specific device and role. Leave expiry empty to let authority apply its default TTL.')"
+            :title="t('Permit Actions')"
+            :description="t('Open focused dialogs for issue and revoke so the page stays readable between operations.')"
             title-tag="h3"
             title-class="text-base"
           />
 
-          <div class="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Device ID") }}
-              </label>
-              <input v-model="issueForm.deviceId" :class="inputClass" :placeholder="t('device-001')" />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Role") }}
-              </label>
-              <input v-model="issueForm.role" :class="inputClass" :placeholder="t('admin')" />
-            </div>
-          </div>
+          <div class="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-background/70">
+            <article
+              data-permit-issue-row
+              class="flex flex-wrap items-start justify-between gap-4 border-b border-border/60 px-4 py-4"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="text-base font-semibold text-foreground">{{ t("Issue Permit") }}</p>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  {{ t("Open the issue dialog only when you need to mint a token for one device.") }}
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button
+                  data-open-issue-dialog
+                  size="sm"
+                  @click="openIssueDialog"
+                >
+                  {{ t("Issue Permit") }}
+                </Button>
+              </div>
+            </article>
 
-          <div class="mt-4">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Expires At (optional)") }}
-            </label>
-            <input v-model="issueForm.expiresAt" type="datetime-local" :class="inputClass" />
-          </div>
-
-          <div class="mt-5 flex flex-wrap gap-2">
-            <Button :disabled="permitStore.state.issuing" @click="issuePermit">{{ t("Issue Permit") }}</Button>
-          </div>
-        </section>
-
-        <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
-          <CardHeader
-            :title="t('Revoke Permit')"
-            :description="t('Use revoke when the token should be burned immediately, even if the device has not consumed it yet.')"
-            title-tag="h3"
-            title-class="text-base"
-          />
-
-          <div class="mt-4">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Permit Token") }}
-            </label>
-            <textarea
-              v-model="revokeForm.permit"
-              :class="textAreaClass"
-              :placeholder="t('permit_xxx')"
-            />
-          </div>
-
-          <div class="mt-5 flex flex-wrap gap-2">
-            <Button variant="outline" :disabled="permitStore.state.revoking" @click="revokePermit()">
-              {{ t("Revoke Permit") }}
-            </Button>
+            <article
+              data-permit-revoke-row
+              class="flex flex-wrap items-start justify-between gap-4 px-4 py-4"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-base font-semibold text-foreground">{{ t("Revoke Permit") }}</p>
+                  <Badge v-if="permitStore.state.lastIssued?.permit" variant="secondary">
+                    {{ latestPermitStateLabel }}
+                  </Badge>
+                </div>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  {{ t("Open the revoke dialog only when you need to burn a token from the latest result or a pasted value.") }}
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button
+                  v-if="permitStore.state.lastIssued?.permit"
+                  data-open-revoke-latest
+                  size="sm"
+                  variant="outline"
+                  :disabled="permitStore.state.lastIssued.revoked"
+                  @click="openRevokeDialog(permitStore.state.lastIssued.permit)"
+                >
+                  {{ t("Use Latest Permit") }}
+                </Button>
+                <Button
+                  data-open-revoke-dialog
+                  size="sm"
+                  variant="outline"
+                  @click="openRevokeDialog()"
+                >
+                  {{ t("Revoke Permit") }}
+                </Button>
+              </div>
+            </article>
           </div>
         </section>
       </div>
 
       <div class="space-y-6">
-        <section class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm">
+        <section
+          data-latest-permit-card
+          class="rounded-2xl border bg-card/90 p-5 text-card-foreground shadow-sm"
+        >
           <CardHeader
             :title="t('Latest Permit')"
-            :description="t('This panel reflects only the latest successful issue action from the current session.')"
+            :description="t('Review the latest issued token, then copy it or send it into the revoke flow.')"
             title-tag="h3"
             title-class="text-base"
           >
             <template #actions>
-              <Badge variant="secondary">
-                {{
-                  permitStore.state.lastIssued?.revoked
-                    ? t("Revoked")
-                    : permitStore.state.lastIssued?.permit
-                      ? t("Active")
-                      : t("Idle")
-                }}
-              </Badge>
+              <Badge variant="secondary">{{ latestPermitStateLabel }}</Badge>
             </template>
           </CardHeader>
 
@@ -353,12 +408,13 @@ onMounted(() => {
             </div>
 
             <div class="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" @click="copyPermit">{{ t("Copy Permit") }}</Button>
+              <Button data-copy-permit size="sm" variant="outline" @click="copyPermit">{{ t("Copy Permit") }}</Button>
               <Button
+                data-open-latest-revoke-dialog
                 size="sm"
                 variant="outline"
-                :disabled="permitStore.state.lastIssued.revoked || permitStore.state.revoking"
-                @click="revokePermit(permitStore.state.lastIssued.permit)"
+                :disabled="permitStore.state.lastIssued.revoked"
+                @click="openRevokeDialog(permitStore.state.lastIssued.permit)"
               >
                 {{ t("Revoke Latest Permit") }}
               </Button>
@@ -382,5 +438,121 @@ onMounted(() => {
         </section>
       </div>
     </section>
+
+    <Overlay
+      :open="dialogs.issueOpen"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      trapFocus
+      initialFocusSelector="[data-issue-device-input]"
+      @close="closeIssueDialog"
+    >
+      <div
+        data-permit-issue-dialog
+        class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
+        <CardHeader
+          :title="t('Issue Permit')"
+          :description="t('Bind the token to a specific device and role. Leave expiry empty to let authority apply its default TTL.')"
+          title-tag="h3"
+          title-class="text-lg"
+        />
+
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Device ID") }}
+              </label>
+              <input
+                v-model="issueForm.deviceId"
+                data-issue-device-input
+                :class="inputClass"
+                :placeholder="t('device-001')"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Role") }}
+              </label>
+              <input
+                v-model="issueForm.role"
+                data-issue-role-input
+                :class="inputClass"
+                :placeholder="t('admin')"
+              />
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Expires At (optional)") }}
+            </label>
+            <input
+              v-model="issueForm.expiresAt"
+              data-issue-expires-input
+              type="datetime-local"
+              :class="inputClass"
+            />
+          </div>
+        </div>
+
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" @click="closeIssueDialog">{{ t("Cancel") }}</Button>
+          <Button
+            data-issue-submit
+            :disabled="permitStore.state.issuing"
+            @click="issuePermit"
+          >
+            {{ t("Issue Now") }}
+          </Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay
+      :open="dialogs.revokeOpen"
+      overlayClass="bg-black/40 p-4"
+      closeOnBackdrop
+      trapFocus
+      initialFocusSelector="[data-revoke-permit-input]"
+      @close="closeRevokeDialog"
+    >
+      <div
+        data-permit-revoke-dialog
+        class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
+        <CardHeader
+          :title="t('Revoke Permit')"
+          :description="t('Use revoke when the token should be burned immediately, even if the device has not consumed it yet.')"
+          title-tag="h3"
+          title-class="text-lg"
+        />
+
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Permit Token") }}
+          </label>
+          <textarea
+            v-model="revokeForm.permit"
+            data-revoke-permit-input
+            :class="textAreaClass"
+            :placeholder="t('permit_xxx')"
+          />
+        </div>
+
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" @click="closeRevokeDialog">{{ t("Cancel") }}</Button>
+          <Button
+            data-revoke-submit
+            variant="outline"
+            :disabled="permitStore.state.revoking"
+            @click="revokePermit"
+          >
+            {{ t("Revoke Now") }}
+          </Button>
+        </div>
+      </div>
+    </Overlay>
   </section>
 </template>

@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-27_win-approval-permit-ui.md](2026-03-27_win-approval-permit-ui.md)
   - [2026-03-27_win-project-meta-uuid.md](2026-03-27_win-project-meta-uuid.md)
   - [2026-03-27_win-access-policy-role-dialog-refine.md](2026-03-27_win-access-policy-role-dialog-refine.md)
   - [2026-03-27_win-access-policy-dialog-editors.md](2026-03-27_win-access-policy-dialog-editors.md)
