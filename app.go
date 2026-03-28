@@ -19,6 +19,7 @@ import (
 	permissionsvc "github.com/yttydcs/myflowhub-win/internal/services/permission"
 	presetssvc "github.com/yttydcs/myflowhub-win/internal/services/presets"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
+	streamsvc "github.com/yttydcs/myflowhub-win/internal/services/stream"
 	topicbussvc "github.com/yttydcs/myflowhub-win/internal/services/topicbus"
 	varpoolsvc "github.com/yttydcs/myflowhub-win/internal/services/varpool"
 	storagesvc "github.com/yttydcs/myflowhub-win/internal/storage"
@@ -33,6 +34,7 @@ type App struct {
 	auth         *authsvc.AuthService
 	varpool      *varpoolsvc.VarPoolService
 	topicbus     *topicbussvc.TopicBusService
+	stream       *streamsvc.StreamService
 	file         *filesvc.FileService
 	flow         *flowsvc.FlowService
 	management   *mgmtsvc.ManagementService
@@ -69,6 +71,7 @@ func NewApp() *App {
 		auth:       authsvc.New(session, logs, store),
 		varpool:    varpoolsvc.New(session, logs, bus),
 		topicbus:   topicbussvc.New(session, logs, bus),
+		stream:     streamsvc.New(session, logs, bus),
 		file:       filesvc.New(session, logs, store, bus),
 		flow:       flowsvc.New(session, logs),
 		management: mgmtsvc.New(session, logs, store),
@@ -86,7 +89,7 @@ func NewApp() *App {
 }
 
 func (a *App) Bindings() []interface{} {
-	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.file, a.flow, a.management, a.permission, a.debug, a.presets}
+	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.stream, a.file, a.flow, a.management, a.permission, a.debug, a.presets}
 }
 
 func (a *App) Startup(ctx context.Context) {
@@ -102,6 +105,9 @@ func (a *App) Shutdown(ctx context.Context) {
 	a.unbridgeEvents()
 	if a.topicbus != nil {
 		a.topicbus.Close()
+	}
+	if a.stream != nil {
+		a.stream.Close()
 	}
 	if a.varpool != nil {
 		a.varpool.Close()
@@ -143,6 +149,9 @@ func (a *App) bridgeEvents() {
 	bind(presetssvc.EventTopicStressSender)
 	bind(presetssvc.EventTopicStressReceiver)
 	bind(topicbussvc.EventTopicBusEvent)
+	bind(streamsvc.EventStreamDelivery)
+	bind(streamsvc.EventStreamText)
+	bind(streamsvc.EventStreamStats)
 	bind(varpoolsvc.EventVarPoolChanged)
 	bind(varpoolsvc.EventVarPoolDeleted)
 }
