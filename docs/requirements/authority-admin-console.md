@@ -37,7 +37,7 @@
   - 从列表中撤销 permit
   - 展示当前 authority 的活动 permit 列表
   - 在首次加载和刷新期间给出页面内可见的 loading 提示
-  - 当解析出的 authority 不是当前登录节点时，显式提示“当前需在 authority 节点本机操作”，并停止继续等待 permit 管理超时
+  - 当解析出的 authority 不是当前登录节点时，仍必须通过 remote authority 链路完成 permit 管理，而不是进入 authority-local 限制态
 
 ### Optional
 
@@ -46,8 +46,7 @@
 
 ### Out of Scope
 
-- 不修改 `MyFlowHub-Server` 协议。
-- 不新增 permit 列表或 permit 查询能力。
+- 不新增 Win 专用的审批 / permit 私有协议分支。
 - 不自动把 permit token 长期持久化到本地配置。
 - 不重构 Home 页登录/注册主流程。
 
@@ -85,7 +84,8 @@
 16. 准入许可页面必须把签发动作收敛为按需打开的聚焦操作面，首屏保留动作入口、协议边界提示和活动 permit 列表。
 17. 准入许可页面必须允许管理员在签发动作面输入 `device_id`、`role` 和可选过期时间来签发 permit。
 18. 准入许可页面必须允许管理员从活动 permit 列表中直接撤销 permit，而不是要求手动输入 token。
-19. 当解析出的 authority 不是当前登录节点时，permit 页面必须显式提示“当前需在 authority 节点本机操作”，并停止自动请求 permit 列表。
+19. 当解析出的 `authorityId != sourceId` 时，注册审批和准入许可页面仍必须正常请求并执行 authority admin 动作，不得再以 authority-local 限制或伪 timeout 阻断。
+20. 远程 authority 场景下，页面可以提示“当前动作将由 authority 节点远程执行”，但不得改变功能可用性。
 
 ## Non-functional Requirements
 
@@ -100,7 +100,7 @@
 - Authority 管理 GUI 不得再暴露手动 authority override 输入或内部解析原因文案。
 - 注册审批页不得回退为每条请求常驻展开 approve / reject 双表单；审批详细输入必须收敛到单一审阅弹窗。
 - 准入许可页首屏不得长期展开签发 / 撤销大表单；签发输入必须收敛到按需打开的聚焦弹窗。
-- 当 authority 为远程节点时，permit 页不得继续以普通失败态或 timeout 伪装成“可远程管理”。
+- 当 authority 为远程节点时，审批页和 permit 页不得退回 authority-local 限制态，也不得继续以 timeout 伪装成不可用。
 - permit token 默认只保留会话态展示，不在本地配置里长期保存。
 
 ## Edge Cases
@@ -125,7 +125,7 @@
 5. 页面在 policy 加载期间会显示明确的页面内加载提示。
 6. 目录外权限在页面中可见，并能在保存时被保留。
 7. 注册审批页面可以完成待审批列表查询、批准和拒绝的基础链路。
-8. 准入许可页面可以完成 permit 列表刷新、permit 签发与列表行内撤销，并清楚展示活动 permit 列表；在 remote authority 场景下会改为显式限制提示，而不是继续等待超时。
+8. 准入许可页面可以完成 permit 列表刷新、permit 签发与列表行内撤销，并清楚展示活动 permit 列表；在 remote authority 场景下仍可正常操作，不再退回 authority-local 限制提示。
 9. 本轮改动要求补齐真实 permit list 协议能力，但不引入 permit 历史持久化。
 
 ## Related Specs
