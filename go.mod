@@ -10,7 +10,7 @@ require (
 	github.com/yttydcs/myflowhub-sdk v0.1.13
 )
 
-replace github.com/yttydcs/myflowhub-proto => ../proto-stream-subproto
+replace github.com/yttydcs/myflowhub-proto => ../../worktrees/proto-stream-subproto
 
 require (
 	github.com/bep/debounce v1.2.1 // indirect

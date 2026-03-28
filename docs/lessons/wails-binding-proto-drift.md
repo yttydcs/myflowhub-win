@@ -3,6 +3,7 @@
 ## Summary
 - 当 Win Wails service 直接引用 shared proto 中尚未存在的新 req/resp 类型，或 merge 后同时保留两套本地 detail 定义时，`GOWORK=off` 下的 `go test` 和 `wails generate module` 会直接编译失败。
 - 另一类常见变体是：当前 worktree 或旧 tag 已经包含新协议包，但“最新 semver tag”并没有带上它，导致 `go.mod` 看起来已经升级，实际仍然拿不到目标符号。
+- 还有一个常见变体是：shared proto 的开发态 worktree 确实存在，但 `replace` 的相对路径只对某个单一目录层级成立，导致主仓库路径和 worktree 路径之间切换时去找错目录。
 - 此类问题应通过单一 canonical 本地 typed payload 或显式开发态 `replace` 保持 JSON 契约不变，并把 proto 漂移显式隔离出来。
 
 ## Lookup Hints
@@ -16,12 +17,16 @@
 - `myflowhub-proto`
 - `latest tag missing package`
 - `replace github.com/yttydcs/myflowhub-proto`
+- `replacement directory ../proto-stream-subproto does not exist`
+- `reading ..\\proto-stream-subproto\\go.mod`
+- `repo\\proto-stream-subproto`
 
 ## Symptoms
 - `wails generate module` 在 Go 编译阶段报未定义符号。
 - `go test ./internal/services/<module>` 报 shared proto 中某个 req/resp 类型不存在。
 - `wails generate module` 或 `go test ./...` 报 `redeclared in this block`，提示 `service.go` 和 `detail_types.go` 同时定义了 `actionDetail` / `DetailReq` / `DetailResp`。
 - 开发者先看到 worktree 不在 `go.work` 的错误，切到 `GOWORK=off` 后才暴露真实缺失符号。
+- `go mod tidy`、`wails dev` 或 `wails generate module` 报 `replacement directory ../proto-stream-subproto does not exist`，并尝试读取不存在的 `repo\\proto-stream-subproto\\go.mod`。
 
 ## Impact
 - Wails bindings 无法生成。
@@ -33,10 +38,12 @@
 - 当前仓库依赖的 shared proto semver tag 并不是包含目标协议包的那个 tag；例如 worktree 或较早 tag 已有新包，但最新 tag 回到了另一条发布链。
 - 把本地 typed payload 从 `service.go` 拆到独立文件后，后续 merge/cherry-pick 又把旧的内联定义带回了 `service.go`。
 - worktree 校验未显式使用 `GOWORK=off`，导致父级 `go.work` 先拦截真实错误。
+- `go.mod` 里的 `replace` 使用了只对某个 worktree 目录成立的相对路径，而实际启动入口来自主仓库路径或另一层级的 worktree。
 
 ## Root Cause
 - Win 仓库的实现节奏先于 shared proto 基线；service 层把“未来 proto 类型”直接暴露到当前可编译接口，导致 bindings 生成和 Go 编译都依赖一个不存在的符号集。
 - 后续集成没有保持单一 canonical 本地 detail 类型来源，merge 结果把独立 `detail_types.go` 和旧的 `service.go` 内联定义同时保留下来，导致重复声明。
+- 对开发态 `replace` 而言，相对路径本身也是契约的一部分；一旦仓库同时支持主路径启动和 worktree 启动，只对单一路径结构成立的 `replace` 就会把依赖解析到错误目录。
 
 ## Investigation Trail
 - 先在 worktree 中执行 `wails generate module`，看到父级 `go.work` 模块外错误。
@@ -45,12 +52,14 @@
 - 对照已有 `internal/services/auth/authority.go`，确认本地 typed payload 是仓库内已采用的稳定修复模式。
 - 如果报 `redeclared in this block`，继续对 `internal/services/flow/service.go` 与 `internal/services/flow/detail_types.go` 做对照，确认是否存在两套 detail action/type 定义。
 - 用 `git blame` / `git log -S "type DetailReq struct"` 追踪是哪次 merge 或后续功能提交把旧定义带回了 `service.go`。
+- 如果报 `replacement directory ... does not exist`，直接从“实际执行命令的模块根目录”解析 `go.mod` 中的 `replace`，确认它落到的是否真是 workspace 根 `worktrees/` 下的目标 repo。
 
 ## Resolution
 - 在 Win 侧新增本地 exported typed payload 和 action 常量。
 - 保持 JSON 字段契约不变，只替换 service 方法的 Go 类型依赖。
 - 补充最小单元测试，并用 `GOWORK=off` 执行 `go test ./...` 与 `wails generate module`。
 - 如果已存在独立 `detail_types.go`，则删除 `service.go` 中重复的 `actionDetail*` / `DetailReq` / `DetailResp` 定义，保持单一 canonical 来源。
+- 若问题在开发态 `replace`，将路径改为从模块根同时兼容主仓库路径和 worktree 路径的相对地址，例如 `../../worktrees/proto-stream-subproto`。
 
 ## Prevention / Guardrails
 - 新增 Win Wails binding 前，先检查 shared proto 是否已定义对应 req/resp/action。
@@ -58,9 +67,11 @@
 - worktree 下所有 Go / Wails 验证默认使用 `GOWORK=off`。
 - 如果 shared proto 还没准备好，但前端/Win 需要先落地，优先使用 Win 本地 typed payload，并在 spec 中澄清这是实现边界而非协议扩展。
 - 当本地 typed payload 已经被抽到独立文件后，后续 merge review 要显式检查旧文件里的内联定义是否已经删除，避免重新形成双源定义。
+- 如果 workspace 同时存在主仓库路径和根级 worktree，开发态 `replace` 必须从这两种模块根都能解析到同一目录；不要提交只在单一 worktree 层级有效的相对路径。
 
 ## Related Docs
 - [2026-03-26_win-flow-detail-bindings.md](../change/2026-03-26_win-flow-detail-bindings.md)
 - [2026-03-26_win-flow-detail-merge-regression.md](../change/2026-03-26_win-flow-detail-merge-regression.md)
 - [2026-03-26_win-authority-console-refactor.md](../change/2026-03-26_win-authority-console-refactor.md)
+- [2026-03-29_win-run-dev-proto-path.md](../change/2026-03-29_win-run-dev-proto-path.md)
 - [flow-editor-run-detail.md](../specs/flow-editor-run-detail.md)
