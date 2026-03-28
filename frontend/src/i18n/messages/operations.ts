@@ -260,6 +260,7 @@ export const operationsZhCN: LocaleMessages = {
   "Apply Filter": "应用筛选",
   "Pending registrations loaded.": "待审批注册已加载。",
   "Failed to load pending registrations.": "加载待审批注册失败。",
+  "Failed to load permits.": "加载准入许可失败。",
   "Registration approved.": "注册已批准。",
   "Failed to approve registration.": "批准注册失败。",
   "Registration rejected.": "注册已拒绝。",

@@ -17,6 +17,9 @@ const toast = useToastStore()
 const { t } = useI18n()
 
 const autoLoaded = reactive({ value: false })
+const loadState = reactive({
+  error: ""
+})
 const dialogs = reactive({
   issueOpen: false
 })
@@ -52,12 +55,8 @@ const authorityLabel = computed(() => {
   return authorityStore.state.authorityId ? String(authorityStore.state.authorityId) : "-"
 })
 
-const permitCountLabel = computed(() => {
-  return t("Total {count}", { count: permitStore.state.total })
-})
-
-const permitStatusLabel = computed(() => {
-  return permitStore.state.loading ? t("Loading") : t("Live")
+const loadErrorDetail = computed(() => {
+  return loadState.error.trim()
 })
 
 const ensureReady = () => {
@@ -109,12 +108,14 @@ const closeIssueDialog = () => {
 }
 
 const loadPermits = async () => {
+  loadState.error = ""
   try {
     ensureReady()
     await permitStore.loadPermits()
+    loadState.error = ""
   } catch (err) {
     console.warn(err)
-    toast.errorOf(err, t("Failed to load permits."))
+    loadState.error = err instanceof Error ? err.message.trim() : String(err || "").trim()
   }
 }
 
@@ -175,6 +176,7 @@ watch(
     if (Number(nodeId || 0) !== Number(prevNodeId || 0) || Number(hubId || 0) !== Number(prevHubId || 0)) {
       permitStore.reset()
       autoLoaded.value = false
+      loadState.error = ""
       dialogs.issueOpen = false
       resetIssueForm()
     }
@@ -188,6 +190,7 @@ watch(
     if (!isReady) {
       autoLoaded.value = false
       permitStore.reset()
+      loadState.error = ""
       dialogs.issueOpen = false
       resetIssueForm()
       return
@@ -219,26 +222,6 @@ watch(
         </template>
       </CardHeader>
 
-      <div class="mt-5 flex flex-wrap items-center gap-2">
-        <Button
-          data-refresh-permits
-          size="sm"
-          variant="outline"
-          :disabled="!ready || permitStore.state.loading"
-          @click="refreshPermits"
-        >
-          {{ t("Refresh") }}
-        </Button>
-        <Button
-          data-open-issue-dialog
-          size="sm"
-          :disabled="!ready"
-          @click="openIssueDialog"
-        >
-          {{ t("New Permit") }}
-        </Button>
-      </div>
-
       <p class="mt-4 text-sm text-muted-foreground">
         {{ t("Only active permits are listed here. Consumed, revoked, or expired permits disappear automatically.") }}
       </p>
@@ -252,10 +235,36 @@ watch(
         title-class="text-base"
       >
         <template #actions>
-          <Badge variant="secondary">{{ permitCountLabel }}</Badge>
-          <Badge variant="secondary">{{ permitStatusLabel }}</Badge>
+          <div data-permit-card-actions class="flex flex-wrap items-center gap-2">
+            <Button
+              data-refresh-permits
+              size="sm"
+              variant="outline"
+              :disabled="!ready || permitStore.state.loading"
+              @click="refreshPermits"
+            >
+              {{ t("Refresh") }}
+            </Button>
+            <Button
+              data-open-issue-dialog
+              size="sm"
+              :disabled="!ready"
+              @click="openIssueDialog"
+            >
+              {{ t("New Permit") }}
+            </Button>
+          </div>
         </template>
       </CardHeader>
+
+      <div
+        v-if="loadErrorDetail"
+        data-permit-load-error
+        class="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950"
+      >
+        <p class="font-medium">{{ t("Failed to load permits.") }}</p>
+        <p class="mt-2 break-all text-xs text-amber-900/80">{{ loadErrorDetail }}</p>
+      </div>
 
       <div
         v-if="permitStore.state.loading"
@@ -266,7 +275,7 @@ watch(
       </div>
 
       <div
-        v-else-if="!permitStore.state.items.length"
+        v-else-if="!permitStore.state.items.length && !loadErrorDetail"
         data-permit-empty
         class="mt-4 rounded-2xl border border-dashed border-border/60 bg-background/50 px-5 py-8 text-center text-sm text-muted-foreground"
       >

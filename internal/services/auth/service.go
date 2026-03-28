@@ -312,6 +312,11 @@ func extractAuthCodeMsg(v any) (int, string) {
 			return 0, ""
 		}
 		return t.Code, t.Msg
+	case *ListRegisterPermitsResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
 	case *ApproveRegisterResp:
 		if t == nil {
 			return 0, ""

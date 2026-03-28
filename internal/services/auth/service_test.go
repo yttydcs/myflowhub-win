@@ -101,3 +101,18 @@ func TestNewLoginRequestOmitsDisplayNameWhenEmpty(t *testing.T) {
 		t.Fatalf("expected display_name omitted, got %s", string(data))
 	}
 }
+
+func TestExtractAuthCodeMsgSupportsListRegisterPermitsResp(t *testing.T) {
+	resp := &ListRegisterPermitsResp{
+		Code: 1,
+		Msg:  "ok",
+		Items: []RegisterPermitInfo{
+			{Permit: "permit_123", DeviceID: "device-1", Role: "admin"},
+		},
+	}
+
+	code, msg := extractAuthCodeMsg(resp)
+	if code != 1 || msg != "ok" {
+		t.Fatalf("extractAuthCodeMsg() = (%d, %q), want (1, %q)", code, msg, "ok")
+	}
+}

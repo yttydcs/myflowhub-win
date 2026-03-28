@@ -200,12 +200,29 @@ describe("PermitIssuance", () => {
     await nextTick()
 
     expect(permitStore.loadPermits).toHaveBeenCalledTimes(1)
-    expect(wrapper.find("[data-refresh-permits]").exists()).toBe(true)
-    expect(wrapper.find("[data-open-issue-dialog]").exists()).toBe(true)
+    expect(wrapper.find("[data-permit-card-actions] [data-refresh-permits]").exists()).toBe(true)
+    expect(wrapper.find("[data-permit-card-actions] [data-open-issue-dialog]").exists()).toBe(true)
     expect(wrapper.find("[data-permit-list]").exists()).toBe(true)
     expect(wrapper.findAll("[data-permit-row]")).toHaveLength(1)
     expect(wrapper.text()).not.toContain("Latest Permit")
     expect(wrapper.text()).not.toContain("Use Latest Permit")
+    expect(wrapper.text()).not.toContain("共 1 条")
+    expect(wrapper.text()).not.toContain("实时")
+  })
+
+  it("shows inline load errors without raising a toast on auto load", async () => {
+    permitStore.loadPermits.mockRejectedValueOnce(new Error("auth list_register_permits: request timed out"))
+
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    expect(permitStore.loadPermits).toHaveBeenCalledTimes(1)
+    expect(wrapper.find("[data-permit-load-error]").exists()).toBe(true)
+    expect(wrapper.text()).toContain("加载准入许可失败。")
+    expect(wrapper.text()).toContain("auth list_register_permits: request timed out")
+    expect(toastStore.errorOf).not.toHaveBeenCalled()
   })
 
   it("issues and revokes permits through the list-based flow", async () => {
