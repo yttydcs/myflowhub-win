@@ -2,7 +2,6 @@ package permission
 
 import (
 	"slices"
-	"strings"
 	"testing"
 
 	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
@@ -123,7 +122,7 @@ func TestAuthorityActionValidation(t *testing.T) {
 	}
 }
 
-func TestPermitActionsRequireAuthorityLocalSession(t *testing.T) {
+func TestPermitActionsAllowRemoteAuthorityBeforeAuthInvocation(t *testing.T) {
 	svc := New(nil, nil, nil)
 
 	checkErr := func(name string, err error) {
@@ -131,11 +130,8 @@ func TestPermitActionsRequireAuthorityLocalSession(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: expected error, got nil", name)
 		}
-		if !strings.Contains(err.Error(), "requires authority-local session") {
+		if err.Error() != "auth service not initialized" {
 			t.Fatalf("%s: unexpected error %q", name, err.Error())
-		}
-		if !strings.Contains(err.Error(), "source_id=7") || !strings.Contains(err.Error(), "authority_id=11") {
-			t.Fatalf("%s: missing node ids in error %q", name, err.Error())
 		}
 	}
 

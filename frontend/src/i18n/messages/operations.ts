@@ -320,8 +320,6 @@ export const operationsZhCN: LocaleMessages = {
   "Active Permits": "活动许可",
   "Use the list below as the single source of truth for current join permits on this authority.": "以下列表是当前 Authority 活动准入许可的唯一真实视图。",
   "Only active permits are listed here. Consumed, revoked, or expired permits disappear automatically.": "这里只展示活动许可；已消费、已撤销或已过期的许可会自动消失。",
-  "Permit management is available only on the authority node.": "只有在 Authority 节点本机登录时才能管理准入许可。",
-  "Permit management currently requires logging in on authority node {authority}. Current session node={nodeId}.": "当前准入许可管理仍要求在 Authority 节点 {authority} 本机登录；当前会话节点={nodeId}。",
   "Loading active permits...": "正在加载活动许可...",
   "No active permits.": "当前没有活动许可。",
   "Total {count}": "共 {count} 条",
