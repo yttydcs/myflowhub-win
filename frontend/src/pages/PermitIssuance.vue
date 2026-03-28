@@ -42,8 +42,10 @@ const ready = computed(() => {
   )
 })
 
+const currentNodeId = computed(() => Number(sessionStore.auth.nodeId || 0))
+
 const identityLabel = computed(() => {
-  const nodeId = Number(sessionStore.auth.nodeId || 0)
+  const nodeId = currentNodeId.value
   const hubId = Number(sessionStore.auth.hubId || 0)
   if (!nodeId || !hubId) {
     return t("Not logged in")
@@ -59,6 +61,21 @@ const loadErrorDetail = computed(() => {
   return loadState.error.trim()
 })
 
+const remoteAuthorityBlocked = computed(() => {
+  const authorityId = Number(authorityStore.state.authorityId || 0)
+  return Boolean(ready.value && authorityId > 0 && currentNodeId.value > 0 && authorityId !== currentNodeId.value)
+})
+
+const remoteAuthorityDetail = computed(() => {
+  if (!remoteAuthorityBlocked.value) {
+    return ""
+  }
+  return t("Permit management currently requires logging in on authority node {authority}. Current session node={nodeId}.", {
+    authority: authorityLabel.value,
+    nodeId: currentNodeId.value
+  })
+})
+
 const ensureReady = () => {
   if (!sessionStore.connected) {
     throw new Error(t("Connect to a session first."))
@@ -72,6 +89,18 @@ const ensureReady = () => {
   if (!Number(sessionStore.auth.hubId || 0)) {
     throw new Error(t("Hub ID missing."))
   }
+}
+
+const ensurePermitAuthorityLocal = async () => {
+  ensureReady()
+  if (!Number(authorityStore.state.authorityId || 0)) {
+    await authorityStore.resolveAuthority()
+  }
+  const authorityId = Number(authorityStore.state.authorityId || 0)
+  if (!authorityId) {
+    throw new Error(t("Authority ID unresolved."))
+  }
+  return authorityId === currentNodeId.value
 }
 
 const resetIssueForm = () => {
@@ -110,7 +139,10 @@ const closeIssueDialog = () => {
 const loadPermits = async () => {
   loadState.error = ""
   try {
-    ensureReady()
+    if (!(await ensurePermitAuthorityLocal())) {
+      loadState.error = ""
+      return
+    }
     await permitStore.loadPermits()
     loadState.error = ""
   } catch (err) {
@@ -235,12 +267,12 @@ watch(
         title-class="text-base"
       >
         <template #actions>
-          <div data-permit-card-actions class="flex flex-wrap items-center gap-2">
+      <div data-permit-card-actions class="flex flex-wrap items-center gap-2">
             <Button
               data-refresh-permits
               size="sm"
               variant="outline"
-              :disabled="!ready || permitStore.state.loading"
+              :disabled="!ready || permitStore.state.loading || remoteAuthorityBlocked"
               @click="refreshPermits"
             >
               {{ t("Refresh") }}
@@ -248,7 +280,7 @@ watch(
             <Button
               data-open-issue-dialog
               size="sm"
-              :disabled="!ready"
+              :disabled="!ready || remoteAuthorityBlocked"
               @click="openIssueDialog"
             >
               {{ t("New Permit") }}
@@ -258,7 +290,16 @@ watch(
       </CardHeader>
 
       <div
-        v-if="loadErrorDetail"
+        v-if="remoteAuthorityBlocked"
+        data-permit-remote-authority
+        class="mt-4 rounded-2xl border border-sky-200/70 bg-sky-50/80 px-4 py-3 text-sm text-sky-950"
+      >
+        <p class="font-medium">{{ t("Permit management is available only on the authority node.") }}</p>
+        <p class="mt-2 text-xs text-sky-900/80">{{ remoteAuthorityDetail }}</p>
+      </div>
+
+      <div
+        v-else-if="loadErrorDetail"
         data-permit-load-error
         class="mt-4 rounded-2xl border border-amber-200/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950"
       >

@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-28_win-permit-remote-authority-guard.md](2026-03-28_win-permit-remote-authority-guard.md)
   - [2026-03-28_win-permit-load-feedback.md](2026-03-28_win-permit-load-feedback.md)
   - [2026-03-28_win-active-permit-list.md](2026-03-28_win-active-permit-list.md)
   - [2026-03-27_win-permit-ui-refine.md](2026-03-27_win-permit-ui-refine.md)

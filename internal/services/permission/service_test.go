@@ -2,6 +2,7 @@ package permission
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	authsvc "github.com/yttydcs/myflowhub-win/internal/services/auth"
@@ -120,4 +121,43 @@ func TestAuthorityActionValidation(t *testing.T) {
 	if _, err := svc.RevokeRegisterPermit(RevokeRegisterPermitRequest{SourceID: 1, AuthorityID: 2}); err == nil {
 		t.Fatal("expected permit validation error")
 	}
+}
+
+func TestPermitActionsRequireAuthorityLocalSession(t *testing.T) {
+	svc := New(nil, nil, nil)
+
+	checkErr := func(name string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("%s: expected error, got nil", name)
+		}
+		if !strings.Contains(err.Error(), "requires authority-local session") {
+			t.Fatalf("%s: unexpected error %q", name, err.Error())
+		}
+		if !strings.Contains(err.Error(), "source_id=7") || !strings.Contains(err.Error(), "authority_id=11") {
+			t.Fatalf("%s: missing node ids in error %q", name, err.Error())
+		}
+	}
+
+	_, err := svc.ListRegisterPermits(ListRegisterPermitsRequest{
+		SourceID:    7,
+		AuthorityID: 11,
+		Limit:       10,
+	})
+	checkErr("list", err)
+
+	_, err = svc.IssueRegisterPermit(IssueRegisterPermitRequest{
+		SourceID:    7,
+		AuthorityID: 11,
+		DeviceID:    "device-1",
+		Role:        "admin",
+	})
+	checkErr("issue", err)
+
+	_, err = svc.RevokeRegisterPermit(RevokeRegisterPermitRequest{
+		SourceID:    7,
+		AuthorityID: 11,
+		Permit:      "permit-1",
+	})
+	checkErr("revoke", err)
 }

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setLocale } from "@/i18n"
 
 const authorityState = reactive({
-  authorityId: 11,
+  authorityId: 7,
   resolving: false
 })
 
@@ -174,7 +174,7 @@ describe("PermitIssuance", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setLocale("zh-CN")
-    authorityState.authorityId = 11
+    authorityState.authorityId = 7
     authorityState.resolving = false
     permitRows = [
       {
@@ -216,6 +216,7 @@ describe("PermitIssuance", () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
+    await Promise.resolve()
     await nextTick()
 
     expect(permitStore.loadPermits).toHaveBeenCalledTimes(1)
@@ -223,6 +224,22 @@ describe("PermitIssuance", () => {
     expect(wrapper.text()).toContain("加载准入许可失败。")
     expect(wrapper.text()).toContain("auth list_register_permits: request timed out")
     expect(toastStore.errorOf).not.toHaveBeenCalled()
+  })
+
+  it("shows a remote-authority notice and skips permit loading", async () => {
+    authorityState.authorityId = 11
+
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    expect(permitStore.loadPermits).not.toHaveBeenCalled()
+    expect(wrapper.find("[data-permit-remote-authority]").exists()).toBe(true)
+    expect(wrapper.text()).toContain("只有在 Authority 节点本机登录时才能管理准入许可。")
+    expect(wrapper.text()).toContain("当前准入许可管理仍要求在 Authority 节点 11 本机登录；当前会话节点=7。")
+    expect(wrapper.get("[data-refresh-permits]").attributes("disabled")).toBeDefined()
+    expect(wrapper.get("[data-open-issue-dialog]").attributes("disabled")).toBeDefined()
   })
 
   it("issues and revokes permits through the list-based flow", async () => {

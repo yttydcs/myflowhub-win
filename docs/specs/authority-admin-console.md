@@ -102,6 +102,10 @@
 - 主视图必须采用“顶部动作栏 + 活动 permit 列表”结构，不得继续维持 latest-only 结果卡。
 - issue 的详细输入必须放在按需打开的独立 dialog 中；revoke 直接从列表行内触发，不再要求用户手动输入 token。
 - 页面只展示活动 permit，不展示已消费 / 已撤销 / 已过期的 permit 历史。
+- 当解析出的 `authorityId != sourceId` 时，页面必须进入 authority-local 受限态：
+  - 不再自动请求 permit 列表
+  - 不再把 timeout 作为普通加载失败展示
+  - 显式提示当前需在 authority 节点本机登录后再进行 permit 管理
 
 ## Data Model or Protocol
 
@@ -176,6 +180,7 @@
 - 必填参数为空时，Go service 必须立即返回错误。
 - auth action 返回 `code != 1` 时，必须透传为显式失败，不得静默吞掉。
 - 页面动作失败时，必须保持当前可见状态稳定，不得因为一次失败清空已加载的全部数据。
+- permit 管理动作在 `sourceId != authorityId` 的 remote authority 场景下，Win orchestration 层必须快速返回 authority-local 错误，而不是继续等待 auth timeout。
 - `loadPolicy()` 进行中时，页面必须展示稳定的页面内 loading notice，不能只依赖按钮 disabled 状态传达反馈。
 - role 名重复、空 role、非法 node ID、非法分隔符等错误必须在前端显式校验。
 

@@ -1,337 +1,307 @@
-# Plan - Win Permit UI Refine
+# Plan - Win 准入许可远程 authority 超时收敛
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-permit-ui-refine`
+- Branch: `fix/win-permit-list-timeout-route`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine`
-- Current Stage: `4 archived, awaiting workflow end decision`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Current Stage: `4 archive complete, awaiting workflow end decision`
 
 ## Stage Records
 
 ### Initialization
-- `guide.md`:
+- `guide.md`
   - 已读取 workspace 根 `D:\project\MyFlowHub3\guide.md`
-  - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`
-  - 已读取 `frontend-design` 技能说明；本轮只在既有 authority 页面语言内收敛准入许可页，不重做整体视觉体系
-- base/worktree confirmation:
+  - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`、`references/m-docs-integration.md`
+  - 已读取 `$m-docs` 的 requirement impact 和 indexing 规则入口
+- base/worktree confirmation
   - implementation repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - dedicated branch: `fix/win-permit-ui-refine`
-  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine`
+  - dedicated branch: `fix/win-permit-list-timeout-route`
+  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
   - implementation will stay inside the worktree only
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 继续收敛 `Permit Issuance` 页面，修正与注册审批页类似的冗余解析入口、编辑框形态和结果区臃肿感，让页面更像“动作入口 + 紧凑结果”。
+- 收敛 `Permit Issuance` 页在远程 authority 场景下的真实超时，把“当前后端不支持远程 authority permit 管理”从模糊 timeout 改成前端可理解、可预期的限制提示。
 
 #### Scope
-- 必须:
-  - 保持准入许可页的 authority 解析、issue permit、revoke permit 和 latest permit 结果链路不变
-  - 去掉页面中冗余的显式 `Resolve` 入口，避免与主动作并列抢占注意力
-  - 优化 permit 编辑框形态，使其更符合输入内容本身
-  - 收敛 latest permit 结果区，让信息展示更接近紧凑列表而不是块状大卡片
-  - 页面测试需要覆盖新的动作入口与关键表单结构
-- 可选:
-  - 统一 issue / revoke dialog 的单列阅读节奏
-  - 为最新 permit 结果补稳定测试定位点
-- 不做:
-  - 不修改 `IssueRegisterPermit` / `RevokeRegisterPermit` 后端契约
-  - 不新增 permit history list/query 能力
-  - 不改动注册审批或访问策略页面
+- 必须
+  - 识别 `sourceId != authorityId` 的远程 authority 场景
+  - permit 页在该场景下不再自动触发 `list_register_permits` 并等待超时
+  - 页面需要给出明确的本地 authority 限制提示，并禁用不成立的 permit 管理动作
+  - Go orchestration 层对 permit 管理动作提前返回可读错误，避免继续等待 auth timeout
+  - 补齐前端和 Go 回归测试
+- 可选
+  - 让相同限制文案可复用于其它 authority admin 页
+- 不做
+  - 不扩到 `MyFlowHub-Server` / `MyFlowHub-SubProto` 的远程 authority 分布式审批链路
+  - 不修改 auth wire / protocol
+  - 不改访问策略页
 
 #### Use Cases
-- 管理员进入准入许可页后，希望先看到简洁的协议边界和动作入口，而不是先被一个单独的 `Resolve` 按钮打断
-- 管理员签发 permit 时，希望在单列表单里顺序填写设备、角色和过期时间，而不是横向来回扫读
-- 管理员撤销 permit 时，希望直接粘贴单行 token，而不是在一个过高的 textarea 里操作
-- 管理员查看最近一次 permit 时，希望结果区是紧凑明细行，便于快速扫读和触发复制 / 撤销
+- 管理员在非 authority 节点打开“准入许可”页时，希望直接知道“当前节点不能远程管理 authority permit”，而不是只看到 `request timed out`
+- 管理员在 authority 本机打开页面时，permit 列表、签发和撤销继续正常工作
+- 后续排查时，可以从错误信息直接区分“真实 authority-local 限制”和“普通网络抖动”
 
 #### Functional Requirements
-- `Permit Issuance` 页面必须继续支持：
-  - authority 自动解析
-  - issue permit
-  - revoke permit
-  - latest permit 结果展示
-- 页面不得再保留单独的显式 `Resolve` 按钮作为主操作
-- issue / revoke 仍必须通过 focused dialogs 完成
-- revoke dialog 的 token 输入必须继续允许粘贴完整 permit
-- latest permit 区仍必须支持复制和直接送入 revoke 流程
+- permit 页必须在 authority 已解析且 `sourceId != authorityId` 时显示显式受限提示
+- permit 页在受限状态下不得自动加载 permit 列表
+- permit 页在受限状态下不得允许 `Refresh` / `New Permit`
+- `PermissionService` 的 permit 管理动作在远程 authority 场景下必须快速失败，并返回包含 source/authority 信息的可读错误
+- authority 本地场景下 permit 页现有成功路径不得回退
 
 #### Non-functional Requirements
-- 优先做最小安全改动，不新增状态字段或请求
-- 保持当前 authority 页面紧凑、克制的视觉语言
-- 页面主视图应继续遵守“动作入口 + 最新结果”的既有设计方向
-- 测试需覆盖新布局下的关键入口仍可用
+- 以最小安全改动收敛，不扩展跨仓协议范围
+- 错误提示应足够明确，便于用户判断需要切换到 authority 节点操作
+- 页面失败态应保持稳定，不因受限场景清空或抖动现有列表
 
 #### Inputs / Outputs
-- 输入:
-  - 当前 session 身份 `sourceId / hubId`
-  - authority store 当前 `authorityId`
-  - permit issue 输入 `deviceId / role / expiresAt`
-  - permit revoke 输入 `permit`
-- 输出:
-  - 更收敛的 permit 动作区和结果区
-  - 保持不变的签发 / 撤销行为
+- 输入
+  - 当前 session `sourceId` / `hubId`
+  - authority store 的 `authorityId`
+  - permit 管理动作名
+- 输出
+  - permit 页的受限提示与禁用状态
+  - Go service 的快速失败错误
 
 #### Edge Cases
-- authority 未解析但用户直接 issue / revoke
-- latest permit 已被 revoked
-- revoke dialog 打开时没有 latest permit，只能手动粘贴 token
-- expiresAt 为空时仍需保持 authority default TTL 语义
+- authority 尚未解析时不能误判为受限
+- authority 本地场景下仍需正常自动加载
+- permit 页身份切换后需要重新计算受限状态
+- 将来后端补齐远程 authority 管理链路时，当前 guard 需要可回滚
 
 #### Acceptance Criteria
-- 准入许可页不再显示显式 `Resolve` 按钮
-- issue dialog 改为更聚焦的单列输入节奏
-- revoke token 输入不再使用大 textarea
-- latest permit 结果区更紧凑，且复制 / 撤销路径不变
-- `PermitIssuance` 测试和前端构建通过
+- 在 `sourceId != authorityId` 时，permit 页不再出现 `auth list_register_permits: request timed out`
+- 页面能明确提示“当前需要在 authority 节点本地操作”
+- authority 本地场景下现有 permit 列表、签发、撤销路径不变
+- `go test ./internal/services/permission/...` 和 `npm test -- PermitIssuance` 通过
 
 #### Risks
-- 若移除 `Resolve` 但没有保留清晰的 issue/revoke 主路径，用户可能误以为 authority 解析能力消失
-- 若 latest permit 区压得过紧，长 token 的可读性可能下降
+- 若后端某些拓扑实际上已经可以远程执行 permit 管理，本轮 guard 会比真实能力更保守
+- 仅修 permit 页的话，注册审批页后续仍可能暴露同类限制
 
 #### Issue List
 - none
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 采用最小前端收敛方案：
-  - 删除 `Permit Issuance` 顶部的 `resolveAuthorityAction` 和对应按钮
-  - 保持 `permitStore.issuePermit()` / `revokePermit()` 现有自动 authority 解析链路不变
-  - 将 issue dialog 改成单列输入布局
-  - 将 revoke dialog 的 token 从 textarea 改成单行 input
-  - 将 `Latest Permit` 卡内部明细改成紧凑明细行结构
-
-#### Alternatives Considered
-- 方案 A（采用）：页面局部收敛，移除冗余 `Resolve`，压缩结果区与表单结构
-  - 优点：最贴近用户当前反馈，且不触碰 store / protocol
-  - 代价：最新 permit 结果仍是卡片语境，只是内部更紧凑
-- 方案 B：保留 `Resolve`，只平移到 header actions
-  - 优点：改动更小
-  - 代价：仍保留冗余动作，没有真正收敛页面心智
-- 方案 C：进一步把 permit 页面拆 tab 或拆更多子卡片
-  - 优点：层级更细
-  - 代价：超过当前需求，风险和写集都偏大
+- 方案 A（采用）
+  - 在 Win `PermissionService` 中为 permit 管理动作增加 `authority-local` 前置校验
+  - permit 页基于 authority store 的 `sourceId/authorityId` 计算 `remoteAuthorityBlocked`
+  - 当受限时，permit 页跳过自动加载并展示稳定提示，同时禁用刷新和新建
+  - 继续保留 authority 本地场景下的原有加载和动作链路
+- 不采用方案
+  - 直接扩到 Server/SubProto 实现远程 authority permit 管理
+  - 理由：涉及跨仓 runtime 行为，明显超出本轮 Win 缺陷修复范围
 
 #### Module Responsibilities
+- `internal/services/permission/service.go`
+  - 收敛 permit 管理动作的 authority-local 前置校验
+- `internal/services/permission/service_test.go`
+  - 覆盖远程 authority permit 管理快速失败
 - `frontend/src/pages/PermitIssuance.vue`
-  - 收敛页头动作区
-  - 调整 issue / revoke dialog 表单结构
-  - 调整 latest permit 结果区布局
-- `frontend/src/stores/permitIssuance.ts`
-  - 保持现有签发 / 撤销与 latest permit 状态语义不变
-- `frontend/src/stores/authority.ts`
-  - 保持 `requireAuthority()` 自动解析行为不变
+  - 展示 remote authority 受限提示
+  - 跳过受限场景自动加载
+  - 禁用不成立的动作按钮
 - `frontend/src/pages/PermitIssuance.test.ts`
-  - 覆盖移除 `Resolve`、revoke input 结构和关键动作路径
+  - 覆盖 remote authority 受限提示和不自动加载
+- `docs/requirements/authority-admin-console.md`
+  - 澄清当前 backend 能力下 permit/admin 页的远程 authority 限制提示要求
+- `docs/specs/authority-admin-console.md`
+  - 澄清 authority-local guard 是当前长期 UI/服务契约的一部分
 
 #### Data / Call Flow
-1. 页面 ready 后继续只建立本地 authority 上下文，不主动发 permit 请求
-2. 用户从 `Permit Actions` 打开 issue / revoke dialog
-3. `issuePermit()` / `revokePermit()` 内部继续通过 store 调用 `requireAuthority()`
-4. latest permit 结果继续由 store 的 `lastIssued` / `lastRevoke` 驱动
-
-#### Interface Drafts
-- 顶部摘要卡:
-  - 保留连接状态、登录状态、identity、authority badges
-  - 保留协议边界说明
-  - 移除单独 `Resolve`
-- `Permit Actions`:
-  - 保留 `Issue Permit` / `Revoke Permit` 两行紧凑动作
-- `Issue Permit` dialog:
-  - `Device ID`
-  - `Role`
-  - `Expires At (optional)`
-  - 单列顺序布局
-- `Revoke Permit` dialog:
-  - 单行 token input
-- `Latest Permit`:
-  - token 展示
-  - device / role / expires / issued 明细行
-  - copy / revoke actions
+1. 页面基于 session 身份设置 authority store `sourceId/hubId`
+2. authority 解析完成后，若 `authorityId != sourceId`，页面进入 `remoteAuthorityBlocked`
+3. 受限状态下不触发 `loadPermits()`，只展示限制提示
+4. 若前端或其它调用者仍直接触发 permit 管理动作，`PermissionService` 立即返回显式错误
+5. authority 本地场景继续沿用当前 permit store 请求链路
 
 #### Error Handling and Safety
-- 不改变 issue / revoke 的既有本地校验和 toast 行为
-- 不改变 `latestIssued.revoked` 与 `lastRevoke` 的回写逻辑
-- revoke 仍需显式按钮触发
+- permit 页受限提示优先于 timeout
+- authority-local guard 返回的错误应包含动作名、当前 sourceId 和 authorityId
+- 不改变 authority 本地场景的业务返回码和 toast 行为
 
 #### Performance and Testing Strategy
-- 不增加任何新的 authority 请求
-- 验证重点:
-  - `frontend/src/pages/PermitIssuance.test.ts`
+- 不增加新的网络请求
+- 验证重点
+  - `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
   - `npm test -- PermitIssuance`
   - `npm run build`
-- fresh worktree 如缺 `node_modules` 或 `wailsjs`，按既有预热流程补齐后再验证
 
 #### Extensibility Design Points
-- 若后续 permit 支持历史记录，当前紧凑结果区可以继续作为“latest snapshot”，旁边再挂独立列表
-- 若其它 authority 页面也要消除冗余 `Resolve`，本轮结构可作为直接参考
+- 若后续后端补齐远程 authority 管理链路，可删除 service guard 和页面提示，回到真实远程加载
+- 同一 guard 模式可复用到 `Registration Approvals`
 
 #### Issue List
 - none
 
 ### Stage 3.1 - Planning
-#### Project Goal and Current State
-- Goal:
-  - 让准入许可页继续向“动作入口 + 聚焦表单 + 紧凑结果”收敛
-- Current State:
-  - 顶部协议边界区仍带独立 `Resolve` 按钮
-  - issue dialog 仍使用双列表单
-  - revoke dialog 仍使用较重的 textarea
-  - latest permit 结果区仍偏块状
-
 #### Docs Governance Routing Decision
 - 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
-- Requirements impact: `none`
-- Specs impact: `none`
-- Stable docs destination:
-  - none
-- Change archive destination:
-  - `docs/change/2026-03-27_win-permit-ui-refine.md`
-- Lessons impact:
-  - none
-
-#### Related Requirements / Specs / Lessons
-- Requirements:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine\docs\requirements\authority-admin-console.md`
-- Specs:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine\docs\specs\authority-admin-console.md`
-- Lessons:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine\docs\lessons\README.md`
+- Requirements impact: `clarify`
+- Specs impact: `clarify`
+- Related requirements
+  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route\docs\requirements\authority-admin-console.md`
+- Related specs
+  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route\docs\specs\authority-admin-console.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+- Related lessons
+  - `none`
 
 #### Executable Task List
-- [x] IMPL-WPR-1 收敛准入许可页动作与表单布局
-- [x] TEST-WPR-1 更新准入许可页面测试
-- [x] REVIEW-WPR-1 完成 3.3 代码复核
-- [x] ARCHIVE-WPR-1 归档到 `docs/change`
+- [x] `PERMIT-GUARD-1` 在 Go orchestration 层增加 permit authority-local guard
+- [x] `PERMIT-GUARD-2` 在 permit 页增加 remote authority 受限提示与按钮禁用
+- [x] `DOC-CLARIFY-1` 更新 requirements/specs，明确当前远程 authority 限制提示要求
+- [x] `VALIDATE-1` 补测试并执行 Go / 前端验证
+- [x] `REVIEW-1` 完成 3.3 checklist
+- [x] `ARCHIVE-1` 归档到 `docs/change`
 
 #### Task Details
-##### IMPL-WPR-1 - 收敛准入许可页动作与表单布局
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine\plan.md`
-- Goal:
-  - 移除冗余 `Resolve`，优化 issue/revoke 编辑框形态，并压缩 latest permit 结果区
-- Files / Modules:
-  - `frontend/src/pages/PermitIssuance.vue`
-- Write Set:
-  - `frontend/src/pages/PermitIssuance.vue`
-- Acceptance:
-  - 页面不再显示 `Resolve`
-  - issue/revoke dialog 更聚焦
-  - latest permit 更紧凑
-- Test Points:
-  - `npm test -- PermitIssuance`
-  - `npm run build`
-- Rollback:
-  - 回退 permit 页面布局和 dialog 结构修改
+##### `PERMIT-GUARD-1` - Go authority-local guard
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Goal
+  - permit 管理动作在远程 authority 场景快速失败为可读错误
+- Files
+  - `internal/services/permission/service.go`
+  - `internal/services/permission/service_test.go`
+- Acceptance
+  - `ListRegisterPermits` 至少不再等到 auth timeout
+- Tests
+  - `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
+- Rollback
+  - 回退 authority-local guard 和对应测试
 
-##### TEST-WPR-1 - 准入许可页回归验证
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-permit-ui-refine\plan.md`
-- Goal:
-  - 锁定新 permit 页面结构和关键动作路径
-- Files / Modules:
+##### `PERMIT-GUARD-2` - Permit page remote authority UX
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Goal
+  - permit 页在 remote authority 下给出稳定限制提示，而不是继续自动加载
+- Files
+  - `frontend/src/pages/PermitIssuance.vue`
   - `frontend/src/pages/PermitIssuance.test.ts`
-- Write Set:
-  - `frontend/src/pages/PermitIssuance.test.ts`
-- Acceptance:
-  - 测试覆盖不再渲染 `Resolve`
-  - 测试覆盖 revoke token 使用单行 input
-  - issue / revoke 关键路径继续通过
-- Test Points:
+- Acceptance
+  - 受限状态不自动调用 `loadPermits`
+  - 页面展示可理解提示
+  - 刷新和新建按钮禁用
+- Tests
   - `npm test -- PermitIssuance`
-  - `npm run build`
-- Rollback:
-  - 回退新增断言
+- Rollback
+  - 回退 permit 页面受限态逻辑
+
+##### `DOC-CLARIFY-1` - Requirements/Specs clarify
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Goal
+  - 让 Win 稳定文档与当前 backend 能力保持一致
+- Files
+  - `docs/requirements/authority-admin-console.md`
+  - `docs/specs/authority-admin-console.md`
+- Acceptance
+  - 文档明确 permit/admin 页在 remote authority 下需给出 authority-local 限制提示
+- Tests
+  - doc consistency by manual review
+- Rollback
+  - 回退文档澄清
 
 #### Dependencies
-- `PermitIssuance.vue` 与 `permitIssuance.ts`、`authority.ts`、toast 高度耦合
-- issue / revoke 主路径依赖 `requireAuthority()` 自动解析链路
+- permit 页依赖 authority store 的 `sourceId/authorityId`
+- Win 文档澄清依赖 Server auth spec 中“审批列表/permit 仍建议从 authority 节点操作”的现有事实
 
 #### Risks and Notes
-- 本轮只做 permit 页面局部收敛，不修改任何 authority 服务契约
+- 本轮不承诺“remote authority permit 管理真实可用”，只收敛为显式限制提示
 
 #### Parallelism Assessment
 - 不派发子Agent
-- 原因:
-  - 写集集中在单个页面和其页面测试，规模小且高度耦合
-  - 当前会话未获得显式子Agent委派授权
-- Owner:
-  - 主Agent
-
-#### Issue List
-- none
+- 原因
+  - 写集小，Go service、Vue 页面、测试和 docs 高度耦合
+  - 当前会话未获得显式子Agent授权
 
 阻塞：否
 进入 3.2
 
 ### Stage 3.2 - Implementation
 #### Task Mapping
-- `IMPL-WPR-1`
+- `PERMIT-GUARD-1`
+  - `internal/services/permission/service.go`
+  - `internal/services/permission/service_test.go`
+- `PERMIT-GUARD-2`
   - `frontend/src/pages/PermitIssuance.vue`
-- `TEST-WPR-1`
   - `frontend/src/pages/PermitIssuance.test.ts`
+- `DOC-CLARIFY-1`
+  - `docs/requirements/authority-admin-console.md`
+  - `docs/specs/authority-admin-console.md`
 
 #### File-level Change Summary
+- `internal/services/permission/service.go`
+  - 为 permit 管理动作增加 authority-local 前置校验
+- `internal/services/permission/service_test.go`
+  - 覆盖 remote authority 快速失败
 - `frontend/src/pages/PermitIssuance.vue`
-  - 删除显式 `resolveAuthorityAction` 和页头 `Resolve` 按钮，保留协议边界说明。
-  - 将 `Issue Permit` dialog 从双列输入改为单列顺序输入。
-  - 将 `Revoke Permit` 的 token 编辑框从 `textarea` 改为单行 `input`。
-  - 将 `Latest Permit` 明细压缩为紧凑行列表，并补 `data-latest-permit-details` 供测试定位。
+  - remote authority 下跳过自动加载
+  - 展示 authority-local 受限提示
+  - 禁用 `Refresh / New Permit`
 - `frontend/src/pages/PermitIssuance.test.ts`
-  - 补充不再渲染 `Resolve` 文案断言。
-  - 补充撤销输入框为 `INPUT` 的结构断言。
-  - 补充 latest permit 紧凑明细区存在断言。
+  - 补 remote authority 受限态回归
+- `frontend/src/i18n/messages/operations.ts`
+  - 新增 permit remote authority 提示文案
+- `docs/requirements/authority-admin-console.md`
+  - 澄清 permit 页 remote authority 限制提示要求
+- `docs/specs/authority-admin-console.md`
+  - 澄清 authority-local 受限态与快速失败契约
 
 #### Design Notes
-- `issuePermit()` / `revokePermit()` 继续经 `permitStore` 调用 `authority.requireAuthority()` 自动解析 authority，不新增额外请求。
-- 继续保持“动作入口 + focused dialog + latest snapshot”结构，只收敛视觉密度，不改 store / backend 契约。
+- 不扩到跨仓 remote authority 管理链路，只把当前 backend 边界显式化
+- Go orchestration guard 和前端受限态同时存在，避免页面外调用者继续等待 timeout
 
 #### Validation
-- `npm ci`
-  - 通过
+- `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
+  - 结果：通过
 - `npm test -- PermitIssuance`
-  - 通过
-- `npm run build`
-  - 首次失败，原因是 fresh worktree 缺少 `frontend/wailsjs/**`
+  - 结果：通过
 - `$env:GOWORK='off'; wails generate module`
-  - 通过
+  - 结果：通过
+  - 备注：仍会打印 `Not found: time.Time`，但退出码为 0
 - `npm run build`
-  - 通过
+  - 结果：通过
 
 #### Blockers
 - none
 
 ### Stage 3.3 - Code Review
 - 需求覆盖：通过
-  - 已覆盖去除冗余 `Resolve`、单列 issue 表单、单行 revoke 输入和更紧凑的 latest permit 明细。
+  - 已覆盖 remote authority permit timeout 收敛、显式限制提示、authority-local guard 和文档澄清
 - 架构合理性：通过
-  - 仅修改页面层和页面测试，不触碰 authority / permit store 契约。
+  - 保持改动面在 Win repo 内，不误扩到跨仓 runtime
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 仅新增本地 `computed` 明细数组；未增加网络请求。
+  - 只减少了无效 timeout 等待，没有新增额外请求
 - 可读性与一致性：通过
-  - 延续 authority 页面现有 `CardHeader + compact rows + overlay dialog` 结构。
+  - 页面与 Go service 的错误边界语义保持一致
 - 可扩展性与配置化：通过
-  - 明细行抽成 `latestPermitDetails`，后续若扩展字段可继续顺序追加。
+  - 将来若补齐 remote 链路，可集中回退 guard 和页面受限态
 - 稳定性与安全：通过
-  - 保持既有输入校验、toast 和危险操作触发路径不变。
+  - authority 本地场景不变；remote authority 不再伪装成普通失败
 - 测试覆盖情况：通过
-  - 页面结构变化已由 `PermitIssuance.test.ts` 锁定，并完成前端构建验证。
-- 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 未使用子Agent。
+  - Go / permit 页面单测通过，前端构建通过
+- 子Agent治理与审计：通过
+  - 未使用子Agent
 
 ### Stage 4 - Change Archive
 #### $m-docs Check
-- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口。
-- Requirements impact: `none`
-- Specs impact: `none`
-- Lessons impact: `none`
-- `docs/README.md` 无需更新。
-- 需更新：
-  - `docs/change/2026-03-27_win-permit-ui-refine.md`
+- 使用 `$m-docs` 校验 plan/change/lessons 路由
+- Requirements impact: `updated`
+- Specs impact: `updated`
+- Lessons impact: `updated`
+- 新增：
+  - `docs/change/2026-03-28_win-permit-remote-authority-guard.md`
+  - `docs/lessons/authority-local-admin-actions.md`
+- 更新：
   - `docs/change/README.md`
+  - `docs/lessons/README.md`
+  - `docs/requirements/authority-admin-console.md`
+  - `docs/specs/authority-admin-console.md`
 
 #### Archive Status
-- 已归档到 `docs/change/2026-03-27_win-permit-ui-refine.md`
+- 已完成 repo-local 归档
 - 等待用户确认是否结束 workflow
