@@ -1,13 +1,19 @@
 import { reactive } from "vue"
 import { callPermission, useAuthorityStore } from "@/stores/authority"
 
-export type IssuedPermit = {
+export type RegisterPermit = {
   permit: string
   deviceId: string
   role: string
+  issuedBy: number
+  issuedAt: number
   expiresAt: number
-  issuedAt: string
-  revoked: boolean
+}
+
+type PermitListResp = {
+  authorityId?: number
+  total?: number
+  items?: RegisterPermit[]
 }
 
 type PermitIssueResp = {
@@ -23,36 +29,64 @@ type PermitRevokeResp = {
   role?: string
 }
 
-type LastRevoke = {
-  permit: string
-  deviceId: string
-  role: string
-  revokedAt: string
-}
-
 type PermitIssuanceState = {
+  loading: boolean
   issuing: boolean
-  revoking: boolean
-  lastIssued?: IssuedPermit
-  lastRevoke?: LastRevoke
+  busyPermit: string
+  total: number
+  items: RegisterPermit[]
 }
 
 const authority = useAuthorityStore()
 
 const state = reactive<PermitIssuanceState>({
+  loading: false,
   issuing: false,
-  revoking: false,
-  lastIssued: undefined,
-  lastRevoke: undefined
+  busyPermit: "",
+  total: 0,
+  items: []
 })
 
-const nowIso = () => new Date().toISOString()
+const applyPermitList = (resp?: PermitListResp) => {
+  state.total = Number(resp?.total || 0)
+  state.items = Array.isArray(resp?.items)
+    ? resp.items
+        .map((item) => ({
+          permit: String(item?.permit || "").trim(),
+          deviceId: String(item?.deviceId || "").trim(),
+          role: String(item?.role || "").trim(),
+          issuedBy: Number(item?.issuedBy || 0),
+          issuedAt: Number(item?.issuedAt || 0),
+          expiresAt: Number(item?.expiresAt || 0)
+        }))
+        .filter((item) => item.permit || item.deviceId)
+    : []
+}
 
 const reset = () => {
+  state.loading = false
   state.issuing = false
-  state.revoking = false
-  state.lastIssued = undefined
-  state.lastRevoke = undefined
+  state.busyPermit = ""
+  state.total = 0
+  state.items = []
+}
+
+const loadPermits = async (input?: { deviceId?: string }) => {
+  const { sourceId, authorityId } = await authority.requireAuthority()
+  state.loading = true
+  try {
+    const resp = await callPermission<PermitListResp>("ListRegisterPermits", {
+      sourceId,
+      authorityId,
+      offset: 0,
+      limit: 200,
+      deviceId: String(input?.deviceId || "").trim()
+    })
+    applyPermitList(resp)
+    return state.items
+  } finally {
+    state.loading = false
+  }
 }
 
 const issuePermit = async (input: { deviceId: string; role: string; expiresAt: number }) => {
@@ -66,15 +100,12 @@ const issuePermit = async (input: { deviceId: string; role: string; expiresAt: n
       role: input.role,
       expiresAt: input.expiresAt
     })
-    state.lastIssued = {
-      permit: String(resp?.permit || ""),
-      deviceId: String(resp?.deviceId || input.deviceId),
-      role: String(resp?.role || input.role),
-      expiresAt: Number(resp?.expiresAt || 0),
-      issuedAt: nowIso(),
-      revoked: false
+    return {
+      permit: String(resp?.permit || "").trim(),
+      deviceId: String(resp?.deviceId || input.deviceId).trim(),
+      role: String(resp?.role || input.role).trim(),
+      expiresAt: Number(resp?.expiresAt || 0)
     }
-    return state.lastIssued
   } finally {
     state.issuing = false
   }
@@ -82,31 +113,27 @@ const issuePermit = async (input: { deviceId: string; role: string; expiresAt: n
 
 const revokePermit = async (permit: string) => {
   const { sourceId, authorityId } = await authority.requireAuthority()
-  state.revoking = true
+  state.busyPermit = permit
   try {
     const resp = await callPermission<PermitRevokeResp>("RevokeRegisterPermit", {
       sourceId,
       authorityId,
       permit
     })
-    state.lastRevoke = {
-      permit: String(resp?.permit || permit),
-      deviceId: String(resp?.deviceId || ""),
-      role: String(resp?.role || ""),
-      revokedAt: nowIso()
+    return {
+      permit: String(resp?.permit || permit).trim(),
+      deviceId: String(resp?.deviceId || "").trim(),
+      role: String(resp?.role || "").trim()
     }
-    if (state.lastIssued && state.lastIssued.permit === state.lastRevoke.permit) {
-      state.lastIssued.revoked = true
-    }
-    return state.lastRevoke
   } finally {
-    state.revoking = false
+    state.busyPermit = ""
   }
 }
 
 export const usePermitIssuanceStore = () => {
   return {
     state,
+    loadPermits,
     issuePermit,
     revokePermit,
     reset

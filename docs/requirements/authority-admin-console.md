@@ -32,9 +32,11 @@
   - 批准单条注册请求
   - 拒绝单条注册请求
 - 准入许可页面必须支持：
+  - 刷新当前活动 permit 列表
   - 签发 permit
-  - 撤销 permit
-  - 展示最近一次成功签发的 permit 结果
+  - 从列表中撤销 permit
+  - 展示当前 authority 的活动 permit 列表
+  - 在首次加载和刷新期间给出页面内可见的 loading 提示
 
 ### Optional
 
@@ -109,7 +111,8 @@
 - reject 的 reason 为空。
 - issue permit 时缺少 `device_id` 或 `role`。
 - revoke permit 时 token 为空。
-- permit 页面无法回读历史 permit，只能展示最近一次成功签发结果。
+- permit 列表为空。
+- permit 已被消费 / 撤销 / 过期，因此不再出现在活动列表中。
 
 ## Acceptance Criteria
 
@@ -120,8 +123,8 @@
 5. 页面在 policy 加载期间会显示明确的页面内加载提示。
 6. 目录外权限在页面中可见，并能在保存时被保留。
 7. 注册审批页面可以完成待审批列表查询、批准和拒绝的基础链路。
-8. 准入许可页面可以完成 permit 签发与撤销，并清楚展示最近一次签发结果。
-9. 本轮改动不要求新增 Server 协议，也不引入 permit 历史持久化。
+8. 准入许可页面可以完成 permit 列表刷新、permit 签发与列表行内撤销，并清楚展示活动 permit 列表。
+9. 本轮改动要求补齐真实 permit list 协议能力，但不引入 permit 历史持久化。
 
 ## Related Specs
 

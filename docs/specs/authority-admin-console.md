@@ -30,6 +30,7 @@
   - `SavePolicy`
   - `GetNodePerms`
   - `ListPendingRegisters`
+  - `ListRegisterPermits`
   - `ApproveRegister`
   - `RejectRegister`
   - `IssueRegisterPermit`
@@ -39,6 +40,7 @@
 
 - `AuthService` 必须提供对下列 auth action 的强类型封装：
   - `list_pending_registers`
+  - `list_register_permits`
   - `approve_register`
   - `reject_register`
   - `issue_register_permit`
@@ -94,12 +96,12 @@
 
 - `Permit Issuance` 页面负责：
   - authority 解析
+  - 读取活动 permit 列表
   - issue permit
-  - revoke permit
-  - 展示当前会话最近一次成功签发的 permit 结果
-- 主视图必须采用“动作入口 + 最新结果”结构，不得长期保留 issue / revoke 大表单。
-- issue / revoke 的详细输入必须放在按需打开的独立 dialog 中；最新 permit 卡允许把 token 送入 revoke 流程，但不应把撤销表单重新铺回页面主体。
-- 页面不得假装支持“历史 permit 列表”；若协议没有该能力，文案必须明确边界。
+  - 从活动 permit 列表行内 revoke permit
+- 主视图必须采用“顶部动作栏 + 活动 permit 列表”结构，不得继续维持 latest-only 结果卡。
+- issue 的详细输入必须放在按需打开的独立 dialog 中；revoke 直接从列表行内触发，不再要求用户手动输入 token。
+- 页面只展示活动 permit，不展示已消费 / 已撤销 / 已过期的 permit 历史。
 
 ## Data Model or Protocol
 
@@ -122,6 +124,17 @@
   - `createdAt`
   - `expiresAt`
 - 上述字段来源于 auth 协议 `PendingRegisterInfo`。
+
+### 3. 活动 permit 模型
+
+- 前端与 Win service 之间使用以下稳定字段：
+  - `permit`
+  - `deviceId`
+  - `role`
+  - `issuedBy`
+  - `issuedAt`
+  - `expiresAt`
+- 上述字段来源于 auth 协议 `RegisterPermitInfo`。
 
 ### 3. permit 结果模型
 

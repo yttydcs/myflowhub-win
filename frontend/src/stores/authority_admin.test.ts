@@ -12,6 +12,7 @@ const loadPolicyMock = vi.fn()
 const savePolicyMock = vi.fn()
 const getNodePermsMock = vi.fn()
 const listPendingRegistersMock = vi.fn()
+const listRegisterPermitsMock = vi.fn()
 const approveRegisterMock = vi.fn()
 const rejectRegisterMock = vi.fn()
 const issueRegisterPermitMock = vi.fn()
@@ -29,6 +30,7 @@ beforeEach(() => {
   savePolicyMock.mockReset()
   getNodePermsMock.mockReset()
   listPendingRegistersMock.mockReset()
+  listRegisterPermitsMock.mockReset()
   approveRegisterMock.mockReset()
   rejectRegisterMock.mockReset()
   issueRegisterPermitMock.mockReset()
@@ -42,6 +44,7 @@ beforeEach(() => {
         SavePolicy: savePolicyMock,
         GetNodePerms: getNodePermsMock,
         ListPendingRegisters: listPendingRegistersMock,
+        ListRegisterPermits: listRegisterPermitsMock,
         ApproveRegister: approveRegisterMock,
         RejectRegister: rejectRegisterMock,
         IssueRegisterPermit: issueRegisterPermitMock,
@@ -143,31 +146,88 @@ describe("authority admin stores", () => {
     })
   })
 
-  it("tracks the latest issued permit and marks it revoked when revoked", async () => {
+  it("reloads the active permit list after issue and revoke", async () => {
     authority.setIdentity(7, 9)
     authority.state.authorityId = 11
 
+    listRegisterPermitsMock
+      .mockResolvedValueOnce({
+        authorityId: 11,
+        total: 1,
+        items: [
+          {
+            permit: "permit_123",
+            deviceId: "device-1",
+            role: "admin",
+            issuedBy: 9,
+            issuedAt: 100,
+            expiresAt: 200
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        authorityId: 11,
+        total: 2,
+        items: [
+          {
+            permit: "permit_456",
+            deviceId: "device-2",
+            role: "observer",
+            issuedBy: 9,
+            issuedAt: 150,
+            expiresAt: 250
+          },
+          {
+            permit: "permit_123",
+            deviceId: "device-1",
+            role: "admin",
+            issuedBy: 9,
+            issuedAt: 100,
+            expiresAt: 200
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        authorityId: 11,
+        total: 1,
+        items: [
+          {
+            permit: "permit_123",
+            deviceId: "device-1",
+            role: "admin",
+            issuedBy: 9,
+            issuedAt: 100,
+            expiresAt: 200
+          }
+        ]
+      })
     issueRegisterPermitMock.mockResolvedValue({
-      permit: "permit_123",
-      deviceId: "device-1",
-      role: "admin",
-      expiresAt: 12345
+      permit: "permit_456",
+      deviceId: "device-2",
+      role: "observer",
+      expiresAt: 23456
     })
     revokeRegisterPermitMock.mockResolvedValue({
-      permit: "permit_123",
-      deviceId: "device-1",
-      role: "admin"
+      permit: "permit_456",
+      deviceId: "device-2",
+      role: "observer"
     })
 
+    await permits.loadPermits()
     const issued = await permits.issuePermit({
-      deviceId: "device-1",
-      role: "admin",
-      expiresAt: 12345
+      deviceId: "device-2",
+      role: "observer",
+      expiresAt: 23456
     })
-    const revoked = await permits.revokePermit("permit_123")
+    await permits.loadPermits()
+    const revoked = await permits.revokePermit("permit_456")
+    await permits.loadPermits()
 
-    expect(issued.permit).toBe("permit_123")
-    expect(revoked.permit).toBe("permit_123")
-    expect(permits.state.lastIssued?.revoked).toBe(true)
+    expect(issued.permit).toBe("permit_456")
+    expect(revoked.permit).toBe("permit_456")
+    expect(listRegisterPermitsMock).toHaveBeenCalledTimes(3)
+    expect(permits.state.total).toBe(1)
+    expect(permits.state.items).toHaveLength(1)
+    expect(permits.state.items[0]?.permit).toBe("permit_123")
   })
 })

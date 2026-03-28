@@ -133,6 +133,29 @@ type ListPendingRegistersResult struct {
 	Items       []PendingRegister `json:"items,omitempty"`
 }
 
+type ListRegisterPermitsRequest struct {
+	SourceID    uint32 `json:"sourceId"`
+	AuthorityID uint32 `json:"authorityId"`
+	Offset      int    `json:"offset,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	DeviceID    string `json:"deviceId,omitempty"`
+}
+
+type RegisterPermit struct {
+	Permit    string `json:"permit"`
+	DeviceID  string `json:"deviceId"`
+	Role      string `json:"role,omitempty"`
+	IssuedBy  uint32 `json:"issuedBy,omitempty"`
+	IssuedAt  int64  `json:"issuedAt,omitempty"`
+	ExpiresAt int64  `json:"expiresAt,omitempty"`
+}
+
+type ListRegisterPermitsResult struct {
+	AuthorityID uint32           `json:"authorityId"`
+	Total       int              `json:"total"`
+	Items       []RegisterPermit `json:"items,omitempty"`
+}
+
 type ApproveRegisterRequest struct {
 	SourceID    uint32 `json:"sourceId"`
 	AuthorityID uint32 `json:"authorityId"`
@@ -447,6 +470,41 @@ func (s *PermissionService) ListPendingRegisters(req ListPendingRegistersRequest
 		AuthorityID: req.AuthorityID,
 		Total:       resp.Total,
 		Items:       toPendingRegisters(resp.Items),
+	}, nil
+}
+
+func (s *PermissionService) ListRegisterPermits(req ListRegisterPermitsRequest) (ListRegisterPermitsResult, error) {
+	if req.SourceID == 0 {
+		return ListRegisterPermitsResult{}, errors.New("source_id is required")
+	}
+	if req.AuthorityID == 0 {
+		return ListRegisterPermitsResult{}, errors.New("authority_id is required")
+	}
+	if req.Offset < 0 {
+		return ListRegisterPermitsResult{}, errors.New("offset must be non-negative")
+	}
+	if req.Limit < 0 {
+		return ListRegisterPermitsResult{}, errors.New("limit must be non-negative")
+	}
+	if s.auth == nil {
+		return ListRegisterPermitsResult{}, errors.New("auth service not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := s.auth.ListRegisterPermits(ctx, req.SourceID, req.AuthorityID, authsvc.ListRegisterPermitsReq{
+		Offset:   req.Offset,
+		Limit:    req.Limit,
+		DeviceID: strings.TrimSpace(req.DeviceID),
+	})
+	if err != nil {
+		return ListRegisterPermitsResult{}, err
+	}
+	return ListRegisterPermitsResult{
+		AuthorityID: req.AuthorityID,
+		Total:       resp.Total,
+		Items:       toRegisterPermits(resp.Items),
 	}, nil
 }
 
@@ -869,6 +927,29 @@ func toPendingRegisters(items []authsvc.PendingRegisterInfo) []PendingRegister {
 			DisplayName:   strings.TrimSpace(item.DisplayName),
 			CreatedAt:     item.CreatedAt,
 			ExpiresAt:     item.ExpiresAt,
+		})
+	}
+	return out
+}
+
+func toRegisterPermits(items []authsvc.RegisterPermitInfo) []RegisterPermit {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]RegisterPermit, 0, len(items))
+	for _, item := range items {
+		permit := strings.TrimSpace(item.Permit)
+		deviceID := strings.TrimSpace(item.DeviceID)
+		if permit == "" && deviceID == "" {
+			continue
+		}
+		out = append(out, RegisterPermit{
+			Permit:    permit,
+			DeviceID:  deviceID,
+			Role:      strings.TrimSpace(item.Role),
+			IssuedBy:  item.IssuedBy,
+			IssuedAt:  item.IssuedAt,
+			ExpiresAt: item.ExpiresAt,
 		})
 	}
 	return out

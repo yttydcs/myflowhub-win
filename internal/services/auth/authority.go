@@ -11,6 +11,8 @@ import (
 const (
 	actionListPendingRegisters     = "list_pending_registers"
 	actionListPendingRegistersResp = "list_pending_registers_resp"
+	actionListRegisterPermits      = "list_register_permits"
+	actionListRegisterPermitsResp  = "list_register_permits_resp"
 	actionApproveRegister          = "approve_register"
 	actionApproveRegisterResp      = "approve_register_resp"
 	actionRejectRegister           = "reject_register"
@@ -41,6 +43,28 @@ type ListPendingRegistersResp struct {
 	Msg   string                `json:"msg,omitempty"`
 	Total int                   `json:"total"`
 	Items []PendingRegisterInfo `json:"items,omitempty"`
+}
+
+type RegisterPermitInfo struct {
+	Permit    string `json:"permit,omitempty"`
+	DeviceID  string `json:"device_id,omitempty"`
+	Role      string `json:"role,omitempty"`
+	IssuedBy  uint32 `json:"issued_by,omitempty"`
+	IssuedAt  int64  `json:"issued_at,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+}
+
+type ListRegisterPermitsReq struct {
+	Offset   int    `json:"offset,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+}
+
+type ListRegisterPermitsResp struct {
+	Code  int                  `json:"code"`
+	Msg   string               `json:"msg,omitempty"`
+	Total int                  `json:"total"`
+	Items []RegisterPermitInfo `json:"items,omitempty"`
 }
 
 type ApproveRegisterReq struct {
@@ -122,6 +146,31 @@ func (s *AuthService) ListPendingRegistersSimple(sourceID, targetID uint32, req 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
 	defer cancel()
 	return s.ListPendingRegisters(ctx, sourceID, targetID, req)
+}
+
+func (s *AuthService) ListRegisterPermits(ctx context.Context, sourceID, targetID uint32, req ListRegisterPermitsReq) (ListRegisterPermitsResp, error) {
+	if req.Offset < 0 {
+		return ListRegisterPermitsResp{}, errors.New("offset must be non-negative")
+	}
+	if req.Limit < 0 {
+		return ListRegisterPermitsResp{}, errors.New("limit must be non-negative")
+	}
+	req.DeviceID = strings.TrimSpace(req.DeviceID)
+	payload, err := transport.EncodeMessage(actionListRegisterPermits, req)
+	if err != nil {
+		return ListRegisterPermitsResp{}, err
+	}
+	var resp ListRegisterPermitsResp
+	if err := s.sendAndAwaitInto(ctx, sourceID, targetID, payload, actionListRegisterPermits, actionListRegisterPermitsResp, &resp); err != nil {
+		return ListRegisterPermitsResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *AuthService) ListRegisterPermitsSimple(sourceID, targetID uint32, req ListRegisterPermitsReq) (ListRegisterPermitsResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
+	defer cancel()
+	return s.ListRegisterPermits(ctx, sourceID, targetID, req)
 }
 
 func (s *AuthService) ApproveRegister(ctx context.Context, sourceID, targetID uint32, req ApproveRegisterReq) (ApproveRegisterResp, error) {

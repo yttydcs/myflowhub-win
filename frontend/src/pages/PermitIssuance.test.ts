@@ -11,27 +11,28 @@ const authorityState = reactive({
 })
 
 const permitState = reactive({
+  loading: false,
   issuing: false,
-  revoking: false,
-  lastIssued: undefined as
-    | undefined
-    | {
-        permit: string
-        deviceId: string
-        role: string
-        expiresAt: number
-        issuedAt: string
-        revoked: boolean
-      },
-  lastRevoke: undefined as
-    | undefined
-    | {
-        permit: string
-        deviceId: string
-        role: string
-        revokedAt: string
-      }
+  busyPermit: "",
+  total: 0,
+  items: [] as Array<{
+    permit: string
+    deviceId: string
+    role: string
+    issuedBy: number
+    issuedAt: number
+    expiresAt: number
+  }>
 })
+
+let permitRows: Array<{
+  permit: string
+  deviceId: string
+  role: string
+  issuedBy: number
+  issuedAt: number
+  expiresAt: number
+}> = []
 
 const sessionStore = {
   connected: true,
@@ -50,41 +51,52 @@ const authorityStore = {
 
 const permitStore = {
   state: permitState,
-  issuePermit: vi.fn(
-    async (input: { deviceId: string; role: string; expiresAt: number }) => {
-      permitState.issuing = true
-      permitState.lastIssued = {
-        permit: "permit_123",
-        deviceId: input.deviceId,
-        role: input.role,
-        expiresAt: input.expiresAt,
-        issuedAt: "2026-03-27T10:00:00.000Z",
-        revoked: false
-      }
-      permitState.lastRevoke = undefined
-      permitState.issuing = false
-      return permitState.lastIssued
+  loadPermits: vi.fn(async () => {
+    permitState.loading = true
+    permitState.items = permitRows.map((item) => ({ ...item }))
+    permitState.total = permitRows.length
+    permitState.loading = false
+    return permitState.items
+  }),
+  issuePermit: vi.fn(async (input: { deviceId: string; role: string; expiresAt: number }) => {
+    permitState.issuing = true
+    const issued = {
+      permit: "permit_456",
+      deviceId: input.deviceId,
+      role: input.role,
+      expiresAt: input.expiresAt
     }
-  ),
+    permitRows = [
+      {
+        permit: issued.permit,
+        deviceId: issued.deviceId,
+        role: issued.role,
+        issuedBy: 9,
+        issuedAt: Math.floor(Date.parse("2026-03-27T10:30:00Z") / 1000),
+        expiresAt: issued.expiresAt
+      },
+      ...permitRows
+    ]
+    permitState.issuing = false
+    return issued
+  }),
   revokePermit: vi.fn(async (permit: string) => {
-    permitState.revoking = true
-    permitState.lastRevoke = {
+    permitState.busyPermit = permit
+    const removed = permitRows.find((item) => item.permit === permit)
+    permitRows = permitRows.filter((item) => item.permit !== permit)
+    permitState.busyPermit = ""
+    return {
       permit,
-      deviceId: permitState.lastIssued?.deviceId || "",
-      role: permitState.lastIssued?.role || "",
-      revokedAt: "2026-03-27T10:05:00.000Z"
+      deviceId: removed?.deviceId || "",
+      role: removed?.role || ""
     }
-    if (permitState.lastIssued?.permit === permit) {
-      permitState.lastIssued.revoked = true
-    }
-    permitState.revoking = false
-    return permitState.lastRevoke
   }),
   reset: vi.fn(() => {
+    permitState.loading = false
     permitState.issuing = false
-    permitState.revoking = false
-    permitState.lastIssued = undefined
-    permitState.lastRevoke = undefined
+    permitState.busyPermit = ""
+    permitState.total = 0
+    permitState.items = []
   })
 }
 
@@ -95,8 +107,6 @@ const toastStore = {
   errorOf: vi.fn(),
   info: vi.fn()
 }
-
-const clipboardWriteText = vi.fn()
 
 vi.mock("@/stores/session", () => ({
   useSessionStore: () => sessionStore
@@ -166,43 +176,39 @@ describe("PermitIssuance", () => {
     setLocale("zh-CN")
     authorityState.authorityId = 11
     authorityState.resolving = false
-    permitState.issuing = false
-    permitState.revoking = false
-    permitState.lastIssued = undefined
-    permitState.lastRevoke = undefined
-
-    Object.defineProperty(window.navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: clipboardWriteText
+    permitRows = [
+      {
+        permit: "permit_123",
+        deviceId: "device-1",
+        role: "admin",
+        issuedBy: 9,
+        issuedAt: Math.floor(Date.parse("2026-03-27T10:00:00Z") / 1000),
+        expiresAt: Math.floor(Date.parse("2026-03-27T11:00:00Z") / 1000)
       }
-    })
+    ]
+    permitState.loading = false
+    permitState.issuing = false
+    permitState.busyPermit = ""
+    permitState.total = 0
+    permitState.items = []
   })
 
-  it("renders compact action rows and opens focused dialogs only when needed", async () => {
+  it("loads active permits automatically and renders the compact list layout", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
     await nextTick()
 
-    expect(wrapper.text()).toContain("准入许可")
-    expect(wrapper.text()).toContain("许可动作")
-    expect(wrapper.text()).not.toContain("解析")
-    expect(wrapper.find("[data-permit-issue-dialog]").exists()).toBe(false)
-    expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(false)
-
-    await wrapper.get("[data-open-issue-dialog]").trigger("click")
-    await nextTick()
-
-    expect(wrapper.find("[data-permit-issue-dialog]").exists()).toBe(true)
-
-    await wrapper.get("[data-open-revoke-dialog]").trigger("click")
-    await nextTick()
-
-    expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(true)
+    expect(permitStore.loadPermits).toHaveBeenCalledTimes(1)
+    expect(wrapper.find("[data-refresh-permits]").exists()).toBe(true)
+    expect(wrapper.find("[data-open-issue-dialog]").exists()).toBe(true)
+    expect(wrapper.find("[data-permit-list]").exists()).toBe(true)
+    expect(wrapper.findAll("[data-permit-row]")).toHaveLength(1)
+    expect(wrapper.text()).not.toContain("Latest Permit")
+    expect(wrapper.text()).not.toContain("Use Latest Permit")
   })
 
-  it("issues, copies, and revokes the latest permit through the focused flow", async () => {
+  it("issues and revokes permits through the list-based flow", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
@@ -212,40 +218,29 @@ describe("PermitIssuance", () => {
     await wrapper.get("[data-open-issue-dialog]").trigger("click")
     await nextTick()
 
-    await wrapper.get("[data-issue-device-input]").setValue("device-1")
-    await wrapper.get("[data-issue-role-input]").setValue("admin")
+    await wrapper.get("[data-issue-device-input]").setValue("device-2")
+    await wrapper.get("[data-issue-role-input]").setValue("observer")
     await wrapper.get("[data-issue-expires-input]").setValue(expiresAt)
     await wrapper.get("[data-issue-submit]").trigger("click")
     await Promise.resolve()
     await nextTick()
 
     expect(permitStore.issuePermit).toHaveBeenCalledWith({
-      deviceId: "device-1",
-      role: "admin",
+      deviceId: "device-2",
+      role: "observer",
       expiresAt: Math.floor(Date.parse(expiresAt) / 1000)
     })
+    expect(permitStore.loadPermits).toHaveBeenCalledTimes(2)
     expect(wrapper.find("[data-permit-issue-dialog]").exists()).toBe(false)
-    expect(wrapper.get("[data-latest-permit-card]").text()).toContain("permit_123")
+    expect(wrapper.text()).toContain("permit_456")
 
-    await wrapper.get("[data-copy-permit]").trigger("click")
-    await Promise.resolve()
-    expect(clipboardWriteText).toHaveBeenCalledWith("permit_123")
-
-    await wrapper.get("[data-open-latest-revoke-dialog]").trigger("click")
-    await nextTick()
-
-    expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(true)
-    const revokeInput = wrapper.get("[data-revoke-permit-input]")
-    expect(revokeInput.element.tagName).toBe("INPUT")
-    expect((revokeInput.element as HTMLInputElement).value).toBe("permit_123")
-    expect(wrapper.find("[data-latest-permit-details]").exists()).toBe(true)
-
-    await wrapper.get("[data-revoke-submit]").trigger("click")
+    await wrapper.findAll("[data-row-revoke]")[0].trigger("click")
     await Promise.resolve()
     await nextTick()
 
-    expect(permitStore.revokePermit).toHaveBeenCalledWith("permit_123")
-    expect(wrapper.find("[data-permit-revoke-dialog]").exists()).toBe(false)
-    expect(wrapper.get("[data-latest-permit-card]").text()).toContain("已撤销")
+    expect(permitStore.revokePermit).toHaveBeenCalledWith("permit_456")
+    expect(permitStore.loadPermits).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).not.toContain("permit_456")
+    expect(wrapper.text()).toContain("permit_123")
   })
 })
