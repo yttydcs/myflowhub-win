@@ -5,9 +5,9 @@ go 1.25.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v2 v2.11.0
-	github.com/yttydcs/myflowhub-core v0.4.7
-	github.com/yttydcs/myflowhub-proto v0.1.2-0.20260318063708-7eef50dcc471
-	github.com/yttydcs/myflowhub-sdk v0.1.10
+	github.com/yttydcs/myflowhub-core v0.4.9
+	github.com/yttydcs/myflowhub-proto v0.1.5
+	github.com/yttydcs/myflowhub-sdk v0.1.12
 )
 
 require (
