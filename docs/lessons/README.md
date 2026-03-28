@@ -22,8 +22,8 @@
 ## Current Docs
 
 - [authority-local-admin-actions.md](authority-local-admin-actions.md)
-  - 症状：`auth list_register_permits: request timed out`，且当前会话节点不是 authority 节点
-  - 关键词：`requires authority-local session`、`authorityId != sourceId`、`Permit Issuance`
+  - 症状：remote authority 下审批 / permit 管理仍 timeout、仍提示 `requires authority-local session`，或 authority 拒绝 routed source
+  - 关键词：`authorityId != sourceId`、`routed source`、`requires authority-local session`、`list_register_permits`
 - [frontend-build-babel-parser-missing.md](frontend-build-babel-parser-missing.md)
   - 症状：`failed to load config from frontend/vite.config.ts`、`Cannot find module '@babel/parser'`
   - 关键词：`@babel/parser`、`@vue/compiler-core`、`Compiling frontend`、`Cannot find module`

@@ -486,9 +486,6 @@ func (s *PermissionService) ListRegisterPermits(req ListRegisterPermitsRequest) 
 	if req.Limit < 0 {
 		return ListRegisterPermitsResult{}, errors.New("limit must be non-negative")
 	}
-	if err := ensureAuthorityLocalPermitAction("list_register_permits", req.SourceID, req.AuthorityID); err != nil {
-		return ListRegisterPermitsResult{}, err
-	}
 	if s.auth == nil {
 		return ListRegisterPermitsResult{}, errors.New("auth service not initialized")
 	}
@@ -592,9 +589,6 @@ func (s *PermissionService) IssueRegisterPermit(req IssueRegisterPermitRequest) 
 	if req.ExpiresAt < 0 {
 		return PermitIssueResult{}, errors.New("expires_at must be non-negative")
 	}
-	if err := ensureAuthorityLocalPermitAction("issue_register_permit", req.SourceID, req.AuthorityID); err != nil {
-		return PermitIssueResult{}, err
-	}
 	if s.auth == nil {
 		return PermitIssueResult{}, errors.New("auth service not initialized")
 	}
@@ -627,9 +621,6 @@ func (s *PermissionService) RevokeRegisterPermit(req RevokeRegisterPermitRequest
 	}
 	if strings.TrimSpace(req.Permit) == "" {
 		return RevokeRegisterPermitResult{}, errors.New("permit is required")
-	}
-	if err := ensureAuthorityLocalPermitAction("revoke_register_permit", req.SourceID, req.AuthorityID); err != nil {
-		return RevokeRegisterPermitResult{}, err
 	}
 	if s.auth == nil {
 		return RevokeRegisterPermitResult{}, errors.New("auth service not initialized")
@@ -668,18 +659,6 @@ func isNotFoundErr(err error) bool {
 	}
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))
 	return strings.Contains(msg, "not found") || strings.Contains(msg, "code=404")
-}
-
-func ensureAuthorityLocalPermitAction(action string, sourceID, authorityID uint32) error {
-	if sourceID == 0 || authorityID == 0 || sourceID == authorityID {
-		return nil
-	}
-	return fmt.Errorf(
-		"auth %s requires authority-local session: current source_id=%d authority_id=%d",
-		strings.TrimSpace(action),
-		sourceID,
-		authorityID,
-	)
 }
 
 func parseRawPolicy(raw RawPolicy) (Policy, []string, error) {

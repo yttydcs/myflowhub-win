@@ -226,7 +226,7 @@ describe("PermitIssuance", () => {
     expect(toastStore.errorOf).not.toHaveBeenCalled()
   })
 
-  it("shows a remote-authority notice and skips permit loading", async () => {
+  it("keeps remote-authority permit management available", async () => {
     authorityState.authorityId = 11
 
     const wrapper = mountPage()
@@ -234,12 +234,11 @@ describe("PermitIssuance", () => {
     await Promise.resolve()
     await nextTick()
 
-    expect(permitStore.loadPermits).not.toHaveBeenCalled()
-    expect(wrapper.find("[data-permit-remote-authority]").exists()).toBe(true)
-    expect(wrapper.text()).toContain("只有在 Authority 节点本机登录时才能管理准入许可。")
-    expect(wrapper.text()).toContain("当前准入许可管理仍要求在 Authority 节点 11 本机登录；当前会话节点=7。")
-    expect(wrapper.get("[data-refresh-permits]").attributes("disabled")).toBeDefined()
-    expect(wrapper.get("[data-open-issue-dialog]").attributes("disabled")).toBeDefined()
+    expect(permitStore.loadPermits).toHaveBeenCalledTimes(1)
+    expect(wrapper.find("[data-permit-remote-authority]").exists()).toBe(false)
+    expect(wrapper.find("[data-permit-list]").exists()).toBe(true)
+    expect(wrapper.get("[data-refresh-permits]").attributes("disabled")).toBeUndefined()
+    expect(wrapper.get("[data-open-issue-dialog]").attributes("disabled")).toBeUndefined()
   })
 
   it("issues and revokes permits through the list-based flow", async () => {
