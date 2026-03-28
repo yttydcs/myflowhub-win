@@ -7,7 +7,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/yttydcs/myflowhub-core v0.4.9
 	github.com/yttydcs/myflowhub-proto v0.1.5
-	github.com/yttydcs/myflowhub-sdk v0.1.12
+	github.com/yttydcs/myflowhub-sdk v0.1.13
 )
 
 require (
