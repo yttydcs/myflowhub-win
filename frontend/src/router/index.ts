@@ -8,6 +8,7 @@ import Debug from "@/pages/Debug.vue"
 import Logs from "@/pages/Logs.vue"
 import Presets from "@/pages/Presets.vue"
 import Settings from "@/pages/Settings.vue"
+import Stream from "@/pages/Stream.vue"
 import TopicBus from "@/pages/TopicBus.vue"
 import VarPool from "@/pages/VarPool.vue"
 import AccessPolicy from "@/pages/AccessPolicy.vue"
@@ -67,6 +68,15 @@ const routes = [
     meta: {
       title: "TopicBus",
       subtitle: "Publish, subscribe, and replay topic events."
+    }
+  },
+  {
+    path: "/stream",
+    name: "stream",
+    component: Stream,
+    meta: {
+      title: "Stream",
+      subtitle: "Query typed sources and consumers, connect deliveries, and inspect runtime traffic."
     }
   },
   {

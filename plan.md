@@ -1,11 +1,16 @@
-# Plan - Win 准入许可远程 authority 超时收敛
+# Plan - Win Stream Module Integration
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-permit-list-timeout-route`
+- Branch: `feat/win-stream-console`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
-- Current Stage: `4 archive complete, awaiting workflow end decision`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
+- Current Stage: `4`
+- External dependencies:
+  - `D:\project\MyFlowHub3\worktrees\proto-stream-subproto`
+    - purpose: provide `protocol/stream` during development
+  - `D:\project\MyFlowHub3\worktrees\server-stream-subproto-design`
+    - purpose: stream requirements/spec reference and local integration target
 
 ## Stage Records
 
@@ -13,72 +18,88 @@
 - `guide.md`
   - 已读取 workspace 根 `D:\project\MyFlowHub3\guide.md`
   - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`、`references/m-docs-integration.md`
-  - 已读取 `$m-docs` 的 requirement impact 和 indexing 规则入口
-- base/worktree confirmation
+  - 已读取 `$m-docs` 的 docs routing / requirement impact 规则
+- repo / branch / worktree confirmation
   - implementation repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - dedicated branch: `fix/win-permit-list-timeout-route`
-  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+  - dedicated branch: `feat/win-stream-console`
+  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
   - implementation will stay inside the worktree only
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 收敛 `Permit Issuance` 页在远程 authority 场景下的真实超时，把“当前后端不支持远程 authority permit 管理”从模糊 timeout 改成前端可理解、可预期的限制提示。
+- 在 Win 中引入一等 `Stream` 模块，接上上游 `stream` 子协议的 control plane，并提供类型感知的本地观察能力。
 
 #### Scope
 - 必须
-  - 识别 `sourceId != authorityId` 的远程 authority 场景
-  - permit 页在该场景下不再自动触发 `list_register_permits` 并等待超时
-  - 页面需要给出明确的本地 authority 限制提示，并禁用不成立的 permit 管理动作
-  - Go orchestration 层对 permit 管理动作提前返回可读错误，避免继续等待 auth timeout
-  - 补齐前端和 Go 回归测试
+  - 新增独立 `Stream` 模块，不复用当前 `Flow`
+  - Go 侧新增 `StreamService`，覆盖 `announce/list/get/subscribe/connect/disconnect/signal` 等控制动作
+  - 前端新增 `Stream` 页面与 store
+  - 支持列出 sources / consumers，并显示 `kind` / `content_type` / `mode` / `unit_mode` / `tags`
+  - 支持创建 / 撤销本地 consumer endpoint
+  - 支持 `subscribe` / `unsubscribe`
+  - 支持控制侧 `connect` / `disconnect`
+  - Go 侧新增 `stream.*` 业务事件与本地 runtime
+  - `text` 类型要可读；其余类型至少要显示 delivery 状态与统计
+  - 显式记录当前 Proto 版本链缺口，并在开发态使用 worktree 依赖对齐
 - 可选
-  - 让相同限制文案可复用于其它 authority admin 页
+  - 本地 `text` producer
+  - 独立 stream viewer window
+  - source / consumer 草稿持久化
 - 不做
-  - 不扩到 `MyFlowHub-Server` / `MyFlowHub-SubProto` 的远程 authority 分布式审批链路
-  - 不修改 auth wire / protocol
-  - 不改访问策略页
+  - 不实现摄像头 / 麦克风 / 屏幕采集
+  - 不承诺音视频真实播放
+  - 不在本轮发正式 Proto / Win release tag
+  - 不把原始媒体 payload 默认走 Wails 事件桥
 
 #### Use Cases
-- 管理员在非 authority 节点打开“准入许可”页时，希望直接知道“当前节点不能远程管理 authority permit”，而不是只看到 `request timed out`
-- 管理员在 authority 本机打开页面时，permit 列表、签发和撤销继续正常工作
-- 后续排查时，可以从错误信息直接区分“真实 authority-local 限制”和“普通网络抖动”
+- 用户查询远端 producer sources 并看到 `kind`
+- 用户在 Win 上创建 `text` consumer endpoint 并连接到远端 `text` source
+- 用户作为控制侧把远端 source 和 consumer 连起来后，直接在 Win 中看到 delivery 建立和数据活动
+- 用户查看 `music/video/custom` delivery 的状态、metadata 和吞吐统计
 
 #### Functional Requirements
-- permit 页必须在 authority 已解析且 `sourceId != authorityId` 时显示显式受限提示
-- permit 页在受限状态下不得自动加载 permit 列表
-- permit 页在受限状态下不得允许 `Refresh` / `New Permit`
-- `PermissionService` 的 permit 管理动作在远程 authority 场景下必须快速失败，并返回包含 source/authority 信息的可读错误
-- authority 本地场景下 permit 页现有成功路径不得回退
+- Win 必须有独立 `Stream` 路由与导航项
+- `StreamService` 必须使用 `SendCommandAndAwait`
+- 页面不得直接解析原始 `session.frame`
+- Go runtime 必须发布 `stream.delivery` / `stream.text` / `stream.stats` 业务事件
+- `text` viewer 必须展示最近文本内容
+- `music/video/custom` viewer 必须展示运行统计，而不是空白页
+- 当前开发流程必须解决 `myflowhub-proto v0.1.5` 缺失 `protocol/stream` 的问题
 
 #### Non-functional Requirements
-- 以最小安全改动收敛，不扩展跨仓协议范围
-- 错误提示应足够明确，便于用户判断需要切换到 authority 节点操作
-- 页面失败态应保持稳定，不因受限场景清空或抖动现有列表
+- 控制面、runtime、页面 store 分层清晰
+- 高频数据不能造成前端无界渲染
+- 输入校验和业务错误必须显式返回
+- 设计要为后续播放器 / 捕获器扩展留接口
 
 #### Inputs / Outputs
 - 输入
-  - 当前 session `sourceId` / `hubId`
-  - authority store 的 `authorityId`
-  - permit 管理动作名
+  - 当前 session `node_id` / `hub_id`
+  - 上游 `protocol/stream` descriptor / resp
+  - `session.frame` 中的 `SubProtoStream` 帧
 - 输出
-  - permit 页的受限提示与禁用状态
-  - Go service 的快速失败错误
+  - Wails binding：`StreamService`
+  - Wails 业务事件：`stream.delivery` / `stream.text` / `stream.stats`
+  - 页面：`/stream`
 
 #### Edge Cases
-- authority 尚未解析时不能误判为受限
-- authority 本地场景下仍需正常自动加载
-- permit 页身份切换后需要重新计算受限状态
-- 将来后端补齐远程 authority 管理链路时，当前 guard 需要可回滚
+- 当前依赖的 Proto 主线 tag 不含 `protocol/stream`
+- `source.kind != consumer.kind`
+- 重复 `disconnect`
+- 高频文本导致渲染抖动
+- 当前 viewer 不支持直接渲染音视频
 
 #### Acceptance Criteria
-- 在 `sourceId != authorityId` 时，permit 页不再出现 `auth list_register_permits: request timed out`
-- 页面能明确提示“当前需要在 authority 节点本地操作”
-- authority 本地场景下现有 permit 列表、签发、撤销路径不变
-- `go test ./internal/services/permission/...` 和 `npm test -- PermitIssuance` 通过
+- `Stream` 页面可用，且可执行 source / consumer / delivery 控制动作
+- `text` delivery 可读
+- `music/video/custom` delivery 可见状态和统计
+- Go 和前端都不直接依赖手工 raw frame 解码散落在页面
+- 本地验证可通过 `go test`、`wails generate module`、`npm run build`
 
 #### Risks
-- 若后端某些拓扑实际上已经可以远程执行 permit 管理，本轮 guard 会比真实能力更保守
-- 仅修 permit 页的话，注册审批页后续仍可能暴露同类限制
+- 当前 `myflowhub-proto v0.1.5` 不含 `stream`，正式 release 前必须补新的 semver 收口
+- 若把高频 payload 直接桥接到前端，会造成性能问题
+- 音视频渲染若在本轮硬上，会显著扩大实现面
 
 #### Issue List
 - none
@@ -86,52 +107,71 @@
 ### Stage 2 - Architecture Design
 #### Overall Solution
 - 方案 A（采用）
-  - 在 Win `PermissionService` 中为 permit 管理动作增加 `authority-local` 前置校验
-  - permit 页基于 authority store 的 `sourceId/authorityId` 计算 `remoteAuthorityBlocked`
-  - 当受限时，permit 页跳过自动加载并展示稳定提示，同时禁用刷新和新建
-  - 继续保留 authority 本地场景下的原有加载和动作链路
+  - 新增独立 `internal/services/stream` + `frontend/src/stores/stream.ts` + `frontend/src/pages/Stream.vue`
+  - 控制面全部走 `SendCommandAndAwait`
+  - `session.frame` 的 `SubProtoStream` 帧由 Go runtime 消费，转换成 `stream.*` 业务事件
+  - `text` 类型桥接有界文本片段，其他类型桥接统计摘要
 - 不采用方案
-  - 直接扩到 Server/SubProto 实现远程 authority permit 管理
-  - 理由：涉及跨仓 runtime 行为，明显超出本轮 Win 缺陷修复范围
+  - 把 `stream` 混入 `Flow` 或 `Debug`
+    - 理由：语义和用户心智都错位
+  - 让页面直接解析原始 `session.frame`
+    - 理由：协议细节会扩散到 UI，且不利于高频流量治理
+  - 默认把原始媒体 payload 全量发到前端
+    - 理由：Wails 事件桥不适合承载高频 bulk media
 
 #### Module Responsibilities
-- `internal/services/permission/service.go`
-  - 收敛 permit 管理动作的 authority-local 前置校验
-- `internal/services/permission/service_test.go`
-  - 覆盖远程 authority permit 管理快速失败
-- `frontend/src/pages/PermitIssuance.vue`
-  - 展示 remote authority 受限提示
-  - 跳过受限场景自动加载
-  - 禁用不成立的动作按钮
-- `frontend/src/pages/PermitIssuance.test.ts`
-  - 覆盖 remote authority 受限提示和不自动加载
-- `docs/requirements/authority-admin-console.md`
-  - 澄清当前 backend 能力下 permit/admin 页的远程 authority 限制提示要求
-- `docs/specs/authority-admin-console.md`
-  - 澄清 authority-local guard 是当前长期 UI/服务契约的一部分
+- `go.mod`
+  - 在开发态对齐 `protocol/stream` 依赖
+- `internal/services/stream`
+  - 控制面请求编排
+  - DATA/ACK runtime 解码
+  - 业务事件发布
+- `app.go`
+  - 绑定 `StreamService`
+  - 桥接 `stream.*` 业务事件
+- `frontend/src/stores/stream.ts`
+  - 维护 UI state、表单、delivery 视图状态
+- `frontend/src/pages/Stream.vue`
+  - sources / consumers / deliveries / viewers 组合页
+- `frontend/src/router/index.ts`
+  - 注册 `/stream`
+- `frontend/src/layout/AppShell.vue`
+  - 增加导航入口
 
 #### Data / Call Flow
-1. 页面基于 session 身份设置 authority store `sourceId/hubId`
-2. authority 解析完成后，若 `authorityId != sourceId`，页面进入 `remoteAuthorityBlocked`
-3. 受限状态下不触发 `loadPermits()`，只展示限制提示
-4. 若前端或其它调用者仍直接触发 permit 管理动作，`PermissionService` 立即返回显式错误
-5. authority 本地场景继续沿用当前 permit store 请求链路
+1. 页面调用 `StreamService.ListSourcesSimple` / `ListConsumersSimple`
+2. Go 侧编码 `protocol/stream` payload 并 `SendCommandAndAwait`
+3. `*_resp` 解包后返回结构化结果给前端
+4. 已建立 delivery 后，`session.frame` 收到 `SubProtoStream`
+5. Go runtime 解析：
+   - `KindCtrl`：必要时更新 delivery 状态
+   - `KindData`：
+     - `kind=text` -> 发布 `stream.text`
+     - `kind!=text` -> 只更新本地统计并发布 `stream.stats`
+   - `KindAck` -> 更新本地 delivery stats / 状态
+6. `app.go` 把 `stream.*` 桥接到前端
+7. 前端 store 更新 viewers 与 delivery 列表
 
 #### Error Handling and Safety
-- permit 页受限提示优先于 timeout
-- authority-local guard 返回的错误应包含动作名、当前 sourceId 和 authorityId
-- 不改变 authority 本地场景的业务返回码和 toast 行为
+- 所有 control-plane 请求必须做输入校验和 `code` 判定
+- 非法 stream payload 或未知 delivery 只记录日志，不允许传播 panic
+- 文本桥接有界，避免内存无界增长
+- `replace` 仅用于开发态；release 前必须移除
 
 #### Performance and Testing Strategy
-- 不增加新的网络请求
-- 验证重点
-  - `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
-  - `npm test -- PermitIssuance`
+- Go:
+  - `go test ./internal/services/stream/... -count=1`
+  - `go test ./... -count=1 -p 1`
+- Frontend:
+  - `npm test -- Stream`
   - `npm run build`
+- Bindings:
+  - `wails generate module`
 
 #### Extensibility Design Points
-- 若后续后端补齐远程 authority 管理链路，可删除 service guard 和页面提示，回到真实远程加载
-- 同一 guard 模式可复用到 `Registration Approvals`
+- `viewer` 与 `runtime` 解耦，后续可以给 `music/video/custom` 换成真实播放器
+- `text` / `stats` 事件接口稳定后，可扩到独立 window 或 MCP 工具
+- 若 Proto 正式 release 收口，只需移除开发态 `replace`，不应重写 Stream 模块
 
 #### Issue List
 - none
@@ -139,151 +179,230 @@
 ### Stage 3.1 - Planning
 #### Docs Governance Routing Decision
 - 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
-- Requirements impact: `clarify`
-- Specs impact: `clarify`
+- Requirements impact: `add`
+- Specs impact: `add`
 - Related requirements
-  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route\docs\requirements\authority-admin-console.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-console\docs\requirements\stream.md`
 - Related specs
-  - `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route\docs\specs\authority-admin-console.md`
-  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-console\docs\specs\stream.md`
+  - `D:\project\MyFlowHub3\worktrees\server-stream-subproto-design\docs\specs\stream.md`
 - Related lessons
-  - `none`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-console\docs\lessons\wails-binding-proto-drift.md`
 
 #### Executable Task List
-- [x] `PERMIT-GUARD-1` 在 Go orchestration 层增加 permit authority-local guard
-- [x] `PERMIT-GUARD-2` 在 permit 页增加 remote authority 受限提示与按钮禁用
-- [x] `DOC-CLARIFY-1` 更新 requirements/specs，明确当前远程 authority 限制提示要求
-- [x] `VALIDATE-1` 补测试并执行 Go / 前端验证
-- [x] `REVIEW-1` 完成 3.3 checklist
-- [x] `ARCHIVE-1` 归档到 `docs/change`
+- [x] `WIN-DOC-1` 新增 Win `stream` requirements/specs 并更新索引
+- [x] `WIN-DEP-1` 解决开发态 `protocol/stream` 依赖
+- [x] `WIN-BE-1` 新增 `internal/services/stream` 控制面 service
+- [x] `WIN-BE-2` 新增 stream runtime 和业务事件桥
+- [x] `WIN-FE-1` 新增 `/stream` 路由、导航、页面和 store
+- [x] `WIN-FE-2` 补 text viewer 和 generic stats viewer
+- [x] `WIN-VAL-1` 执行 Go / Wails / 前端验证
+- [x] `WIN-REVIEW-1` 完成 3.3 checklist
+- [x] `WIN-ARCHIVE-1` 归档到 `docs/change`
 
 #### Task Details
-##### `PERMIT-GUARD-1` - Go authority-local guard
+##### `WIN-DOC-1` - Stream requirements/specs
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
 - Goal
-  - permit 管理动作在远程 authority 场景快速失败为可读错误
+  - 把 Win stream 模块的长期需求和技术边界写入 docs 真源
 - Files
-  - `internal/services/permission/service.go`
-  - `internal/services/permission/service_test.go`
+  - `docs/requirements/stream.md`
+  - `docs/specs/stream.md`
+  - `docs/requirements/README.md`
+  - `docs/specs/README.md`
 - Acceptance
-  - `ListRegisterPermits` 至少不再等到 auth timeout
+  - Win repo docs tree 可明确回答“Stream 是什么、放在哪、怎么扩展”
 - Tests
-  - `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
+  - manual doc review
 - Rollback
-  - 回退 authority-local guard 和对应测试
+  - 回退新增 docs
 
-##### `PERMIT-GUARD-2` - Permit page remote authority UX
+##### `WIN-DEP-1` - Development dependency alignment
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
 - Goal
-  - permit 页在 remote authority 下给出稳定限制提示，而不是继续自动加载
+  - 让 Win 在当前 workflow 中可编译 `protocol/stream`
 - Files
-  - `frontend/src/pages/PermitIssuance.vue`
-  - `frontend/src/pages/PermitIssuance.test.ts`
+  - `go.mod`
+  - `go.sum`
 - Acceptance
-  - 受限状态不自动调用 `loadPermits`
-  - 页面展示可理解提示
-  - 刷新和新建按钮禁用
+  - `go test ./internal/services/stream/... -count=1` 可解析 `protocol/stream`
 - Tests
-  - `npm test -- PermitIssuance`
+  - `go test ./... -count=1 -p 1`
 - Rollback
-  - 回退 permit 页面受限态逻辑
+  - 回退开发态 `replace` 或依赖改动
 
-##### `DOC-CLARIFY-1` - Requirements/Specs clarify
+##### `WIN-BE-1` - Stream control plane service
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-permit-list-timeout-route`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
 - Goal
-  - 让 Win 稳定文档与当前 backend 能力保持一致
+  - 提供 source / consumer / delivery 的 control-plane bindings
 - Files
-  - `docs/requirements/authority-admin-console.md`
-  - `docs/specs/authority-admin-console.md`
+  - `internal/services/stream/*.go`
 - Acceptance
-  - 文档明确 permit/admin 页在 remote authority 下需给出 authority-local 限制提示
+  - `announce/list/get/connect/disconnect/...` 可调用且统一错误处理
 - Tests
-  - doc consistency by manual review
+  - `go test ./internal/services/stream/... -count=1`
 - Rollback
-  - 回退文档澄清
+  - 回退 `internal/services/stream`
+
+##### `WIN-BE-2` - Stream runtime and event bridge
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
+- Goal
+  - 在 Go 侧解析 stream 运行帧并发布业务事件
+- Files
+  - `internal/services/stream/*.go`
+  - `app.go`
+- Acceptance
+  - `stream.delivery` / `stream.text` / `stream.stats` 事件可发到前端
+- Tests
+  - `go test ./internal/services/stream/... -count=1`
+  - `wails generate module`
+- Rollback
+  - 回退 runtime 和 bridge
+
+##### `WIN-FE-1` - Stream page and store
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
+- Goal
+  - 提供独立 Stream 页面和状态管理
+- Files
+  - `frontend/src/router/index.ts`
+  - `frontend/src/layout/AppShell.vue`
+  - `frontend/src/pages/Stream.vue`
+  - `frontend/src/stores/stream.ts`
+- Acceptance
+  - 页面可查询、连接、断开，并显示 sources / consumers / deliveries
+- Tests
+  - `npm run build`
+  - `npm test -- Stream`
+- Rollback
+  - 回退页面和 store
+
+##### `WIN-FE-2` - Type-aware viewers
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-console`
+- Goal
+  - 给 `text`、`music`、`video`、`custom` 提供可区分的 viewer
+- Files
+  - `frontend/src/pages/Stream.vue`
+  - `frontend/src/stores/stream.ts`
+  - `frontend/src/stores/stream.test.ts`
+- Acceptance
+  - `text` 可读；其余类型有非空统计视图
+- Tests
+  - `npm run build`
+  - `npm test -- Stream`
+- Rollback
+  - 回退 viewer 逻辑
 
 #### Dependencies
-- permit 页依赖 authority store 的 `sourceId/authorityId`
-- Win 文档澄清依赖 Server auth spec 中“审批列表/permit 仍建议从 authority 节点操作”的现有事实
+- 本地开发态依赖 `proto-stream-subproto` worktree 提供 `protocol/stream`
+- 本地集成目标依赖 `server-stream-subproto-design` worktree 或后续正式 release
 
 #### Risks and Notes
-- 本轮不承诺“remote authority permit 管理真实可用”，只收敛为显式限制提示
+- 当前主线 `myflowhub-proto v0.1.5` 不含 `stream`，这是 release blockers，不是实现 blockers
+- 若本轮把音视频播放做满，会让实现面显著失控，因此先锁定“控制面完整 + text 真正可用 + 非 text 有状态观察”
 
 #### Parallelism Assessment
 - 不派发子Agent
 - 原因
-  - 写集小，Go service、Vue 页面、测试和 docs 高度耦合
   - 当前会话未获得显式子Agent授权
+  - 依赖对齐、Go runtime、Wails bindings、前端页面和 docs 强耦合，主 Agent 集成成本更低
 
 阻塞：否
 进入 3.2
 
 ### Stage 3.2 - Implementation
 #### Task Mapping
-- `PERMIT-GUARD-1`
-  - `internal/services/permission/service.go`
-  - `internal/services/permission/service_test.go`
-- `PERMIT-GUARD-2`
-  - `frontend/src/pages/PermitIssuance.vue`
-  - `frontend/src/pages/PermitIssuance.test.ts`
-- `DOC-CLARIFY-1`
-  - `docs/requirements/authority-admin-console.md`
-  - `docs/specs/authority-admin-console.md`
+- `WIN-DOC-1`
+  - `docs/requirements/stream.md`
+  - `docs/specs/stream.md`
+  - `docs/requirements/README.md`
+  - `docs/specs/README.md`
+- `WIN-DEP-1`
+  - `go.mod`
+- `WIN-BE-1`
+  - `internal/services/stream/service.go`
+- `WIN-BE-2`
+  - `internal/services/stream/runtime.go`
+  - `internal/services/stream/events.go`
+  - `internal/services/stream/service_test.go`
+  - `app.go`
+- `WIN-FE-1`
+  - `frontend/src/router/index.ts`
+  - `frontend/src/layout/AppShell.vue`
+  - `frontend/src/pages/Stream.vue`
+  - `frontend/src/stores/stream.ts`
+- `WIN-FE-2`
+  - `frontend/src/pages/Stream.vue`
+  - `frontend/src/stores/stream.ts`
+  - `frontend/src/stores/stream.test.ts`
 
 #### File-level Change Summary
-- `internal/services/permission/service.go`
-  - 为 permit 管理动作增加 authority-local 前置校验
-- `internal/services/permission/service_test.go`
-  - 覆盖 remote authority 快速失败
-- `frontend/src/pages/PermitIssuance.vue`
-  - remote authority 下跳过自动加载
-  - 展示 authority-local 受限提示
-  - 禁用 `Refresh / New Permit`
-- `frontend/src/pages/PermitIssuance.test.ts`
-  - 补 remote authority 受限态回归
-- `frontend/src/i18n/messages/operations.ts`
-  - 新增 permit remote authority 提示文案
-- `docs/requirements/authority-admin-console.md`
-  - 澄清 permit 页 remote authority 限制提示要求
-- `docs/specs/authority-admin-console.md`
-  - 澄清 authority-local 受限态与快速失败契约
+- `docs/requirements/stream.md` / `docs/specs/stream.md`
+  - 新增 Win Stream 的长期需求、边界和架构约束
+- `docs/requirements/README.md` / `docs/specs/README.md`
+  - 挂载 Stream 文档入口
+- `go.mod`
+  - 开发态 `replace` 指向 `proto-stream-subproto`，补齐 `protocol/stream`
+- `internal/services/stream/service.go`
+  - 新增 source / consumer / delivery 全控制面 binding 与统一错误处理
+- `internal/services/stream/runtime.go`
+  - 新增 DATA / ACK runtime 解析、本地 delivery 状态跟踪和有界事件发布
+- `internal/services/stream/events.go`
+  - 定义 `stream.delivery` / `stream.text` / `stream.stats` 事件载荷
+- `internal/services/stream/service_test.go`
+  - 覆盖 text DATA 与 ACK stats 事件路径
+- `app.go`
+  - 注册 `StreamService` 并桥接 `stream.*` 业务事件到 Wails runtime
+- `frontend/src/router/index.ts` / `frontend/src/layout/AppShell.vue`
+  - 增加 `/stream` 路由与导航入口
+- `frontend/src/stores/stream.ts`
+  - 新增 Stream store，负责控制面调用、delivery/viewer 状态和 runtime 事件消费
+- `frontend/src/pages/Stream.vue`
+  - 新增 sources / consumers / deliveries / viewers 组合页
+- `frontend/src/stores/stream.test.ts`
+  - 覆盖控制面结果归一化、connect/disconnect 状态流转和 runtime 事件镜像
 
 #### Design Notes
-- 不扩到跨仓 remote authority 管理链路，只把当前 backend 边界显式化
-- Go orchestration guard 和前端受限态同时存在，避免页面外调用者继续等待 timeout
+- 保持 `Stream` 为独立模块，不复用现有 `Flow`/`TopicBus` 语义
+- 原始 `SubProtoStream` 帧只在 Go runtime 解析，Vue 页面只消费业务事件和结构化状态
+- `text` 提供真实可读 viewer，`music` / `video` / `custom` 首版只桥接摘要统计，避免把高频媒体 payload 直接穿过 Wails 事件桥
+- 当前 `replace github.com/yttydcs/myflowhub-proto => ../proto-stream-subproto` 仅为开发态收口，正式 release 前必须切回 semver 依赖
 
 #### Validation
-- `$env:GOWORK='off'; go test ./internal/services/permission/... -count=1`
+- `$env:GOWORK='off'; go test ./... -count=1 -p 1`
   - 结果：通过
-- `npm test -- PermitIssuance`
-  - 结果：通过
+- `npm test -- src/stores/stream.test.ts`
+  - 结果：通过（1 个文件，2 个用例）
 - `$env:GOWORK='off'; wails generate module`
   - 结果：通过
   - 备注：仍会打印 `Not found: time.Time`，但退出码为 0
 - `npm run build`
   - 结果：通过
+  - 备注：Vite 继续提示主 bundle 超过 `500 kB`，本轮未处理 code splitting
 
 #### Blockers
 - none
 
 ### Stage 3.3 - Code Review
 - 需求覆盖：通过
-  - 已覆盖 remote authority permit timeout 收敛、显式限制提示、authority-local guard 和文档澄清
+  - 已覆盖 sources / consumers / deliveries 控制面、kind 感知 viewer、runtime 业务事件和依赖链缺口记录
 - 架构合理性：通过
-  - 保持改动面在 Win repo 内，不误扩到跨仓 runtime
+  - 控制面、runtime 和页面 store 分层明确，未把协议解码扩散到 Vue 页面
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 只减少了无效 timeout 等待，没有新增额外请求
+  - 高频 runtime 帧在 Go 侧节流为有界 text/stats 事件，未把 bulk media 直接桥到前端
 - 可读性与一致性：通过
-  - 页面与 Go service 的错误边界语义保持一致
+  - 命名和错误处理沿用现有 service/store 模式，Stream 与 Flow/TopicBus 语义边界清晰
 - 可扩展性与配置化：通过
-  - 将来若补齐 remote 链路，可集中回退 guard 和页面受限态
+  - `kind`、viewer 和 runtime 事件模型可继续扩到真实播放器或 producer/editor
 - 稳定性与安全：通过
-  - authority 本地场景不变；remote authority 不再伪装成普通失败
+  - 输入校验、无效 payload 丢弃、session 断链统一收敛到 delivery 状态关闭
 - 测试覆盖情况：通过
-  - Go / permit 页面单测通过，前端构建通过
+  - Go 单测覆盖 runtime 关键路径；前端新增 store 单测覆盖控制面与事件镜像；全量 Go/Wails/Build 验证通过
 - 子Agent治理与审计：通过
   - 未使用子Agent
 
@@ -294,13 +413,13 @@
 - Specs impact: `updated`
 - Lessons impact: `updated`
 - 新增：
-  - `docs/change/2026-03-28_win-permit-remote-authority-guard.md`
-  - `docs/lessons/authority-local-admin-actions.md`
+  - `docs/change/2026-03-28_win-stream-module.md`
 - 更新：
+  - `plan.md`
   - `docs/change/README.md`
-  - `docs/lessons/README.md`
-  - `docs/requirements/authority-admin-console.md`
-  - `docs/specs/authority-admin-console.md`
+  - `docs/lessons/wails-binding-proto-drift.md`
+  - `docs/requirements/stream.md`
+  - `docs/specs/stream.md`
 
 #### Archive Status
 - 已完成 repo-local 归档

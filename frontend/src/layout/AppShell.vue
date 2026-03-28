@@ -225,6 +225,13 @@ const navGroups = ref<{ title: string; items: NavItem[] }[]>([
         tone: "bg-cyan-500/15 text-cyan-700"
       },
       {
+        label: "Stream",
+        description: "Sources and deliveries",
+        to: "/stream",
+        icon: Share2,
+        tone: "bg-indigo-500/15 text-indigo-700"
+      },
+      {
         label: "Showcase",
         description: "Compose screens",
         to: "/showcase",

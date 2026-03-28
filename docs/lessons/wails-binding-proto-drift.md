@@ -1,7 +1,9 @@
 # wails-binding-proto-drift
 
 ## Summary
-- 当 Win Wails service 直接引用 shared proto 中尚未存在的新 req/resp 类型，或 merge 后同时保留两套本地 detail 定义时，`GOWORK=off` 下的 `go test` 和 `wails generate module` 会直接编译失败。此类问题应通过单一 canonical 本地 typed payload 保持 JSON 契约不变并隔离 proto 漂移。
+- 当 Win Wails service 直接引用 shared proto 中尚未存在的新 req/resp 类型，或 merge 后同时保留两套本地 detail 定义时，`GOWORK=off` 下的 `go test` 和 `wails generate module` 会直接编译失败。
+- 另一类常见变体是：当前 worktree 或旧 tag 已经包含新协议包，但“最新 semver tag”并没有带上它，导致 `go.mod` 看起来已经升级，实际仍然拿不到目标符号。
+- 此类问题应通过单一 canonical 本地 typed payload 或显式开发态 `replace` 保持 JSON 契约不变，并把 proto 漂移显式隔离出来。
 
 ## Lookup Hints
 - `undefined: flow.DetailReq`
@@ -12,6 +14,8 @@
 - `wails generate module`
 - `GOWORK=off`
 - `myflowhub-proto`
+- `latest tag missing package`
+- `replace github.com/yttydcs/myflowhub-proto`
 
 ## Symptoms
 - `wails generate module` 在 Go 编译阶段报未定义符号。
@@ -26,6 +30,7 @@
 
 ## Trigger Conditions
 - 新增或修改 Win service public method 时，直接使用了 shared proto 中尚未发布的类型或常量。
+- 当前仓库依赖的 shared proto semver tag 并不是包含目标协议包的那个 tag；例如 worktree 或较早 tag 已有新包，但最新 tag 回到了另一条发布链。
 - 把本地 typed payload 从 `service.go` 拆到独立文件后，后续 merge/cherry-pick 又把旧的内联定义带回了 `service.go`。
 - worktree 校验未显式使用 `GOWORK=off`，导致父级 `go.work` 先拦截真实错误。
 
@@ -49,6 +54,7 @@
 
 ## Prevention / Guardrails
 - 新增 Win Wails binding 前，先检查 shared proto 是否已定义对应 req/resp/action。
+- 不仅要检查“当前分支”有没有目标包，还要检查 `go.mod` 实际解析到的 semver tag 是否真的包含该包；必要时直接 `git ls-tree <tag> protocol` 或临时加 `replace` 验证。
 - worktree 下所有 Go / Wails 验证默认使用 `GOWORK=off`。
 - 如果 shared proto 还没准备好，但前端/Win 需要先落地，优先使用 Win 本地 typed payload，并在 spec 中澄清这是实现边界而非协议扩展。
 - 当本地 typed payload 已经被抽到独立文件后，后续 merge review 要显式检查旧文件里的内联定义是否已经删除，避免重新形成双源定义。

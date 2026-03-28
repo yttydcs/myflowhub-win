@@ -23,6 +23,7 @@
 
 - [authority-admin-console.md](authority-admin-console.md)
 - [mcp-client.md](mcp-client.md)
+- [stream.md](stream.md)
 - [flow-editor-accessibility.md](flow-editor-accessibility.md)
 - [flow-editor-draft-reliability.md](flow-editor-draft-reliability.md)
 - [flow-editor-run-detail.md](flow-editor-run-detail.md)
