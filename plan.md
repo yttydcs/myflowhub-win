@@ -321,3 +321,49 @@
 #### Archive Status
 - 已完成 repo-local 归档
 - 等待用户确认是否结束 workflow
+
+---
+
+## Imported Workflow - 2026-03-29 Stream Announce Timeout
+
+### Workflow Information
+- Source branch: `fix/stream-announce-timeout`
+- Source worktree: `D:\project\MyFlowHub3\worktrees\fix-stream-announce-timeout\MyFlowHub-Win`
+- Merge target: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
+- Final status: `completed and merged`
+
+### Goal
+- 修复 Stream 页面创建本地 source 时出现的 `创建本地 Source 失败。` / `stream announce: request timed out`
+- 收敛 Win `StreamService` 的 CTRL framing 与 await 行为，避免其它 stream 控制动作继续复现同类 timeout
+
+### Key Findings
+- `stream` 子协议的控制请求 / 响应都要求 `KindCtrl + JSON(action,data)` framing
+- Win 初版 `internal/services/stream/service.go` 发送的是裸 JSON
+- SDK 当前仅为 `file` 子协议在 await 解码时剥离 `KindCtrl`，导致 `stream` 的 `*_resp` 无法被通用 await 匹配
+
+### Merged Changes
+- `internal/services/stream/service.go`
+  - 新增 stream CTRL payload 编码 helper
+  - 新增 stream 局部 await helper
+  - 统一 stream 控制动作的 request / response 解码路径
+- `internal/services/stream/service_test.go`
+  - 新增 CTRL request prefix、CTRL response match、timeout 映射回归测试
+- `docs/change/2026-03-29_win-stream-announce-timeout.md`
+  - 记录本次修复背景、验证和回滚
+- `docs/lessons/stream-ctrl-await-mismatch.md`
+  - 固化“子协议 CTRL framing 与 await 解码错位导致 timeout”的排查规则
+
+### Validation
+- `MyFlowHub-Win`
+  - `$env:GOWORK='off'; go test ./internal/services/stream -count=1`
+  - 结果：通过
+- 验证备注
+  - 当前嵌套 worktree 的 `go.mod replace` 解析路径不适合直接 `GOWORK=off` 编译
+  - 测试期间临时创建 junction 指向 `D:\project\MyFlowHub3\worktrees\proto-stream-subproto`
+  - 验证完成后已清理，不留工作区残留
+
+### Related Docs
+- Change: `docs/change/2026-03-29_win-stream-announce-timeout.md`
+- Lesson: `docs/lessons/stream-ctrl-await-mismatch.md`
+- Requirements: `docs/requirements/stream.md`
+- Specs: `docs/specs/stream.md`
