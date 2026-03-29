@@ -100,10 +100,12 @@ func (s *StreamService) bindBus() {
 		if frame.SubProto != proto.SubProtoStream {
 			return
 		}
-		if frame.Major != header.MajorMsg {
-			return
+		switch frame.Major {
+		case header.MajorCmd:
+			s.handleIncomingCtrl(frame)
+		case header.MajorMsg:
+			s.handleFrame(frame)
 		}
-		s.handleFrame(frame)
 	})
 	addToken(sessionsvc.EventState, func(data any) {
 		state, ok := data.(sessionsvc.StateEvent)
@@ -144,23 +146,28 @@ func (s *StreamService) handleFrame(frame sessionsvc.FrameEvent) {
 	}
 	switch frame.Payload[0] {
 	case proto.KindData:
-		s.handleData(frame.Payload)
+		s.handleData(frame)
 	case proto.KindAck:
-		s.handleAck(frame.Payload)
+		s.handleAck(frame)
 	default:
 		return
 	}
 }
 
-func (s *StreamService) handleData(payload []byte) {
-	packet, err := parseDataPacket(payload)
+func (s *StreamService) handleData(frame sessionsvc.FrameEvent) {
+	packet, err := parseDataPacket(frame.Payload)
 	if err != nil {
 		s.logWarn("stream data parse failed: %v", err)
 		return
 	}
 	now := time.Now()
+	ackSource := uint32(0)
+	ackTarget := uint32(0)
+	ackPosition := uint64(0)
+	shouldAck := false
 
 	s.mu.Lock()
+	s.ensureStateMapsLocked()
 	rt := s.ensureDeliveryLocked(packet.DeliveryID)
 	rt.BytesIn += uint64(len(packet.Body))
 	rt.FramesIn++
@@ -174,6 +181,22 @@ func (s *StreamService) handleData(payload []byte) {
 	emitStats := rt.Kind != proto.StreamKindText && (rt.LastStatsEmit.IsZero() || now.Sub(rt.LastStatsEmit) >= streamStatsEvery)
 	if emitStats {
 		rt.LastStatsEmit = now
+	}
+	if delivery := s.consumerDeliveries[packet.DeliveryID]; delivery != nil &&
+		delivery.State == localDeliveryStateActive &&
+		frame.SourceID == delivery.Producer &&
+		frame.TargetID == delivery.Consumer {
+		nextPosition := nextExpectedPosition(delivery.UnitMode, packet.Position, len(packet.Body))
+		if nextPosition >= delivery.ExpectedPosition {
+			delivery.ExpectedPosition = nextPosition
+			delivery.LastAckPosition = nextPosition
+			delivery.LastActive = now
+			rt.LastAckPos = nextPosition
+			ackSource = delivery.Consumer
+			ackTarget = delivery.Producer
+			ackPosition = nextPosition
+			shouldAck = true
+		}
 	}
 	kind := rt.Kind
 	s.mu.Unlock()
@@ -203,21 +226,36 @@ func (s *StreamService) handleData(payload []byte) {
 			UpdatedAt:    snapshot.UpdatedAt,
 		})
 	}
+	if shouldAck {
+		if err := s.sendAck(packet.DeliveryID, ackSource, ackTarget, ackPosition); err != nil {
+			s.logWarn("stream ack send failed: %v", err)
+		}
+	}
 }
 
-func (s *StreamService) handleAck(payload []byte) {
-	packet, err := parseAckPacket(payload)
+func (s *StreamService) handleAck(frame sessionsvc.FrameEvent) {
+	packet, err := parseAckPacket(frame.Payload)
 	if err != nil {
 		s.logWarn("stream ack parse failed: %v", err)
 		return
 	}
 	now := time.Now()
 	s.mu.Lock()
+	s.ensureStateMapsLocked()
 	rt := s.ensureDeliveryLocked(packet.DeliveryID)
 	rt.LastAckPos = packet.Position
 	rt.LastFlags = packet.Flags
 	rt.State = "active"
 	rt.UpdatedAt = now
+	if delivery := s.producerDeliveries[packet.DeliveryID]; delivery != nil &&
+		delivery.State == localDeliveryStateActive &&
+		frame.SourceID == delivery.Consumer &&
+		frame.TargetID == delivery.Producer {
+		if packet.Position > delivery.AckedPosition {
+			delivery.AckedPosition = packet.Position
+		}
+		delivery.LastActive = now
+	}
 	snapshot := rt.snapshot()
 	emitStats := rt.LastStatsEmit.IsZero() || now.Sub(rt.LastStatsEmit) >= streamStatsEvery
 	if emitStats {
@@ -360,6 +398,7 @@ func (s *StreamService) markAllClosed(reason string) {
 		reason = "disconnected"
 	}
 	s.mu.Lock()
+	s.ensureStateMapsLocked()
 	evts := make([]StreamDeliveryEvent, 0, len(s.deliveries))
 	now := time.Now()
 	for _, item := range s.deliveries {
@@ -372,6 +411,10 @@ func (s *StreamService) markAllClosed(reason string) {
 		evts = append(evts, item.snapshot())
 	}
 	s.deliveries = make(map[string]*deliveryRuntime)
+	s.sources = make(map[string]proto.SourceDescriptor)
+	s.consumers = make(map[string]proto.ConsumerDescriptor)
+	s.producerDeliveries = make(map[string]*localProducerDelivery)
+	s.consumerDeliveries = make(map[string]*localConsumerDelivery)
 	s.mu.Unlock()
 	for _, evt := range evts {
 		s.emitDelivery(evt)
@@ -379,6 +422,7 @@ func (s *StreamService) markAllClosed(reason string) {
 }
 
 func (s *StreamService) ensureDeliveryLocked(deliveryID string) *deliveryRuntime {
+	s.ensureStateMapsLocked()
 	rt := s.deliveries[deliveryID]
 	if rt != nil {
 		return rt
@@ -499,4 +543,33 @@ func decodeTextPayload(body []byte) string {
 		return string(body)
 	}
 	return hex.EncodeToString(body)
+}
+
+func (s *StreamService) sendAck(deliveryID string, sourceID, targetID uint32, position uint64) error {
+	if s == nil || s.session == nil {
+		return errors.New("session service not initialized")
+	}
+	if sourceID == 0 || targetID == 0 {
+		return errors.New("ack route is incomplete")
+	}
+	id, err := uuid.Parse(strings.TrimSpace(deliveryID))
+	if err != nil {
+		return err
+	}
+	payload := make([]byte, streamAckHeaderLen)
+	payload[0] = proto.KindAck
+	payload[1] = proto.HeaderVersionV1
+	payload[2] = 0
+	copy(payload[3:19], id[:])
+	binary.BigEndian.PutUint64(payload[19:27], position)
+	binary.BigEndian.PutUint32(payload[27:31], 0)
+	binary.BigEndian.PutUint32(payload[31:35], 0)
+
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorMsg).
+		WithSubProto(proto.SubProtoStream).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
+		WithTimestamp(uint32(time.Now().Unix()))
+	return s.session.Send(hdr, payload)
 }

@@ -29,6 +29,21 @@
   - `ConnectSimple(...)`
   - `DisconnectSimple(...)`
   - `SignalSimple(...)`
+- 除主动 bindings 外，`StreamService` 还必须处理发往本机 leaf owner 的 inbound CTRL：
+  - owner catalog
+    - `announce`
+    - `withdraw`
+    - `list_sources`
+    - `get_source`
+    - `announce_consumer`
+    - `withdraw_consumer`
+    - `list_consumers`
+    - `get_consumer`
+  - private delivery lifecycle
+    - `delivery_prepare`
+    - `delivery_activate`
+    - `delivery_abort`
+    - `delivery_close`
 
 ### Business Events
 
@@ -70,6 +85,14 @@
 
 - Go 本地维护轻量 runtime，而不是把所有高频 payload 直接透传给前端。
 - 建议最小本地状态：
+  - `localSources[sourceID]`
+    - 当前 Win 节点声明的 source descriptor
+  - `localConsumers[consumerID]`
+    - 当前 Win 节点声明的 consumer descriptor
+  - `localProducerDeliveries[deliveryID]`
+    - private prepare / activate 安装的 producer owner 状态
+  - `localConsumerDeliveries[deliveryID]`
+    - private prepare / activate 安装的 consumer owner 状态
   - `knownDeliveries[deliveryID]`
     - `kind`
     - `producer`
@@ -87,6 +110,7 @@
   - `textBuffers[deliveryID]`
     - 仅保留有界最近文本内容
 - 前端 store 持有业务镜像，不重复承担二进制解码。
+- `knownDeliveries` 是前端镜像视角；`local*` 状态用于 owner side catalog 与 delivery lifecycle，不在前端直接暴露原始私有结构。
 
 ### Development Dependency Strategy
 
@@ -101,6 +125,10 @@
   - 校验必填参数
   - 用 `SendCommandAndAwait` 等待 `*_resp`
   - `code != 1` 时返回业务错误
+- inbound owner/private CTRL 必须：
+  - 只处理 `SubProtoStream + MajorCmd + KindCtrl`
+  - 复用原请求 `MsgID` 返回 `MajorOKResp`
+  - 用 `code/msg` 显式表达 descriptor 缺失、kind 不匹配、delivery 冲突等错误
 - 非法输入示例：
   - 空 `source_id`
   - 空 `consumer_id`
@@ -110,6 +138,7 @@
 - runtime 解析异常不得导致前端崩溃：
   - 非法 DATA/ACK 头直接丢弃并记录日志
   - 文本解析失败时降级为 stats 或 hex 摘要，而不是 panic
+  - 未处于 active 状态或方向不匹配的 consumer delivery 不得发送 ACK
 
 ## Security / Safety
 
@@ -117,6 +146,7 @@
 - `text` 事件桥只发送有界文本内容；不得默认透传完整媒体 payload。
 - runtime 必须对文本缓存和统计缓存做有界控制，避免无限增长。
 - 前端只能通过明确的 bindings 调用控制面动作，不能散落构造原始 stream payload。
+- Win 只补 leaf owner 最小能力，不承担 coordinator 路由表或权限裁决职责。
 
 ## Performance Constraints
 
@@ -137,4 +167,5 @@
 
 ## Related Changes
 
-- 待本次 workflow 完成后补充。
+- [../change/2026-03-29_win-stream-local-owner.md](../change/2026-03-29_win-stream-local-owner.md)
+- [../change/2026-03-29_win-stream-announce-timeout.md](../change/2026-03-29_win-stream-announce-timeout.md)
