@@ -58,17 +58,25 @@ type StreamService struct {
 	logs    *logs.LogService
 	bus     corebus.IBus
 
-	mu         sync.Mutex
-	deliveries map[string]*deliveryRuntime
-	busTokens  []busToken
+	mu                 sync.Mutex
+	deliveries         map[string]*deliveryRuntime
+	sources            map[string]proto.SourceDescriptor
+	consumers          map[string]proto.ConsumerDescriptor
+	producerDeliveries map[string]*localProducerDelivery
+	consumerDeliveries map[string]*localConsumerDelivery
+	busTokens          []busToken
 }
 
 func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, bus corebus.IBus) *StreamService {
 	svc := &StreamService{
-		session:    session,
-		logs:       logsSvc,
-		bus:        bus,
-		deliveries: make(map[string]*deliveryRuntime),
+		session:            session,
+		logs:               logsSvc,
+		bus:                bus,
+		deliveries:         make(map[string]*deliveryRuntime),
+		sources:            make(map[string]proto.SourceDescriptor),
+		consumers:          make(map[string]proto.ConsumerDescriptor),
+		producerDeliveries: make(map[string]*localProducerDelivery),
+		consumerDeliveries: make(map[string]*localConsumerDelivery),
 	}
 	svc.bindBus()
 	return svc
@@ -81,6 +89,7 @@ func (s *StreamService) Close() {
 func (s *StreamService) DeliverySnapshot() []StreamDeliveryEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureStateMapsLocked()
 	out := make([]StreamDeliveryEvent, 0, len(s.deliveries))
 	for _, item := range s.deliveries {
 		if item == nil {

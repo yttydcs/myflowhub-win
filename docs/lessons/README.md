@@ -30,6 +30,9 @@
 - [stream-ctrl-await-mismatch.md](stream-ctrl-await-mismatch.md)
   - 症状：Stream 页面创建本地 source / consumer 超时，日志报 `stream announce: request timed out`
   - 关键词：`KindCtrl`、`SubProtoStream`、`announce_resp`、`SendCommandAndAwait`、`payload[0]`
+- [stream-local-owner-ctrl-gap.md](stream-local-owner-ctrl-gap.md)
+  - 症状：`stream announce` / `announce_consumer` 仍然 timeout，且服务端已把 owner 请求路由回本机 Win
+  - 关键词：`routeOwnerRequest`、`delivery_prepare`、`MajorCmd`、`ACK`、`stream local owner`
 - [wails-binding-proto-drift.md](wails-binding-proto-drift.md)
   - 症状：`wails generate module` / `go test` 报 `undefined: flow.DetailReq`，或 `actionDetail redeclared in this block`，或 `replacement directory ../proto-stream-subproto does not exist`
   - 关键词：`GOWORK=off`、`flow.DetailReq`、`actionDetail redeclared`、`wails generate module`、`myflowhub-proto`、`reading ..\proto-stream-subproto\go.mod`

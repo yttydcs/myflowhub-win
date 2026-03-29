@@ -26,6 +26,37 @@ func (f *fakeStreamSession) Send(hdr core.IHeader, payload []byte) error {
 	return f.send(hdr, payload)
 }
 
+type sentFrame struct {
+	Major    uint8
+	SubProto uint8
+	SourceID uint32
+	TargetID uint32
+	MsgID    uint32
+	Payload  []byte
+}
+
+type recordingStreamSession struct {
+	frames []sentFrame
+	send   func(hdr core.IHeader, payload []byte) error
+}
+
+func (r *recordingStreamSession) Send(hdr core.IHeader, payload []byte) error {
+	if hdr != nil {
+		r.frames = append(r.frames, sentFrame{
+			Major:    hdr.Major(),
+			SubProto: hdr.SubProto(),
+			SourceID: hdr.SourceID(),
+			TargetID: hdr.TargetID(),
+			MsgID:    hdr.GetMsgID(),
+			Payload:  append([]byte(nil), payload...),
+		})
+	}
+	if r.send != nil {
+		return r.send(hdr, payload)
+	}
+	return nil
+}
+
 func TestAnnounceSendsCtrlPayloadAndAcceptsCtrlResp(t *testing.T) {
 	bus := corebus.New(corebus.Options{})
 	defer bus.Close()
@@ -254,6 +285,380 @@ func TestHandleAckPublishesStatsEvent(t *testing.T) {
 	}
 	if snapshot[0].LastAckPos != 64 {
 		t.Fatalf("expected snapshot ack position 64, got %d", snapshot[0].LastAckPos)
+	}
+}
+
+func TestAnnounceCompletesWhenOwnerRequestLoopsBackToLocalWin(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	session := &recordingStreamSession{}
+	sendCount := 0
+	session.send = func(hdr core.IHeader, payload []byte) error {
+		sendCount++
+		switch sendCount {
+		case 1:
+			if hdr.Major() != header.MajorCmd {
+				t.Fatalf("expected cmd request, got major=%d", hdr.Major())
+			}
+			bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+				Major:    header.MajorCmd,
+				SubProto: proto.SubProtoStream,
+				SourceID: hdr.SourceID(),
+				TargetID: hdr.SourceID(),
+				MsgID:    hdr.GetMsgID(),
+				Payload:  append([]byte(nil), payload...),
+			}, nil)
+		case 2:
+			if hdr.Major() != header.MajorOKResp {
+				t.Fatalf("expected ok response, got major=%d", hdr.Major())
+			}
+			bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+				Major:    header.MajorOKResp,
+				SubProto: proto.SubProtoStream,
+				SourceID: hdr.SourceID(),
+				TargetID: hdr.TargetID(),
+				MsgID:    hdr.GetMsgID(),
+				Payload:  append([]byte(nil), payload...),
+			}, nil)
+		default:
+			t.Fatalf("unexpected send count: %d", sendCount)
+		}
+		return nil
+	}
+
+	svc := &StreamService{
+		session:    session,
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+
+	resp, err := svc.Announce(context.Background(), 7, 9, proto.AnnounceReq{
+		ReqID: "announce-loopback",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-loopback",
+			Producer: 7,
+			Kind:     proto.StreamKindText,
+		},
+	})
+	if err != nil {
+		t.Fatalf("announce returned err: %v", err)
+	}
+	if resp.Code != 1 || resp.Source == nil || resp.Source.SourceID != "source-loopback" {
+		t.Fatalf("unexpected announce resp: %+v", resp)
+	}
+	if got := svc.handleListSourcesLocal(proto.ListSourcesReq{ReqID: "list", Producer: 7}); len(got.Sources) != 1 || got.Sources[0].SourceID != "source-loopback" {
+		t.Fatalf("expected local source catalog to contain source-loopback, got %+v", got)
+	}
+	if got := svc.handleGetSourceLocal(proto.GetSourceReq{ReqID: "get", Producer: 7, SourceID: "source-loopback"}); got.Source == nil || got.Source.SourceID != "source-loopback" {
+		t.Fatalf("expected get_source to return local source, got %+v", got)
+	}
+}
+
+func TestAnnounceConsumerCompletesWhenOwnerRequestLoopsBackToLocalWin(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	session := &recordingStreamSession{}
+	sendCount := 0
+	session.send = func(hdr core.IHeader, payload []byte) error {
+		sendCount++
+		switch sendCount {
+		case 1:
+			bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+				Major:    header.MajorCmd,
+				SubProto: proto.SubProtoStream,
+				SourceID: hdr.SourceID(),
+				TargetID: hdr.SourceID(),
+				MsgID:    hdr.GetMsgID(),
+				Payload:  append([]byte(nil), payload...),
+			}, nil)
+		case 2:
+			bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+				Major:    header.MajorOKResp,
+				SubProto: proto.SubProtoStream,
+				SourceID: hdr.SourceID(),
+				TargetID: hdr.TargetID(),
+				MsgID:    hdr.GetMsgID(),
+				Payload:  append([]byte(nil), payload...),
+			}, nil)
+		default:
+			t.Fatalf("unexpected send count: %d", sendCount)
+		}
+		return nil
+	}
+
+	svc := &StreamService{
+		session:    session,
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+
+	resp, err := svc.AnnounceConsumer(context.Background(), 7, 9, proto.AnnounceConsumerReq{
+		ReqID: "announce-consumer-loopback",
+		ConsumerEndpoint: proto.ConsumerDescriptor{
+			ConsumerID: "consumer-loopback",
+			Consumer:   7,
+			Kind:       proto.StreamKindText,
+		},
+	})
+	if err != nil {
+		t.Fatalf("announce consumer returned err: %v", err)
+	}
+	if resp.Code != 1 || resp.ConsumerEndpoint == nil || resp.ConsumerEndpoint.ConsumerID != "consumer-loopback" {
+		t.Fatalf("unexpected announce consumer resp: %+v", resp)
+	}
+	if got := svc.handleListConsumersLocal(proto.ListConsumersReq{ReqID: "list", Consumer: 7}); len(got.ConsumerEndpoints) != 1 || got.ConsumerEndpoints[0].ConsumerID != "consumer-loopback" {
+		t.Fatalf("expected local consumer catalog to contain consumer-loopback, got %+v", got)
+	}
+	if got := svc.handleGetConsumerLocal(proto.GetConsumerReq{ReqID: "get", Consumer: 7, ConsumerID: "consumer-loopback"}); got.ConsumerEndpoint == nil || got.ConsumerEndpoint.ConsumerID != "consumer-loopback" {
+		t.Fatalf("expected get_consumer to return local consumer, got %+v", got)
+	}
+}
+
+func TestLocalConsumerDeliveryLifecycleSendsAckAndCloses(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	session := &recordingStreamSession{}
+	svc := &StreamService{
+		session:    session,
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+
+	consumerResp := svc.handleAnnounceConsumerLocal(21, proto.AnnounceConsumerReq{
+		ReqID: "local-consumer",
+		ConsumerEndpoint: proto.ConsumerDescriptor{
+			ConsumerID: "consumer-1",
+			Consumer:   21,
+			Kind:       proto.StreamKindText,
+		},
+	})
+	if consumerResp.Code != 1 {
+		t.Fatalf("announce consumer failed: %+v", consumerResp)
+	}
+
+	textCh := make(chan StreamTextEvent, 1)
+	token := bus.Subscribe(EventStreamText, func(_ context.Context, evt corebus.Event) {
+		if data, ok := evt.Data.(StreamTextEvent); ok {
+			textCh <- data
+		}
+	})
+	defer bus.Unsubscribe(EventStreamText, token)
+
+	deliveryID := uuid.NewString()
+	preparePayload, err := encodeStreamCtrlPayload(actionDeliveryPrepare, deliveryPrepareReq{
+		ReqID:      "prepare-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+		Producer:   99,
+		SourceID:   "source-1",
+		Consumer:   21,
+		ConsumerID: "consumer-1",
+		Kind:       proto.StreamKindText,
+		UnitMode:   proto.UnitModeFrame,
+	})
+	if err != nil {
+		t.Fatalf("encode prepare payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    11,
+		Payload:  preparePayload,
+	}, nil)
+
+	activatePayload, err := encodeStreamCtrlPayload(actionDeliveryActivate, deliveryActivateReq{
+		ReqID:      "activate-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+	})
+	if err != nil {
+		t.Fatalf("encode activate payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    12,
+		Payload:  activatePayload,
+	}, nil)
+
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildDataPayload(t, deliveryID, 5, 120, []byte("hello local consumer")),
+	}, nil)
+
+	select {
+	case evt := <-textCh:
+		if evt.DeliveryID != deliveryID || evt.Text != "hello local consumer" {
+			t.Fatalf("unexpected text event: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected text event")
+	}
+
+	if len(session.frames) < 3 {
+		t.Fatalf("expected prepare resp, activate resp, and ack, got %d sends", len(session.frames))
+	}
+	ack := session.frames[2]
+	if ack.Major != header.MajorMsg || ack.SourceID != 21 || ack.TargetID != 99 {
+		t.Fatalf("unexpected ack routing: %+v", ack)
+	}
+	ackPacket, err := parseAckPacket(ack.Payload)
+	if err != nil {
+		t.Fatalf("parse ack payload: %v", err)
+	}
+	if ackPacket.DeliveryID != deliveryID || ackPacket.Position != 6 {
+		t.Fatalf("unexpected ack packet: %+v", ackPacket)
+	}
+
+	snapshot := svc.DeliverySnapshot()
+	if len(snapshot) != 1 || snapshot[0].LastAckPos != 6 || snapshot[0].FramesIn != 1 {
+		t.Fatalf("unexpected delivery snapshot after data: %+v", snapshot)
+	}
+
+	closePayload, err := encodeStreamCtrlPayload(actionDeliveryClose, deliveryCloseReq{
+		ReqID:      "close-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+		Reason:     "test close",
+	})
+	if err != nil {
+		t.Fatalf("encode close payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    13,
+		Payload:  closePayload,
+	}, nil)
+
+	if got := svc.DeliverySnapshot(); len(got) != 0 {
+		t.Fatalf("expected close to remove delivery snapshot, got %+v", got)
+	}
+}
+
+func TestLocalProducerDeliveryLifecycleTracksAckAndCloses(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	session := &recordingStreamSession{}
+	svc := &StreamService{
+		session:    session,
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+
+	sourceResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "local-source",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-1",
+			Producer: 21,
+			Kind:     proto.StreamKindText,
+			Mode:     proto.ModeLive,
+			UnitMode: proto.UnitModeFrame,
+		},
+	})
+	if sourceResp.Code != 1 {
+		t.Fatalf("announce source failed: %+v", sourceResp)
+	}
+
+	deliveryID := uuid.NewString()
+	preparePayload, err := encodeStreamCtrlPayload(actionDeliveryPrepare, deliveryPrepareReq{
+		ReqID:      "prepare-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+		Producer:   21,
+		SourceID:   "source-1",
+		Consumer:   99,
+		ConsumerID: "consumer-remote",
+	})
+	if err != nil {
+		t.Fatalf("encode prepare payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    21,
+		Payload:  preparePayload,
+	}, nil)
+
+	activatePayload, err := encodeStreamCtrlPayload(actionDeliveryActivate, deliveryActivateReq{
+		ReqID:      "activate-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+	})
+	if err != nil {
+		t.Fatalf("encode activate payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    22,
+		Payload:  activatePayload,
+	}, nil)
+
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildAckPayload(t, deliveryID, 64),
+	}, nil)
+
+	snapshot := svc.DeliverySnapshot()
+	if len(snapshot) != 1 || snapshot[0].LastAckPos != 64 || snapshot[0].State != "active" {
+		t.Fatalf("unexpected producer snapshot after ack: %+v", snapshot)
+	}
+
+	closePayload, err := encodeStreamCtrlPayload(actionDeliveryClose, deliveryCloseReq{
+		ReqID:      "close-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+		Reason:     "test close",
+	})
+	if err != nil {
+		t.Fatalf("encode close payload: %v", err)
+	}
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorCmd,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		MsgID:    23,
+		Payload:  closePayload,
+	}, nil)
+
+	if got := svc.DeliverySnapshot(); len(got) != 0 {
+		t.Fatalf("expected close to remove producer delivery snapshot, got %+v", got)
 	}
 }
 
