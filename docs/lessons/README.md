@@ -27,6 +27,9 @@
 - [frontend-build-babel-parser-missing.md](frontend-build-babel-parser-missing.md)
   - 症状：`failed to load config from frontend/vite.config.ts`、`Cannot find module '@babel/parser'`
   - 关键词：`@babel/parser`、`@vue/compiler-core`、`Compiling frontend`、`Cannot find module`
+- [stream-ctrl-await-mismatch.md](stream-ctrl-await-mismatch.md)
+  - 症状：Stream 页面创建本地 source / consumer 超时，日志报 `stream announce: request timed out`
+  - 关键词：`KindCtrl`、`SubProtoStream`、`announce_resp`、`SendCommandAndAwait`、`payload[0]`
 - [wails-binding-proto-drift.md](wails-binding-proto-drift.md)
   - 症状：`wails generate module` / `go test` 报 `undefined: flow.DetailReq`，或 `actionDetail redeclared in this block`，或 `replacement directory ../proto-stream-subproto does not exist`
   - 关键词：`GOWORK=off`、`flow.DetailReq`、`actionDetail redeclared`、`wails generate module`、`myflowhub-proto`、`reading ..\proto-stream-subproto\go.mod`

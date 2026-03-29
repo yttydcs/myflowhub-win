@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-29_win-stream-announce-timeout.md](2026-03-29_win-stream-announce-timeout.md)
   - [2026-03-29_win-run-dev-proto-path.md](2026-03-29_win-run-dev-proto-path.md)
   - [2026-03-28_win-stream-module.md](2026-03-28_win-stream-module.md)
   - [2026-03-28_win-remote-authority-admin.md](2026-03-28_win-remote-authority-admin.md)

@@ -3,15 +3,145 @@ package stream
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	core "github.com/yttydcs/myflowhub-core"
 	corebus "github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
 	proto "github.com/yttydcs/myflowhub-proto/protocol/stream"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 )
+
+type fakeStreamSession struct {
+	send func(hdr core.IHeader, payload []byte) error
+}
+
+func (f *fakeStreamSession) Send(hdr core.IHeader, payload []byte) error {
+	if f == nil || f.send == nil {
+		return nil
+	}
+	return f.send(hdr, payload)
+}
+
+func TestAnnounceSendsCtrlPayloadAndAcceptsCtrlResp(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	var sentHdr core.IHeader
+	var sentPayload []byte
+	session := &fakeStreamSession{
+		send: func(hdr core.IHeader, payload []byte) error {
+			sentHdr = hdr
+			sentPayload = append([]byte(nil), payload...)
+
+			msg, err := decodeStreamCtrlMessage(payload)
+			if err != nil {
+				t.Fatalf("decode request payload: %v", err)
+			}
+			if msg.Action != proto.ActionAnnounce {
+				t.Fatalf("unexpected request action: %s", msg.Action)
+			}
+
+			var req proto.AnnounceReq
+			if err := json.Unmarshal(msg.Data, &req); err != nil {
+				t.Fatalf("decode announce request: %v", err)
+			}
+			if req.Source.SourceID != "source-1" {
+				t.Fatalf("unexpected source id: %s", req.Source.SourceID)
+			}
+
+			respPayload, err := encodeStreamCtrlPayload(proto.ActionAnnounceResp, proto.AnnounceResp{
+				ReqID: req.ReqID,
+				Code:  1,
+				Source: &proto.SourceDescriptor{
+					SourceID: "source-1",
+					Producer: 7,
+					Kind:     proto.StreamKindText,
+				},
+			})
+			if err != nil {
+				t.Fatalf("encode response payload: %v", err)
+			}
+
+			bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+				Major:    header.MajorOKResp,
+				SubProto: proto.SubProtoStream,
+				MsgID:    hdr.GetMsgID(),
+				Payload:  respPayload,
+			}, nil)
+			return nil
+		},
+	}
+
+	svc := &StreamService{
+		session:    session,
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	resp, err := svc.Announce(context.Background(), 7, 9, proto.AnnounceReq{
+		ReqID: "announce-1",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-1",
+			Producer: 7,
+			Kind:     proto.StreamKindText,
+		},
+	})
+	if err != nil {
+		t.Fatalf("announce returned err: %v", err)
+	}
+	if resp.Code != 1 || resp.Source == nil || resp.Source.SourceID != "source-1" {
+		t.Fatalf("unexpected announce resp: %+v", resp)
+	}
+	if sentHdr == nil {
+		t.Fatal("expected request header to be captured")
+	}
+	if sentHdr.Major() != header.MajorCmd || sentHdr.SubProto() != proto.SubProtoStream {
+		t.Fatalf("unexpected request header: major=%d sub=%d", sentHdr.Major(), sentHdr.SubProto())
+	}
+	if sentHdr.SourceID() != 7 || sentHdr.TargetID() != 9 || sentHdr.GetMsgID() == 0 {
+		t.Fatalf("unexpected request routing: src=%d tgt=%d msg=%d", sentHdr.SourceID(), sentHdr.TargetID(), sentHdr.GetMsgID())
+	}
+	if len(sentPayload) == 0 || sentPayload[0] != proto.KindCtrl {
+		t.Fatalf("expected ctrl payload prefix, got %v", sentPayload)
+	}
+}
+
+func TestAnnounceTimeoutMapsToUIError(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	svc := &StreamService{
+		session: &fakeStreamSession{
+			send: func(hdr core.IHeader, payload []byte) error {
+				return nil
+			},
+		},
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err := svc.Announce(ctx, 7, 9, proto.AnnounceReq{
+		ReqID: "announce-timeout",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-timeout",
+			Producer: 7,
+			Kind:     proto.StreamKindText,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if got := err.Error(); got != "stream announce: request timed out" {
+		t.Fatalf("unexpected error: %s", got)
+	}
+}
 
 func TestHandleDataPublishesTextEventAndSnapshot(t *testing.T) {
 	bus := corebus.New(corebus.Options{})

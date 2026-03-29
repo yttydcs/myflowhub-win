@@ -2,16 +2,22 @@ package stream
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
+	core "github.com/yttydcs/myflowhub-core"
 	corebus "github.com/yttydcs/myflowhub-core/eventbus"
+	"github.com/yttydcs/myflowhub-core/header"
 	proto "github.com/yttydcs/myflowhub-proto/protocol/stream"
+	sdktransport "github.com/yttydcs/myflowhub-sdk/transport"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
 	"github.com/yttydcs/myflowhub-win/internal/services/transport"
@@ -19,8 +25,36 @@ import (
 
 const defaultStreamTimeout = 8 * time.Second
 
+var streamMsgSeq atomic.Uint32
+var streamMsgSeqInit sync.Once
+
+type streamSession interface {
+	Send(hdr core.IHeader, payload []byte) error
+}
+
+type ctrlWaitResult struct {
+	message sdktransport.Message
+	err     error
+}
+
+func nextStreamMsgID() uint32 {
+	streamMsgSeqInit.Do(func() {
+		var seed [4]byte
+		if _, err := rand.Read(seed[:]); err != nil {
+			streamMsgSeq.Store(uint32(time.Now().UnixNano()))
+			return
+		}
+		streamMsgSeq.Store(binary.BigEndian.Uint32(seed[:]))
+	})
+	v := streamMsgSeq.Add(1)
+	if v == 0 {
+		v = streamMsgSeq.Add(1)
+	}
+	return v
+}
+
 type StreamService struct {
-	session *sessionsvc.SessionService
+	session streamSession
 	logs    *logs.LogService
 	bus     corebus.IBus
 
@@ -349,22 +383,127 @@ func (s *StreamService) sendAndAwaitAnnounce(ctx context.Context, sourceID, targ
 	return sendAndAwaitJSON[proto.AnnounceResp](s, ctx, sourceID, targetID, proto.ActionAnnounce, proto.ActionAnnounceResp, req)
 }
 
-func sendAndAwaitJSON[T any](s *StreamService, ctx context.Context, sourceID, targetID uint32, reqAction, respAction string, req any) (T, error) {
-	var zero T
+func encodeStreamCtrlPayload(action string, data any) ([]byte, error) {
+	body, err := transport.EncodeMessage(action, data)
+	if err != nil {
+		return nil, err
+	}
+	payload := make([]byte, 1+len(body))
+	payload[0] = proto.KindCtrl
+	copy(payload[1:], body)
+	return payload, nil
+}
+
+func decodeStreamCtrlMessage(payload []byte) (sdktransport.Message, error) {
+	if len(payload) == 0 {
+		return sdktransport.Message{}, errors.New("stream ctrl payload is empty")
+	}
+	if payload[0] != proto.KindCtrl {
+		return sdktransport.Message{}, fmt.Errorf("unexpected stream payload kind: %d", payload[0])
+	}
+	return sdktransport.DecodeMessage(payload[1:])
+}
+
+func sendAndAwaitCtrlMessage(s *StreamService, ctx context.Context, sourceID, targetID uint32, reqAction, respAction string, payload []byte) (sdktransport.Message, error) {
 	if s.session == nil {
-		return zero, errors.New("session service not initialized")
+		return sdktransport.Message{}, errors.New("session service not initialized")
+	}
+	if s.bus == nil {
+		return sdktransport.Message{}, errors.New("event bus not initialized")
 	}
 	if sourceID == 0 {
-		return zero, errors.New("sourceID is required")
+		return sdktransport.Message{}, errors.New("sourceID is required")
 	}
 	if targetID == 0 {
-		return zero, errors.New("targetID is required")
+		return sdktransport.Message{}, errors.New("targetID is required")
 	}
-	payload, err := transport.EncodeMessage(reqAction, req)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(proto.SubProtoStream).
+		WithSourceID(sourceID).
+		WithTargetID(targetID).
+		WithTimestamp(uint32(time.Now().Unix())).
+		WithMsgID(nextStreamMsgID())
+
+	resultCh := make(chan ctrlWaitResult, 1)
+	var resolveOnce sync.Once
+	resolve := func(message sdktransport.Message, err error) {
+		resolveOnce.Do(func() {
+			resultCh <- ctrlWaitResult{message: message, err: err}
+		})
+	}
+
+	frameToken := s.bus.Subscribe(sessionsvc.EventFrame, func(_ context.Context, evt corebus.Event) {
+		frame, ok := evt.Data.(sessionsvc.FrameEvent)
+		if !ok {
+			return
+		}
+		if frame.SubProto != proto.SubProtoStream || frame.MsgID != hdr.GetMsgID() {
+			return
+		}
+		if frame.Major != header.MajorOKResp && frame.Major != header.MajorErrResp {
+			return
+		}
+		message, err := decodeStreamCtrlMessage(frame.Payload)
+		if err != nil {
+			resolve(sdktransport.Message{}, err)
+			return
+		}
+		if message.Action != respAction {
+			resolve(sdktransport.Message{}, fmt.Errorf("unexpected stream response action: got %q want %q", message.Action, respAction))
+			return
+		}
+		resolve(message, nil)
+	})
+	errorToken := s.bus.Subscribe(sessionsvc.EventError, func(_ context.Context, evt corebus.Event) {
+		errEvt, ok := evt.Data.(sessionsvc.ErrorEvent)
+		if !ok {
+			return
+		}
+		msg := strings.TrimSpace(errEvt.Message)
+		if msg == "" {
+			msg = "session error"
+		}
+		resolve(sdktransport.Message{}, errors.New(msg))
+	})
+	stateToken := s.bus.Subscribe(sessionsvc.EventState, func(_ context.Context, evt corebus.Event) {
+		stateEvt, ok := evt.Data.(sessionsvc.StateEvent)
+		if !ok || stateEvt.Connected {
+			return
+		}
+		resolve(sdktransport.Message{}, errors.New("connection closed"))
+	})
+	defer s.bus.Unsubscribe(sessionsvc.EventFrame, frameToken)
+	defer s.bus.Unsubscribe(sessionsvc.EventError, errorToken)
+	defer s.bus.Unsubscribe(sessionsvc.EventState, stateToken)
+
+	if err := s.session.Send(hdr, payload); err != nil {
+		return sdktransport.Message{}, err
+	}
+
+	if s.logs != nil {
+		s.logs.Appendf("info", "stream %s sent (msg_id=%d src=%d tgt=%d)", reqAction, hdr.GetMsgID(), sourceID, targetID)
+	}
+
+	select {
+	case result := <-resultCh:
+		return result.message, result.err
+	case <-ctx.Done():
+		return sdktransport.Message{}, ctx.Err()
+	}
+}
+
+func sendAndAwaitJSON[T any](s *StreamService, ctx context.Context, sourceID, targetID uint32, reqAction, respAction string, req any) (T, error) {
+	var zero T
+	payload, err := encodeStreamCtrlPayload(reqAction, req)
 	if err != nil {
 		return zero, err
 	}
-	resp, err := s.session.SendCommandAndAwait(ctx, proto.SubProtoStream, sourceID, targetID, payload, respAction)
+	message, err := sendAndAwaitCtrlMessage(s, ctx, sourceID, targetID, reqAction, respAction, payload)
 	if err != nil {
 		if s.logs != nil {
 			s.logs.Appendf("error", "stream %s await failed: %v", reqAction, err)
@@ -372,7 +511,7 @@ func sendAndAwaitJSON[T any](s *StreamService, ctx context.Context, sourceID, ta
 		return zero, fmt.Errorf("stream %s: %w", reqAction, toUIError(err))
 	}
 	var out T
-	if err := json.Unmarshal(resp.Message.Data, &out); err != nil {
+	if err := json.Unmarshal(message.Data, &out); err != nil {
 		if s.logs != nil {
 			s.logs.Appendf("error", "stream %s decode failed: %v", reqAction, err)
 		}
