@@ -4,17 +4,23 @@ import { EventsOn } from "../../wailsjs/runtime/runtime"
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
+const callApp = async <T>(method: string, ...args: any[]): Promise<T> => {
+  const api = (window as any)?.go?.main?.App
+  const fn: WailsBinding | undefined = api?.[method]
+  if (!fn) throw new Error(t("App binding '{method}' unavailable", { method }))
+  return fn(...args)
+}
+
 const callStream = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.stream?.StreamService
   const fn: WailsBinding | undefined = api?.[method]
-  if (!fn) {
-    throw new Error(t("Stream binding '{method}' unavailable", { method }))
-  }
+  if (!fn) throw new Error(t("Stream binding '{method}' unavailable", { method }))
   return fn(...args)
 }
 
 export const streamKinds = ["music", "video", "text", "custom"] as const
 export type StreamKind = (typeof streamKinds)[number]
+export type StreamTab = "source" | "consumer" | "control"
 
 export type StreamSource = {
   sourceId: string
@@ -101,10 +107,16 @@ export type StreamConsumerDraft = {
   metadataText: string
 }
 
-export type StreamState = {
+export type StreamRestoreResult = { attempted: number; failed: number }
+export type StreamPublishTextResult = { sourceId: string; sent: number; deliveryIds: string[] }
+
+type StreamState = {
+  activeTab: StreamTab
   targetId: string
   selfNodeId: number
   defaultTargetId: number
+  localSources: StreamSource[]
+  localConsumers: StreamConsumer[]
   sources: StreamSource[]
   consumers: StreamConsumer[]
   deliveries: StreamDelivery[]
@@ -118,9 +130,12 @@ export type StreamState = {
 }
 
 const state = reactive<StreamState>({
+  activeTab: "source",
   targetId: "",
   selfNodeId: 0,
   defaultTargetId: 0,
+  localSources: [],
+  localConsumers: [],
   sources: [],
   consumers: [],
   deliveries: [],
@@ -134,45 +149,56 @@ const state = reactive<StreamState>({
 })
 
 let initialized = false
+let restorePromise: Promise<StreamRestoreResult> | null = null
+let lastRestoreKey = ""
 
 const nowIso = () => new Date().toISOString()
 
 const normalizeNodeText = (value: string, field: string) => {
   const trimmed = String(value ?? "").trim()
-  if (!trimmed) {
-    throw new Error(t("{field} is required.", { field }))
-  }
+  if (!trimmed) throw new Error(t("{field} is required.", { field }))
   const parsed = Number.parseInt(trimmed, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(t("{field} must be a positive number.", { field }))
-  }
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(t("{field} must be a positive number.", { field }))
   return parsed
+}
+
+const normalizeConfiguredTargetId = (value: unknown) => {
+  const trimmed = String(value ?? "").trim()
+  if (!trimmed) return ""
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(t("Target Node ID must be a positive number."))
+  return String(parsed)
 }
 
 const normalizeTargetId = (value: string) => {
-  const trimmed = String(value ?? "").trim()
-  if (!trimmed) return state.defaultTargetId
-  const parsed = Number.parseInt(trimmed, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(t("Target Node ID must be a positive number."))
+  const normalized = normalizeConfiguredTargetId(value)
+  return normalized ? Number.parseInt(normalized, 10) : state.defaultTargetId
+}
+
+const normalizeTab = (value: unknown): StreamTab => {
+  switch (String(value ?? "").trim().toLowerCase()) {
+    case "consumer":
+      return "consumer"
+    case "control":
+      return "control"
+    default:
+      return "source"
   }
-  return parsed
 }
 
 const ensureSourceId = () => {
-  if (!state.selfNodeId) {
-    throw new Error(t("Login required to use Stream controls."))
-  }
+  if (!state.selfNodeId) throw new Error(t("Login required to use Stream controls."))
   return state.selfNodeId
 }
 
 const resolveTargetId = () => normalizeTargetId(state.targetId)
 
-const normalizeTags = (value: string) => {
+const normalizeTags = (value: string | string[]) => {
+  const items = Array.isArray(value) ? value : String(value ?? "").split(/[\n,，;；]+/g)
   const seen = new Set<string>()
   const out: string[] = []
-  for (const item of String(value ?? "").split(/[\n,，;；]+/g)) {
-    const tag = item.trim()
+  for (const item of items) {
+    const tag = String(item ?? "").trim()
     if (!tag || seen.has(tag)) continue
     seen.add(tag)
     out.push(tag)
@@ -212,36 +238,32 @@ const formatMetadata = (value: any) => {
 }
 
 const normalizeSource = (input: any): StreamSource | null => {
-  const sourceId = String(input?.source_id ?? "").trim()
+  const sourceId = String(input?.sourceId ?? input?.source_id ?? "").trim()
   if (!sourceId) return null
   return {
     sourceId,
-    producer: Number(input?.producer ?? 0),
+    producer: Number(input?.producer ?? state.selfNodeId ?? 0),
     name: String(input?.name ?? "").trim(),
     kind: String(input?.kind ?? "").trim(),
-    contentType: String(input?.content_type ?? "").trim(),
+    contentType: String(input?.contentType ?? input?.content_type ?? "").trim(),
     mode: String(input?.mode ?? "").trim(),
-    unitMode: String(input?.unit_mode ?? "").trim(),
-    tags: Array.isArray(input?.tags)
-      ? input.tags.map((item: unknown) => String(item ?? "").trim()).filter(Boolean)
-      : [],
-    metadataRaw: formatMetadata(input?.metadata)
+    unitMode: String(input?.unitMode ?? input?.unit_mode ?? "").trim(),
+    tags: Array.isArray(input?.tags) ? input.tags.map((item: unknown) => String(item ?? "").trim()).filter(Boolean) : [],
+    metadataRaw: formatMetadata(input?.metadataRaw ?? input?.metadata)
   }
 }
 
 const normalizeConsumer = (input: any): StreamConsumer | null => {
-  const consumerId = String(input?.consumer_id ?? "").trim()
+  const consumerId = String(input?.consumerId ?? input?.consumer_id ?? "").trim()
   if (!consumerId) return null
   return {
     consumerId,
-    consumer: Number(input?.consumer ?? 0),
+    consumer: Number(input?.consumer ?? state.selfNodeId ?? 0),
     name: String(input?.name ?? "").trim(),
     kind: String(input?.kind ?? "").trim(),
-    contentType: String(input?.content_type ?? "").trim(),
-    tags: Array.isArray(input?.tags)
-      ? input.tags.map((item: unknown) => String(item ?? "").trim()).filter(Boolean)
-      : [],
-    metadataRaw: formatMetadata(input?.metadata)
+    contentType: String(input?.contentType ?? input?.content_type ?? "").trim(),
+    tags: Array.isArray(input?.tags) ? input.tags.map((item: unknown) => String(item ?? "").trim()).filter(Boolean) : [],
+    metadataRaw: formatMetadata(input?.metadataRaw ?? input?.metadata)
   }
 }
 
@@ -300,32 +322,24 @@ const normalizeStatsFrame = (input: any): StreamStatsFrame | null => {
   }
 }
 
-const upsertDelivery = (delivery: StreamDelivery) => {
-  const next = [...state.deliveries]
-  const index = next.findIndex((item) => item.deliveryId === delivery.deliveryId)
-  if (index >= 0) {
-    next[index] = { ...next[index], ...delivery }
-  } else {
-    next.push(delivery)
-  }
-  next.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
-  state.deliveries = next
-  if (!state.selectedDeliveryId) {
-    state.selectedDeliveryId = delivery.deliveryId
-  }
+const upsertSourceList = (list: StreamSource[], source: StreamSource) => {
+  const next = [...list]
+  const index = next.findIndex((item) => item.sourceId === source.sourceId)
+  if (index >= 0) next[index] = { ...next[index], ...source }
+  else next.unshift(source)
+  return next
 }
 
-const appendTextFrame = (frame: StreamTextFrame) => {
-  const current = Array.isArray(state.textFramesByDelivery[frame.deliveryId])
-    ? [...state.textFramesByDelivery[frame.deliveryId]]
-    : []
-  current.push(frame)
-  state.textFramesByDelivery[frame.deliveryId] = current.slice(-200)
+const upsertConsumerList = (list: StreamConsumer[], consumer: StreamConsumer) => {
+  const next = [...list]
+  const index = next.findIndex((item) => item.consumerId === consumer.consumerId)
+  if (index >= 0) next[index] = { ...next[index], ...consumer }
+  else next.unshift(consumer)
+  return next
 }
 
-const rememberStatsFrame = (frame: StreamStatsFrame) => {
-  state.statsByDelivery[frame.deliveryId] = frame
-}
+const removeSourceFromList = (list: StreamSource[], sourceId: string) => list.filter((item) => item.sourceId !== String(sourceId ?? "").trim())
+const removeConsumerFromList = (list: StreamConsumer[], consumerId: string) => list.filter((item) => item.consumerId !== String(consumerId ?? "").trim())
 
 const touchSync = () => {
   state.lastSyncAt = nowIso()
@@ -335,41 +349,147 @@ const touchEvent = () => {
   state.lastEventAt = nowIso()
 }
 
-const buildSourceDraftPayload = (draft: StreamSourceDraft) => ({
+const resetRestoreState = () => {
+  lastRestoreKey = ""
+}
+
+const applyLocalIdentity = () => {
+  if (!state.selfNodeId) return
+  state.localSources = state.localSources.map((item) => ({ ...item, producer: state.selfNodeId }))
+  state.localConsumers = state.localConsumers.map((item) => ({ ...item, consumer: state.selfNodeId }))
+}
+
+const applyPrefs = (prefs: any) => {
+  state.activeTab = normalizeTab(prefs?.activeTab)
+  const targetId = Number(prefs?.targetId ?? 0)
+  state.targetId = Number.isFinite(targetId) && targetId > 0 ? String(Math.floor(targetId)) : ""
+  state.localSources = Array.isArray(prefs?.sources) ? (prefs.sources.map(normalizeSource).filter(Boolean) as StreamSource[]) : []
+  state.localConsumers = Array.isArray(prefs?.consumers) ? (prefs.consumers.map(normalizeConsumer).filter(Boolean) as StreamConsumer[]) : []
+  applyLocalIdentity()
+  resetRestoreState()
+}
+
+const buildSourcePayload = (source: { sourceId: string; name: string; kind: string; contentType: string; mode: string; unitMode: string; tags: string[]; metadataRaw: string }) => ({
   req_id: "",
   source: {
-    source_id: String(draft.sourceId ?? "").trim(),
-    name: String(draft.name ?? "").trim(),
-    kind: String(draft.kind ?? "").trim(),
-    content_type: String(draft.contentType ?? "").trim(),
-    mode: String(draft.mode ?? "").trim(),
-    unit_mode: String(draft.unitMode ?? "").trim(),
-    tags: normalizeTags(draft.tagsText),
-    metadata: normalizeMetadata(draft.metadataText)
+    source_id: String(source.sourceId ?? "").trim(),
+    name: String(source.name ?? "").trim(),
+    kind: String(source.kind ?? "").trim(),
+    content_type: String(source.contentType ?? "").trim(),
+    mode: String(source.mode ?? "").trim(),
+    unit_mode: String(source.unitMode ?? "").trim(),
+    tags: normalizeTags(source.tags),
+    metadata: normalizeMetadata(source.metadataRaw)
   }
 })
 
-const buildConsumerDraftPayload = (draft: StreamConsumerDraft) => ({
+const buildConsumerPayload = (consumer: { consumerId: string; name: string; kind: string; contentType: string; tags: string[]; metadataRaw: string }) => ({
   req_id: "",
   consumer_endpoint: {
-    consumer_id: String(draft.consumerId ?? "").trim(),
-    name: String(draft.name ?? "").trim(),
-    kind: String(draft.kind ?? "").trim(),
-    content_type: String(draft.contentType ?? "").trim(),
-    tags: normalizeTags(draft.tagsText),
-    metadata: normalizeMetadata(draft.metadataText)
+    consumer_id: String(consumer.consumerId ?? "").trim(),
+    name: String(consumer.name ?? "").trim(),
+    kind: String(consumer.kind ?? "").trim(),
+    content_type: String(consumer.contentType ?? "").trim(),
+    tags: normalizeTags(consumer.tags),
+    metadata: normalizeMetadata(consumer.metadataRaw)
   }
 })
+
+const buildSourceDraftPayload = (draft: StreamSourceDraft) =>
+  buildSourcePayload({
+    sourceId: draft.sourceId,
+    name: draft.name,
+    kind: draft.kind,
+    contentType: draft.contentType,
+    mode: draft.mode,
+    unitMode: draft.unitMode,
+    tags: normalizeTags(draft.tagsText),
+    metadataRaw: draft.metadataText
+  })
+
+const buildConsumerDraftPayload = (draft: StreamConsumerDraft) =>
+  buildConsumerPayload({
+    consumerId: draft.consumerId,
+    name: draft.name,
+    kind: draft.kind,
+    contentType: draft.contentType,
+    tags: normalizeTags(draft.tagsText),
+    metadataRaw: draft.metadataText
+  })
+
+const toAppSource = (source: StreamSource) => ({
+  sourceId: source.sourceId,
+  name: source.name,
+  kind: source.kind,
+  contentType: source.contentType,
+  mode: source.mode,
+  unitMode: source.unitMode,
+  tags: source.tags,
+  metadataRaw: source.metadataRaw
+})
+
+const toAppConsumer = (consumer: StreamConsumer) => ({
+  consumerId: consumer.consumerId,
+  name: consumer.name,
+  kind: consumer.kind,
+  contentType: consumer.contentType,
+  tags: consumer.tags,
+  metadataRaw: consumer.metadataRaw
+})
+
+const upsertDelivery = (delivery: StreamDelivery) => {
+  const next = [...state.deliveries]
+  const index = next.findIndex((item) => item.deliveryId === delivery.deliveryId)
+  if (index >= 0) next[index] = { ...next[index], ...delivery }
+  else next.push(delivery)
+  next.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+  state.deliveries = next
+  if (!state.selectedDeliveryId) state.selectedDeliveryId = delivery.deliveryId
+}
+
+const appendTextFrame = (frame: StreamTextFrame) => {
+  const current = Array.isArray(state.textFramesByDelivery[frame.deliveryId]) ? [...state.textFramesByDelivery[frame.deliveryId]] : []
+  current.push(frame)
+  state.textFramesByDelivery[frame.deliveryId] = current.slice(-200)
+}
+
+const rememberStatsFrame = (frame: StreamStatsFrame) => {
+  state.statsByDelivery[frame.deliveryId] = frame
+}
+
+const savePrefs = async () => {
+  const saved = await callApp<any>("SaveStreamPrefs", {
+    activeTab: state.activeTab,
+    targetId: state.targetId ? Number.parseInt(normalizeConfiguredTargetId(state.targetId), 10) : 0,
+    sources: state.localSources.map(toAppSource),
+    consumers: state.localConsumers.map(toAppConsumer)
+  })
+  applyPrefs(saved)
+  return saved
+}
+
+const savePrefsBestEffort = async () => {
+  try {
+    await savePrefs()
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
+const loadPrefs = async () => {
+  const prefs = await callApp<any>("StreamPrefs")
+  applyPrefs(prefs)
+  return prefs
+}
 
 const loadDeliveries = async () => {
   const snapshot = await callStream<any[]>("DeliverySnapshot")
-  state.deliveries = Array.isArray(snapshot)
-    ? snapshot.map(normalizeDelivery).filter(Boolean) as StreamDelivery[]
-    : []
+  state.deliveries = Array.isArray(snapshot) ? (snapshot.map(normalizeDelivery).filter(Boolean) as StreamDelivery[]) : []
   touchSync()
+  return state.deliveries
 }
 
-const listSources = async (producerText: string, kind = "", tag = "") => {
+const listSources = async (producerText: string, kind = "", tag = "", scope: "catalog" | "local" = "catalog") => {
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
   const producer = normalizeNodeText(producerText, t("Producer Node ID"))
@@ -379,17 +499,18 @@ const listSources = async (producerText: string, kind = "", tag = "") => {
     kind: String(kind ?? "").trim(),
     tag: String(tag ?? "").trim()
   })
-  state.sources = Array.isArray(resp?.sources)
-    ? resp.sources.map(normalizeSource).filter(Boolean) as StreamSource[]
-    : []
-  if (state.selectedSourceId && !state.sources.some((item) => item.sourceId === state.selectedSourceId)) {
-    state.selectedSourceId = ""
+  const items = Array.isArray(resp?.sources) ? (resp.sources.map(normalizeSource).filter(Boolean) as StreamSource[]) : []
+  if (scope === "local") {
+    state.localSources = items.map((item) => ({ ...item, producer: state.selfNodeId || item.producer }))
+  } else {
+    state.sources = items
+    if (state.selectedSourceId && !state.sources.some((item) => item.sourceId === state.selectedSourceId)) state.selectedSourceId = ""
   }
   touchSync()
-  return state.sources
+  return items
 }
 
-const listConsumers = async (consumerText: string, kind = "", tag = "") => {
+const listConsumers = async (consumerText: string, kind = "", tag = "", scope: "catalog" | "local" = "catalog") => {
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
   const consumer = normalizeNodeText(consumerText, t("Consumer Node ID"))
@@ -399,14 +520,15 @@ const listConsumers = async (consumerText: string, kind = "", tag = "") => {
     kind: String(kind ?? "").trim(),
     tag: String(tag ?? "").trim()
   })
-  state.consumers = Array.isArray(resp?.consumer_endpoints)
-    ? resp.consumer_endpoints.map(normalizeConsumer).filter(Boolean) as StreamConsumer[]
-    : []
-  if (state.selectedConsumerId && !state.consumers.some((item) => item.consumerId === state.selectedConsumerId)) {
-    state.selectedConsumerId = ""
+  const items = Array.isArray(resp?.consumer_endpoints) ? (resp.consumer_endpoints.map(normalizeConsumer).filter(Boolean) as StreamConsumer[]) : []
+  if (scope === "local") {
+    state.localConsumers = items.map((item) => ({ ...item, consumer: state.selfNodeId || item.consumer }))
+  } else {
+    state.consumers = items
+    if (state.selectedConsumerId && !state.consumers.some((item) => item.consumerId === state.selectedConsumerId)) state.selectedConsumerId = ""
   }
   touchSync()
-  return state.consumers
+  return items
 }
 
 const announceSource = async (draft: StreamSourceDraft) => {
@@ -415,24 +537,24 @@ const announceSource = async (draft: StreamSourceDraft) => {
   const resp = await callStream<any>("AnnounceSimple", sourceID, targetID, buildSourceDraftPayload(draft))
   const source = normalizeSource(resp?.source)
   if (source) {
-    state.sources = [source, ...state.sources.filter((item) => item.sourceId !== source.sourceId)]
+    state.localSources = upsertSourceList(state.localSources, { ...source, producer: state.selfNodeId || source.producer })
+    state.sources = upsertSourceList(state.sources, source)
     state.selectedSourceId = source.sourceId
+    await savePrefs()
   }
   touchSync()
   return source
 }
 
 const withdrawSource = async (sourceId: string) => {
+  const normalized = String(sourceId ?? "").trim()
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
-  await callStream("WithdrawSimple", sourceID, targetID, {
-    req_id: "",
-    source_id: String(sourceId ?? "").trim()
-  })
-  state.sources = state.sources.filter((item) => item.sourceId !== sourceId)
-  if (state.selectedSourceId === sourceId) {
-    state.selectedSourceId = ""
-  }
+  await callStream("WithdrawSimple", sourceID, targetID, { req_id: "", source_id: normalized })
+  state.localSources = removeSourceFromList(state.localSources, normalized)
+  state.sources = removeSourceFromList(state.sources, normalized)
+  if (state.selectedSourceId === normalized) state.selectedSourceId = ""
+  await savePrefs()
   touchSync()
 }
 
@@ -442,24 +564,24 @@ const announceConsumer = async (draft: StreamConsumerDraft) => {
   const resp = await callStream<any>("AnnounceConsumerSimple", sourceID, targetID, buildConsumerDraftPayload(draft))
   const consumer = normalizeConsumer(resp?.consumer_endpoint)
   if (consumer) {
-    state.consumers = [consumer, ...state.consumers.filter((item) => item.consumerId !== consumer.consumerId)]
+    state.localConsumers = upsertConsumerList(state.localConsumers, { ...consumer, consumer: state.selfNodeId || consumer.consumer })
+    state.consumers = upsertConsumerList(state.consumers, consumer)
     state.selectedConsumerId = consumer.consumerId
+    await savePrefs()
   }
   touchSync()
   return consumer
 }
 
 const withdrawConsumer = async (consumerId: string) => {
+  const normalized = String(consumerId ?? "").trim()
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
-  await callStream("WithdrawConsumerSimple", sourceID, targetID, {
-    req_id: "",
-    consumer_id: String(consumerId ?? "").trim()
-  })
-  state.consumers = state.consumers.filter((item) => item.consumerId !== consumerId)
-  if (state.selectedConsumerId === consumerId) {
-    state.selectedConsumerId = ""
-  }
+  await callStream("WithdrawConsumerSimple", sourceID, targetID, { req_id: "", consumer_id: normalized })
+  state.localConsumers = removeConsumerFromList(state.localConsumers, normalized)
+  state.consumers = removeConsumerFromList(state.consumers, normalized)
+  if (state.selectedConsumerId === normalized) state.selectedConsumerId = ""
+  await savePrefs()
   touchSync()
 }
 
@@ -525,16 +647,13 @@ const subscribe = async (input: { producer: number; sourceId: string; consumerId
 }
 
 const disconnect = async (deliveryId: string, reason = "") => {
+  const normalized = String(deliveryId ?? "").trim()
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
-  await callStream("DisconnectSimple", sourceID, targetID, {
-    req_id: "",
-    delivery_id: String(deliveryId ?? "").trim(),
-    reason: String(reason ?? "").trim()
-  })
+  await callStream("DisconnectSimple", sourceID, targetID, { req_id: "", delivery_id: normalized, reason: String(reason ?? "").trim() })
   upsertDelivery({
-    ...(state.deliveries.find((item) => item.deliveryId === deliveryId) ?? {
-      deliveryId,
+    ...(state.deliveries.find((item) => item.deliveryId === normalized) ?? {
+      deliveryId: normalized,
       sourceId: "",
       producer: 0,
       consumer: 0,
@@ -558,16 +677,13 @@ const disconnect = async (deliveryId: string, reason = "") => {
 }
 
 const unsubscribe = async (deliveryId: string, reason = "") => {
+  const normalized = String(deliveryId ?? "").trim()
   const sourceID = ensureSourceId()
   const targetID = resolveTargetId()
-  await callStream("UnsubscribeSimple", sourceID, targetID, {
-    req_id: "",
-    delivery_id: String(deliveryId ?? "").trim(),
-    reason: String(reason ?? "").trim()
-  })
+  await callStream("UnsubscribeSimple", sourceID, targetID, { req_id: "", delivery_id: normalized, reason: String(reason ?? "").trim() })
   upsertDelivery({
-    ...(state.deliveries.find((item) => item.deliveryId === deliveryId) ?? {
-      deliveryId,
+    ...(state.deliveries.find((item) => item.deliveryId === normalized) ?? {
+      deliveryId: normalized,
       sourceId: "",
       producer: 0,
       consumer: 0,
@@ -602,8 +718,97 @@ const signal = async (deliveryId: string, op: string, data?: unknown) => {
   touchSync()
 }
 
+const publishText = async (sourceId: string, text: string) => {
+  const normalizedSourceID = String(sourceId ?? "").trim()
+  const normalizedText = String(text ?? "")
+  if (!normalizedSourceID) throw new Error(t("Source ID is required."))
+  if (!normalizedText.trim()) throw new Error(t("Text content is required."))
+  const source = state.localSources.find((item) => item.sourceId === normalizedSourceID)
+  if (!source) throw new Error(t("Source not found."))
+  if (source.kind !== "text") throw new Error(t("Only text sources support direct input."))
+  const sourceID = ensureSourceId()
+  const resp = await callStream<any>("PublishTextSimple", sourceID, { source_id: normalizedSourceID, text: normalizedText })
+  touchSync()
+  return {
+    sourceId: String(resp?.source_id ?? normalizedSourceID).trim() || normalizedSourceID,
+    sent: Number(resp?.sent ?? 0),
+    deliveryIds: Array.isArray(resp?.delivery_ids) ? resp.delivery_ids.map((item: unknown) => String(item ?? "").trim()).filter(Boolean) : []
+  } satisfies StreamPublishTextResult
+}
+
+const restoreLocalCatalogs = async (options?: { force?: boolean }) => {
+  if (restorePromise) return restorePromise
+  restorePromise = (async () => {
+    let sourceID = 0
+    let targetID = 0
+    try {
+      sourceID = ensureSourceId()
+      targetID = resolveTargetId()
+    } catch (err) {
+      console.warn(err)
+      return { attempted: 0, failed: 0 }
+    }
+    if (!targetID) return { attempted: 0, failed: 0 }
+    const restoreKey = `${sourceID}:${targetID}`
+    if (!options?.force && lastRestoreKey === restoreKey) return { attempted: 0, failed: 0 }
+
+    const sources = state.localSources.slice()
+    const consumers = state.localConsumers.slice()
+    let failed = 0
+
+    for (const source of sources) {
+      try {
+        const resp = await callStream<any>("AnnounceSimple", sourceID, targetID, buildSourcePayload(source))
+        const restored = normalizeSource(resp?.source)
+        if (restored) state.localSources = upsertSourceList(state.localSources, { ...restored, producer: state.selfNodeId || restored.producer })
+      } catch (err) {
+        console.warn(err)
+        failed += 1
+      }
+    }
+
+    for (const consumer of consumers) {
+      try {
+        const resp = await callStream<any>("AnnounceConsumerSimple", sourceID, targetID, buildConsumerPayload(consumer))
+        const restored = normalizeConsumer(resp?.consumer_endpoint)
+        if (restored) state.localConsumers = upsertConsumerList(state.localConsumers, { ...restored, consumer: state.selfNodeId || restored.consumer })
+      } catch (err) {
+        console.warn(err)
+        failed += 1
+      }
+    }
+
+    lastRestoreKey = restoreKey
+    touchSync()
+    return { attempted: sources.length + consumers.length, failed }
+  })()
+  try {
+    return await restorePromise
+  } finally {
+    restorePromise = null
+  }
+}
+
 const textFramesFor = (deliveryId: string) => state.textFramesByDelivery[String(deliveryId ?? "").trim()] ?? []
 const statsFor = (deliveryId: string) => state.statsByDelivery[String(deliveryId ?? "").trim()] ?? null
+const sourceById = (sourceId: string, scope: "local" | "catalog" | "any" = "any") => {
+  const normalized = String(sourceId ?? "").trim()
+  if (!normalized) return null
+  if (scope === "local") return state.localSources.find((item) => item.sourceId === normalized) ?? null
+  if (scope === "catalog") return state.sources.find((item) => item.sourceId === normalized) ?? null
+  return state.localSources.find((item) => item.sourceId === normalized) ?? state.sources.find((item) => item.sourceId === normalized) ?? null
+}
+
+const consumerById = (consumerId: string, scope: "local" | "catalog" | "any" = "any") => {
+  const normalized = String(consumerId ?? "").trim()
+  if (!normalized) return null
+  if (scope === "local") return state.localConsumers.find((item) => item.consumerId === normalized) ?? null
+  if (scope === "catalog") return state.consumers.find((item) => item.consumerId === normalized) ?? null
+  return state.localConsumers.find((item) => item.consumerId === normalized) ?? state.consumers.find((item) => item.consumerId === normalized) ?? null
+}
+
+const deliveriesForSource = (sourceId: string) => state.deliveries.filter((item) => item.sourceId === String(sourceId ?? "").trim())
+const deliveriesForConsumer = (consumerId: string) => state.deliveries.filter((item) => item.consumerId === String(consumerId ?? "").trim())
 
 const selectSource = (sourceId: string) => {
   state.selectedSourceId = String(sourceId ?? "").trim()
@@ -618,12 +823,23 @@ const selectDelivery = (deliveryId: string) => {
 }
 
 const setIdentity = (nodeId: number, hubId: number) => {
-  state.selfNodeId = Number(nodeId || 0)
-  state.defaultTargetId = Number(hubId || 0)
+  const nextNodeID = Number(nodeId || 0)
+  const nextHubID = Number(hubId || 0)
+  const changed = state.selfNodeId !== nextNodeID || state.defaultTargetId !== nextHubID
+  state.selfNodeId = nextNodeID
+  state.defaultTargetId = nextHubID
+  applyLocalIdentity()
+  if (changed) resetRestoreState()
 }
 
 const setTargetId = (value: string) => {
   state.targetId = String(value ?? "").trim()
+  if (!state.targetId || /^\d+$/.test(state.targetId)) void savePrefsBestEffort()
+}
+
+const setActiveTab = (tab: StreamTab) => {
+  state.activeTab = normalizeTab(tab)
+  void savePrefsBestEffort()
 }
 
 const ensureListeners = () => {
@@ -669,17 +885,26 @@ export const useStreamStore = () => {
     announceConsumer,
     announceSource,
     connect,
+    consumerById,
+    deliveriesForConsumer,
+    deliveriesForSource,
     disconnect,
     listConsumers,
     listSources,
     loadDeliveries,
+    loadPrefs,
+    publishText,
     resolveTargetId,
+    restoreLocalCatalogs,
+    savePrefs,
     selectConsumer,
     selectDelivery,
     selectSource,
+    setActiveTab,
     setIdentity,
     setTargetId,
     signal,
+    sourceById,
     statsFor,
     subscribe,
     textFramesFor,

@@ -30,6 +30,7 @@ import { useFileStore } from "@/stores/file"
 import { useLanguageStore } from "@/stores/language"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
+import { useStreamStore } from "@/stores/stream"
 import { useToastStore } from "@/stores/toast"
 import { useVarPoolStore } from "@/stores/varpool"
 
@@ -48,6 +49,7 @@ const appSettings = useAppSettingsStore()
 const languageStore = useLanguageStore()
 const profileStore = useProfileStore()
 const sessionStore = useSessionStore()
+const stream = useStreamStore()
 const toast = useToastStore()
 const varpool = useVarPoolStore()
 const { locale } = useI18n()
@@ -130,6 +132,45 @@ const restoreVarPoolSubs = async () => {
   }
 }
 
+let streamStorageEpoch = 0
+const loadStreamStorage = async () => {
+  const myEpoch = ++streamStorageEpoch
+  try {
+    await stream.loadPrefs()
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to load Stream settings."))
+  }
+  if (streamStorageEpoch !== myEpoch) return
+
+  const connected = Boolean(sessionStore.connected)
+  const loggedIn = Boolean(sessionStore.auth.loggedIn)
+  const nodeId = Number(sessionStore.auth.nodeId || 0)
+  const hubId = Number(sessionStore.auth.hubId || 0)
+  stream.setIdentity(nodeId, hubId)
+  if (connected && loggedIn && nodeId > 0 && hubId > 0) {
+    void restoreStreamCatalogs()
+  }
+}
+
+let streamRestoreEpoch = 0
+const restoreStreamCatalogs = async () => {
+  const myEpoch = ++streamRestoreEpoch
+  try {
+    const result = await stream.restoreLocalCatalogs()
+    if (streamRestoreEpoch !== myEpoch) return
+    if (result.attempted && result.failed) {
+      toast.warn(
+        t("Stream auto-restore incomplete."),
+        t("{failed}/{attempted} failed.", { failed: result.failed, attempted: result.attempted })
+      )
+    }
+  } catch (err) {
+    if (streamRestoreEpoch !== myEpoch) return
+    console.warn(err)
+  }
+}
+
 watch(
   () => profileStore.state.current,
   () => {
@@ -156,6 +197,7 @@ watch(
   () => profileStore.state.current,
   () => {
     void loadVarPoolStorage()
+    void loadStreamStorage()
   },
   { immediate: true }
 )
@@ -164,8 +206,10 @@ watch(
   () => [sessionStore.connected, sessionStore.auth.loggedIn, sessionStore.auth.nodeId, sessionStore.auth.hubId],
   ([connected, loggedIn, nodeId, hubId]) => {
     varpool.setIdentity(Number(nodeId || 0), Number(hubId || 0))
+    stream.setIdentity(Number(nodeId || 0), Number(hubId || 0))
     if (connected && loggedIn && Number(nodeId || 0) > 0 && Number(hubId || 0) > 0) {
       void restoreVarPoolSubs()
+      void restoreStreamCatalogs()
     }
   }
 )
