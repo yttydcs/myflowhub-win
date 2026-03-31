@@ -23,15 +23,21 @@ vi.mock("../../wailsjs/runtime/runtime", () => ({
 import { useStreamStore } from "./stream"
 
 const store = useStreamStore()
+const streamPrefs = vi.fn()
+const saveStreamPrefs = vi.fn()
 const listSourcesSimple = vi.fn()
 const listConsumersSimple = vi.fn()
-const connectSimple = vi.fn()
-const disconnectSimple = vi.fn()
+const announceSimple = vi.fn()
+const announceConsumerSimple = vi.fn()
+const publishTextSimple = vi.fn()
 
 const resetState = () => {
+  store.state.activeTab = "source"
   store.state.targetId = ""
   store.state.selfNodeId = 0
   store.state.defaultTargetId = 0
+  store.state.localSources = []
+  store.state.localConsumers = []
   store.state.sources = []
   store.state.consumers = []
   store.state.deliveries = []
@@ -44,28 +50,31 @@ const resetState = () => {
   store.state.statsByDelivery = {}
 }
 
-const emitRuntimeEvent = (name: string, payload: any) => {
-  const handler = runtimeState.listeners[name]
-  if (!handler) {
-    throw new Error(`listener ${name} not registered`)
-  }
-  handler(payload)
-}
-
 beforeEach(() => {
   setLocale("en")
   resetState()
+  streamPrefs.mockReset()
+  saveStreamPrefs.mockReset()
   listSourcesSimple.mockReset()
   listConsumersSimple.mockReset()
-  connectSimple.mockReset()
-  disconnectSimple.mockReset()
+  announceSimple.mockReset()
+  announceConsumerSimple.mockReset()
+  publishTextSimple.mockReset()
   ;(window as any).go = {
+    main: {
+      App: {
+        StreamPrefs: streamPrefs,
+        SaveStreamPrefs: saveStreamPrefs
+      }
+    },
     stream: {
       StreamService: {
         ListSourcesSimple: listSourcesSimple,
         ListConsumersSimple: listConsumersSimple,
-        ConnectSimple: connectSimple,
-        DisconnectSimple: disconnectSimple
+        AnnounceSimple: announceSimple,
+        AnnounceConsumerSimple: announceConsumerSimple,
+        PublishTextSimple: publishTextSimple,
+        DeliverySnapshot: vi.fn(async () => [])
       }
     }
   }
@@ -73,176 +82,159 @@ beforeEach(() => {
 })
 
 describe("stream store", () => {
-  it("normalizes stream catalogs and updates delivery state through connect/disconnect", async () => {
+  it("loads persisted local catalogs and restores them through announce bindings", async () => {
+    streamPrefs.mockResolvedValueOnce({
+      activeTab: "consumer",
+      targetId: 9,
+      sources: [
+        {
+          sourceId: "source-1",
+          name: "Local Text Source",
+          kind: "text",
+          contentType: "text/plain",
+          mode: "live",
+          unitMode: "frame",
+          tags: ["alpha"],
+          metadataRaw: "{\"room\":1}"
+        }
+      ],
+      consumers: [
+        {
+          consumerId: "consumer-1",
+          name: "Local Consumer",
+          kind: "text",
+          contentType: "text/plain",
+          tags: ["alpha"],
+          metadataRaw: "{\"buffer\":32}"
+        }
+      ]
+    })
+    announceSimple.mockResolvedValueOnce({
+      source: {
+        source_id: "source-1",
+        producer: 7,
+        name: "Local Text Source",
+        kind: "text",
+        content_type: "text/plain",
+        mode: "live",
+        unit_mode: "frame",
+        tags: ["alpha"],
+        metadata: { room: 1 }
+      }
+    })
+    announceConsumerSimple.mockResolvedValueOnce({
+      consumer_endpoint: {
+        consumer_id: "consumer-1",
+        consumer: 7,
+        name: "Local Consumer",
+        kind: "text",
+        content_type: "text/plain",
+        tags: ["alpha"],
+        metadata: { buffer: 32 }
+      }
+    })
+
+    await store.loadPrefs()
+    const result = await store.restoreLocalCatalogs()
+
+    expect(store.state.activeTab).toBe("consumer")
+    expect(store.state.targetId).toBe("9")
+    expect(store.state.localSources[0]).toMatchObject({ sourceId: "source-1", producer: 7 })
+    expect(store.state.localConsumers[0]).toMatchObject({ consumerId: "consumer-1", consumer: 7 })
+    expect(result).toEqual({ attempted: 2, failed: 0 })
+    expect(announceSimple).toHaveBeenCalledWith(7, 9, {
+      req_id: "",
+      source: {
+        source_id: "source-1",
+        name: "Local Text Source",
+        kind: "text",
+        content_type: "text/plain",
+        mode: "live",
+        unit_mode: "frame",
+        tags: ["alpha"],
+        metadata: { room: 1 }
+      }
+    })
+    expect(announceConsumerSimple).toHaveBeenCalledWith(7, 9, {
+      req_id: "",
+      consumer_endpoint: {
+        consumer_id: "consumer-1",
+        name: "Local Consumer",
+        kind: "text",
+        content_type: "text/plain",
+        tags: ["alpha"],
+        metadata: { buffer: 32 }
+      }
+    })
+  })
+
+  it("keeps remote catalog queries separate from local saved sources", async () => {
+    store.state.localSources = [
+      {
+        sourceId: "source-local",
+        producer: 7,
+        name: "Saved Local",
+        kind: "text",
+        contentType: "text/plain",
+        mode: "live",
+        unitMode: "frame",
+        tags: [],
+        metadataRaw: ""
+      }
+    ]
     listSourcesSimple.mockResolvedValueOnce({
       sources: [
         {
-          source_id: "source-1",
+          source_id: "source-remote",
           producer: 12,
-          name: "Demo Source",
+          name: "Remote Source",
           kind: "text",
           content_type: "text/plain",
           mode: "live",
           unit_mode: "frame",
-          tags: ["alpha", "beta"],
-          metadata: { channel: "room-1" }
+          tags: ["alpha"]
         }
       ]
     })
-    listConsumersSimple.mockResolvedValueOnce({
-      consumer_endpoints: [
-        {
-          consumer_id: "consumer-1",
-          consumer: 7,
-          name: "Local Consumer",
-          kind: "text",
-          content_type: "text/plain",
-          tags: ["alpha"],
-          metadata: { buffer: 32 }
-        }
-      ]
-    })
-    connectSimple.mockResolvedValueOnce({
-      code: 1,
-      accept: true,
-      delivery_id: "delivery-1",
-      producer: 12,
-      consumer: 7,
-      consumer_id: "consumer-1",
-      source: {
-        source_id: "source-1",
-        kind: "text",
-        content_type: "text/plain",
-        mode: "live",
-        unit_mode: "frame"
-      }
-    })
-    disconnectSimple.mockResolvedValueOnce({ code: 1 })
 
     const sources = await store.listSources("12", "text", "alpha")
-    const consumers = await store.listConsumers("7", "text", "alpha")
-    const delivery = await store.connect({
-      producer: 12,
-      sourceId: "source-1",
-      consumer: 7,
-      consumerId: "consumer-1"
-    })
-    await store.disconnect("delivery-1")
 
-    expect(listSourcesSimple).toHaveBeenCalledWith(7, 9, {
-      req_id: "",
-      producer: 12,
-      kind: "text",
-      tag: "alpha"
-    })
     expect(sources).toHaveLength(1)
-    expect(sources[0]).toMatchObject({
-      sourceId: "source-1",
-      kind: "text",
-      contentType: "text/plain",
-      mode: "live",
-      unitMode: "frame",
-      tags: ["alpha", "beta"]
-    })
-    expect(sources[0].metadataRaw).toContain("\"channel\": \"room-1\"")
-
-    expect(listConsumersSimple).toHaveBeenCalledWith(7, 9, {
-      req_id: "",
-      consumer: 7,
-      kind: "text",
-      tag: "alpha"
-    })
-    expect(consumers).toHaveLength(1)
-    expect(consumers[0]).toMatchObject({
-      consumerId: "consumer-1",
-      consumer: 7,
-      kind: "text",
-      contentType: "text/plain"
-    })
-    expect(consumers[0].metadataRaw).toContain("\"buffer\": 32")
-
-    expect(connectSimple).toHaveBeenCalledWith(7, 9, {
-      req_id: "",
-      producer: 12,
-      source_id: "source-1",
-      consumer: 7,
-      consumer_id: "consumer-1"
-    })
-    expect(delivery).toMatchObject({
-      deliveryId: "delivery-1",
-      sourceId: "source-1",
-      consumerId: "consumer-1",
-      kind: "text",
-      state: "active"
-    })
-    expect(store.state.selectedDeliveryId).toBe("delivery-1")
-    expect(store.state.deliveries[0]).toMatchObject({
-      deliveryId: "delivery-1",
-      state: "closed"
-    })
+    expect(store.state.sources[0]).toMatchObject({ sourceId: "source-remote", producer: 12 })
+    expect(store.state.localSources[0]).toMatchObject({ sourceId: "source-local", producer: 7 })
   })
 
-  it("keeps bounded text history and mirrors stats events into deliveries", () => {
-    emitRuntimeEvent("stream.delivery", {
-      deliveryId: "delivery-2",
-      sourceId: "source-2",
-      producer: 18,
-      consumer: 7,
-      consumerId: "consumer-2",
-      kind: "text",
-      contentType: "text/plain",
-      state: "active",
-      updatedAt: "2026-03-28T08:00:00Z"
-    })
-
-    for (let index = 0; index < 205; index += 1) {
-      emitRuntimeEvent("stream.text", {
-        deliveryId: "delivery-2",
+  it("publishes text through the new binding for local text sources", async () => {
+    store.state.localSources = [
+      {
+        sourceId: "source-1",
+        producer: 7,
+        name: "Local Text Source",
         kind: "text",
-        text: `frame-${index}`,
-        position: index,
-        ptsMs: index * 10,
-        flags: 0,
-        updatedAt: `2026-03-28T08:00:${String(index % 60).padStart(2, "0")}Z`
-      })
-    }
-
-    emitRuntimeEvent("stream.stats", {
-      deliveryId: "delivery-2",
-      kind: "text",
-      bytesIn: 4096,
-      framesIn: 205,
-      lastPosition: 204,
-      lastPtsMs: 2040,
-      lastAckPos: 128,
-      lastFlags: 3,
-      updatedAt: "2026-03-28T08:05:00Z"
+        contentType: "text/plain",
+        mode: "live",
+        unitMode: "frame",
+        tags: [],
+        metadataRaw: ""
+      }
+    ]
+    publishTextSimple.mockResolvedValueOnce({
+      code: 1,
+      source_id: "source-1",
+      sent: 2,
+      delivery_ids: ["delivery-1", "delivery-2"]
     })
 
-    const frames = store.textFramesFor("delivery-2")
-    const stats = store.statsFor("delivery-2")
+    const result = await store.publishText("source-1", "hello world")
 
-    expect(store.state.selectedDeliveryId).toBe("delivery-2")
-    expect(frames).toHaveLength(200)
-    expect(frames[0].text).toBe("frame-5")
-    expect(frames[199].text).toBe("frame-204")
-    expect(stats).toMatchObject({
-      deliveryId: "delivery-2",
-      bytesIn: 4096,
-      framesIn: 205,
-      lastPosition: 204,
-      lastAckPos: 128,
-      lastFlags: 3
+    expect(publishTextSimple).toHaveBeenCalledWith(7, {
+      source_id: "source-1",
+      text: "hello world"
     })
-    expect(store.state.deliveries[0]).toMatchObject({
-      deliveryId: "delivery-2",
-      bytesIn: 4096,
-      framesIn: 205,
-      lastPosition: 204,
-      lastAckPos: 128,
-      lastFlags: 3,
-      updatedAt: "2026-03-28T08:05:00Z"
+    expect(result).toEqual({
+      sourceId: "source-1",
+      sent: 2,
+      deliveryIds: ["delivery-1", "delivery-2"]
     })
-    expect(store.state.lastEventAt).not.toBe("")
   })
 })

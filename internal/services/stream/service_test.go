@@ -200,7 +200,7 @@ func TestHandleDataPublishesTextEventAndSnapshot(t *testing.T) {
 	})
 	defer bus.Unsubscribe(EventStreamText, token)
 
-	payload := buildDataPayload(t, deliveryID, 5, 120, []byte("hello stream"))
+	payload := buildTestDataPayload(t, deliveryID, 5, 120, []byte("hello stream"))
 	svc.handleFrame(sessionsvc.FrameEvent{
 		Major:    header.MajorMsg,
 		SubProto: proto.SubProtoStream,
@@ -501,7 +501,7 @@ func TestLocalConsumerDeliveryLifecycleSendsAckAndCloses(t *testing.T) {
 		SubProto: proto.SubProtoStream,
 		SourceID: 99,
 		TargetID: 21,
-		Payload:  buildDataPayload(t, deliveryID, 5, 120, []byte("hello local consumer")),
+		Payload:  buildTestDataPayload(t, deliveryID, 5, 120, []byte("hello local consumer")),
 	}, nil)
 
 	select {
@@ -662,7 +662,104 @@ func TestLocalProducerDeliveryLifecycleTracksAckAndCloses(t *testing.T) {
 	}
 }
 
-func buildDataPayload(t *testing.T, deliveryID string, position, pts uint64, body []byte) []byte {
+func TestPublishTextSimpleSendsDataToActiveProducerDeliveries(t *testing.T) {
+	session := &recordingStreamSession{}
+	svc := &StreamService{
+		session:    session,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	sourceResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "source-1",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-text",
+			Producer: 21,
+			Kind:     proto.StreamKindText,
+			Mode:     proto.ModeLive,
+			UnitMode: proto.UnitModeFrame,
+		},
+	})
+	if sourceResp.Code != 1 {
+		t.Fatalf("announce source failed: %+v", sourceResp)
+	}
+
+	deliveryID := uuid.NewString()
+	prepareResp := svc.prepareProducerLocal(21, deliveryPrepareReq{
+		ReqID:      "prepare-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+		Producer:   21,
+		SourceID:   "source-text",
+		Consumer:   99,
+		ConsumerID: "consumer-1",
+	})
+	if prepareResp.Code != 1 {
+		t.Fatalf("prepare producer failed: %+v", prepareResp)
+	}
+	activateResp := svc.handleDeliveryActivateLocal(deliveryActivateReq{
+		ReqID:      "activate-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+	})
+	if activateResp.Code != 1 {
+		t.Fatalf("activate producer failed: %+v", activateResp)
+	}
+
+	resp, err := svc.PublishTextSimple(21, PublishTextReq{SourceID: "source-text", Text: "hello producer"})
+	if err != nil {
+		t.Fatalf("PublishTextSimple() error = %v", err)
+	}
+	if resp.Code != 1 || resp.Sent != 1 || len(resp.DeliveryIDs) != 1 || resp.DeliveryIDs[0] != deliveryID {
+		t.Fatalf("unexpected publish response: %+v", resp)
+	}
+	if len(session.frames) != 1 {
+		t.Fatalf("expected 1 data frame got %d", len(session.frames))
+	}
+	sent := session.frames[0]
+	if sent.Major != header.MajorMsg || sent.SubProto != proto.SubProtoStream || sent.SourceID != 21 || sent.TargetID != 99 {
+		t.Fatalf("unexpected sent frame routing: %+v", sent)
+	}
+	packet, err := parseDataPacket(sent.Payload)
+	if err != nil {
+		t.Fatalf("parse data payload: %v", err)
+	}
+	if packet.DeliveryID != deliveryID || packet.Position != 0 || string(packet.Body) != "hello producer" {
+		t.Fatalf("unexpected packet: %+v", packet)
+	}
+
+	snapshot := svc.DeliverySnapshot()
+	if len(snapshot) != 1 || snapshot[0].FramesIn != 1 || snapshot[0].BytesIn != uint64(len("hello producer")) || snapshot[0].LastPosition != 0 {
+		t.Fatalf("unexpected snapshot after publish: %+v", snapshot)
+	}
+}
+
+func TestPublishTextSimpleRejectsSourceWithoutActiveDeliveries(t *testing.T) {
+	svc := &StreamService{
+		session:    &recordingStreamSession{},
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	sourceResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "source-1",
+		Source: proto.SourceDescriptor{
+			SourceID: "source-text",
+			Producer: 21,
+			Kind:     proto.StreamKindText,
+		},
+	})
+	if sourceResp.Code != 1 {
+		t.Fatalf("announce source failed: %+v", sourceResp)
+	}
+
+	_, err := svc.PublishTextSimple(21, PublishTextReq{SourceID: "source-text", Text: "hello"})
+	if err == nil || err.Error() != "no active deliveries" {
+		t.Fatalf("expected no active deliveries error got %v", err)
+	}
+}
+
+func buildTestDataPayload(t *testing.T, deliveryID string, position, pts uint64, body []byte) []byte {
 	t.Helper()
 	id := uuid.MustParse(deliveryID)
 	payload := make([]byte, streamFrameHeaderLen+len(body))

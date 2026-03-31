@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-03-31_win-stream-product-tabs.md](2026-03-31_win-stream-product-tabs.md)
   - [2026-03-29_win-stream-local-owner.md](2026-03-29_win-stream-local-owner.md)
   - [2026-03-29_win-stream-announce-timeout.md](2026-03-29_win-stream-announce-timeout.md)
   - [2026-03-29_win-run-dev-proto-path.md](2026-03-29_win-run-dev-proto-path.md)

@@ -6,9 +6,30 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setLocale } from "@/i18n"
 
 const streamState = reactive({
+  activeTab: "source",
   targetId: "",
   selfNodeId: 0,
   defaultTargetId: 0,
+  localSources: [] as Array<{
+    sourceId: string
+    producer: number
+    name: string
+    kind: string
+    contentType: string
+    mode: string
+    unitMode: string
+    tags: string[]
+    metadataRaw: string
+  }>,
+  localConsumers: [] as Array<{
+    consumerId: string
+    consumer: number
+    name: string
+    kind: string
+    contentType: string
+    tags: string[]
+    metadataRaw: string
+  }>,
   sources: [] as Array<{
     sourceId: string
     producer: number
@@ -46,14 +67,17 @@ const streamState = reactive({
   selectedDeliveryId: "",
   lastSyncAt: "",
   lastEventAt: "",
-  textFramesByDelivery: {} as Record<string, unknown[]>,
+  textFramesByDelivery: {} as Record<string, Array<{ text: string; position: number; updatedAt: string; deliveryId: string }>>,
   statsByDelivery: {} as Record<string, unknown>
 })
 
 const resetStreamState = () => {
+  streamState.activeTab = "source"
   streamState.targetId = ""
   streamState.selfNodeId = 0
   streamState.defaultTargetId = 0
+  streamState.localSources = []
+  streamState.localConsumers = []
   streamState.sources = []
   streamState.consumers = []
   streamState.deliveries = []
@@ -75,12 +99,50 @@ const streamStore = {
   setTargetId: vi.fn((value: string) => {
     streamState.targetId = String(value ?? "").trim()
   }),
-  listSources: vi.fn(async () => streamState.sources),
-  listConsumers: vi.fn(async () => streamState.consumers),
+  setActiveTab: vi.fn((value: "source" | "consumer" | "control") => {
+    streamState.activeTab = value
+  }),
+  loadPrefs: vi.fn(async () => undefined),
   loadDeliveries: vi.fn(async () => streamState.deliveries),
+  listSources: vi.fn(async (producer: string, _kind = "", _tag = "", scope = "catalog") => {
+    if (scope === "catalog") {
+      streamState.sources = [
+        {
+          sourceId: "remote-source-1",
+          producer: Number(producer || 12) || 12,
+          name: "Remote Source",
+          kind: "text",
+          contentType: "text/plain",
+          mode: "live",
+          unitMode: "frame",
+          tags: ["alpha"],
+          metadataRaw: ""
+        }
+      ]
+      return streamState.sources
+    }
+    return streamState.localSources
+  }),
+  listConsumers: vi.fn(async (_consumer: string, _kind = "", _tag = "", scope = "catalog") => {
+    if (scope === "catalog") {
+      streamState.consumers = [
+        {
+          consumerId: "remote-consumer-1",
+          consumer: 21,
+          name: "Remote Consumer",
+          kind: "text",
+          contentType: "text/plain",
+          tags: [],
+          metadataRaw: ""
+        }
+      ]
+      return streamState.consumers
+    }
+    return streamState.localConsumers
+  }),
   announceSource: vi.fn(async (draft: { name: string; kind: string; contentType: string; mode: string; unitMode: string; tagsText: string; metadataText: string }) => {
     const source = {
-      sourceId: `source-${streamState.sources.length + 1}`,
+      sourceId: `source-${streamState.localSources.length + 1}`,
       producer: streamState.selfNodeId || 7,
       name: draft.name,
       kind: draft.kind,
@@ -90,13 +152,12 @@ const streamStore = {
       tags: [],
       metadataRaw: draft.metadataText
     }
-    streamState.sources = [source, ...streamState.sources]
-    streamState.selectedSourceId = source.sourceId
+    streamState.localSources = [source, ...streamState.localSources]
     return source
   }),
   announceConsumer: vi.fn(async (draft: { name: string; kind: string; contentType: string; metadataText: string }) => {
     const consumer = {
-      consumerId: `consumer-${streamState.consumers.length + 1}`,
+      consumerId: `consumer-${streamState.localConsumers.length + 1}`,
       consumer: streamState.selfNodeId || 7,
       name: draft.name,
       kind: draft.kind,
@@ -104,17 +165,31 @@ const streamStore = {
       tags: [],
       metadataRaw: draft.metadataText
     }
-    streamState.consumers = [consumer, ...streamState.consumers]
-    streamState.selectedConsumerId = consumer.consumerId
+    streamState.localConsumers = [consumer, ...streamState.localConsumers]
     return consumer
   }),
-  connect: vi.fn(async () => undefined),
+  publishText: vi.fn(async () => ({ sourceId: "source-1", sent: 1, deliveryIds: ["delivery-1"] })),
   subscribe: vi.fn(async () => undefined),
+  connect: vi.fn(async () => undefined),
   disconnect: vi.fn(async () => undefined),
   unsubscribe: vi.fn(async () => undefined),
   signal: vi.fn(async () => undefined),
   withdrawSource: vi.fn(async () => undefined),
   withdrawConsumer: vi.fn(async () => undefined),
+  sourceById: vi.fn((sourceId: string, scope = "any") => {
+    const normalized = String(sourceId ?? "").trim()
+    if (scope === "local") return streamState.localSources.find((item) => item.sourceId === normalized) ?? null
+    if (scope === "catalog") return streamState.sources.find((item) => item.sourceId === normalized) ?? null
+    return streamState.localSources.find((item) => item.sourceId === normalized) ?? streamState.sources.find((item) => item.sourceId === normalized) ?? null
+  }),
+  consumerById: vi.fn((consumerId: string, scope = "any") => {
+    const normalized = String(consumerId ?? "").trim()
+    if (scope === "local") return streamState.localConsumers.find((item) => item.consumerId === normalized) ?? null
+    if (scope === "catalog") return streamState.consumers.find((item) => item.consumerId === normalized) ?? null
+    return streamState.localConsumers.find((item) => item.consumerId === normalized) ?? streamState.consumers.find((item) => item.consumerId === normalized) ?? null
+  }),
+  deliveriesForSource: vi.fn((sourceId: string) => streamState.deliveries.filter((item) => item.sourceId === sourceId)),
+  deliveriesForConsumer: vi.fn((consumerId: string) => streamState.deliveries.filter((item) => item.consumerId === consumerId)),
   selectSource: vi.fn((sourceId: string) => {
     streamState.selectedSourceId = sourceId
   }),
@@ -124,7 +199,7 @@ const streamStore = {
   selectDelivery: vi.fn((deliveryId: string) => {
     streamState.selectedDeliveryId = deliveryId
   }),
-  textFramesFor: vi.fn(() => []),
+  textFramesFor: vi.fn((deliveryId: string) => streamState.textFramesByDelivery[deliveryId] ?? []),
   statsFor: vi.fn(() => null)
 }
 
@@ -162,12 +237,7 @@ const PageHeroStub = defineComponent({
   props: {
     description: { type: String, default: "" }
   },
-  template: `
-    <section>
-      <p v-if="description">{{ description }}</p>
-      <slot name="actions" />
-    </section>
-  `
+  template: `<section><p v-if="description">{{ description }}</p><slot name="actions" /></section>`
 })
 
 const CardHeaderStub = defineComponent({
@@ -175,13 +245,7 @@ const CardHeaderStub = defineComponent({
     title: { type: String, default: "" },
     description: { type: String, default: "" }
   },
-  template: `
-    <section>
-      <h2>{{ title }}</h2>
-      <p v-if="description">{{ description }}</p>
-      <slot name="actions" />
-    </section>
-  `
+  template: `<section><h2>{{ title }}</h2><p v-if="description">{{ description }}</p><slot name="actions" /></section>`
 })
 
 const ButtonStub = defineComponent({
@@ -224,23 +288,26 @@ describe("Stream page", () => {
     sessionStore.auth.hubId = 9
   })
 
-  it("auto-loads catalogs on first render while keeping add forms inside dialogs", async () => {
+  it("renders the new tabbed source workspace and keeps create form inside a dialog", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
     await nextTick()
 
     expect(streamStore.setIdentity).toHaveBeenCalledWith(7, 9)
-    expect(streamStore.setTargetId).toHaveBeenCalledWith("9")
-    expect(streamStore.listSources).toHaveBeenCalledWith("7", "", "")
-    expect(streamStore.listConsumers).toHaveBeenCalledWith("7", "", "")
-    expect(streamStore.loadDeliveries).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain("查看流目录、连接所需端点，并只在需要时打开新增表单。")
+    expect(wrapper.text()).toContain("管理已保存的本地 Source")
+    expect(wrapper.text()).toContain("源")
+    expect(wrapper.text()).toContain("消费者")
+    expect(wrapper.text()).toContain("控制")
     expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(false)
-    expect(wrapper.find("[data-stream-consumer-dialog]").exists()).toBe(false)
+
+    await wrapper.get("[data-stream-open-source]").trigger("click")
+    await nextTick()
+
+    expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(true)
   })
 
-  it("opens the source dialog on demand and closes it after creating a local source", async () => {
+  it("creates a local source from the dialog and opens the source studio to send text", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
@@ -248,9 +315,6 @@ describe("Stream page", () => {
 
     await wrapper.get("[data-stream-open-source]").trigger("click")
     await nextTick()
-
-    expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(true)
-
     await wrapper.get("#stream-source-name").setValue("Local Text Source")
     await wrapper.get("[data-stream-submit-source]").trigger("click")
     await Promise.resolve()
@@ -258,7 +322,55 @@ describe("Stream page", () => {
 
     expect(streamStore.announceSource).toHaveBeenCalledTimes(1)
     expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(false)
-    expect(streamState.sources).toHaveLength(1)
-    expect(streamState.sources[0].name).toBe("Local Text Source")
+    expect(streamState.localSources).toHaveLength(1)
+
+    await wrapper.get("[data-stream-open-studio]").trigger("click")
+    await nextTick()
+    await wrapper.get("#stream-source-studio-input").setValue("hello stream")
+    await wrapper.get("[data-stream-submit-studio]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(streamStore.publishText).toHaveBeenCalledWith(streamState.localSources[0].sourceId, "hello stream")
+    expect(wrapper.find("[data-stream-source-studio]").exists()).toBe(true)
+  })
+
+  it("opens the subscribe dialog from a local consumer and subscribes the selected source", async () => {
+    streamState.localConsumers = [
+      {
+        consumerId: "consumer-1",
+        consumer: 7,
+        name: "Local Consumer",
+        kind: "text",
+        contentType: "text/plain",
+        tags: [],
+        metadataRaw: ""
+      }
+    ]
+
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    await wrapper.get("button[aria-pressed='false']").trigger("click")
+    await nextTick()
+    await wrapper.get("[data-stream-open-subscribe]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(wrapper.find("[data-stream-subscribe-dialog]").exists()).toBe(true)
+    expect(streamStore.listSources).toHaveBeenCalled()
+
+    await wrapper.get("[data-stream-subscribe-source-row]").trigger("click")
+    await wrapper.get("[data-stream-submit-subscribe]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(streamStore.subscribe).toHaveBeenCalledWith({
+      producer: streamState.sources[0].producer,
+      sourceId: streamState.sources[0].sourceId,
+      consumerId: "consumer-1"
+    })
   })
 })
