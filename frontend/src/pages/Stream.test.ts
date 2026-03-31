@@ -218,6 +218,10 @@ const toastStore = {
   info: vi.fn()
 }
 
+const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => ({
+  focus: vi.fn()
+}) as unknown as Window)
+
 vi.mock("@/stores/stream", () => ({
   streamKinds: ["music", "video", "text", "custom"],
   useStreamStore: () => streamStore
@@ -288,17 +292,18 @@ describe("Stream page", () => {
     sessionStore.auth.hubId = 9
   })
 
-  it("renders the new tabbed source workspace and keeps create form inside a dialog", async () => {
+  it("renders the compact tabbed stream page and removes the old summary cards", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
     await nextTick()
 
     expect(streamStore.setIdentity).toHaveBeenCalledWith(7, 9)
-    expect(wrapper.text()).toContain("管理已保存的本地 Source")
     expect(wrapper.text()).toContain("源")
     expect(wrapper.text()).toContain("消费者")
     expect(wrapper.text()).toContain("控制")
+    expect(wrapper.text()).not.toContain("已保存 Source")
+    expect(wrapper.text()).not.toContain("已保存 Consumer")
     expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(false)
 
     await wrapper.get("[data-stream-open-source]").trigger("click")
@@ -307,7 +312,7 @@ describe("Stream page", () => {
     expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(true)
   })
 
-  it("creates a local source from the dialog and opens the source studio to send text", async () => {
+  it("creates a local source from the dialog and opens the dedicated source input window", async () => {
     const wrapper = mountPage()
 
     await Promise.resolve()
@@ -324,15 +329,13 @@ describe("Stream page", () => {
     expect(wrapper.find("[data-stream-source-dialog]").exists()).toBe(false)
     expect(streamState.localSources).toHaveLength(1)
 
-    await wrapper.get("[data-stream-open-studio]").trigger("click")
-    await nextTick()
-    await wrapper.get("#stream-source-studio-input").setValue("hello stream")
-    await wrapper.get("[data-stream-submit-studio]").trigger("click")
-    await Promise.resolve()
-    await nextTick()
+    await wrapper.get("[data-stream-open-source-window]").trigger("click")
 
-    expect(streamStore.publishText).toHaveBeenCalledWith(streamState.localSources[0].sourceId, "hello stream")
-    expect(wrapper.find("[data-stream-source-studio]").exists()).toBe(true)
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      expect.stringContaining("#/stream-source-window?sourceId=source-1"),
+      expect.stringContaining("stream_source_source-1_"),
+      "width=1100,height=780"
+    )
   })
 
   it("opens the subscribe dialog from a local consumer and subscribes the selected source", async () => {
@@ -353,7 +356,7 @@ describe("Stream page", () => {
     await Promise.resolve()
     await nextTick()
 
-    await wrapper.get("button[aria-pressed='false']").trigger("click")
+    await wrapper.get("[data-stream-tab='consumer']").trigger("click")
     await nextTick()
     await wrapper.get("[data-stream-open-subscribe]").trigger("click")
     await Promise.resolve()
@@ -372,5 +375,38 @@ describe("Stream page", () => {
       sourceId: streamState.sources[0].sourceId,
       consumerId: "consumer-1"
     })
+  })
+
+  it("opens a dedicated delivery output window from the control tab", async () => {
+    streamState.deliveries = [
+      {
+        deliveryId: "delivery-1",
+        producer: 7,
+        consumer: 9,
+        consumerId: "consumer-1",
+        sourceId: "source-1",
+        kind: "text",
+        state: "active",
+        bytesIn: 12,
+        framesIn: 3,
+        updatedAt: "2026-03-31T12:00:00Z"
+      }
+    ]
+
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    await wrapper.get("[data-stream-tab='control']").trigger("click")
+    await nextTick()
+    await wrapper.get("[data-stream-open-delivery-window]").trigger("click")
+
+    expect(streamStore.selectDelivery).toHaveBeenCalledWith("delivery-1")
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      expect.stringContaining("#/stream-delivery-window?deliveryId=delivery-1"),
+      expect.stringContaining("stream_delivery_delivery-1_"),
+      "width=1180,height=820"
+    )
   })
 })

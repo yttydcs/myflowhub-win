@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue"
-import { Cable, Pause, Play, Plus, RefreshCw, ScanSearch, Send, Target } from "lucide-vue-next"
+import { Cable, Pause, Play, Plus, RefreshCw, ScanSearch, Target } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { t } from "@/i18n"
-import { streamKinds, type StreamConsumer, type StreamConsumerDraft, type StreamSource, type StreamSourceDraft, type StreamTab, useStreamStore } from "@/stores/stream"
+import {
+  streamKinds,
+  type StreamConsumer,
+  type StreamConsumerDraft,
+  type StreamDelivery,
+  type StreamSource,
+  type StreamSourceDraft,
+  type StreamTab,
+  useStreamStore
+} from "@/stores/stream"
 import { useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 
@@ -17,7 +26,6 @@ const toast = useToastStore()
 
 const sourceNameInputId = "stream-source-name"
 const consumerNameInputId = "stream-consumer-name"
-const sourceStudioInputId = "stream-source-studio-input"
 
 const inputClass =
   "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -55,12 +63,6 @@ const controlConsumerQuery = reactive({ consumer: "", kind: "", tag: "" })
 const subscribeQuery = reactive({ producer: "", kind: "", tag: "", selectedSourceId: "" })
 const sourceDraft = reactive<StreamSourceDraft>(defaultSourceDraft())
 const consumerDraft = reactive<StreamConsumerDraft>(defaultConsumerDraft())
-const sourceStudio = reactive({
-  open: false,
-  sourceId: "",
-  text: "",
-  sentItems: [] as Array<{ text: string; sent: number; at: string }>
-})
 const subscribeDialog = reactive({
   open: false,
   consumerId: ""
@@ -68,8 +70,6 @@ const subscribeDialog = reactive({
 
 const sourceDialogOpen = ref(false)
 const consumerDialogOpen = ref(false)
-const selectedLocalSourceId = ref("")
-const selectedLocalConsumerId = ref("")
 
 const selfNodeId = computed(() => Number(sessionStore.auth.nodeId || 0))
 const hubId = computed(() => Number(sessionStore.auth.hubId || 0))
@@ -87,16 +87,10 @@ const localConsumers = computed(() => stream.state.localConsumers)
 const catalogSources = computed(() => stream.state.sources)
 const catalogConsumers = computed(() => stream.state.consumers)
 const deliveries = computed(() => stream.state.deliveries)
-const selectedLocalSource = computed(() => stream.sourceById(selectedLocalSourceId.value, "local"))
-const selectedLocalConsumer = computed(() => stream.consumerById(selectedLocalConsumerId.value, "local"))
 const selectedControlSource = computed(() => stream.sourceById(stream.state.selectedSourceId, "catalog"))
 const selectedControlConsumer = computed(() => stream.consumerById(stream.state.selectedConsumerId, "catalog"))
 const selectedDelivery = computed(() => deliveries.value.find((item) => item.deliveryId === stream.state.selectedDeliveryId) ?? null)
-const selectedTextFrames = computed(() => (selectedDelivery.value ? stream.textFramesFor(selectedDelivery.value.deliveryId) : []))
-const selectedStats = computed(() => (selectedDelivery.value ? stream.statsFor(selectedDelivery.value.deliveryId) : null))
 const resolvedTargetId = computed(() => targetIdText.value || (hubId.value ? String(hubId.value) : ""))
-const latestActivityAt = computed(() => stream.state.lastEventAt || stream.state.lastSyncAt)
-const sourceStudioSource = computed(() => stream.sourceById(sourceStudio.sourceId, "local"))
 const subscribeConsumer = computed(() => stream.consumerById(subscribeDialog.consumerId, "local"))
 const subscribeSelectedSource = computed(() => stream.sourceById(subscribeQuery.selectedSourceId, "catalog"))
 const canConnect = computed(() => {
@@ -108,17 +102,14 @@ const canSubscribe = computed(() => {
   return selectedControlConsumer.value.consumer === selfNodeId.value
 })
 
-const summaryCards = computed(() => [
-  { label: t("Saved Sources"), value: String(localSources.value.length), hint: t("Persistent local list") },
-  { label: t("Saved Consumers"), value: String(localConsumers.value.length), hint: t("Restored after login") },
-  { label: t("Known Deliveries"), value: String(deliveries.value.length), hint: selectedDelivery.value ? t("Selected {id}", { id: selectedDelivery.value.deliveryId }) : t("No selection") },
-  { label: t("Last Runtime Event"), value: latestActivityAt.value ? formatTimestamp(latestActivityAt.value) : t("No activity yet"), hint: stream.state.lastSyncAt ? t("Last sync {time}", { time: formatTimestamp(stream.state.lastSyncAt) }) : t("Waiting for first sync") }
-])
-
 const heroDescription = computed(() => {
-  if (activeTab.value === "source") return t("Manage your saved local sources, keep the main list compact, and open a separate input studio only when you need to send content.")
-  if (activeTab.value === "consumer") return t("Keep local consumers in a simple list, review current bindings, and subscribe through a dedicated dialog instead of inline forms.")
-  return t("Browse remote catalogs, connect compatible endpoints, and inspect runtime deliveries from the control tab.")
+  if (activeTab.value === "source") {
+    return t("Manage your saved local sources in a compact list and open a dedicated input window only when you need to send content.")
+  }
+  if (activeTab.value === "consumer") {
+    return t("Keep local consumers in a simple list, review current bindings, and subscribe through a dedicated dialog only when you need to change them.")
+  }
+  return t("Browse remote catalogs, connect compatible endpoints, and open runtime output windows from the control tab.")
 })
 
 const tabButtonClass = (tab: StreamTab) => [
@@ -144,15 +135,41 @@ const kindToneClass = (kind: string) => {
   }
 }
 
-const metadataPreview = (value: string) => String(value ?? "").trim() || t("No metadata")
-const descriptorMetaLine = (item: Pick<StreamSource, "contentType" | "mode" | "unitMode"> | Pick<StreamConsumer, "contentType">) =>
-  ["contentType" in item ? item.contentType : "", "mode" in item ? item.mode : "", "unitMode" in item ? item.unitMode : ""]
-    .map((entry) => String(entry ?? "").trim())
-    .filter(Boolean)
-    .join(" · ")
-const tagsOrFallback = (tags: string[]) => (tags.length ? tags : [t("No tags")])
-const sourceBindings = (sourceId: string) => stream.deliveriesForSource(sourceId)
-const consumerBindings = (consumerId: string) => stream.deliveriesForConsumer(consumerId)
+const isActiveDelivery = (delivery: Pick<StreamDelivery, "state">) => String(delivery.state ?? "").trim().toLowerCase() !== "closed"
+const sourceBindings = (sourceId: string) => stream.deliveriesForSource(sourceId).filter(isActiveDelivery)
+const consumerBindings = (consumerId: string) => stream.deliveriesForConsumer(consumerId).filter(isActiveDelivery)
+
+const compactList = (values: string[]) => {
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  )
+  if (!normalized.length) return ""
+  if (normalized.length <= 2) return normalized.join(" · ")
+  return `${normalized.slice(0, 2).join(" · ")} +${normalized.length - 2}`
+}
+
+const sourceBindingSummary = (source: StreamSource) => {
+  const bindings = sourceBindings(source.sourceId)
+  if (!bindings.length) return t("No active bindings")
+  return t("{count} active bindings", { count: bindings.length })
+}
+
+const consumerBindingSummary = (consumer: StreamConsumer) => {
+  const bindings = consumerBindings(consumer.consumerId)
+  if (!bindings.length) return t("No current source bindings")
+  const summary = compactList(bindings.map((binding) => binding.sourceId))
+  return summary || t("{count} active bindings", { count: bindings.length })
+}
+
+const deliverySummary = (delivery: StreamDelivery) => {
+  const sourceLabel = delivery.sourceId || t("Unknown source")
+  const consumerLabel = delivery.consumerId || t("Consumer {id}", { id: delivery.consumer || "-" })
+  return `${sourceLabel} -> ${consumerLabel}`
+}
 
 const resetSourceDraft = () => Object.assign(sourceDraft, defaultSourceDraft())
 const resetConsumerDraft = () => Object.assign(consumerDraft, defaultConsumerDraft())
@@ -163,11 +180,6 @@ const closeSourceDialog = () => {
 const closeConsumerDialog = () => {
   consumerDialogOpen.value = false
   resetConsumerDraft()
-}
-const closeSourceStudio = () => {
-  sourceStudio.open = false
-  sourceStudio.sourceId = ""
-  sourceStudio.text = ""
 }
 const closeSubscribeDialog = () => {
   subscribeDialog.open = false
@@ -188,32 +200,64 @@ const withToast = async (action: () => Promise<unknown>, ok: string, fail: strin
   }
 }
 
+const openAuxWindow = (routePath: string, name: string, size: string, blockedMessage: string) => {
+  const base = window.location.href.split("#")[0]
+  const win = window.open(`${base}${routePath}`, name, size)
+  if (win) {
+    win.focus()
+    return
+  }
+  toast.warn(t(blockedMessage))
+}
+
 const refreshControlSourcesRaw = () => stream.listSources(controlSourceQuery.producer, controlSourceQuery.kind, controlSourceQuery.tag)
 const refreshControlConsumersRaw = () => stream.listConsumers(controlConsumerQuery.consumer, controlConsumerQuery.kind, controlConsumerQuery.tag)
 const refreshControlSources = () => withToast(refreshControlSourcesRaw, "Sources refreshed.", "Failed to query sources.")
 const refreshControlConsumers = () => withToast(refreshControlConsumersRaw, "Consumers refreshed.", "Failed to query consumers.")
 const refreshDeliveries = () => withToast(() => stream.loadDeliveries(), "Runtime deliveries refreshed.", "Failed to load deliveries.")
-const refreshControlPlane = () => withToast(async () => {
-  await Promise.all([refreshControlSourcesRaw(), refreshControlConsumersRaw(), stream.loadDeliveries()])
-}, "Stream control plane refreshed.", "Failed to refresh Stream control plane.")
-const refreshLocalLists = () => withToast(async () => {
-  if (!selfNodeId.value) return
-  await Promise.all([stream.listSources(String(selfNodeId.value), "", "", "local"), stream.listConsumers(String(selfNodeId.value), "", "", "local")])
-}, "Local stream lists refreshed.", "Failed to refresh local stream lists.")
+const refreshControlPlane = () =>
+  withToast(
+    async () => {
+      await Promise.all([refreshControlSourcesRaw(), refreshControlConsumersRaw(), stream.loadDeliveries()])
+    },
+    "Stream control plane refreshed.",
+    "Failed to refresh Stream control plane."
+  )
+const refreshLocalLists = () =>
+  withToast(
+    async () => {
+      if (!selfNodeId.value) return
+      await Promise.all([
+        stream.listSources(String(selfNodeId.value), "", "", "local"),
+        stream.listConsumers(String(selfNodeId.value), "", "", "local")
+      ])
+    },
+    "Local stream lists refreshed.",
+    "Failed to refresh local stream lists."
+  )
 const refreshSubscribeSourcesRaw = () => stream.listSources(subscribeQuery.producer, subscribeQuery.kind, subscribeQuery.tag)
-const refreshSubscribeSources = () => withToast(refreshSubscribeSourcesRaw, "Subscription sources refreshed.", "Failed to load subscription sources.")
+const refreshSubscribeSources = () =>
+  withToast(refreshSubscribeSourcesRaw, "Subscription sources refreshed.", "Failed to load subscription sources.")
 
-const submitSource = () => withToast(async () => {
-  const created = await stream.announceSource(sourceDraft)
-  if (created) selectedLocalSourceId.value = created.sourceId
-  closeSourceDialog()
-}, "Local source created.", "Failed to create local source.")
+const submitSource = () =>
+  withToast(
+    async () => {
+      await stream.announceSource(sourceDraft)
+      closeSourceDialog()
+    },
+    "Local source created.",
+    "Failed to create local source."
+  )
 
-const submitConsumer = () => withToast(async () => {
-  const created = await stream.announceConsumer(consumerDraft)
-  if (created) selectedLocalConsumerId.value = created.consumerId
-  closeConsumerDialog()
-}, "Local consumer created.", "Failed to create local consumer.")
+const submitConsumer = () =>
+  withToast(
+    async () => {
+      await stream.announceConsumer(consumerDraft)
+      closeConsumerDialog()
+    },
+    "Local consumer created.",
+    "Failed to create local consumer."
+  )
 
 const openSourceDialog = () => {
   resetSourceDraft()
@@ -225,11 +269,27 @@ const openConsumerDialog = () => {
   consumerDialogOpen.value = true
 }
 
-const openSourceStudio = (sourceId: string) => {
-  sourceStudio.sourceId = sourceId
-  sourceStudio.text = ""
-  sourceStudio.open = true
-  selectedLocalSourceId.value = sourceId
+const openSourceWindow = (sourceId: string) => {
+  const normalized = String(sourceId ?? "").trim()
+  if (!normalized) return
+  openAuxWindow(
+    `#/stream-source-window?sourceId=${encodeURIComponent(normalized)}`,
+    `stream_source_${normalized}_${Date.now()}`,
+    "width=1100,height=780",
+    "Stream input window was blocked by browser popup policy."
+  )
+}
+
+const openDeliveryWindow = (deliveryId: string) => {
+  const normalized = String(deliveryId ?? "").trim()
+  if (!normalized) return
+  stream.selectDelivery(normalized)
+  openAuxWindow(
+    `#/stream-delivery-window?deliveryId=${encodeURIComponent(normalized)}`,
+    `stream_delivery_${normalized}_${Date.now()}`,
+    "width=1180,height=820",
+    "Stream output window was blocked by browser popup policy."
+  )
 }
 
 const openSubscribeDialog = async (consumerId: string) => {
@@ -250,44 +310,50 @@ const openSubscribeDialog = async (consumerId: string) => {
   }
 }
 
-const publishSourceText = () => withToast(async () => {
-  const result = await stream.publishText(sourceStudio.sourceId, sourceStudio.text)
-  sourceStudio.sentItems.unshift({ text: sourceStudio.text, sent: result.sent, at: new Date().toISOString() })
-  sourceStudio.sentItems = sourceStudio.sentItems.slice(0, 8)
-  sourceStudio.text = ""
-}, "Text sent to source.", "Failed to send text to source.")
-
-const subscribeFromDialog = () => withToast(async () => {
-  if (!subscribeSelectedSource.value || !subscribeDialog.consumerId) throw new Error(t("Select a source before subscribing."))
-  await stream.subscribe({
-    producer: subscribeSelectedSource.value.producer,
-    sourceId: subscribeSelectedSource.value.sourceId,
-    consumerId: subscribeDialog.consumerId
-  })
-  closeSubscribeDialog()
-}, "Subscribed.", "Failed to subscribe.")
+const subscribeFromDialog = () =>
+  withToast(
+    async () => {
+      if (!subscribeSelectedSource.value || !subscribeDialog.consumerId) {
+        throw new Error(t("Select a source before subscribing."))
+      }
+      await stream.subscribe({
+        producer: subscribeSelectedSource.value.producer,
+        sourceId: subscribeSelectedSource.value.sourceId,
+        consumerId: subscribeDialog.consumerId
+      })
+      closeSubscribeDialog()
+    },
+    "Subscribed.",
+    "Failed to subscribe."
+  )
 
 const connectSelected = () =>
   selectedControlSource.value && selectedControlConsumer.value
-    ? withToast(() =>
-        stream.connect({
-          producer: selectedControlSource.value!.producer,
-          sourceId: selectedControlSource.value!.sourceId,
-          consumer: selectedControlConsumer.value!.consumer,
-          consumerId: selectedControlConsumer.value!.consumerId
-        }),
-      "Delivery connected.", "Failed to connect delivery.")
+    ? withToast(
+        () =>
+          stream.connect({
+            producer: selectedControlSource.value!.producer,
+            sourceId: selectedControlSource.value!.sourceId,
+            consumer: selectedControlConsumer.value!.consumer,
+            consumerId: selectedControlConsumer.value!.consumerId
+          }),
+        "Delivery connected.",
+        "Failed to connect delivery."
+      )
     : Promise.resolve()
 
 const subscribeSelected = () =>
   selectedControlSource.value && selectedControlConsumer.value
-    ? withToast(() =>
-        stream.subscribe({
-          producer: selectedControlSource.value!.producer,
-          sourceId: selectedControlSource.value!.sourceId,
-          consumerId: selectedControlConsumer.value!.consumerId
-        }),
-      "Subscribed.", "Failed to subscribe.")
+    ? withToast(
+        () =>
+          stream.subscribe({
+            producer: selectedControlSource.value!.producer,
+            sourceId: selectedControlSource.value!.sourceId,
+            consumerId: selectedControlConsumer.value!.consumerId
+          }),
+        "Subscribed.",
+        "Failed to subscribe."
+      )
     : Promise.resolve()
 
 const disconnectSelected = () =>
@@ -305,17 +371,18 @@ const signalSelected = (op: string) =>
     ? withToast(() => stream.signal(selectedDelivery.value!.deliveryId, op), "Signal sent.", "Failed to send signal.")
     : Promise.resolve()
 
-const removeSource = (sourceId: string) => withToast(async () => {
-  await stream.withdrawSource(sourceId)
-  if (selectedLocalSourceId.value === sourceId) selectedLocalSourceId.value = localSources.value[0]?.sourceId ?? ""
-  if (sourceStudio.sourceId === sourceId) closeSourceStudio()
-}, "Source removed.", "Failed to remove source.")
+const removeSource = (sourceId: string) =>
+  withToast(() => stream.withdrawSource(sourceId), "Source removed.", "Failed to remove source.")
 
-const removeConsumer = (consumerId: string) => withToast(async () => {
-  await stream.withdrawConsumer(consumerId)
-  if (selectedLocalConsumerId.value === consumerId) selectedLocalConsumerId.value = localConsumers.value[0]?.consumerId ?? ""
-  if (subscribeDialog.consumerId === consumerId) closeSubscribeDialog()
-}, "Consumer removed.", "Failed to remove consumer.")
+const removeConsumer = (consumerId: string) =>
+  withToast(
+    async () => {
+      await stream.withdrawConsumer(consumerId)
+      if (subscribeDialog.consumerId === consumerId) closeSubscribeDialog()
+    },
+    "Consumer removed.",
+    "Failed to remove consumer."
+  )
 
 watch(
   () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
@@ -327,10 +394,6 @@ watch(
     void (async () => {
       try {
         await Promise.all([stream.loadPrefs(), stream.loadDeliveries()])
-        if (selfNodeId.value > 0) {
-          if (!selectedLocalSourceId.value && stream.state.localSources.length) selectedLocalSourceId.value = stream.state.localSources[0].sourceId
-          if (!selectedLocalConsumerId.value && stream.state.localConsumers.length) selectedLocalConsumerId.value = stream.state.localConsumers[0].consumerId
-        }
         if (selfNodeId.value > 0 && hubId.value > 0) {
           await Promise.all([refreshControlSourcesRaw(), refreshControlConsumersRaw()])
         }
@@ -338,26 +401,6 @@ watch(
         console.warn(err)
       }
     })()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => localSources.value.map((item) => item.sourceId).join("|"),
-  () => {
-    if (!selectedLocalSourceId.value || !stream.sourceById(selectedLocalSourceId.value, "local")) {
-      selectedLocalSourceId.value = localSources.value[0]?.sourceId ?? ""
-    }
-  },
-  { immediate: true }
-)
-
-watch(
-  () => localConsumers.value.map((item) => item.consumerId).join("|"),
-  () => {
-    if (!selectedLocalConsumerId.value || !stream.consumerById(selectedLocalConsumerId.value, "local")) {
-      selectedLocalConsumerId.value = localConsumers.value[0]?.consumerId ?? ""
-    }
   },
   { immediate: true }
 )
@@ -371,24 +414,28 @@ watch(
         <Badge variant="secondary">{{ t("Hub {id}", { id: hubId || "-" }) }}</Badge>
         <Badge variant="secondary">{{ t("Target {id}", { id: resolvedTargetId || "-" }) }}</Badge>
         <div class="inline-flex rounded-full border border-border/70 bg-background/80 p-1">
-          <button v-for="tab in tabs" :key="tab.id" type="button" :class="tabButtonClass(tab.id)" :aria-pressed="activeTab === tab.id" @click="activeTab = tab.id">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            :data-stream-tab="tab.id"
+            :class="tabButtonClass(tab.id)"
+            :aria-pressed="activeTab === tab.id"
+            @click="activeTab = tab.id"
+          >
             {{ t(tab.label) }}
           </button>
         </div>
       </template>
     </PageHero>
 
-    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <article v-for="card in summaryCards" :key="card.label" class="rounded-2xl border border-border/60 bg-card/90 px-4 py-4 text-card-foreground shadow-sm">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">{{ card.label }}</p>
-        <p class="mt-3 text-xl font-semibold">{{ card.value }}</p>
-        <p class="mt-2 text-xs text-muted-foreground">{{ card.hint }}</p>
-      </article>
-    </section>
-
-    <section v-if="activeTab === 'source'" class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+    <section v-if="activeTab === 'source'" class="space-y-6">
       <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-        <CardHeader :title="t('Local Sources')" :description="t('Keep local sources persistent and focused. Add or remove sources here, then open a separate studio only when you need to input content.')" title-class="text-lg">
+        <CardHeader
+          :title="t('Local Sources')"
+          :description="t('Keep local sources persistent and focused. Add or remove sources here, then open a dedicated input window only when you need to send content.')"
+          title-class="text-lg"
+        >
           <template #actions>
             <div class="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" @click="refreshLocalLists">
@@ -403,90 +450,49 @@ watch(
           </template>
         </CardHeader>
 
-        <div class="mt-4 space-y-3">
-          <button
+        <div class="mt-4 space-y-2">
+          <article
             v-for="source in localSources"
             :key="source.sourceId"
-            type="button"
             data-stream-local-source-row
-            class="w-full rounded-2xl border p-4 text-left transition"
-            :class="selectedLocalSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
-            @click="selectedLocalSourceId = source.sourceId"
+            class="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-card-foreground md:flex-row md:items-center md:justify-between"
           >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="truncate text-sm font-semibold">{{ source.name || source.sourceId }}</p>
-                  <Badge :class="kindToneClass(source.kind)">{{ source.kind }}</Badge>
-                  <Badge variant="secondary">{{ t("{count} bindings", { count: sourceBindings(source.sourceId).length }) }}</Badge>
-                </div>
-                <p class="mt-2 truncate text-xs text-muted-foreground">{{ source.sourceId }}</p>
-                <p class="mt-1 text-xs text-muted-foreground">{{ descriptorMetaLine(source) || t("No descriptor details") }}</p>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <Badge v-for="tag in tagsOrFallback(source.tags)" :key="`${source.sourceId}:${tag}`" variant="secondary">{{ tag }}</Badge>
-                </div>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <Badge v-for="binding in sourceBindings(source.sourceId).slice(0, 3)" :key="binding.deliveryId" variant="secondary">
-                    {{ t("Consumer {id}", { id: binding.consumer }) }}
-                  </Badge>
-                  <span v-if="!sourceBindings(source.sourceId).length" class="text-xs text-muted-foreground">{{ t("No active bindings") }}</span>
-                </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="truncate text-sm font-semibold">{{ source.name || source.sourceId }}</p>
+                <Badge :class="kindToneClass(source.kind)">{{ source.kind }}</Badge>
               </div>
-              <div class="flex flex-col items-end gap-2">
-                <Button variant="outline" size="sm" data-stream-open-studio @click.stop="openSourceStudio(source.sourceId)">{{ t("Input") }}</Button>
-                <Button variant="ghost" size="sm" @click.stop="removeSource(source.sourceId)">{{ t("Remove") }}</Button>
-              </div>
+              <p class="mt-1 truncate text-xs text-muted-foreground">
+                {{ source.sourceId }} · {{ sourceBindingSummary(source) }}
+              </p>
             </div>
-          </button>
+            <div class="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" data-stream-open-source-window @click="openSourceWindow(source.sourceId)">
+                {{ t("Input Window") }}
+              </Button>
+              <Button variant="ghost" size="sm" @click="removeSource(source.sourceId)">
+                {{ t("Remove") }}
+              </Button>
+            </div>
+          </article>
 
-          <div v-if="!localSources.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground">
+          <div
+            v-if="!localSources.length"
+            class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground"
+          >
             {{ t("No local sources yet. Use New Source to create one.") }}
           </div>
         </div>
       </section>
-
-      <aside class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-        <CardHeader :title="t('Source Details')" :description="t('Keep the list simple. Use this side panel to review metadata and current bindings before opening the input studio.')" title-class="text-lg" />
-
-        <div v-if="selectedLocalSource" class="mt-4 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-lg font-semibold">{{ selectedLocalSource.name || selectedLocalSource.sourceId }}</p>
-            <Badge :class="kindToneClass(selectedLocalSource.kind)">{{ selectedLocalSource.kind }}</Badge>
-          </div>
-          <p class="text-xs text-muted-foreground">{{ selectedLocalSource.sourceId }}</p>
-          <p class="text-xs text-muted-foreground">{{ descriptorMetaLine(selectedLocalSource) }}</p>
-          <div class="flex flex-wrap gap-2">
-            <Badge v-for="tag in tagsOrFallback(selectedLocalSource.tags)" :key="`detail-${selectedLocalSource.sourceId}-${tag}`" variant="secondary">{{ tag }}</Badge>
-          </div>
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Metadata") }}</p>
-            <pre class="mt-3 whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-muted-foreground">{{ metadataPreview(selectedLocalSource.metadataRaw) }}</pre>
-          </div>
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Current bindings") }}</p>
-            <div class="mt-3 space-y-2">
-              <article v-for="binding in sourceBindings(selectedLocalSource.sourceId)" :key="binding.deliveryId" class="rounded-xl border border-border/60 bg-card/80 px-3 py-3 text-sm">
-                <p class="font-semibold">{{ t("Consumer {id}", { id: binding.consumer }) }}</p>
-                <p class="mt-1 text-xs text-muted-foreground">{{ binding.consumerId }} · {{ binding.state }}</p>
-              </article>
-              <p v-if="!sourceBindings(selectedLocalSource.sourceId).length" class="text-sm text-muted-foreground">{{ t("Nothing is bound to this source yet.") }}</p>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <Button @click="openSourceStudio(selectedLocalSource.sourceId)">{{ t("Open Input Studio") }}</Button>
-            <Button variant="outline" @click="removeSource(selectedLocalSource.sourceId)">{{ t("Remove Source") }}</Button>
-          </div>
-        </div>
-
-        <div v-else class="mt-4 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground">
-          {{ t("Select a local source to inspect its metadata and bindings.") }}
-        </div>
-      </aside>
     </section>
 
-    <section v-else-if="activeTab === 'consumer'" class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+    <section v-else-if="activeTab === 'consumer'" class="space-y-6">
       <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-        <CardHeader :title="t('Local Consumers')" :description="t('Store local consumers as a compact list. Review current bindings here and open a separate dialog only when you want to subscribe to a source.')" title-class="text-lg">
+        <CardHeader
+          :title="t('Local Consumers')"
+          :description="t('Store local consumers as a compact list. Review current bindings here and open a separate dialog only when you want to subscribe to a source.')"
+          title-class="text-lg"
+        >
           <template #actions>
             <div class="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" @click="refreshLocalLists">
@@ -501,83 +507,40 @@ watch(
           </template>
         </CardHeader>
 
-        <div class="mt-4 space-y-3">
-          <button
+        <div class="mt-4 space-y-2">
+          <article
             v-for="consumer in localConsumers"
             :key="consumer.consumerId"
-            type="button"
             data-stream-local-consumer-row
-            class="w-full rounded-2xl border p-4 text-left transition"
-            :class="selectedLocalConsumerId === consumer.consumerId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
-            @click="selectedLocalConsumerId = consumer.consumerId"
+            class="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-card-foreground md:flex-row md:items-center md:justify-between"
           >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="truncate text-sm font-semibold">{{ consumer.name || consumer.consumerId }}</p>
-                  <Badge :class="kindToneClass(consumer.kind)">{{ consumer.kind }}</Badge>
-                  <Badge variant="secondary">{{ t("{count} bindings", { count: consumerBindings(consumer.consumerId).length }) }}</Badge>
-                </div>
-                <p class="mt-2 truncate text-xs text-muted-foreground">{{ consumer.consumerId }}</p>
-                <p class="mt-1 text-xs text-muted-foreground">{{ descriptorMetaLine(consumer) || t("No descriptor details") }}</p>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <Badge v-for="binding in consumerBindings(consumer.consumerId).slice(0, 3)" :key="binding.deliveryId" variant="secondary">
-                    {{ binding.sourceId || t("Unknown source") }}
-                  </Badge>
-                  <span v-if="!consumerBindings(consumer.consumerId).length" class="text-xs text-muted-foreground">{{ t("No current source bindings") }}</span>
-                </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="truncate text-sm font-semibold">{{ consumer.name || consumer.consumerId }}</p>
+                <Badge :class="kindToneClass(consumer.kind)">{{ consumer.kind }}</Badge>
               </div>
-              <div class="flex flex-col items-end gap-2">
-                <Button variant="outline" size="sm" data-stream-open-subscribe @click.stop="openSubscribeDialog(consumer.consumerId)">{{ t("Subscribe") }}</Button>
-                <Button variant="ghost" size="sm" @click.stop="removeConsumer(consumer.consumerId)">{{ t("Remove") }}</Button>
-              </div>
+              <p class="mt-1 truncate text-xs text-muted-foreground">
+                {{ consumer.consumerId }} · {{ consumerBindingSummary(consumer) }}
+              </p>
             </div>
-          </button>
+            <div class="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" data-stream-open-subscribe @click="openSubscribeDialog(consumer.consumerId)">
+                {{ t("Subscribe") }}
+              </Button>
+              <Button variant="ghost" size="sm" @click="removeConsumer(consumer.consumerId)">
+                {{ t("Remove") }}
+              </Button>
+            </div>
+          </article>
 
-          <div v-if="!localConsumers.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground">
+          <div
+            v-if="!localConsumers.length"
+            class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground"
+          >
             {{ t("No local consumers yet. Use New Consumer to create one.") }}
           </div>
         </div>
       </section>
-
-      <aside class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-        <CardHeader :title="t('Consumer Details')" :description="t('This side panel only shows what the consumer is currently bound to. Use the subscription dialog when you need to change it.')" title-class="text-lg" />
-
-        <div v-if="selectedLocalConsumer" class="mt-4 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-lg font-semibold">{{ selectedLocalConsumer.name || selectedLocalConsumer.consumerId }}</p>
-            <Badge :class="kindToneClass(selectedLocalConsumer.kind)">{{ selectedLocalConsumer.kind }}</Badge>
-          </div>
-          <p class="text-xs text-muted-foreground">{{ selectedLocalConsumer.consumerId }}</p>
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Current source bindings") }}</p>
-            <div class="mt-3 space-y-2">
-              <article v-for="binding in consumerBindings(selectedLocalConsumer.consumerId)" :key="binding.deliveryId" class="rounded-xl border border-border/60 bg-card/80 px-3 py-3 text-sm">
-                <div class="flex items-center justify-between gap-2">
-                  <div>
-                    <p class="font-semibold">{{ binding.sourceId || t("Unknown source") }}</p>
-                    <p class="mt-1 text-xs text-muted-foreground">{{ t("Producer {id}", { id: binding.producer }) }} · {{ binding.state }}</p>
-                  </div>
-                  <Button variant="ghost" size="sm" @click="stream.unsubscribe(binding.deliveryId)">{{ t("Unsubscribe") }}</Button>
-                </div>
-              </article>
-              <p v-if="!consumerBindings(selectedLocalConsumer.consumerId).length" class="text-sm text-muted-foreground">{{ t("This consumer is not bound to any source.") }}</p>
-            </div>
-          </div>
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Metadata") }}</p>
-            <pre class="mt-3 whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-muted-foreground">{{ metadataPreview(selectedLocalConsumer.metadataRaw) }}</pre>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <Button @click="openSubscribeDialog(selectedLocalConsumer.consumerId)">{{ t("Open Subscribe Dialog") }}</Button>
-            <Button variant="outline" @click="removeConsumer(selectedLocalConsumer.consumerId)">{{ t("Remove Consumer") }}</Button>
-          </div>
-        </div>
-
-        <div v-else class="mt-4 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-10 text-center text-sm text-muted-foreground">
-          {{ t("Select a local consumer to review its bindings.") }}
-        </div>
-      </aside>
     </section>
 
     <section v-else class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_380px]">
@@ -613,7 +576,14 @@ watch(
           </div>
 
           <div class="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-            <button v-for="source in catalogSources" :key="source.sourceId" type="button" class="w-full rounded-2xl border p-4 text-left transition" :class="stream.state.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'" @click="stream.selectSource(source.sourceId)">
+            <button
+              v-for="source in catalogSources"
+              :key="source.sourceId"
+              type="button"
+              class="w-full rounded-2xl border p-4 text-left transition"
+              :class="stream.state.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
+              @click="stream.selectSource(source.sourceId)"
+            >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
@@ -662,7 +632,14 @@ watch(
           </div>
 
           <div class="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-            <button v-for="consumer in catalogConsumers" :key="consumer.consumerId" type="button" class="w-full rounded-2xl border p-4 text-left transition" :class="stream.state.selectedConsumerId === consumer.consumerId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'" @click="stream.selectConsumer(consumer.consumerId)">
+            <button
+              v-for="consumer in catalogConsumers"
+              :key="consumer.consumerId"
+              type="button"
+              class="w-full rounded-2xl border p-4 text-left transition"
+              :class="stream.state.selectedConsumerId === consumer.consumerId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
+              @click="stream.selectConsumer(consumer.consumerId)"
+            >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
@@ -710,7 +687,9 @@ watch(
               <Button :disabled="!canConnect" @click="connectSelected">{{ t("Connect") }}</Button>
               <Button variant="outline" :disabled="!canSubscribe" @click="subscribeSelected">{{ t("Subscribe") }}</Button>
             </div>
-            <p v-if="selectedControlSource && selectedControlConsumer && !canConnect" class="mt-3 text-xs text-rose-600">{{ t("Source kind and consumer kind must match.") }}</p>
+            <p v-if="selectedControlSource && selectedControlConsumer && !canConnect" class="mt-3 text-xs text-rose-600">
+              {{ t("Source kind and consumer kind must match.") }}
+            </p>
           </div>
         </section>
 
@@ -735,45 +714,35 @@ watch(
             </Button>
           </div>
 
-          <div class="mt-4 max-h-[320px] space-y-3 overflow-y-auto pr-1">
-            <button v-for="delivery in deliveries" :key="delivery.deliveryId" type="button" data-stream-delivery-row class="w-full rounded-2xl border p-4 text-left transition" :class="stream.state.selectedDeliveryId === delivery.deliveryId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'" @click="stream.selectDelivery(delivery.deliveryId)">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <p class="truncate text-sm font-semibold">{{ delivery.deliveryId }}</p>
-                    <Badge :class="kindToneClass(delivery.kind)">{{ delivery.kind }}</Badge>
-                    <Badge variant="secondary">{{ delivery.state || t("Observed") }}</Badge>
-                  </div>
-                  <p class="mt-2 text-xs text-muted-foreground">{{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">{{ t("Producer {producer} · Consumer {consumer}", { producer: delivery.producer, consumer: delivery.consumer }) }}</p>
+          <div class="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+            <article
+              v-for="delivery in deliveries"
+              :key="delivery.deliveryId"
+              data-stream-delivery-row
+              class="flex cursor-pointer flex-col gap-3 rounded-2xl border p-4 text-card-foreground transition md:flex-row md:items-center md:justify-between"
+              :class="stream.state.selectedDeliveryId === delivery.deliveryId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
+              @click="stream.selectDelivery(delivery.deliveryId)"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-sm font-semibold">{{ deliverySummary(delivery) }}</p>
+                  <Badge :class="kindToneClass(delivery.kind)">{{ delivery.kind }}</Badge>
+                  <Badge variant="secondary">{{ delivery.state || t("Observed") }}</Badge>
                 </div>
-                <p class="text-xs text-muted-foreground">{{ formatTimestamp(delivery.updatedAt) }}</p>
+                <p class="mt-1 truncate text-xs text-muted-foreground">{{ delivery.deliveryId }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}
+                </p>
               </div>
-            </button>
+              <div class="flex flex-wrap items-center gap-2 md:justify-end">
+                <span class="text-xs text-muted-foreground">{{ formatTimestamp(delivery.updatedAt) }}</span>
+                <Button variant="outline" size="sm" data-stream-open-delivery-window @click.stop="openDeliveryWindow(delivery.deliveryId)">
+                  {{ t("Output Window") }}
+                </Button>
+              </div>
+            </article>
             <div v-if="!deliveries.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
               {{ t("No known deliveries yet.") }}
-            </div>
-          </div>
-
-          <div v-if="selectedDelivery" class="mt-4 rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-sm font-semibold">{{ t("Selected Delivery") }}</p>
-            <p class="mt-2 text-xs text-muted-foreground">{{ selectedDelivery.deliveryId }}</p>
-            <div v-if="selectedDelivery.kind === 'text'" class="mt-4 rounded-2xl border border-emerald-200/20 bg-slate-950 px-4 py-4 text-sm text-emerald-100 shadow-inner">
-              <div class="max-h-[220px] space-y-3 overflow-y-auto pr-1">
-                <article v-for="frame in selectedTextFrames" :key="`${frame.deliveryId}:${frame.position}:${frame.updatedAt}`" class="rounded-xl border border-emerald-200/10 bg-white/5 px-3 py-3">
-                  <div class="flex items-center justify-between gap-3 text-[11px] text-emerald-200/70">
-                    <span>{{ frame.position }}</span>
-                    <span>{{ formatTimestamp(frame.updatedAt) }}</span>
-                  </div>
-                  <pre class="mt-2 whitespace-pre-wrap break-words font-mono text-[13px] leading-6">{{ frame.text }}</pre>
-                </article>
-                <div v-if="!selectedTextFrames.length" class="rounded-xl border border-dashed border-emerald-200/15 px-3 py-6 text-center text-emerald-200/60">
-                  {{ t("Waiting for text frames...") }}
-                </div>
-              </div>
-            </div>
-            <div v-else-if="selectedStats" class="mt-4 rounded-2xl border border-border/60 bg-card/80 px-4 py-3 text-sm text-muted-foreground">
-              {{ t("Frames {frames} · Bytes {bytes} · ACK {ack} · Flags {flags}", { frames: selectedStats.framesIn, bytes: selectedStats.bytesIn, ack: selectedStats.lastAckPos, flags: selectedStats.lastFlags }) }}
             </div>
           </div>
         </section>
@@ -852,56 +821,9 @@ watch(
       </div>
     </Overlay>
 
-    <Overlay :open="sourceStudio.open" closeOnBackdrop trapFocus :initial-focus-selector="`#${sourceStudioInputId}`" @close="closeSourceStudio">
-      <div data-stream-source-studio class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <CardHeader :title="t('Source Input Studio')" :description="t('Use a dedicated workspace for source input so the list page stays compact.')" title-class="text-lg" />
-
-        <div v-if="sourceStudioSource" class="mt-5 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-lg font-semibold">{{ sourceStudioSource.name || sourceStudioSource.sourceId }}</p>
-            <Badge :class="kindToneClass(sourceStudioSource.kind)">{{ sourceStudioSource.kind }}</Badge>
-            <Badge variant="secondary">{{ t("{count} active bindings", { count: sourceBindings(sourceStudioSource.sourceId).length }) }}</Badge>
-          </div>
-          <p class="text-xs text-muted-foreground">{{ sourceStudioSource.sourceId }}</p>
-
-          <div v-if="sourceStudioSource.kind === 'text'" class="space-y-4">
-            <div>
-              <label :for="sourceStudioInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Text input") }}</label>
-              <textarea :id="sourceStudioInputId" v-model="sourceStudio.text" :class="['mt-2', textAreaClass]" :placeholder="t('Type text for the active deliveries of this source...')" />
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button data-stream-submit-studio @click="publishSourceText">
-                <Send class="mr-2 h-4 w-4" />
-                {{ t("Send Text") }}
-              </Button>
-              <Button variant="outline" @click="closeSourceStudio">{{ t("Close") }}</Button>
-            </div>
-          </div>
-
-          <div v-else class="rounded-2xl border border-border/60 bg-background/70 px-4 py-4 text-sm text-muted-foreground">
-            {{ t("Direct input is currently available only for text sources. Other kinds still use the control plane and runtime viewer.") }}
-          </div>
-
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Recent sends") }}</p>
-            <div class="mt-3 space-y-2">
-              <article v-for="item in sourceStudio.sentItems" :key="`${item.at}:${item.text}`" class="rounded-xl border border-border/60 bg-card/80 px-3 py-3 text-sm">
-                <div class="flex items-center justify-between gap-3">
-                  <p class="font-semibold">{{ t("Sent to {count} deliveries", { count: item.sent }) }}</p>
-                  <span class="text-xs text-muted-foreground">{{ formatTimestamp(item.at) }}</span>
-                </div>
-                <pre class="mt-2 whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-muted-foreground">{{ item.text }}</pre>
-              </article>
-              <p v-if="!sourceStudio.sentItems.length" class="text-sm text-muted-foreground">{{ t("No text has been sent from this studio yet.") }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Overlay>
-
     <Overlay :open="subscribeDialog.open" closeOnBackdrop trapFocus @close="closeSubscribeDialog">
       <div data-stream-subscribe-dialog class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
-        <CardHeader :title="t('Subscribe Consumer')" :description="t('Choose a source from the current node or another node, then subscribe without expanding the main consumer list into a form.') " title-class="text-lg" />
+        <CardHeader :title="t('Subscribe Consumer')" :description="t('Choose a source from the current node or another node, then subscribe without expanding the main consumer list into a form.')" title-class="text-lg" />
 
         <div v-if="subscribeConsumer" class="mt-5 space-y-4">
           <div class="flex flex-wrap items-center gap-2">
@@ -936,7 +858,15 @@ watch(
           </div>
 
           <div class="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-            <button v-for="source in catalogSources" :key="source.sourceId" type="button" data-stream-subscribe-source-row class="w-full rounded-2xl border p-4 text-left transition" :class="subscribeQuery.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'" @click="subscribeQuery.selectedSourceId = source.sourceId">
+            <button
+              v-for="source in catalogSources"
+              :key="source.sourceId"
+              type="button"
+              data-stream-subscribe-source-row
+              class="w-full rounded-2xl border p-4 text-left transition"
+              :class="subscribeQuery.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
+              @click="subscribeQuery.selectedSourceId = source.sourceId"
+            >
               <div class="flex flex-wrap items-center gap-2">
                 <p class="truncate text-sm font-semibold">{{ source.name || source.sourceId }}</p>
                 <Badge :class="kindToneClass(source.kind)">{{ source.kind }}</Badge>
