@@ -21,6 +21,8 @@ import FlowEditorWindow from "@/windows/FlowEditorWindow.vue"
 import LogWindow from "@/windows/LogWindow.vue"
 import ShowcaseEditorWindow from "@/windows/ShowcaseEditorWindow.vue"
 import ShowcaseWindow from "@/windows/ShowcaseWindow.vue"
+import StreamDeliveryWindow from "@/windows/StreamDeliveryWindow.vue"
+import StreamSourceWindow from "@/windows/StreamSourceWindow.vue"
 import TopicBusWindow from "@/windows/TopicBusWindow.vue"
 
 const routes = [
@@ -77,6 +79,26 @@ const routes = [
     meta: {
       title: "Stream",
       subtitle: "Query typed sources and consumers, connect deliveries, and inspect runtime traffic."
+    }
+  },
+  {
+    path: "/stream-source-window",
+    name: "streamSourceWindow",
+    component: StreamSourceWindow,
+    meta: {
+      title: "Stream Source Window",
+      subtitle: "Send text into a local source from a dedicated window.",
+      layout: "window"
+    }
+  },
+  {
+    path: "/stream-delivery-window",
+    name: "streamDeliveryWindow",
+    component: StreamDeliveryWindow,
+    meta: {
+      title: "Stream Delivery Window",
+      subtitle: "Inspect a single runtime delivery in a dedicated window.",
+      layout: "window"
     }
   },
   {

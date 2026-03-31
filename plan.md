@@ -1,10 +1,10 @@
-# Plan - Win Stream Product Tabs
+# Plan - Win Stream Windows Trim
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-stream-product-tabs`
+- Branch: `feat/win-stream-windows-trim`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
 - Current Stage: `4`
 
 ## Stage Records
@@ -16,126 +16,112 @@
   - 已读取 `frontend-design` 的 `SKILL.md`
 - repo / branch / worktree confirmation
   - implementation repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - dedicated branch: `feat/win-stream-product-tabs`
-  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
+  - dedicated branch: `feat/win-stream-windows-trim`
+  - dedicated worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
   - implementation will stay inside this worktree only
 - participating modules
   - `frontend/src/pages/Stream.vue`
-  - `frontend/src/layout/AppShell.vue`
-  - `frontend/src/stores/stream.ts`
+  - `frontend/src/router/index.ts`
+  - `frontend/src/windows/*`
   - `frontend/src/i18n/messages/*`
-  - `app_stream.go`
-  - `internal/services/stream/*.go`
+  - `frontend/src/pages/Stream.test.ts`
   - `docs/change/*`
 
 ### Stage 1 - Requirements Analysis
 #### 目标
-- 把 Win 的 `Stream` 页面从当前“控制面 + 观察面混排”改造成更接近产品的多 tab 界面，使用户能以更少的主页面表单完成：
-  - 本地 source 管理
-  - 本地 consumer 管理
-  - 远端控制与运行态查看
-- 同时补齐本地持久化、最小 source 输入能力和新增 UI 的 i18n 覆盖。
+- 在保留现有 Stream 协议能力和持久化模型的前提下，进一步收敛 Win `Stream` 页面交互，使主页面更紧凑、更接近工作台：
+  - 移除顶部 4 块统计卡
+  - source / consumer / delivery 列表显著简化
+  - 把输入与输出从页内块或弹窗转为独立窗口
 
 #### 范围
 - 必须
-  - `Stream` 顶部改为类似 `VarPool` 的 tab 切换
-    - `Source`
-    - `Consumer`
-    - `Control`
-  - `Source` tab 以本地 source 列表为主
-    - 新增 source
-    - 移除 source
-    - 打开独立 source 输入界面
-    - 列表只展示关键信息与当前绑定关系摘要
-  - `Consumer` tab 以本地 consumer 列表为主
-    - 新增 consumer
-    - 移除 consumer
-    - 打开独立订阅弹窗
-    - 列表只展示当前绑定了谁的 source
-  - `Control` tab 保留现有 control-plane 能力，但减少页面拥挤度
-  - 本地 source / consumer 列表必须做 profile 级持久化
-  - 登录并恢复会话后，已保存的本地 source / consumer 必须自动恢复
-  - 至少为 `text` source 补一个可用的最小发送能力，满足“向 source 输入东西”
-  - 本轮新增的 Stream 页面 / store / App prefs 文案必须走 i18n
-  - 增加或更新关键前端 / Go 测试
+  - 移除 `Stream` 页面顶部 `Saved Sources / Saved Consumers / Known Deliveries / Last Runtime Event` 四块统计卡
+  - source / consumer 主列表必须进一步精简，只保留高价值摘要
+  - source 输入必须可通过独立窗口完成，而不是页内工作区
+  - output / viewer 必须可通过独立窗口完成，而不是主页面内长块输出区
+  - 主页面仍保留 `Source / Consumer / Control` tabs
+  - 继续沿用现有 Win / `VarPool` / `TopicBus` 的设计语言和 window route 模式
+  - 新增 UI 文案必须补齐 i18n
+  - 增加或更新前端测试覆盖关键交互
 - 可选
-  - source 输入界面显示最近发送记录或当前 delivery 摘要
-  - 在 `Control` tab 中保留更精细的 signal 操作入口
+  - consumer 侧栏或 control 列表提供更直接的输出窗口入口
+  - 窗口内保留轻量操作按钮，例如刷新或基础 runtime signal
 - 不做
   - 不修改 `stream` 协议 wire
-  - 不新增摄像头 / 麦克风 / 屏幕采集
-  - 不实现音乐 / 视频的真实采集或播放器
-  - 不把主页面改成大块常驻表单编辑器
+  - 不修改 Go `StreamService` 的核心控制面契约，除非前端窗口化需要极小配套调整
+  - 不新增音视频解码或采集能力
+  - 不重做全局布局或 AppShell 结构
 
 #### 使用场景
-- 用户进入 `Source` tab，看到自己保存的本地 source 列表，点击按钮弹窗新增一个 source。
-- 用户在某个 text source 上点击“输入”，进入独立弹窗并发送文本到当前 active deliveries。
-- 用户进入 `Consumer` tab，看到自己保存的本地 consumer 列表，以及每个 consumer 当前订阅了谁。
-- 用户在某个 consumer 上点击“订阅”，弹窗查询当前节点或其它节点的 source，并选择一个发起订阅。
-- 用户进入 `Control` tab，继续做远端 source / consumer 查询、connect / disconnect / signal 等控制面动作。
-- 用户重启 Win 或切换 profile 后，已保存的本地 source / consumer 会在身份就绪后自动恢复。
+- 用户进入 `Source` tab，只看到紧凑的本地 source 列表和少量动作按钮，不再被顶部统计卡和过多 descriptor 文本打断。
+- 用户点击某个 source 的“输入窗口”，弹出独立窗口发送文本，并查看最近发送记录。
+- 用户进入 `Consumer` tab，只看到每个 consumer 当前绑定摘要，而不是大量 metadata 与 descriptor 行。
+- 用户从 consumer 绑定项或 runtime delivery 列表打开独立输出窗口，专门查看 text frames 或 stats。
+- 用户留在主页面时，主要做列表浏览、创建、订阅、连接和定位；详细输入/输出都进入专用窗口。
 
 #### 功能需求
-- Stream store 必须区分：
-  - 本地持久化的 source / consumer 列表
-  - 远端查询得到的 source / consumer catalog
-  - runtime deliveries / text / stats
-- source / consumer 的新增与移除必须同步：
-  - 调用后端 binding
-  - 更新本地 store
-  - 更新 profile 持久化
-- source 输入弹窗必须与主列表分离
-- consumer 订阅弹窗必须与主列表分离
-- consumer 主列表必须能显示当前绑定关系摘要
-- source 主列表必须能显示当前连接的 consumer 摘要
-- 若 source 为 `text`，输入弹窗必须能把文本发送到该 source 的 active local producer deliveries
-- 自动恢复必须避免重复创建冲突，并能在同一描述符场景下安全幂等
+- `Stream.vue` 顶部 summary cards 必须删除
+- 本地 source 列表每行至少保留：
+  - 显示名或 ID
+  - `kind`
+  - 当前绑定摘要
+- 本地 consumer 列表每行至少保留：
+  - 显示名或 ID
+  - `kind`
+  - 当前 source 绑定摘要
+- source 输入窗口必须支持：
+  - 依据 `sourceId` 打开
+  - 对 `text` source 发送文本
+  - 查看最近发送结果
+- output 窗口必须支持：
+  - 依据 `deliveryId` 或等价运行态标识打开
+  - `text` delivery 查看文本帧
+  - 非 `text` delivery 查看统计摘要
+- 主页面必须提供打开输入窗口和输出窗口的入口
+- 窗口页面必须复用现有 store/runtime 状态，而不是在页面内重复解析原始 payload
 
 #### 非功能需求
-- 继续沿用现有 Win 设计语言，尤其是 `VarPool` 的 tab 形态
-- 改动面保持最小，不重写已有 stream runtime 事件契约
-- 持久化必须使用现有 profile-backed `App` storage，而不是浏览器 `localStorage`
-- 表单校验失败、恢复失败、无 active delivery 等异常必须显式报错，不得静默吞掉
-- 页面主画布保持简洁，不在首页堆叠大量常驻输入框
+- 保持主页面简洁，列表优先，避免重复说明文案和冗长 metadata
+- 独立窗口应复用现有 `layout: "window"` 路由模式，不引入新的窗口基础设施
+- 设计继续贴合现有 Win 系统的产品感，不做风格漂移
+- 变更面保持最小，优先复用现有 `TopicBus` / `Logs` / `Flow` 的窗口打开模式
 
 #### 输入输出
 - 输入
   - `docs/requirements/stream.md`
   - `docs/specs/stream.md`
-  - 现有 `Stream.vue` / `stream.ts`
-  - `VarPool.vue` / `varpool.ts`
-  - `app_varpool.go` / `app_topicbus.go`
+  - `frontend/src/pages/Stream.vue`
+  - `frontend/src/router/index.ts`
+  - `frontend/src/windows/TopicBusWindow.vue`
+  - `frontend/src/pages/TopicBus.vue`
+  - `frontend/src/pages/VarPool.vue`
 - 输出
-  - 更新后的 Stream 页面与 store
-  - 新增 `App` Stream prefs 持久化接口
-  - 如有必要，新增最小 text publish binding
-  - 更新后的前端 / Go 测试
+  - 更精简的 `Stream` 主页面
+  - 新增 Stream 输入 / 输出窗口页面与路由
+  - 更新后的 i18n 与测试
   - 本轮 `docs/change` 归档
 
 #### 边界异常
-- 持久化数据损坏、缺字段或重复 ID
-- source / consumer 自动恢复时本地 descriptor 与已有目录冲突
-- session 已连接但身份未就绪
-- text source 输入时没有 active delivery
-- 对非 `text` source 打开输入界面
-- 订阅弹窗查询远端 source 为空或 kind 不匹配
-- profile 切换后旧列表残留在当前界面
+- source 输入窗口打开时对应 source 已被移除
+- output 窗口打开时 delivery 已关闭或不存在
+- 非 `text` source 打开输入窗口
+- `text` output 窗口打开后暂时没有任何 text frame
+- 窗口被浏览器 popup policy 阻止
+- 页面与窗口同时打开时，runtime 状态刷新节奏不一致
 
 #### 验收标准
-- Stream 顶部存在 `Source / Consumer / Control` 三个 tab，视觉与 `VarPool` 一致
-- `Source` tab 主界面不再堆叠大块创建表单；新增和输入都通过独立弹窗完成
-- `Consumer` tab 主界面不再堆叠大块订阅表单；订阅通过独立弹窗完成
-- 本地新增的 source / consumer 在重开应用并登录后可以自动恢复
-- consumer 列表能直接看出当前绑定 source 摘要
-- text source 输入界面能够把文本发送到 active local producer deliveries
-- 新增 UI 文案在 `zh-CN` 下正确翻译，并保持 `en` 回退可用
-- 相关测试通过
+- 主页面顶部四块统计卡已移除
+- source / consumer 列表比当前版本明显更简洁
+- source 输入不再通过主页面弹窗或页内工作区完成，而是独立窗口
+- output / viewer 不再主要依赖主页面大块显示，而是独立窗口
+- 主页面仍保留 source / consumer / control 主路径
+- 前端测试和 build 通过
 
 #### 风险
-- 自动恢复如果触发时机过早，可能在身份未 ready 时失败
-- store 同时承载本地列表、远端 catalog 和 runtime 事件，若边界没拆清会导致 UI 状态串扰
-- text source 发送若未正确维护 position，可能导致对端 ACK / 位置语义异常
-- 页面与 `AppShell` 同时触发恢复时，若没有幂等保护可能产生重复 announce
+- 如果窗口页面过度复刻主页面，会把复杂度从主页面平移到窗口而不是收敛
+- output 窗口的标识若选错层级，可能导致入口不直观或难以定位正确 delivery
+- popup 被浏览器阻止时，需要保留显式失败提示
 
 #### 问题清单
 - none
@@ -143,116 +129,86 @@
 ### Stage 2 - Architecture Design
 #### 总体方案（含选型理由 / 备选对比）
 - 方案 A（采用）
-  - 以现有 `stream` runtime 为基础，补一层“产品化 store + profile 持久化 + tabbed page”
-  - 新增 `App.StreamPrefs / SaveStreamPrefs`
-  - `AppShell` 负责 profile load 与登录后的自动恢复
-  - `Stream.vue` 负责 tab、列表、弹窗和轻量交互
-  - 额外补一个最小 `text` source publish binding，满足 source 输入
+  - 保留现有 `Stream` store 和持久化结构
+  - 精简 `Stream.vue` 主页面
+  - 新增两个 window route：
+    - source input window
+    - delivery output window
+  - 复用 `window.open + #/route` 的既有模式
   - 理由
-    - 复用现有 Win 页面与 profile 体系
-    - 不引入前端 localStorage
-    - 能满足“本地持久化 + 自动恢复 + 单独输入界面”的产品诉求
+    - 改动面最小
+    - 与 `TopicBus` / `Logs` / `Flow` 已有窗口模式一致
+    - 能直接满足“输入输出单独窗口”和“主页面更简洁”
 - 方案 B（不采用）
-  - 只在 Stream 页面打开后恢复本地 source / consumer
-  - 不采用原因：用户希望更接近产品，source / consumer 应在登录后自动可用，而不是依赖打开页面
+  - 继续使用 Overlay 弹窗，只把内部布局做得更轻
+  - 不采用原因：用户已经明确希望输入输出用单独窗口，而不是页内弹层
 - 方案 C（不采用）
-  - 用浏览器 localStorage 保存 source / consumer 列表
-  - 不采用原因：不符合现有 profile-backed 持久化模式，也会绕开多 profile 语义
+  - 把主页面改成 master-detail，多栏常驻 viewer
+  - 不采用原因：会重新把输出内容堆回主页面，和“列表简洁”目标冲突
 
 #### 模块职责
-- `app_stream.go`
-  - 定义 `StreamPrefs`
-  - 提供 `StreamPrefs()` / `SaveStreamPrefs(...)`
-  - 负责 prefs 归一化、去重和 profile 存取
-- `app_stream_test.go`
-  - 覆盖 prefs 读写、归一化、重复 ID 合并
-- `frontend/src/stores/stream.ts`
-  - 维护本地 source / consumer、远端 catalog、runtime deliveries 三类状态边界
-  - 加载 / 保存 prefs
-  - 自动恢复本地 source / consumer
-  - 提供 text source 最小发送能力
-- `frontend/src/layout/AppShell.vue`
-  - profile 切换时加载 Stream prefs
-  - 登录 / 重连成功后触发 restore
 - `frontend/src/pages/Stream.vue`
-  - 提供 tab UI
-  - source / consumer 列表与摘要
-  - 新增弹窗、订阅弹窗、source 输入弹窗
-  - 保留 control tab
-- `internal/services/stream/service.go`
-  - 暴露最小 text publish binding
-- `internal/services/stream/runtime.go`
-  - 复用现有 DATA/ACK 帧格式 helper
-  - 在 producer send 路径维护必要的本地位置状态
-- `frontend/src/i18n/messages/stores.ts`
-  - 补齐新增 Stream 文案中文翻译
+  - 主页面列表、紧凑摘要、打开窗口入口、基础创建/订阅/连接操作
+- `frontend/src/windows/StreamSourceWindow.vue`
+  - source 输入窗口
+  - text send 与最近发送记录
+- `frontend/src/windows/StreamDeliveryWindow.vue`
+  - delivery 输出窗口
+  - text frames 或 stats 查看
+- `frontend/src/router/index.ts`
+  - 注册 Stream window routes
+- `frontend/src/stores/stream.ts`
+  - 继续作为 runtime / source / consumer / delivery 单一业务状态来源
+  - 如有需要，仅补最小 helper，不重构核心状态
+- `frontend/src/i18n/messages/*`
+  - 补齐新增按钮、窗口标题、空态和错误文案
 
 #### 数据 / 调用流
-1. `AppShell` 在 profile 变化时调用 `stream.loadPrefs()`
-2. Stream store 载入：
-  - `activeTab`
-  - `targetId`
-  - 保存的本地 sources
-  - 保存的本地 consumers
-3. 当 session connected + loggedIn + node/hub ready 时，`AppShell` 调 `stream.restoreLocalCatalogs()`
-4. `restoreLocalCatalogs()` 对保存的 source / consumer 逐个调用现有 `AnnounceSimple / AnnounceConsumerSimple`
-5. Stream 页面：
-  - `Source` tab 消费 store 中的本地 source 列表
-  - `Consumer` tab 消费 store 中的本地 consumer 列表
-  - `Control` tab 使用远端 catalog 查询状态
-6. 用户在 source 输入弹窗提交文本时：
-  - 前端调用新 binding
-  - Go 根据本地 `producerDeliveries` 找到该 source 的 active deliveries
-  - 按现有 `KindData` 帧格式发往各个 consumer
-7. runtime 的 `stream.delivery / stream.text / stream.stats` 事件继续驱动控制台与绑定摘要刷新
+1. 主页面 `Stream.vue` 继续消费 `stream` store 中的本地 source / consumer 和 runtime deliveries
+2. 用户点击 source 的输入入口
+3. 页面通过 `window.open()` 打开 `#/stream-source-window?sourceId=...`
+4. 输入窗口根据 `sourceId` 从 `stream` store 取 source，并调用现有 `publishText()`
+5. 用户点击 consumer 绑定项或 runtime delivery 的输出入口
+6. 页面通过 `window.open()` 打开 `#/stream-delivery-window?deliveryId=...`
+7. 输出窗口根据 `deliveryId` 从 `stream` store 取 delivery，并消费 `textFramesFor()` / `statsFor()`
 
 #### 接口草案
-- App prefs
-  - `StreamPrefs() -> { activeTab, targetId, sources, consumers }`
-  - `SaveStreamPrefs(prefs) -> normalized prefs`
-- Stream store
-  - `loadPrefs()`
-  - `savePrefs()`
-  - `restoreLocalCatalogs(options?)`
-  - `publishText(sourceId, text)`
-- Stream service
-  - `PublishTextSimple(sourceID uint32, req PublishTextReq) -> PublishTextResp`
-- 页面状态
-  - `activeTab`
-  - `sourceDialogOpen`
-  - `consumerDialogOpen`
-  - `sourceStudioOpen`
-  - `subscribeDialogOpen`
+- 新增 route
+  - `/stream-source-window?sourceId=...`
+  - `/stream-delivery-window?deliveryId=...`
+- 页面 helper
+  - `openSourceWindow(sourceId)`
+  - `openDeliveryWindow(deliveryId)`
+- store
+  - 优先复用：
+    - `sourceById`
+    - `deliveriesForSource`
+    - `deliveriesForConsumer`
+    - `textFramesFor`
+    - `statsFor`
+    - `publishText`
 
 #### 错误与安全
-- prefs 载入失败时必须显式报错，不使用损坏数据继续恢复
-- `publishText` 只允许：
-  - 已登录本机 node
-  - 已存在的本地 source
-  - `kind=text`
-  - 至少一个 active local producer delivery
-- 非 `text` source 输入界面只展示说明，不伪装成可发送
-- 自动恢复必须以相同 descriptor 幂等，不因重复恢复产生冲突
-- 页面不直接拼原始 DATA payload；统一通过 Go binding 发送
+- `window.open()` 失败时必须 toast 提示 popup 被阻止
+- source 窗口若 `sourceId` 无效，必须显示显式空态
+- delivery 窗口若 `deliveryId` 无效或已关闭，必须显示显式空态
+- 非 `text` source 在输入窗口中不得伪装成可发送
+- 窗口页继续只消费业务状态，不直接解析协议 payload
 
 #### 性能与测试策略
 - 性能
-  - prefs 为 profile 小对象 JSON，不新增高频 I/O
-  - 自动恢复只在 profile / 身份变更后触发，并带幂等保护
-  - 复用现有 runtime 事件，不新增重复监听
+  - 主页面移除 summary cards 和大块 viewer，可降低初始信息密度和无关重绘
+  - 窗口页面按 query 只聚焦单个 source 或单个 delivery
 - 测试
-  - `go test ./... -count=1 -p 1`
-  - `npm test -- Stream`
-  - 重点覆盖
-    - prefs 归一化与持久化
-    - store 恢复与保存
-    - text source publish
-    - Stream 页面 tab / 弹窗主交互
+  - `npm exec vitest run src/pages/Stream.test.ts`
+  - 如新增窗口测试，再补对应 `src/windows/*.test.ts`
+  - `npm run build`
+  - `$env:GOWORK='off'; go test ./... -count=1 -p 1`
 
 #### 可扩展性设计点
-- 本地持久化结构保持 source / consumer 分离，后续可扩展更多本地草稿或 source studio 配置
-- source 输入 binding 独立成最小 `text` publisher，后续可扩成其它 kind 的 producer editor
-- 页面把“本地列表”和“远端控制 catalog”拆开，后续增加更强的浏览器或 viewer 时不需要重写主列表
+- source 输入窗口后续可扩展为更多 producer studio，而无需再改主页面
+- delivery 输出窗口后续可扩展为 text inspector、video viewer、custom monitor
+- 主页面继续保留“列表与控制”，窗口承载“沉浸式输入/输出”，角色边界清晰
 
 #### 问题清单
 - none
@@ -265,281 +221,213 @@
   - `docs/requirements/stream.md`
   - `docs/specs/stream.md`
 - workflow result
-  - `docs/change/2026-03-31_win-stream-product-tabs.md`
+  - `docs/change/2026-03-31_win-stream-windows-trim.md`
 - reusable troubleshooting knowledge
-  - 目前无新增 lesson 需求，先沿用已有 `stream` lessons 作为背景参考
+  - 当前无新增 lesson 需求，沿用现有前端构建与 Stream lessons 作为验证提示
 - Requirements impact: `none`
 - Specs impact: `none`
 - Related requirements
-  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs\docs\requirements\stream.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim\docs\requirements\stream.md`
 - Related specs
-  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs\docs\specs\stream.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim\docs\specs\stream.md`
 - Related lessons
-  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs\docs\lessons\stream-ctrl-await-mismatch.md`
-  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs\docs\lessons\stream-local-owner-ctrl-gap.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim\docs\lessons\frontend-build-babel-parser-missing.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim\docs\lessons\stream-ctrl-await-mismatch.md`
+  - `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim\docs\lessons\stream-local-owner-ctrl-gap.md`
 
 #### Executable Checklist
-- [x] `STRUX-1` 增加 Stream profile-backed prefs 与测试
-- [x] `STRUX-2` 重构 Stream store，拆分本地列表 / 远端 catalog / 自动恢复逻辑
-- [x] `STRUX-3` 实现 text source 最小 publish binding 与测试
-- [x] `STRUX-4` 重构 Stream 页面为 `Source / Consumer / Control` tabs，并补齐弹窗交互和 i18n
-- [x] `STRUX-5` 在 `AppShell` 接入 Stream prefs 加载与自动恢复
-- [x] `STRUX-6` 完成 3.3 review checklist 与 4 阶段归档
+- [x] `STRWIN-1` 精简 Stream 主页面：移除 summary cards，压缩 source / consumer / delivery 列表摘要
+- [x] `STRWIN-2` 新增 source 输入窗口与打开入口
+- [x] `STRWIN-3` 新增 delivery 输出窗口与打开入口
+- [x] `STRWIN-4` 补齐 i18n 与前端测试
+- [x] `STRWIN-5` 完成回归验证、3.3 review 与 4 阶段归档
 
 #### Task Details
-##### `STRUX-1` - Stream prefs
+##### `STRWIN-1` - Trim Stream main page
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
 - Goal
-  - 为 Stream 的本地 source / consumer 列表、tab 和 target 提供 profile-backed 持久化
-- Files
-  - `app_stream.go`
-  - `app_stream_test.go`
-- Acceptance
-  - 可读取 / 保存 / 去重 Stream prefs
-- Tests
-  - `go test ./... -count=1 -p 1`
-- Rollback
-  - 回退 `app_stream.go`
-  - 回退 `app_stream_test.go`
-
-##### `STRUX-2` - Stream store
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
-- Goal
-  - 把本地列表、远端 catalog、恢复逻辑和 runtime 状态拆清楚
-- Files
-  - `frontend/src/stores/stream.ts`
-  - `frontend/src/stores/stream.test.ts`
-- Acceptance
-  - 本地 source / consumer 可保存、恢复，并与远端 catalog 查询互不串扰
-- Tests
-  - `npm test -- Stream`
-- Rollback
-  - 回退 `frontend/src/stores/stream.ts`
-  - 回退 `frontend/src/stores/stream.test.ts`
-
-##### `STRUX-3` - Text source publish
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
-- Goal
-  - 为 text source 增加最小可用的发送文本能力
-- Files
-  - `internal/services/stream/service.go`
-  - `internal/services/stream/runtime.go`
-  - `internal/services/stream/service_test.go`
-- Acceptance
-  - 对 active local producer deliveries 可发送 text DATA
-  - 无 active delivery 或非 text source 时返回显式错误
-- Tests
-  - `go test ./... -count=1 -p 1`
-- Rollback
-  - 回退 `internal/services/stream/service.go`
-  - 回退 `internal/services/stream/runtime.go`
-  - 回退 `internal/services/stream/service_test.go`
-
-##### `STRUX-4` - Stream page tabs and dialogs
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
-- Goal
-  - 用 tab + 列表 + 弹窗重做 Stream 页面主交互
+  - 让 `Stream` 主页面回到“列表 + 轻动作”形态，去掉 summary cards 和冗余明细
 - Files
   - `frontend/src/pages/Stream.vue`
   - `frontend/src/pages/Stream.test.ts`
-  - `frontend/src/i18n/messages/stores.ts`
 - Acceptance
-  - 页面主画布简洁，source / consumer / control 分离明确
-  - source 输入与 consumer 订阅通过独立弹窗完成
+  - 顶部四块统计卡消失
+  - source / consumer / delivery 列表更紧凑
 - Tests
-  - `npm test -- Stream`
+  - `npm exec vitest run src/pages/Stream.test.ts`
 - Rollback
   - 回退 `frontend/src/pages/Stream.vue`
   - 回退 `frontend/src/pages/Stream.test.ts`
-  - 回退 `frontend/src/i18n/messages/stores.ts`
 
-##### `STRUX-5` - AppShell restore integration
+##### `STRWIN-2` - Add source input window
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
 - Goal
-  - 在 profile / session 生命周期内自动加载 Stream prefs 并恢复本地 catalogs
+  - 让 source 输入通过独立窗口完成
 - Files
-  - `frontend/src/layout/AppShell.vue`
+  - `frontend/src/router/index.ts`
+  - `frontend/src/windows/StreamSourceWindow.vue`
+  - `frontend/src/pages/Stream.vue`
 - Acceptance
-  - 登录后无需打开 Stream 页面，也会恢复本地 source / consumer
+  - 可以从主页面打开 source 输入窗口
+  - 窗口内可对 text source 发送文本并看到最近发送记录
 - Tests
-  - `npm test -- Stream`
+  - `npm exec vitest run src/pages/Stream.test.ts`
 - Rollback
-  - 回退 `frontend/src/layout/AppShell.vue`
+  - 回退窗口 route、窗口组件与入口按钮
 
-##### `STRUX-6` - Review and archive
+##### `STRWIN-3` - Add delivery output window
 - Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-product-tabs`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
 - Goal
-  - 按 checklist 复核并归档本轮变更
+  - 让 delivery 输出通过独立窗口查看
+- Files
+  - `frontend/src/router/index.ts`
+  - `frontend/src/windows/StreamDeliveryWindow.vue`
+  - `frontend/src/pages/Stream.vue`
+- Acceptance
+  - 可以从主页面打开输出窗口
+  - text delivery 可看文本帧，非 text delivery 可看 stats
+- Tests
+  - `npm exec vitest run src/pages/Stream.test.ts`
+- Rollback
+  - 回退窗口 route、窗口组件与入口按钮
+
+##### `STRWIN-4` - I18n and tests
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
+- Goal
+  - 保证新增窗口和精简后的页面文案完整可测
+- Files
+  - `frontend/src/i18n/messages/stores.ts`
+  - 如需要：`frontend/src/i18n/messages/signals.ts`
+  - `frontend/src/pages/Stream.test.ts`
+- Acceptance
+  - 新增文案有 `zh-CN`
+  - 关键打开窗口与空态场景有测试
+- Tests
+  - `npm exec vitest run src/pages/Stream.test.ts`
+- Rollback
+  - 回退 i18n 与测试改动
+
+##### `STRWIN-5` - Review and archive
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-stream-windows-trim`
+- Goal
+  - 完成本轮验证、review 和归档
 - Files
   - `plan.md`
-  - `docs/change/2026-03-31_win-stream-product-tabs.md`
+  - `docs/change/2026-03-31_win-stream-windows-trim.md`
   - `docs/change/README.md`
 - Acceptance
-  - 3.3 每项给出结论
+  - review checklist 全部给出结论
   - change 归档完整
 - Tests
-  - review checklist
+  - `npm run build`
+  - `$env:GOWORK='off'; go test ./... -count=1 -p 1`
 - Rollback
   - 回退本轮 docs 变更
 
 #### Dependencies
-- `internal/services/stream`
-  - 现有 local owner / runtime 作为 source 恢复和 text publish 的基础
-- `app_varpool.go`
-  - 提供 profile-backed prefs 实现参考
-- `frontend/src/pages/VarPool.vue`
-  - 提供 tab 风格参考
+- `frontend/src/pages/TopicBus.vue`
+  - 提供 `window.open + route query` 模式参考
+- `frontend/src/windows/TopicBusWindow.vue`
+  - 提供独立窗口工作区骨架参考
+- `frontend/src/pages/Logs.vue`
+  - 提供最小窗口打开入口参考
+- `frontend/src/stores/stream.ts`
+  - 继续作为 Stream 页面与窗口的统一状态来源
 
 #### Risks and Notes
-- `plan.md` 原先残留的是上一轮 `fix/win-stream-local-owner` 内容，本轮已重置为当前 workflow
-- 本轮优先实现最小 text source publisher，不扩展到 `music/video/custom`
-- 若实现中发现 text publish 需要修改稳定协议或外部 proto，则必须回到 `3.1`
+- 当前主仓 `go.mod` 有用户未提交改动，禁止在主仓路径实现
+- 本轮不改变 Stream 的长期 specs，只做产品化交互收敛
+- 若实现中发现“输出窗口”必须改为 consumer 维度或 source 维度以外的标识层级，再回到 `3.1` 更新计划
 
 #### Parallelism Assessment
 - 不派发子Agent
 - 原因
   - 当前会话没有用户显式授权子Agent
-  - 变更集中在同一组 Stream 前后端文件，串行实现更安全
+  - 变更集中在同一组 Stream 前端文件和窗口路由，串行实现更安全
 
 阻塞：否
 进入 3.2
 
 ### Stage 3.2 - Implementation
-#### Task Mapping
-- `STRUX-1`
-  - `app_stream.go`
-  - `app_stream_test.go`
-- `STRUX-2`
-  - `frontend/src/stores/stream.ts`
-  - `frontend/src/stores/stream.test.ts`
-- `STRUX-3`
-  - `internal/services/stream/publish.go`
-  - `internal/services/stream/service_test.go`
-- `STRUX-4`
+#### 实际完成
+- `STRWIN-1`
   - `frontend/src/pages/Stream.vue`
-  - `frontend/src/pages/Stream.test.ts`
+    - 删除顶部 4 块统计卡
+    - `Source` / `Consumer` tab 改为更紧凑的单层列表
+    - `Control` tab 删除页内 delivery viewer，仅保留列表与控制动作
+- `STRWIN-2`
+  - `frontend/src/windows/StreamSourceWindow.vue`
+    - 新增独立 source 输入窗口
+  - `frontend/src/router/index.ts`
+    - 注册 `/stream-source-window`
+  - `frontend/src/pages/Stream.vue`
+    - source 行改为 `window.open()` 打开输入窗口
+- `STRWIN-3`
+  - `frontend/src/windows/StreamDeliveryWindow.vue`
+    - 新增独立 delivery 输出窗口
+  - `frontend/src/router/index.ts`
+    - 注册 `/stream-delivery-window`
+  - `frontend/src/pages/Stream.vue`
+    - runtime delivery 行增加 `Output Window`
+- `STRWIN-4`
   - `frontend/src/i18n/messages/stores.ts`
-- `STRUX-5`
-  - `frontend/src/layout/AppShell.vue`
-- `STRUX-6`
-  - `plan.md`
-  - `docs/change/2026-03-31_win-stream-product-tabs.md`
+    - 补齐本轮窗口和精简页面 `zh-CN`
+  - `frontend/src/pages/Stream.test.ts`
+    - 更新为验证 summary cards 移除和输入/输出窗口入口
+
+#### 偏差记录
+- 未新增独立窗口测试文件
+  - 原因：本轮优先用页面测试覆盖主入口，窗口组件通过主页面入口、Go 测试和人工代码 review 收敛
+
+### Stage 3.3 - Review
+#### Review Checklist
+- 需求对齐
+  - 通过：顶部 4 块统计卡已移除
+  - 通过：source / consumer 列表压缩为名称、kind、绑定摘要 + 轻动作
+  - 通过：输入改为独立 `stream-source-window`
+  - 通过：输出改为独立 `stream-delivery-window`
+- 架构约束
+  - 通过：继续复用现有 `window.open + #/route` 模式
+  - 通过：继续复用 `stream` store，不在窗口内直接解析 raw payload
+- 风险检查
+  - 通过：popup blocked 有 toast
+  - 通过：source / delivery 缺失有窗口空态
+  - 通过：非 `text` source 在输入窗口中不会伪装成可发送
+- 测试与验证
+  - 通过：`git diff --check`
+  - 通过：`$env:GOWORK='off'; go test ./... -count=1 -p 1`
+  - 阻塞已记录：前端 `vitest` / `vite build` 因当前 worktree 缺少 `node_modules` 未能执行
+
+结论：通过，进入 4
+
+### Stage 4 - Archive
+#### Docs Routing
+- 使用 `$m-docs` 复核：
+  - 稳定 truth 仍为 `docs/requirements/stream.md` 与 `docs/specs/stream.md`
+  - 本轮结果进入 `docs/change/2026-03-31_win-stream-windows-trim.md`
+  - `docs/change/README.md` 已更新索引
+
+#### Archive Output
+- 新增：
+  - `docs/change/2026-03-31_win-stream-windows-trim.md`
+- 更新：
   - `docs/change/README.md`
 
-#### File-level Change Summary
-- `app_stream.go`
-  - 新增 Stream profile-backed prefs 读写接口，统一归一化 `activeTab / targetId / sources / consumers`
-- `app_stream_test.go`
-  - 补 prefs 默认值、去重和非法值归一化测试
-- `frontend/src/stores/stream.ts`
-  - 将本地 source / consumer、远端 catalog、runtime deliveries 拆分建模
-  - 新增 prefs 载入保存、自动恢复、text source publish、按 scope 查询 helper
-- `frontend/src/stores/stream.test.ts`
-  - 补 store 恢复、本地/远端边界、text publish 测试
-- `internal/services/stream/publish.go`
-  - 新增 text source 最小发送 binding，只向 active local producer deliveries 发 DATA
-- `internal/services/stream/service_test.go`
-  - 补本地 text publish 成功与无 active delivery 失败测试
-- `frontend/src/layout/AppShell.vue`
-  - 在 profile / session 生命周期内加载 Stream prefs 并自动恢复本地 catalogs
-- `frontend/src/pages/Stream.vue`
-  - 重做为 `Source / Consumer / Control` tabs
-  - `Source` / `Consumer` 改为列表主界面 + 独立弹窗
-  - `text` source 增加独立输入工作区
-  - consumer 订阅改为独立弹窗
-- `frontend/src/pages/Stream.test.ts`
-  - 补 tab、创建弹窗、source studio、consumer subscribe 弹窗测试
-- `frontend/src/i18n/messages/stores.ts`
-  - 补齐新增 Stream 文案的 `zh-CN` 翻译
+#### Validation Snapshot
+- `git diff --check`
+  - 通过
+- `npm exec vitest run src/pages/Stream.test.ts`
+  - 未执行成功：缺少 `vitest` / `@vitejs/plugin-vue`
+- `npm run build`
+  - 未执行成功：缺少 `frontend/node_modules/vite/bin/vite.js`
+- `$env:GOWORK='off'; go test ./... -count=1 -p 1`
+  - 通过
 
-#### Design Notes
-- 持久化复用现有 profile-backed `App` storage，不引入浏览器 `localStorage`
-- 自动恢复放在 `AppShell`，确保登录后无需打开 `Stream` 页面也能恢复本地 source / consumer
-- `text` source 的输入能力只补最小可用 binding，不改 `stream` 协议 wire，不伪造其它 kind 的 producer editor
-- 页面沿用现有 Win / `VarPool` 视觉模式，主界面保持列表优先，把新增、订阅、输入收敛到弹窗或独立工作区
-
-#### Validation
-- `MyFlowHub-Win`
-  - `$env:GOWORK='off'; go test ./internal/services/stream -count=1`
-  - 结果：通过
-- `MyFlowHub-Win`
-  - `$env:GOWORK='off'; go test . -count=1`
-  - 结果：通过
-- `MyFlowHub-Win`
-  - `$env:GOWORK='off'; go test ./... -count=1 -p 1`
-  - 结果：通过
-- `MyFlowHub-Win`
-  - `$env:GOWORK='off'; wails generate module`
-  - 结果：通过
-  - 备注：有 `Not found: time.Time` 提示，但退出码为 `0`，bindings 已刷新
-- `MyFlowHub-Win/frontend`
-  - `npm ci`
-  - 结果：通过
-- `MyFlowHub-Win/frontend`
-  - `npm exec vitest run src/stores/stream.test.ts src/pages/Stream.test.ts`
-  - 结果：通过（`2` files, `6` tests）
-- `MyFlowHub-Win/frontend`
-  - `npm run build`
-  - 结果：通过
-  - 备注：保留既有大 chunk warning，非本轮回归
-
-#### Blockers
-- none
-
-### Stage 3.3 - Code Review
-- 需求覆盖：通过
-  - `Source / Consumer / Control` tabs 已落地
-  - source / consumer 主界面已改为列表优先，新增与订阅通过弹窗完成
-  - `text` source 有独立输入工作区，并能实际发送文本
-  - 本地 source / consumer 支持 profile 级持久化与登录后自动恢复
-- 架构合理性：通过
-  - prefs、store、AppShell 生命周期和 stream service publish 各自边界清晰
-  - 未改稳定协议，也没有把页面逻辑反向塞进 runtime
-- 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - prefs 为小对象按需保存
-  - 自动恢复带幂等保护，未新增重复网络监听
-  - text publish 只遍历匹配 source 的 active producer deliveries
-- 可读性与一致性：通过
-  - Stream store 以 `local` / `catalog` / `runtime` 分层命名
-  - 页面交互按 tab 和弹窗拆分，和现有 `VarPool` 风格一致
-- 可扩展性与配置化：通过
-  - 本地 source / consumer 持久化结构分离
-  - source studio 与 publish binding 后续可继续扩展到更多 producer editor
-- 稳定性与安全：通过
-  - 输入、target、metadata、text content、source kind、active delivery 都有显式校验
-  - 恢复失败与自动恢复不完整会显式反馈，不静默吞错
-- 测试覆盖情况：通过
-  - Go：prefs、publish、stream 全量回归通过
-  - Frontend：store 与页面交互测试通过，生产 build 通过
-- 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 未使用子Agent
-
-### Stage 4 - Change Archive
-#### $m-docs Check
-- 使用 `$m-docs` 校验 plan/change/lessons 路由
-- Requirements impact: `none`
-- Specs impact: `none`
-- Lessons impact: `none`
-- 相关 requirements
-  - `docs/requirements/stream.md`
-- 相关 specs
-  - `docs/specs/stream.md`
-- 相关 lessons
-  - `docs/lessons/stream-ctrl-await-mismatch.md`
-  - `docs/lessons/stream-local-owner-ctrl-gap.md`
-  - `docs/lessons/frontend-build-babel-parser-missing.md`
-- 本轮无需更新 `docs/requirements`、`docs/specs`、`docs/lessons` 或 `docs/lessons/README.md`
-- 已更新
-  - `plan.md`
-  - `docs/change/2026-03-31_win-stream-product-tabs.md`
-  - `docs/change/README.md`
-
-#### Archive Status
-- 已完成 repo-local 归档
-- 等待用户确认是否结束当前 workflow
+#### Workflow Status
+- 当前实现与归档已完成
+- 等待用户决定是否结束本 workflow 并合并/清理 worktree
