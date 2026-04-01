@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-04-01_win-mcp-full-chain-smoke.md](2026-04-01_win-mcp-full-chain-smoke.md)
   - [2026-03-31_win-stream-windows-trim.md](2026-03-31_win-stream-windows-trim.md)
   - [2026-03-31_win-stream-product-tabs.md](2026-03-31_win-stream-product-tabs.md)
   - [2026-03-29_win-stream-local-owner.md](2026-03-29_win-stream-local-owner.md)
