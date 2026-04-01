@@ -31,7 +31,10 @@
 - 使用独立本地配置目录保存 MCP 自己的 settings 与 node keys。
 - 写工具默认受显式开关保护。
 - 日志只能写 `stderr`，不得污染 MCP `stdout`。
-- 仓内提供一个可直接连真实 Hub 的 smoke 脚本，覆盖 `initialize -> tools/list -> connect -> auth -> auth_get_perms -> auth_list_roles -> management_list_nodes`。
+- 仓内提供一个可直接连真实 Hub 的 staged smoke 脚本：
+  - 默认覆盖 `initialize -> tools/list -> connect -> auth -> auth_get_perms -> auth_list_roles -> management_list_nodes`
+  - 显式 opt-in 时扩展覆盖 management/config/exec/flow-read
+  - authority 与写操作阶段必须显式 opt-in，并带清理与失败提示
 
 ### Optional
 
@@ -61,7 +64,7 @@
 - AI 读取某个变量、列出变量名、创建变量、修改变量、撤销变量。
 - 用户同时运行 GUI Win 客户端和 MCP 客户端，两者互不干扰。
 - 用户通过脚本把 MCP 安装到 Codex，而不是手动编辑 host 配置。
-- 用户通过 smoke 脚本直连真实 Hub，验证独立 `config_dir`、auth、权限查询与 management 基础链路。
+- 用户通过 smoke 脚本直连真实 Hub，先验证独立 `config_dir`、auth、权限查询与 management 基础链路，再按需开启 extended read、authority、write 阶段。
 
 ## Functional Requirements
 
@@ -78,22 +81,31 @@
 11. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
 12. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
 13. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
-14. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
-15. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
-16. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
+14. smoke 脚本必须支持 staged 执行：
+   - 默认基础链路
+   - 显式启用的 extended read 链路
+   - 显式启用的 authority 链路
+   - 显式启用的 write 链路
+15. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
+16. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
+17. authority 与写操作阶段默认不得执行；只有显式参数满足时才允许进入。
+18. 写阶段必须使用临时 flow / var 资源名，并在结束后显式清理；清理失败时必须提示残留资源。
+19. 写阶段必须显式依赖 `allow_write` 启动 gate，不得在未开 gate 时静默降级。
+20. authority 阶段必须始终先执行 pending list；permit 签发必须要求 `device_id + role` 成对输入，approve/reject 必须要求显式 `request_id`。
+21. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
    - `device_id`
    - `node_id`
    - `hub_id`
    - `role`
-17. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
-18. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
-19. `flow set/run/delete` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
-20. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
-21. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
-22. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
-23. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
-24. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
-25. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
+22. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
+23. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
+24. `flow set/run/delete` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
+25. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
+26. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
+27. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
+28. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
+29. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
+30. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
 
 ## Non-functional Requirements
 
@@ -141,7 +153,8 @@
 6. `allow_write=false` 时，写工具被本地拒绝且错误结构可读。
 7. `session_status` 可直接暴露 auth/readiness/permissions/hints。
 8. `scripts/install-codex-myflowhub-mcp.ps1 -WhatIf` 可成功预演安装结果。
-9. `scripts/test-myflowhub-mcp-smoke.ps1 -Help` 可输出脚本用法，且 `register pending` 会显式失败并提示保留 `config_dir`。
+9. `scripts/test-myflowhub-mcp-smoke.ps1 -Help` 可输出 staged 用法、前置条件和写入风险，且 `register pending` 会显式失败并提示保留 `config_dir`。
+10. `scripts/test-myflowhub-mcp-smoke.ps1` 对 authority / write 缺参场景必须在本地显式失败，而不是隐式跳过。
 
 ## Related Specs
 

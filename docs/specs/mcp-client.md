@@ -368,17 +368,49 @@
 - `scripts/install-codex-myflowhub-mcp.ps1` 必须能够以幂等方式更新 Codex `config.toml` 中对应的 `mcp_servers.<name>` 配置块。
 - 安装脚本必须支持 `-WhatIf` 预演。
 - `scripts/test-myflowhub-mcp-smoke.ps1` 必须复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程，并通过 stdio 逐条发送 JSON-RPC。
-- smoke 脚本固定覆盖：
-  - `initialize`
-  - `tools/list`
-  - `myflowhub_session_connect`
-  - `myflowhub_auth_register` 或 `myflowhub_auth_login`
-  - `myflowhub_auth_get_perms`
-  - `myflowhub_auth_list_roles`
-  - `myflowhub_management_list_nodes`
+- smoke 脚本必须采用 staged 模型：
+  - 默认基础阶段固定覆盖：
+    - `initialize`
+    - `tools/list`
+    - `myflowhub_session_connect`
+    - `myflowhub_auth_register` 或 `myflowhub_auth_login`
+    - `myflowhub_auth_get_perms`
+    - `myflowhub_auth_list_roles`
+    - `myflowhub_management_list_nodes`
+  - `-EnableExtendedRead` 额外覆盖：
+    - `myflowhub_management_node_info`
+    - `myflowhub_management_node_echo`
+    - `myflowhub_management_list_subtree`
+    - `myflowhub_management_config_list`
+    - `myflowhub_management_config_get`
+    - `myflowhub_exec_cap_query`
+    - `myflowhub_flow_list`
+    - `myflowhub_flow_get`
+    - `myflowhub_flow_status`
+  - `-EnableAuthoritySmoke` 额外覆盖：
+    - `myflowhub_auth_list_pending_registers`
+    - 可选 `myflowhub_auth_issue_register_permit` / `myflowhub_auth_revoke_register_permit`
+    - 可选 `myflowhub_auth_approve_register` / `myflowhub_auth_reject_register`
+  - `-EnableWriteSmoke` 额外覆盖：
+    - `myflowhub_varstore_list`
+    - `myflowhub_varstore_set`
+    - `myflowhub_varstore_get`
+    - `myflowhub_varstore_revoke`
+    - `myflowhub_flow_set`
+    - `myflowhub_flow_list`
+    - `myflowhub_flow_get`
+    - `myflowhub_flow_run`
+    - `myflowhub_flow_status`
+    - `myflowhub_flow_delete`
+- smoke 脚本必须在进入每个已启用阶段前校验该阶段所需工具已经出现在 `tools/list` 中。
 - `login` 模式必须要求显式 `config_dir`，且该目录必须已存在，避免误用 GUI 默认目录或空目录。
 - `register` 模式在未显式传 `config_dir` 时，可创建独立临时目录，但必须把目录路径打印给用户。
 - 当 register 返回 `code=202` 或 `status=pending` 时，脚本必须显式失败并提示“保留当前 config_dir，待审批完成后再 login”。
+- authority 阶段必须始终先执行 pending list；permit 签发要求 `device_id + role` 成对输入，approve/reject 要求显式 `request_id`。
+- extended read 阶段的 `config_get` 必须优先使用 `-ConfigKey`；若该 key 不可用则回退到 `config_list` 返回的首个 key；若没有任何可读 key，必须显式记录 skipped。
+- write 阶段必须自动让 launcher 追加 `--allow-write`，并在本地要求 `executor_node` 与 `flow_method`。
+- write 阶段必须使用临时资源名，完成后显式执行 `flow_delete` 与 `varstore_revoke`；cleanup 失败不得吞掉。
+- 若 extended read 阶段未拿到现成 `flow_id` 且用户也未传 `-FlowID`，`flow_get/status` 可显式记录为 skipped，但 `flow_list` 仍必须执行。
 
 ## Data Model or Protocol
 

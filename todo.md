@@ -1,365 +1,416 @@
-# Plan - Win Frontend Babel Parser Build Fix
+# Workflow Todo - Win MCP Full Chain Smoke
 
 ## Workflow Information
-- Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-missing-babel-parser`
+- Repo: `MyFlowHub-Win`
+- Branch: `feat/win-mcp-full-chain-smoke`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser`
-- Current Stage: `4 archive`
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Current Stage: `4`
 
 ## Stage Records
 
 ### Initialization
-- `guide.md`:
-  - 仓库根未发现 `guide.md`
-  - 已读取 workspace 根 `D:\project\MyFlowHub3\guide.md`
-  - 已读取 `$m-autoflow` 的 `references/initialization.md`、`references/stages.md`、`references/m-docs-integration.md`
-  - 已读取 `$m-docs` 的 `requirement-impact.md`、`indexing-rules.md`、`lessons-rules.md`
+- guide.md:
+  - 已读取 workspace `guide.md`，确认 worktree 必须位于 `D:\project\MyFlowHub3\worktrees\`，实现不得在主 repo 目录直接进行。
 - base/worktree confirmation:
-  - control-plane repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - active execution worktree: `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser`
-  - dedicated branch: `fix/win-missing-babel-parser`
-  - implementation will stay inside the worktree only
+  - 执行 repo: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+  - 当前分支: `feat/win-mcp-full-chain-smoke`
+  - 当前 repo 基线: `repo/MyFlowHub-Win` `main`
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 修复 `MyFlowHub-Win` 在 Wails 前端编译阶段因 `@vue/compiler-core` 缺少 `@babel/parser` 而中断的问题，并保持现有 Win 前端构建链可重复执行。
+- 在不扩张 MCP 协议能力面的前提下，把现有 `myflowhub-mcp` 工具串成更完整的真实 Hub smoke 验证链路。
+- 补齐 authority / management / exec / flow / varstore 的真实环境验收入口，同时保持默认行为安全、可回滚、可重复执行。
 
 #### Scope
 - 必须:
-  - 解决 `failed to load config from frontend/vite.config.ts` 后续的 `Cannot find module '@babel/parser'`
-  - 保持现有 Vite / Vue / Wails 构建入口不回退
-  - 不引入新的环境专属路径或手工步骤作为唯一修复方式
-  - 验证前端 build 与 Wails 绑定 / 构建链路
+  - 扩展 `scripts/test-myflowhub-mcp-smoke.ps1`，使其能覆盖现有已实现工具的更完整验证链路。
+  - 默认保持非破坏性或最小破坏性行为，写操作和 authority 操作必须显式 opt-in。
+  - 为需要真实写入的阶段提供明确参数、命名策略、清理策略和失败提示。
+  - 对齐 `docs/requirements/mcp-client.md`、`docs/specs/mcp-client.md`、`README.md` 的 smoke 契约描述。
+  - 保持 `start-myflowhub-mcp.ps1` / `install-codex-myflowhub-mcp.ps1` 现有兼容行为。
 - 可选:
-  - 补充构建链排障归档或 lesson，前提是本轮发现了可复用的新排障线索
+  - 若当前脚本结构阻碍维护，可抽取少量本地 helper，但仅限脚本内最小重构。
+  - 为真实 Hub 验证输出更清晰的阶段摘要和资源清理结果。
 - 不做:
-  - 不改动业务页面行为
-  - 不升级无关前端框架版本
-  - 不把日常构建强制改成高成本的全量重装流程，除非没有更小且稳定的方案
+  - 不新增 `topicbus`、`subscribe/unsubscribe`、`config_set`、`exec.call` 等新 MCP 能力。
+  - 不修改 `internal/mcp` 工具契约，除非为 smoke 暴露已存在能力所必需。
+  - 不引入 GUI 自动化或第三方 MCP client。
 
 #### Use Cases
-- 开发者执行 `wails build` 时，Wails 在前端 build 阶段不应再因缺少 `@babel/parser` 直接失败。
-- 开发者在 fresh worktree 或已有 `node_modules` 的仓库里重新安装依赖后，应能稳定执行 `npm run build`。
-- 构建链仍需保留现有 `frontend/dist/placeholder.txt` 占位策略和 Vite 入口策略。
+- 维护者需要在真实 Hub 上验证当前 MCP client 不只是“能连上”，而是能完成 auth、authority、management、exec、flow、varstore 的关键路径。
+- 维护者需要在默认安全模式下先跑只读链路，再按需开启 authority / 写操作阶段。
+- 维护者需要在失败时拿到明确的阶段、上下文参数、保留资源和清理建议，而不是只看到某个 RPC 调用失败。
 
 #### Functional Requirements
-1. `frontend/package.json` / `frontend/package-lock.json` 必须能稳定提供 `@babel/parser`，使 Vue 编译链在加载 `vite.config.ts` 时不缺依赖。
-2. 修复后 `npm install` 之后应能解析 `@vue/compiler-core -> @babel/parser`。
-3. 修复不得破坏现有 `vite` 直接入口和 `dist/placeholder.txt` 回写逻辑。
-4. 若 `frontend/wailsjs/**` 缺失，验证阶段必须按仓库既有 bootstrap 方式补齐再判断最终 build 结果。
+- 脚本必须继续复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程。
+- 脚本必须先验证完整工具集合已暴露，再进入对应阶段调用。
+- 脚本必须支持分阶段执行：
+  - 基础链路：`initialize`、`tools/list`、`session_connect`、`register/login`、`auth_get_perms`、`auth_list_roles`、`management_list_nodes`
+  - 扩展只读链路：`management_node_info`、`management_node_echo`、`management_list_subtree`、`management_config_get/list`、`exec_cap_query`
+  - flow / varstore 验证链路
+  - authority 验证链路
+- authority 和写操作默认不得自动执行；只有显式参数满足时才进入。
+- 任何写操作 smoke 都必须使用可追踪、可清理的临时资源命名。
+- 写操作完成后必须尽量执行清理，并在清理失败时明确提示残留资源。
+- 缺少 authority 权限、缺少 write gate、缺少 flow method、缺少 pending request 等前提时，脚本必须本地显式失败。
 
 #### Non-functional Requirements
-- 采用最小安全变更，优先修复依赖确定性而不是扩大到构建流程重写。
-- 不引入每次开发构建都做不必要全量 reinstall 的额外 I/O。
-- 变更应与现有 2026-03-21 / 2026-03-25 构建链修复方向一致，继续强调可重复构建。
+- 安全性:
+  - 默认运行不得触发 flow 写入、varstore 写入、permit 签发或审批动作。
+  - opt-in 写阶段必须明确依赖 `--allow-write` 和显式参数。
+- 可维护性:
+  - 阶段控制、工具调用、资源命名和结果摘要应集中在脚本中，避免分散魔法值。
+  - 文档中的运行方式、参数说明和脚本实际行为保持一致。
+- 兼容性:
+  - 不破坏现有 `register/login` 基础 smoke 用法。
 
 #### Inputs / Outputs
 - 输入:
-  - 用户提供的 Wails build 失败日志
-  - `frontend/package.json`
-  - `frontend/package-lock.json`
-  - `frontend/vite.config.ts`
-  - 构建链相关 README / change / lessons
+  - 真实 Hub 地址
+  - 登录或注册模式
+  - 专用 `ConfigDir`
+  - 可选 authority / write / flow / varstore / permit 参数
 - 输出:
-  - 稳定声明 `@babel/parser` 的前端依赖配置
-  - 通过的前端构建验证
-  - 本轮 change 归档，以及必要时的 lesson / index 更新
+  - 分阶段日志
+  - 成功时的 NodeID / HubID / 角色 / 关键计数和资源信息
+  - 失败时的阶段、错误摘要、`ConfigDir`、`stderr` tail、需要保留或回收的资源提示
 
 #### Edge Cases
-- 现有 `node_modules` 已损坏或缺包，但锁文件仍未变
-- fresh worktree 缺少 `frontend/wailsjs/**`，导致 build 在后续阶段继续失败
-- 只修复 parser 缺包但破坏已有 `go:embed` 占位或 Vite 入口策略
+- 只读工具存在，但某些 Hub/角色缺少 authority 或 management config 权限。
+- `flow_list` 为空，导致 `flow_get/status` 无法依赖现有 flow。
+- 写阶段已开启，但 `start-myflowhub-mcp.ps1` 未携带 `--allow-write`。
+- authority 测试缺少 `authority_id`、`permit device` 或 `pending request id`。
+- cleanup 失败导致残留 var / flow / permit。
 
 #### Acceptance Criteria
-1. `frontend/package.json` 和 `frontend/package-lock.json` 明确覆盖本次 parser 缺依赖风险。
-2. `npm install` 后 `frontend/node_modules/@babel/parser/package.json` 存在。
-3. `$env:GOWORK='off'; wails generate module` 成功。
-4. `npm run build` 成功。
-5. 如环境允许，`$env:GOWORK='off'; wails build -debug -skipembedcreate -nopackage` 成功。
+- `todo.md` 中定义的 smoke 阶段可映射到现有 MCP 工具面，且默认路径安全。
+- `scripts/test-myflowhub-mcp-smoke.ps1 -Help` 明确说明各阶段、前提和写入风险。
+- 本地验证至少覆盖脚本帮助、主要参数失败路径、`go test ./internal/mcp -count=1`、`go build ./cmd/myflowhub-mcp`。
+- 真实 Hub 验证可按阶段执行并覆盖 requirements 中的全链路 acceptance，至少文档和脚本已经为此提供明确入口。
 
 #### Risks
-- 若把问题归因到安装方式而不是依赖声明，可能只是暂时绕过，不足以覆盖后续环境。
-- 若为追求稳定而把 `frontend:install` 改成高成本全量重装，会增加日常开发 I/O 和等待时间。
-- parser 修复完成后，可能暴露下一层既有问题，例如 `frontend/wailsjs/**` 缺失。
+- 真实 Hub smoke 的 authority / 写阶段天然带状态副作用，若参数设计不清晰，容易污染线上或共享环境。
+- flow 写入需要合法 graph / method，若默认值不稳，会导致脚本看似失败但问题实际在环境约束。
+- 过度扩展单脚本会降低可维护性，因此本轮必须坚持最小改动和参数化分阶段策略。
 
 #### Issue List
 - none
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 保持现有 `npm install`、Vite 直接入口和 embed placeholder 策略不变，在 `frontend/package.json` 中显式声明 `@babel/parser` 为构建时依赖，并同步更新 `frontend/package-lock.json`。
-- 验证时按仓库 README 的 fresh worktree 预检顺序执行：先 `wails generate module` 补齐 `frontend/wailsjs/**`，再跑 `npm run build`，最后视环境执行 `wails build -debug -skipembedcreate -nopackage`。
+- 采用“在现有 smoke 脚本上做分阶段扩展”的方案：
+  - 保留当前基础链路和启动方式。
+  - 新增阶段开关和必要参数，把只读验证与写/authority 验证分层。
+  - 对写阶段使用临时资源命名，并在阶段结束后回收。
+- 选型理由:
+  - 最小改动，直接复用现有 JSON-RPC 驱动逻辑。
+  - 风险最可控，默认仍可做只读健康检查。
+  - 文档和 README 只需围绕同一个脚本更新。
 
 #### Alternatives Considered
-- 方案 A（采用）：显式把 `@babel/parser` 提升为前端 direct build dependency
-  - 优点：
-    - 变更面最小
-    - 直接覆盖当前缺失的关键模块
-    - 不改变日常构建的 install 策略
-  - 代价：
-    - 从“纯传递依赖”转为“显式声明的构建依赖”
-- 方案 B：把 `wails.json` 的 `frontend:install` 改为 `npm ci`
-  - 优点：
-    - 更强的确定性
-  - 代价：
-    - 每次构建都可能触发高成本全量 reinstall，额外 I/O 明显，不符合最小变更
-- 方案 C：新增自定义安装自愈脚本
-  - 优点：
-    - 可以主动探测缺包和自愈
-  - 代价：
-    - 复杂度更高，需要额外脚本维护，超出本轮最小修复目标
+- 方案 A: 新建第二个“full smoke”脚本
+  - 优点: 可把高级用法和基础用法完全隔离。
+  - 不采用原因: 会复制启动、RPC、错误处理和帮助文本，后续维护成本更高。
+- 方案 B: 直接把所有 authority / write 动作放入默认 smoke
+  - 优点: 一次命令覆盖最多能力。
+  - 不采用原因: 对真实 Hub 风险过高，违背最小安全改动原则。
 
 #### Module Responsibilities
-- `frontend/package.json`
-  - 声明构建链直接依赖与脚本入口
-- `frontend/package-lock.json`
-  - 固定 direct dependency 的解析结果，保证 Wails 自动安装时一致
+- `scripts/test-myflowhub-mcp-smoke.ps1`
+  - 负责参数解析、阶段编排、MCP JSON-RPC 调用、资源命名和清理。
 - `README.md`
-  - 已有 fresh worktree bootstrap 说明，验证阶段按现有说明执行
-- `wails.json`
-  - 保持当前安装 / 构建入口，不扩大变更面
+  - 负责公开脚本用法、阶段前提、推荐命令和风险提示。
+- `docs/requirements/mcp-client.md`
+  - 负责澄清 smoke 验收路径从“基础链路”扩展为“分阶段全链路验证”。
+- `docs/specs/mcp-client.md`
+  - 负责澄清 smoke 脚本阶段模型、必要输入、写阶段保护和清理约束。
 
 #### Data / Call Flow
-1. Wails 执行 `frontend:install` 安装前端依赖。
-2. Node 解析 `frontend/vite.config.ts` 时加载 `@vitejs/plugin-vue`。
-3. Vue 编译链通过 `@vue/compiler-core` / `@vue/compiler-sfc` 解析 SFC。
-4. 构建时从 root `node_modules` 解析到显式声明的 `@babel/parser`，避免缺包。
-5. 若为 fresh worktree，先由 `wails generate module` 生成 `frontend/wailsjs/**`，再继续 Vite build。
+1. 脚本拉起 `start-myflowhub-mcp.ps1`。
+2. 通过 stdio 完成 `initialize` / `tools/list` / 基础 auth。
+3. 进入扩展只读阶段，校验 management / exec / flow-read。
+4. 仅当显式启用且参数满足时进入 authority / write 阶段。
+5. 对临时资源执行 cleanup。
+6. 输出阶段摘要和残留提示。
 
 #### Interface Drafts
-- 无新增业务接口。
-- 依赖接口约束：
-  - `@vue/compiler-core@3.5.26` / `@vue/compiler-sfc@3.5.26` 需要 `@babel/parser@^7.28.5`
+- 脚本计划新增或调整的参数类别：
+  - 阶段控制:
+    - 只读扩展阶段开关
+    - authority 阶段开关
+    - 写阶段开关
+  - authority 输入:
+    - `authority_id`
+    - `permit device / role`
+    - `pending request id`
+    - `approve | reject` 选择
+  - flow 输入:
+    - `executor_node`
+    - `flow_id` 或临时 flow 前缀
+    - `flow method`
+  - varstore 输入:
+    - `var name/value`
+    - `owner`
+- 具体命名以最小兼容改动为准，优先复用现有参数命名风格。
 
 #### Error Handling and Safety
-- 不吞掉安装或构建错误；验证中若出现后续失败点，明确记录是 parser 之后的新阻塞。
-- 不修改已有业务代码，避免把构建链修复扩散到运行时行为。
+- 基础链路失败时立即停止，不继续后续阶段。
+- authority / 写阶段前先校验参数和本地前提。
+- cleanup 失败单独报出，不吞掉原始业务阶段错误。
+- 写阶段默认关闭；只有显式参数开启并满足前置条件才执行。
 
 #### Performance and Testing Strategy
-- 性能:
-  - 保持现有 `npm install`，避免改为每次重装的 `npm ci`
-- 验证:
-  - `npm install`
-  - `Test-Path frontend/node_modules/@babel/parser/package.json`
-  - `$env:GOWORK='off'; wails generate module`
-  - `npm run build`
-  - `$env:GOWORK='off'; wails build -debug -skipembedcreate -nopackage`
+- 不增加额外进程；继续复用单 MCP 进程和单条 session。
+- 本地验证:
+  - `go test ./internal/mcp -count=1`
+  - `go build ./cmd/myflowhub-mcp`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Help`
+  - 关键失败路径命令
+- 真实 Hub 验证:
+  - 至少给出 read-only 基础命令
+  - 再给出 authority / write 的 staged 命令模板
 
 #### Extensibility Design Points
-- 若后续 Vue 编译链再出现关键 parser / compiler 缺包，可沿用“将关键构建依赖显式化”的策略，而不是把稳定性完全押在隐式传递依赖上。
-- 现有 README / change / lessons 仍作为构建链和 fresh worktree 预检的查阅入口，本轮只在确认有新增复用价值时追加 lesson。
+- 让阶段控制和工具调用映射表可扩展，为后续 `topicbus` 或 subscription smoke 预留入口。
+- 资源命名与 cleanup helper 保持独立，避免后续新增写阶段时复制逻辑。
 
 #### Issue List
 - none
 
 ### Stage 3.1 - Planning
 #### Project Goal and Current State
-- Goal:
-  - 恢复 Win 仓库在当前环境中的前端构建稳定性，消除 `@babel/parser` 缺失导致的 Wails build 阻塞。
-- Current State:
-  - 主仓 `frontend/node_modules/@vue/compiler-core` 已存在，但 `frontend/node_modules/@babel/parser` 缺失，和用户报错一致。
-  - worktree 中 fresh `npm install` 可恢复 parser，但 fresh worktree build 随后会暴露既有 `frontend/wailsjs/**` 缺失，需要按 README 预检补齐。
+- 目标: 补齐 `MyFlowHub-Win` MCP 在真实 Hub 上的分阶段全链路 smoke 验证能力。
+- 当前状态:
+  - `myflowhub-mcp` 工具面已覆盖 `session/auth/management/exec/flow/varstore`。
+  - 现有 `scripts/test-myflowhub-mcp-smoke.ps1` 只覆盖基础链路到 `management_list_nodes`。
+  - authority / exec / flow / varstore 的真实环境验收缺少统一脚本入口。
 
 #### Docs Governance Routing Decision
-- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口。
-- Requirements impact: none
-- Specs impact: none
-- Related requirements:
-  - none
-- Related specs:
-  - none
-- Related lessons:
-  - `docs/lessons/wails-embed-dist-placeholder.md`
-- Related changes:
-  - `docs/change/2026-03-21_win-frontend-build-chain.md`
-  - `docs/change/2026-03-25_win-embed-dist-placeholder.md`
-- Stable truth routing:
-  - 本轮不改长期 requirements / specs
-  - workflow 执行控制使用 worktree 根 `todo.md`
-  - 完成结果归档到 `docs/change`
-  - 仅在发现新的可复用排障模式时更新 `docs/lessons`
+- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 change 索引入口。
+- 结论:
+  - 稳定真相仍在 `docs/requirements/mcp-client.md` 与 `docs/specs/mcp-client.md`
+  - 本轮计划文档保留在 worktree 根 `todo.md`
+  - 完成后结果归档进入 `docs/change/YYYY-MM-DD_win-mcp-full-chain-smoke.md`
+- Requirements impact: clarify
+- Specs impact: clarify
 
 #### Related Requirements / Specs / Lessons
-- Requirements:
-  - none
-- Specs:
-  - none
-- Lessons:
-  - `docs/lessons/wails-embed-dist-placeholder.md`
-- Prior change archives:
-  - `docs/change/2026-03-21_win-frontend-build-chain.md`
-  - `docs/change/2026-03-25_win-embed-dist-placeholder.md`
+- Related requirements:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\docs\requirements\mcp-client.md`
+- Related specs:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\auth.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\exec.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\flow.md`
+  - `D:\project\MyFlowHub3\repo\MyFlowHub-Server\docs\specs\varstore.md`
+- Related lessons:
+  - none known yet
 
 #### Executable Task List
-- [x] BUILD-DEP-1 显式声明 `@babel/parser` 并同步锁文件
-- [x] BUILD-DEP-2 完成 Wails / frontend 构建验证
-- [x] REVIEW-DEP-1 完成 3.3 代码复核
-- [x] ARCHIVE-DEP-1 归档本轮修复并按需更新索引 / lessons
+- [x] DOCS-1 澄清 requirements/spec/README 中的 smoke 分阶段契约
+- [x] SMOKE-1 扩展脚本参数、工具发现和阶段编排
+- [x] SMOKE-2 接入扩展只读链路验证
+- [x] SMOKE-3 接入 authority / write 阶段与 cleanup
+- [x] TEST-1 执行本地验证并整理真实 Hub 运行说明
+- [x] REVIEW-1 完成代码评审和归档准备
 
 #### Task Details
-##### BUILD-DEP-1 - Parser Dependency Hardening
-- Owner:
-  - main agent
-- Worktree:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser`
-- Plan Path:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser\todo.md`
-- Goal:
-  - 通过最小变更让 Vue 编译链稳定拿到 `@babel/parser`
+##### DOCS-1 - Smoke 契约澄清
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 让 requirements/spec/README 与新的 staged smoke 行为一致
 - Files / Modules:
-  - `frontend/package.json`
-  - `frontend/package-lock.json`
+  - `docs/requirements/mcp-client.md`
+  - `docs/specs/mcp-client.md`
+  - `README.md`
 - Write Set:
-  - `frontend/package.json`
-  - `frontend/package-lock.json`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\docs\requirements\mcp-client.md`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\docs\specs\mcp-client.md`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\README.md`
 - Acceptance:
-  - direct dependency 已声明并锁定
-  - 不破坏现有 Vite / embed build 脚本
+  - 文档明确区分默认基础 smoke 与 opt-in authority / write 阶段
+  - 参数前提、清理策略和风险提示可被 README 直接消费
 - Test Points:
-  - `npm install`
-  - `Test-Path frontend/node_modules/@babel/parser/package.json`
+  - 文档与脚本参数一致性人工校对
 - Rollback:
-  - 回退 `frontend/package.json` / `frontend/package-lock.json`
+  - 回退文档澄清内容
 
-##### BUILD-DEP-2 - Build Chain Validation
-- Owner:
-  - main agent
-- Worktree:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser`
-- Plan Path:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser\todo.md`
-- Goal:
-  - 确认 parser 缺依赖修复后，fresh worktree 在补齐 Wails bindings 后能够通过构建
+##### SMOKE-1 - 参数与阶段编排
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 为现有 smoke 脚本增加 staged full-chain 执行骨架
 - Files / Modules:
-  - generated `frontend/wailsjs/**` only if Wails updates them
+  - `scripts/test-myflowhub-mcp-smoke.ps1`
 - Write Set:
-  - generated files only if tool updates them
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\scripts\test-myflowhub-mcp-smoke.ps1`
 - Acceptance:
-  - `wails generate module` 通过
-  - `npm run build` 通过
-  - `wails build -debug -skipembedcreate -nopackage` 尽可能通过
+  - 现有基础 smoke 兼容
+  - 新增阶段参数后可显式控制 read / authority / write 阶段
+  - 完整工具集合校验与阶段摘要可读
 - Test Points:
-  - `$env:GOWORK='off'; wails generate module`
-  - `npm run build`
-  - `$env:GOWORK='off'; wails build -debug -skipembedcreate -nopackage`
+  - `-Help`
+  - 缺参失败路径
 - Rollback:
-  - 若生成物与本轮修复无关且不稳定，则回退生成物改动
+  - 回退新增参数和阶段编排逻辑
 
-##### ARCHIVE-DEP-1 - Change Archive
-- Owner:
-  - main agent
-- Worktree:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser`
-- Plan Path:
-  - `D:\project\MyFlowHub3\worktrees\fix-win-missing-babel-parser\todo.md`
-- Goal:
-  - 归档 parser 构建链修复，并决定是否追加 lesson
+##### SMOKE-2 - 扩展只读链路
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 将 management / exec / flow-read 的真实 Hub 验证接入 smoke 脚本
 - Files / Modules:
-  - `docs/change/YYYY-MM-DD_*.md`
-  - related indexes if needed
-  - related lesson only if the investigation reveals a reusable pattern
+  - `scripts/test-myflowhub-mcp-smoke.ps1`
 - Write Set:
-  - archive and indexes
-  - optional lesson docs
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\scripts\test-myflowhub-mcp-smoke.ps1`
 - Acceptance:
-  - archive 记录背景、验证、回滚和 lesson 决策
-  - 若新增 lesson，则 `docs/lessons/README.md` 同步可检索线索
+  - 可验证 `management_node_info` / `node_echo` / `list_subtree` / `config_get/list`
+  - 可验证 `exec_cap_query`
+  - 可验证 flow read 路径，必要时根据现有 flow 或参数决定 `get/status`
 - Test Points:
-  - 手工文档一致性检查
+  - 本地帮助和参数校验
+  - 真实 Hub 命令模板
 - Rollback:
-  - 回退新增归档 / 索引 / lesson 文件
+  - 回退只读阶段扩展
+
+##### SMOKE-3 - Authority 与写阶段
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 为 authority / flow-write / varstore-write 提供显式 opt-in smoke 路径
+- Files / Modules:
+  - `scripts/test-myflowhub-mcp-smoke.ps1`
+- Write Set:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\scripts\test-myflowhub-mcp-smoke.ps1`
+- Acceptance:
+  - authority 操作只有显式启用且前提满足时才执行
+  - flow / varstore 写操作使用临时资源并在结束后清理
+  - cleanup 失败可见
+- Test Points:
+  - 缺 authority 输入失败路径
+  - 缺 write gate 失败路径
+- Rollback:
+  - 回退 authority / write 阶段代码
+
+##### TEST-1 - 本地验证与真实 Hub 指引
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 在当前环境完成可执行的本地验证，并给出真实 Hub 运行步骤
+- Files / Modules:
+  - `scripts/test-myflowhub-mcp-smoke.ps1`
+  - `README.md`
+- Write Set:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\scripts\test-myflowhub-mcp-smoke.ps1`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\README.md`
+- Acceptance:
+  - 本地验证命令可执行
+  - README 给出 read-only / authority / write 三类示例
+- Test Points:
+  - `go test ./internal/mcp -count=1`
+  - `go build ./cmd/myflowhub-mcp`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Help`
+- Rollback:
+  - 回退 README 和脚本说明调整
+
+##### REVIEW-1 - 评审与归档准备
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+- Goal: 复核需求覆盖、风险、测试和归档输入
+- Files / Modules:
+  - `todo.md`
+  - 本轮改动文件
+- Write Set:
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\todo.md`
+  - `D:\project\MyFlowHub3\worktrees\win-mcp-full-chain-smoke\docs\change\*.md`
+- Acceptance:
+  - Stage 3.3 checklist 全部通过
+  - Stage 4 输入完整
+- Test Points:
+  - review checklist
+- Rollback:
+  - 返回对应 Task 继续修正
 
 #### Dependencies
-- `BUILD-DEP-1` before `BUILD-DEP-2`
-- `BUILD-DEP-2` before `REVIEW-DEP-1` and `ARCHIVE-DEP-1`
+- 真实 Hub 环境和对应角色权限决定 authority / write 阶段是否能完全执行。
+- flow 写阶段依赖有效的 method / executor 环境。
 
 #### Risks and Notes
-- 主仓当前 `node_modules` 已经处于“compiler-core 在、parser 不在”的不一致状态；最终修复必须以锁文件和依赖声明为准，而不是依赖当前目录偶然状态。
-- fresh worktree 的 `frontend/wailsjs/**` 缺失是现有已知基线问题，需要按 README 预检补齐，不能误判成 parser 修复失败。
-- 本轮不派发子 Agent，写集集中在前端依赖和单条验证链路，且当前会话未获得显式子 Agent 授权。
+- 默认安全优先于“单命令全覆盖”；若真实 Hub 环境复杂，允许按阶段多次执行脚本。
+- 当前主线 `repo/MyFlowHub-Win` 存在未提交的 `go.mod` 变更，但本 worktree 独立，不回退主线状态。
 
 #### Parallelism Assessment
-- No sub-agent dispatch.
-- Reason:
-  - 写集只涉及一个前端依赖面和同一条验证流水线
-  - 子 Agent 无法并行缩短关键路径，反而会增加状态同步成本
+- 结论: 不拆子 Agent。
+- 原因:
+  - 写集集中在单个脚本和同一组文档，耦合度高。
+  - 本轮关键路径是脚本阶段设计与统一验收，不存在安全的并行写集拆分。
 
 #### Issue List
 - none
 
-### Stage 3.2 - Implementation
-#### Execution Summary
-- `BUILD-DEP-1`
-  - `frontend/package.json` 已显式加入 `@babel/parser@^7.28.5`
-  - `frontend/package-lock.json` 已同步 direct dependency 记录
-- `BUILD-DEP-2`
-  - 已按 fresh worktree 预检顺序执行 `wails generate module`
-  - `npm run build` 已通过
-  - `wails build -debug -skipembedcreate -nopackage` 已通过
+### Stage 3.2 - Execution
+#### Completed Work
+- `DOCS-1`
+  - 已更新 `docs/requirements/mcp-client.md`、`docs/specs/mcp-client.md`、`README.md`
+  - 明确 staged smoke 合同、opt-in authority/write 风险和示例命令
+- `SMOKE-1`
+  - 已重建 `scripts/test-myflowhub-mcp-smoke.ps1`
+  - 保持 base smoke 兼容
+  - 新增 staged 参数、阶段摘要、工具集合预检和统一错误输出
+- `SMOKE-2`
+  - 已接入 `management_node_info/node_echo/list_subtree/config_get/list`
+  - 已接入 `exec_cap_query`
+  - 已接入 `flow_list/get/status`，并对无可读 flow 的情况显式记录 skipped
+- `SMOKE-3`
+  - authority 阶段默认关闭，已接入 pending list + 可选 permit / approve / reject
+  - write 阶段默认关闭，且只有显式启用时才自动追加 `--allow-write`
+  - write 阶段使用临时 flow / var 资源并显式 cleanup，cleanup 失败可见
 
-#### Validation
-- `npm install`
-  - 通过
-- `npm ls @babel/parser`
-  - 通过
-  - 说明：root 依赖与 Vue 编译链都解析到 `@babel/parser@7.28.5`
-- `$env:GOWORK='off'; wails generate module`
-  - 通过
-  - 说明：`frontend/wailsjs/**` 已补齐
-- `npm run build`
-  - 通过
-- `$env:GOWORK='off'; wails build -debug -skipembedcreate -nopackage`
-  - 通过
-  - 说明：前端编译阶段不再报 `Cannot find module '@babel/parser'`
+#### Local Validation
+- `$env:GOWORK='off'; go test ./internal/mcp -count=1`
+  - 结果：通过
+- `$env:GOWORK='off'; go build ./cmd/myflowhub-mcp`
+  - 结果：通过
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Help`
+  - 结果：通过
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode login`
+  - 结果：按预期失败，提示缺少 `-ConfigDir`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode login -ConfigDir C:\temp\missing-smoke -EnableWriteSmoke -FlowMethod demo::run`
+  - 结果：按预期失败，提示缺少 `-ExecutorNode`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode login -ConfigDir C:\temp\missing-smoke -EnableAuthoritySmoke -PendingAction approve`
+  - 结果：按预期失败，提示缺少 `-PendingRequestID`
+
+#### Residual Risk
+- 当前环境未实际连接真实 Hub 执行 staged smoke，因此 authority / write 的真实环境副作用仍需用户在目标环境下分阶段确认。
 
 #### Issue List
 - none
 
 ### Stage 3.3 - Review
-#### Review Checklist
-- 需求覆盖：通过
-  - 直接消除了用户日志里的 `@babel/parser` 缺依赖阻塞点
-- 架构合理性：通过
-  - 采用 direct dependency 加固，没有扩大到构建流程改写
-- 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 未引入每次构建都做全量 reinstall 的额外 I/O
-- 可读性与一致性：通过
-  - 改动集中在依赖声明、计划文档和归档文档
-- 可扩展性与配置化：通过
-  - 后续升级 Vue 编译链时可按显式依赖策略继续维护
-- 稳定性与安全：通过
-  - 保持现有 Vite 入口、Wails install 入口和 embed placeholder 逻辑不变
-- 测试覆盖情况：通过
-  - 已完成 `npm install`、`npm ls @babel/parser`、`wails generate module`、`npm run build`、`wails build`
-- 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 本轮未派发子 Agent
+#### Checklist
+- [x] 需求影响已写回 `docs/requirements/mcp-client.md`
+- [x] 技术契约影响已写回 `docs/specs/mcp-client.md`
+- [x] README 示例命令与脚本参数一致
+- [x] 脚本帮助、关键失败路径、`go test`、`go build` 已执行
+- [x] authority / write 默认安全关闭
+- [x] cleanup 失败可见，不吞错误
+- [x] 无需回退到 3.2 的评审问题
 
-#### Findings
-- none
-
-#### Issue List
-- none
+#### Review Result
+- 通过，进入 Stage 4 归档
 
 ### Stage 4 - Archive
-#### Archive Outputs
-- `docs/change/2026-03-27_win-babel-parser-build.md`
-  - 已创建
-- `docs/lessons/frontend-build-babel-parser-missing.md`
-  - 已创建
-- `docs/change/README.md`
-  - 已更新索引
-- `docs/lessons/README.md`
-  - 已更新检索线索
+#### Archive Output
+- 已新增 `docs/change/2026-04-01_win-mcp-full-chain-smoke.md`
+- 已更新 `docs/change/README.md`
+- lessons 结论：本轮暂无需要沉淀到 `docs/lessons` 的新稳定经验
 
-#### Lessons Decision
-- `Lessons impact: updated`
-- 原因：
-  - `failed to load config from vite.config.ts` + `Cannot find module '@babel/parser'` 是可复用、可搜索、容易再次出现的构建链症状
-
-#### Ready For Workflow End
-- 是
-- 后续如用户确认结束 workflow，可执行合并 / 清理 worktree
+#### Workflow State
+- Stage 4 已完成
+- 等待用户决定是否结束当前 workflow，或继续下一轮迭代
 
 阻塞：否
-已完成 Stage 4，等待 workflow end confirmation
+进入 4
