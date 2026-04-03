@@ -2,10 +2,10 @@
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/win-orchestrator-editor`
-- Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-orchestrator-editor`
-- Current Stage: `4`
+- Merge Source Branch: `feat/win-orchestrator-editor`
+- Base Branch: `main`
+- Former Worktree: `D:\project\MyFlowHub3\worktrees\feat-win-orchestrator-editor`
+- Current Stage: `workflow ended`
 
 ## Stage Records
 
@@ -1543,3 +1543,13 @@
 #### Workflow Status
 - 本轮 body `call` authoring、审核和归档均已完成。
 - 未执行 workflow end；等待用户决定是否继续下一轮或结束当前 workflow。
+
+## Workflow End
+- 用户已确认结束 workflow。
+- 主仓控制面已执行：
+  - `main <- feat/win-orchestrator-editor` fast-forward 合并
+  - worktree 中的 `plan.md`、`docs/change/*` 和稳定文档改动已进入主仓
+- 当前主仓仍保留用户自己的未提交状态：
+  - `go.mod`
+  - `myflowhub-mcp.exe`
+- 上述用户本地改动未被本次 workflow 清理、回退或纳入提交。
