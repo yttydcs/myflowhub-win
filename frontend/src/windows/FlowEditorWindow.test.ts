@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { defineComponent, nextTick } from "vue"
-import { mount } from "@vue/test-utils"
+import { config, mount } from "@vue/test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setLocale } from "@/i18n"
 
@@ -152,6 +152,11 @@ const FlowMethodPickerDialogStub = defineComponent({
   `
 })
 
+const ButtonStub = defineComponent({
+  emits: ["click"],
+  template: `<button type="button" @click="$emit('click', $event)"><slot /></button>`
+})
+
 const SimpleStub = defineComponent({
   template: `<div />`
 })
@@ -167,6 +172,10 @@ describe("FlowEditorWindow", () => {
     const flowStore = useFlowStore()
     setLocale("en")
     vi.clearAllMocks()
+    config.global.stubs = {
+      ...(config.global.stubs ?? {}),
+      Button: ButtonStub
+    }
     queryExecCapabilities.mockResolvedValue(undefined)
     ensureNodeCapabilityLoaded.mockResolvedValue(false)
     runFlow.mockResolvedValue(undefined)
@@ -599,6 +608,90 @@ describe("FlowEditorWindow", () => {
     const dialog = wrapper.get('[data-test="method-dialog"]')
     expect(dialog.attributes("data-open")).toBe("true")
     expect(dialog.attributes("data-method-search")).toBe("")
+  })
+
+  it("adds bindings to non-call body nodes and syncs them back to the parent foreach JSON", async () => {
+    const flowStore = useFlowStore()
+
+    projectsStore.getProjectByID.mockReturnValue({
+      id: "project-1",
+      flowId: "project-1",
+      name: "Project 1",
+      updatedAt: "2026-03-25T12:00:00.000Z",
+      graph: {
+        nodes: [
+          {
+            id: "foreach1",
+            kind: "foreach",
+            allow_fail: false,
+            retry: 1,
+            timeout_ms: 3000,
+            spec: {
+              source: { kind: "trigger", path: "/items" },
+              required: true,
+              body: {
+                nodes: [
+                  {
+                    id: "inner_set",
+                    kind: "set_var",
+                    allow_fail: false,
+                    retry: 1,
+                    timeout_ms: 3000,
+                    spec: {
+                      name: "session_payload",
+                      template: {},
+                      inputs: [],
+                      _ui: { x: 10, y: 20 }
+                    }
+                  }
+                ],
+                edges: []
+              },
+              result_node_id: "inner_set",
+              _ui: { x: 0, y: 0 }
+            }
+          }
+        ],
+        edges: []
+      }
+    })
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowEdgeInspector: FlowEdgeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    flowStore.selectNodeById("foreach1")
+    await nextTick()
+    await wrapper.get('[data-test="open-body"]').trigger("click")
+    await flushAsync()
+    await wrapper.get('[data-test="select-first-node"]').trigger("click")
+    await flushAsync()
+
+    expect(wrapper.text()).toContain("Body node authoring")
+    expect(wrapper.text()).toContain("Set Var Node")
+
+    const addBindingButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().trim() === "Add Binding")
+    expect(addBindingButton).toBeTruthy()
+    await addBindingButton!.trigger("click")
+    await flushAsync()
+
+    const foreachNode = flowStore.state.nodes.find((node) => node.id === "foreach1")
+    const bodyGraph = JSON.parse(foreachNode?.foreachBodyJson ?? "{}")
+    expect(bodyGraph.nodes[0].spec.inputs).toHaveLength(1)
   })
 
   it("saves body editor graph changes through the root project graph export", async () => {

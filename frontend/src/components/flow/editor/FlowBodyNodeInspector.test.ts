@@ -118,6 +118,7 @@ type InspectorProps = {
   nodeIdDraft: string
   selectedTargetLabel: string
   selectedCallVisualForm: NodeVisualFormModel | null
+  ancestorNodeOptions: string[]
   fieldDrafts: Record<string, unknown>
 }
 
@@ -128,6 +129,7 @@ const mountInspector = (overrides: Partial<InspectorProps> = {}) =>
       nodeIdDraft: "inner-call",
       selectedTargetLabel: "Current executor node 100",
       selectedCallVisualForm: createSupportedVisualForm(),
+      ancestorNodeOptions: ["prep1"],
       fieldDrafts: { "/name": "Alice" },
       ...overrides
     },
@@ -147,7 +149,7 @@ describe("FlowBodyNodeInspector", () => {
   it("renders call authoring controls and emits method/binding/literal actions", async () => {
     const wrapper = mountInspector()
 
-    expect(wrapper.text()).toContain("Body call authoring")
+    expect(wrapper.text()).toContain("Body node authoring")
     expect(wrapper.text()).toContain("Call Method")
     expect(wrapper.text()).toContain("Method Fields")
 
@@ -172,21 +174,29 @@ describe("FlowBodyNodeInspector", () => {
     expect(wrapper.emitted("commit-field-literal")).toHaveLength(1)
   })
 
-  it("keeps non-call body nodes in JSON-first mode", () => {
+  it("renders set_var body nodes in ordinary mode and emits binding actions", async () => {
     const wrapper = mountInspector({
       selectedNode: {
         ...createBaseNode(),
-        id: "inner-transform",
-        kind: "transform",
+        id: "inner-set-var",
+        kind: "set_var",
         method: "",
-        specEditorMode: "json"
+        setVarName: "session_payload",
+        specEditorMode: "form"
       },
-      nodeIdDraft: "inner-transform",
+      nodeIdDraft: "inner-set-var",
       selectedCallVisualForm: null
     })
 
-    expect(wrapper.text()).toContain("JSON-first authoring")
-    expect(wrapper.text()).not.toContain("Call Method")
-    expect(wrapper.find("textarea").exists()).toBe(true)
+    expect(wrapper.text()).toContain("Set Var Node")
+    expect(wrapper.text()).toContain("Flow Local Var Name")
+    expect(wrapper.text()).toContain("Input Bindings")
+
+    const addBindingButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Add Binding"))
+    expect(addBindingButton).toBeTruthy()
+    await addBindingButton!.trigger("click")
+    expect(wrapper.emitted("add-binding")).toHaveLength(1)
   })
 })

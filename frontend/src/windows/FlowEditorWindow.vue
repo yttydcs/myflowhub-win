@@ -620,7 +620,6 @@ const createBodyNodeDraft = (id: string, kind: FlowNodeKind, index: number): Flo
     throw new Error(t("Failed to create body node draft."))
   }
   const pos = bodyNodePosition(index)
-  node.specEditorMode = kind === "call" ? "form" : "json"
   node.x = pos.x
   node.y = pos.y
   return node
@@ -628,10 +627,6 @@ const createBodyNodeDraft = (id: string, kind: FlowNodeKind, index: number): Flo
 
 const normalizeBodySessionSnapshot = (snapshot: FlowGraphEditorState): FlowGraphEditorState => {
   const next = cloneGraphEditorState(snapshot)
-  next.nodes = next.nodes.map((node) => ({
-    ...node,
-    specEditorMode: node.kind === "call" ? node.specEditorMode : ("json" as const)
-  }))
   next.selectedNodeIndex =
     next.selectedNodeIndex >= 0 && next.selectedNodeIndex < next.nodes.length ? next.selectedNodeIndex : -1
   next.selectedEdgeIndex =
@@ -756,10 +751,6 @@ const setBodySelectedNodeSpecMode = (mode: "form" | "json") => {
     return
   }
 
-  if (node.kind !== "call") {
-    throw new Error(t("Body node kind {kind} only supports Advanced JSON mode right now.", { kind: node.kind }))
-  }
-
   let parsedSpec: unknown
   try {
     parsedSpec = JSON.parse(node.specJson.trim() || "{}")
@@ -789,7 +780,9 @@ const setBodySelectedNodeSpecMode = (mode: "form" | "json") => {
   const next = nextSnapshot.nodes[0] ?? null
   if (!next || next.specEditorMode !== "form") {
     throw new Error(
-      t("Body call advanced spec contains fields that ordinary mode cannot represent yet.")
+      t("Body node kind {kind} advanced spec contains fields that ordinary mode cannot represent yet.", {
+        kind: node.kind
+      })
     )
   }
   next.x = node.x
@@ -1886,23 +1879,28 @@ const setSelectedNodeSpecMode = (mode: "form" | "json") => {
 }
 
 const addBinding = () => {
-  if (bodyEditorActive.value) return
-  const node = selectedNode.value
+  const node = bodyEditorActive.value ? bodySelectedNode.value : selectedNode.value
   if (!node) return
   node.inputs.push(flowStore.createInputBinding())
+  if (bodyEditorActive.value) {
+    syncBodySessionToParent({ commitHistory: true })
+    return
+  }
   flowStore.commitHistory()
 }
 
 const removeBinding = (index: number) => {
-  if (bodyEditorActive.value) return
-  const node = selectedNode.value
+  const node = bodyEditorActive.value ? bodySelectedNode.value : selectedNode.value
   if (!node) return
   node.inputs.splice(index, 1)
+  if (bodyEditorActive.value) {
+    syncBodySessionToParent({ commitHistory: true })
+    return
+  }
   flowStore.commitHistory()
 }
 
 const onBindingSourceKindChange = (binding: FlowInputBindingDraft, sourceKind: string) => {
-  if (bodyEditorActive.value) return
   binding.sourceKind =
     sourceKind === "trigger" ||
     sourceKind === "flow_meta" ||
@@ -1935,6 +1933,10 @@ const onBindingSourceKindChange = (binding: FlowInputBindingDraft, sourceKind: s
     binding.name = ""
   }
 
+  if (bodyEditorActive.value) {
+    syncBodySessionToParent({ commitHistory: true })
+    return
+  }
   flowStore.commitHistory()
 }
 
@@ -2450,6 +2452,7 @@ onUnmounted(() => {
           :node-id-draft="bodyNodeIdDraft"
           :selected-target-label="bodySelectedTargetLabel"
           :selected-call-visual-form="bodySelectedCallVisualForm"
+          :ancestor-node-options="bodyBindableAncestorNodeOptions"
           :field-drafts="fieldDrafts"
           @close="closeNodeDetail"
           @update:node-id-draft="bodyNodeIdDraft = $event"
@@ -2461,6 +2464,9 @@ onUnmounted(() => {
           @clear-field-binding="clearVisualFieldBinding"
           @commit-field-literal="commitFieldLiteralValue"
           @set-boolean-field-literal="setBooleanFieldLiteralValue($event.field, $event.checked)"
+          @add-binding="addBinding"
+          @remove-binding="removeBinding"
+          @binding-source-kind-change="onBindingSourceKindChange($event.binding, $event.sourceKind)"
           @commit-history="commitBodySessionHistory"
         />
         <FlowEdgeInspector

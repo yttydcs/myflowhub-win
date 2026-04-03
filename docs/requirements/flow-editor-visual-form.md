@@ -66,11 +66,15 @@
 - `foreach.body` 的可视化编辑必须至少支持：
   - 进入/退出 body 编辑会话
   - body 内节点与边的新增、选中、移动、连接、删除
-  - body 内节点的最小 JSON-first spec 编辑
+  - body 内 `call/compose/transform/set_var/branch/foreach/subflow` 节点的最小 form/json spec 编辑
 - `foreach.body` 内 `kind=call` 的节点必须支持与根图 `call` 节点一致的最小表单化 authoring，包括：
   - 方法选择器
   - 字段级 literal 编辑
   - 字段级 binding 对话框
+- `foreach.body` 内 `compose/set_var/subflow` 节点必须支持最小 template + bindings authoring。
+- `foreach.body` 内 `transform` 节点必须支持顶层表达式模式的最小普通模式 authoring。
+- `foreach.body` 内 `branch` 节点必须支持 case 列表与 `default_case` 的最小普通模式 authoring。
+- `foreach.body` 内 `foreach` 节点必须支持外层字段普通模式 authoring，但其嵌套 `body` 继续以内联 JSON 文本维护。
 - `foreach.body` 的可视化编辑不能引入第二套持久化 graph 真相源；所有变更都必须同步回父节点的 `body` JSON。
 - `branch` 的出边必须支持最小 `edge.case` 编辑，且保存时不得丢失。
 - `compose` / `set_var` 的 binding 编辑器都必须支持 `flow_var` 作为来源。
@@ -90,7 +94,7 @@
 - 本轮不为 `compose` 节点提供新的 schema-driven 普通模式。
 - 本轮不为 `set_var` 提供字段级 schema-driven 表单，只提供最小 authoring。
 - 本轮不为 `transform` 提供完整递归表达式树可视化编辑器，只覆盖顶层模式。
-- 本轮不把 body 内非 `call` 节点提升到和根图同级别的完整表单体验；它们继续维持 JSON-first。
+- 本轮不为 body 内嵌套 `foreach` 提供递归可视化 body 会话；其 `body` 继续以内联 JSON 文本维护。
 - 本轮不修改 Flow 运行时契约或绑定规则。
 - 本轮不以 `varstore/varpool` 变量读取作为主要引用路径。
 
@@ -106,6 +110,8 @@
 - 用户读取已有 `transform/branch/subflow` flow 时，可以在普通模式下直接维护关键字段，而不是被迫手写整段 spec。
 - 用户读取已有 `foreach` flow 时，可以在普通模式下维护外层字段，并进入显式 body 编辑会话可视化维护内部 DAG。
 - 用户在 `foreach.body` 里选中 `call` 节点后，可以直接选择 capability 方法，并为字段填写 literal 或绑定上游来源。
+- 用户在 `foreach.body` 里选中 `transform/branch/set_var/subflow/compose` 节点后，可以直接在普通模式下维护关键字段，而不是回到整段父节点 JSON。
+- 用户在 `foreach.body` 里选中嵌套 `foreach` 节点后，可以继续维护外层字段，但其内层 `body` 仍保持 JSON 文本边界。
 - 用户为 `branch` 节点的出边填写 `edge.case`，保存后路由语义保持不变。
 - 用户遇到复杂方法或高级配置时，退回 `Advanced JSON`。
 - 用户切换方法后，编辑器按该方法重新生成可编辑字段。
@@ -148,11 +154,15 @@
 20. `foreach` 在当前版本必须允许进入部分普通模式；当已有 spec 超出当前普通模式覆盖范围时，必须显式保留在 `Advanced JSON`。
 21. `foreach` 普通模式必须保留 `body` JSON 真相源，并提供显式的 body 子图可视化编辑会话。
 22. body 编辑会话中的每次图结构变更都必须同步回父 `foreach` 节点的 `body` JSON，使保存、恢复草稿和脏状态判断继续以根 graph 为准。
-23. body 编辑会话必须允许 body 内节点使用最小 JSON-first inspector 编辑 spec，不能要求用户直接回到整段父节点 JSON 才能改内部节点。
-24. `transform/branch/subflow` 在普通模式下保存时不得静默删除额外高级字段；若当前 spec 超出普通模式覆盖范围，必须要求回退 `Advanced JSON`。
-25. body 编辑会话中的 `call` 节点必须允许打开方法选择器，并把选中的 `method + target` 稳定写回 body 节点草稿。
-26. body 编辑会话中的 `call` 字段编辑必须复用与根图相同的 schema-driven ordinary mode 规则，稳定写回 `args_template + inputs`。
-27. body 编辑会话中的 `call` 字段 binding 校验必须继续遵守现有来源契约，其中 `node_result` 仅允许引用当前 body 子图内的祖先节点。
+23. body 编辑会话必须允许 `call/compose/transform/set_var/branch/foreach/subflow` 节点使用最小 form/json inspector 编辑 spec，不能要求用户直接回到整段父节点 JSON 才能改内部节点。
+24. body 编辑会话中的 `compose/set_var/subflow` 普通模式必须稳定写回各自的 template/input bindings 草稿。
+25. body 编辑会话中的 `transform` 普通模式必须稳定写回顶层表达式模式与 source/op/object/array 对应草稿。
+26. body 编辑会话中的 `branch` 普通模式必须稳定写回 case 列表与 `default_case` 草稿。
+27. body 编辑会话中的 `foreach` 普通模式必须稳定写回外层字段，同时保留其内层 `body` JSON 文本边界。
+28. `transform/branch/subflow/foreach` 在普通模式下保存时不得静默删除额外高级字段；若当前 spec 超出普通模式覆盖范围，必须要求回退 `Advanced JSON`。
+29. body 编辑会话中的 `call` 节点必须允许打开方法选择器，并把选中的 `method + target` 稳定写回 body 节点草稿。
+30. body 编辑会话中的 `call` 字段编辑必须复用与根图相同的 schema-driven ordinary mode 规则，稳定写回 `args_template + inputs`。
+31. body 编辑会话中的 bindings/source 校验必须继续遵守现有来源契约，其中 `node_result` 仅允许引用当前 body 子图内的祖先节点。
 
 ## Non-functional Requirements
 
@@ -206,6 +216,7 @@
 10. 编辑器可在普通模式下读取并保存 `foreach` 的外层字段，并保持 `body` 子图不丢失。
 11. 编辑器可通过显式 body 编辑会话可视化维护 `foreach.body` 的内部 DAG，并在保存时写回父节点 `body`。
 12. `branch` 的 `edge.case` 在读取、编辑、保存后保持不丢失。
+13. 编辑器可在 `foreach.body` 中以普通模式读取并保存 `compose/transform/set_var/branch/foreach/subflow` 的最小支持字段。
 
 ## Related Specs
 

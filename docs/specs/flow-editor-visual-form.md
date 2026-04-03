@@ -3,6 +3,7 @@
 ## Scope
 
 - 本规范限定 Win Flow 编辑器在 `call`、`transform`、`branch`、`subflow` 节点上的普通模式行为、`set_var` 节点的最小 authoring 行为，以及 `foreach` 的部分普通模式与 body 子图编辑会话边界。
+- 本规范同时覆盖 `foreach.body` 会话内 `call/compose/transform/set_var/branch/foreach/subflow` 的最小 form/json authoring 契约。
 - 本规范不修改 Flow 运行时协议、DAG 校验规则或 `args_template + inputs` 的执行语义。
 - 本规范同时覆盖项目部署对话框中的 trigger authoring，以及 `branch` 出边 `edge.case` 的最小编辑契约。
 
@@ -52,6 +53,7 @@
   - `compose` / `set_var` 共享 `template + inputs`
   - `call` 与 `compose` / `set_var` 切换时，尽量复用已有 JSON 模板内容
 - 新建 `transform`、`branch`、`foreach`、`subflow` 节点时，默认 `specEditorMode` 必须为 `form`。
+- 在 body 编辑会话中新建 `call/compose/transform/set_var/branch/foreach/subflow` 节点时，默认 `specEditorMode` 必须与根图保持一致；支持普通模式的节点默认进入 `form`。
 - 读取已有 payload 时，仅当 `transform`、`branch`、`foreach`、`subflow` 的 spec 处于当前普通模式支持子集内，才允许保持或切回 `form`；否则必须回退 `json`。
 - `set_var` 节点在普通模式下至少暴露：
   - `name`
@@ -183,11 +185,23 @@ type MethodVisualSchema = {
   - `edges`
 - body 编辑会话中的新增、移动、连线、删除和最小节点 JSON 编辑，必须在每次提交后立即同步回父节点 `foreachBodyJson`。
 - 根 graph 的保存、脏状态和本地恢复草稿，继续以外层 editor state 为准；body 会话不能绕开父节点 JSON 直接单独持久化。
-- 当前版本的 body 编辑会话对 `kind=call` 提供受支持子集内的 ordinary mode parity：
+- body 编辑会话对以下节点提供最小 ordinary mode：
+  - `call`
+  - `compose`
+  - `transform`
+  - `set_var`
+  - `branch`
+  - `foreach`
+  - `subflow`
+- body 会话中的 `call` ordinary mode 继续提供：
   - 方法选择器
   - schema-driven literal fields
   - 字段级 binding 对话框
-- body 会话内非 `call` 节点继续维持 JSON-first inspector，不扩展到顶层完整表单。
+- body 会话中的 `compose/set_var/subflow` ordinary mode 继续复用 template + bindings 编辑骨架。
+- body 会话中的 `transform` ordinary mode 继续只覆盖顶层表达式模式，不扩展到递归表达式树可视化。
+- body 会话中的 `branch` ordinary mode 继续复用 case 列表与 `default_case` 编辑契约。
+- body 会话中的 `foreach` ordinary mode 只覆盖外层字段；其嵌套 `body` 继续以内联 JSON 文本维护，不提供递归可视化 body 会话。
+- body 会话中的 `node_result` source/binding 祖先集合必须基于当前 body 子图拓扑计算，不能引用根图无关节点。
 
 ### 7. 引用来源契约
 
