@@ -7,6 +7,38 @@ import { setLocale } from "@/i18n"
 import FlowNodeInspector from "./FlowNodeInspector.vue"
 import type { FlowNodeDetailState, FlowNodeDraft, NodeVisualFormModel } from "@/stores/flow"
 
+const createAdvancedFields = () => ({
+  transformExprMode: "literal" as const,
+  transformLiteralJson: "null",
+  transformSource: {
+    sourceKind: "trigger" as const,
+    nodeId: "",
+    path: "",
+    field: "",
+    name: ""
+  },
+  transformSourceRequired: true,
+  transformOp: "add",
+  transformArgsJson: "[]",
+  transformObjectJson: "{}",
+  transformArrayJson: "[]",
+  branchCases: [],
+  branchDefaultCase: "",
+  foreachSource: {
+    sourceKind: "trigger" as const,
+    nodeId: "",
+    path: "",
+    field: "",
+    name: ""
+  },
+  foreachRequired: true,
+  foreachBodyJson: JSON.stringify({ nodes: [], edges: [] }, null, 2),
+  foreachResultNodeId: "",
+  subflowId: "",
+  subflowInputTemplate: "{}",
+  subflowResultNodeId: ""
+})
+
 const CardHeaderStub = defineComponent({
   props: {
     title: { type: String, default: "" },
@@ -40,6 +72,7 @@ const createCallNode = (): FlowNodeDraft => ({
   composeTemplate: "{}",
   setVarName: "",
   inputs: [],
+  ...createAdvancedFields(),
   specEditorMode: "form",
   specJson: "{\n  \"method\": \"demo::missing-schema\"\n}",
   x: 0,
@@ -68,8 +101,136 @@ const createSetVarNode = (): FlowNodeDraft => ({
       required: true
     }
   ],
+  ...createAdvancedFields(),
   specEditorMode: "form",
   specJson: "{\n  \"name\": \"session_token\",\n  \"template\": {\"value\": null}\n}",
+  x: 0,
+  y: 0
+})
+
+const createTransformNode = (): FlowNodeDraft => ({
+  id: "transform-1",
+  kind: "transform",
+  allowFail: false,
+  retry: 1,
+  timeoutMs: 3000,
+  method: "",
+  target: 0,
+  argsTemplate: "{}",
+  composeTemplate: "{}",
+  setVarName: "",
+  inputs: [],
+  ...createAdvancedFields(),
+  transformExprMode: "source",
+  transformSource: {
+    sourceKind: "trigger",
+    nodeId: "",
+    path: "/payload/value",
+    field: "",
+    name: ""
+  },
+  transformSourceRequired: false,
+  specEditorMode: "form",
+  specJson: "{\n  \"expr\": {\n    \"source\": { \"kind\": \"trigger\", \"path\": \"/payload/value\" },\n    \"required\": false\n  }\n}",
+  x: 0,
+  y: 0
+})
+
+const createBranchNode = (): FlowNodeDraft => ({
+  id: "branch-1",
+  kind: "branch",
+  allowFail: false,
+  retry: 1,
+  timeoutMs: 3000,
+  method: "",
+  target: 0,
+  argsTemplate: "{}",
+  composeTemplate: "{}",
+  setVarName: "",
+  inputs: [],
+  ...createAdvancedFields(),
+  branchCases: [
+    {
+      key: "case-1",
+      name: "approved",
+      source: {
+        sourceKind: "trigger",
+        nodeId: "",
+        path: "/payload/approved",
+        field: "",
+        name: ""
+      },
+      op: "eq",
+      valueJson: "true"
+    }
+  ],
+  branchDefaultCase: "approved",
+  specEditorMode: "form",
+  specJson:
+    "{\n  \"cases\": [{\"name\": \"approved\", \"match\": {\"source\": {\"kind\": \"trigger\", \"path\": \"/payload/approved\"}, \"op\": \"eq\", \"value\": true}}],\n  \"default_case\": \"approved\"\n}",
+  x: 0,
+  y: 0
+})
+
+const createSubflowNode = (): FlowNodeDraft => ({
+  id: "subflow-1",
+  kind: "subflow",
+  allowFail: false,
+  retry: 1,
+  timeoutMs: 3000,
+  method: "",
+  target: 0,
+  argsTemplate: "{}",
+  composeTemplate: "{}",
+  setVarName: "",
+  inputs: [
+    {
+      to: "/ticket_id",
+      sourceKind: "trigger",
+      nodeId: "",
+      path: "/payload/id",
+      field: "",
+      name: "",
+      required: true
+    }
+  ],
+  ...createAdvancedFields(),
+  subflowId: "123e4567-e89b-12d3-a456-426614174000",
+  subflowInputTemplate: "{\n  \"ticket_id\": null\n}",
+  subflowResultNodeId: "done",
+  specEditorMode: "form",
+  specJson:
+    "{\n  \"flow_id\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"input_template\": {\"ticket_id\": null},\n  \"result_node_id\": \"done\"\n}",
+  x: 0,
+  y: 0
+})
+
+const createForeachNode = (): FlowNodeDraft => ({
+  id: "foreach-1",
+  kind: "foreach",
+  allowFail: false,
+  retry: 1,
+  timeoutMs: 3000,
+  method: "",
+  target: 0,
+  argsTemplate: "{}",
+  composeTemplate: "{}",
+  setVarName: "",
+  inputs: [],
+  ...createAdvancedFields(),
+  foreachSource: {
+    sourceKind: "trigger",
+    nodeId: "",
+    path: "/items",
+    field: "",
+    name: ""
+  },
+  foreachRequired: true,
+  foreachBodyJson: "{\n  \"nodes\": [],\n  \"edges\": []\n}",
+  foreachResultNodeId: "item_result",
+  specEditorMode: "form",
+  specJson:
+    "{\n  \"source\": {\"kind\": \"trigger\", \"path\": \"/items\"},\n  \"required\": true,\n  \"body\": {\"nodes\": [], \"edges\": []},\n  \"result_node_id\": \"item_result\"\n}",
   x: 0,
   y: 0
 })
@@ -270,5 +431,76 @@ describe("FlowNodeInspector", () => {
     expect(wrapper.text()).not.toContain("Structured Result")
     expect(wrapper.text()).toContain("Result")
     expect(wrapper.findAll("pre")).toHaveLength(2)
+  })
+
+  it("renders transform authoring controls in form mode", () => {
+    const wrapper = mountInspector({
+      selectedNode: createTransformNode(),
+      nodeIdDraft: "transform-1"
+    })
+
+    const text = wrapper.text()
+    const formButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().trim() === "Form")
+
+    expect(text).toContain("Transform")
+    expect(text).toContain("Transform Node")
+    expect(text).toContain("Expression Mode")
+    expect(text).toContain("Source mode reuses the same trigger/meta/ancestor/local-var binding contract")
+    expect(formButton?.attributes("disabled")).toBeUndefined()
+  })
+
+  it("renders branch form authoring controls", () => {
+    const wrapper = mountInspector({
+      selectedNode: createBranchNode(),
+      nodeIdDraft: "branch-1",
+      ancestorNodeOptions: ["call-1"]
+    })
+
+    const text = wrapper.text()
+
+    expect(text).toContain("Branch Node")
+    expect(text).toContain("Default Case")
+    expect(text).toContain("Add Case")
+    expect(text).toContain("Case 1")
+    expect(text).toContain("Match Op")
+    expect(text).toContain("Match Value (JSON)")
+  })
+
+  it("renders subflow form authoring controls", () => {
+    const wrapper = mountInspector({
+      selectedNode: createSubflowNode(),
+      nodeIdDraft: "subflow-1",
+      ancestorNodeOptions: ["call-1"]
+    })
+
+    const text = wrapper.text()
+
+    expect(text).toContain("Subflow Node")
+    expect(text).toContain("Flow ID")
+    expect(text).toContain("Result Node ID (Optional)")
+    expect(text).toContain("Input Template (JSON)")
+    expect(text).toContain("Destination writes into the child flow input template.")
+  })
+
+  it("renders foreach form authoring controls", () => {
+    const wrapper = mountInspector({
+      selectedNode: createForeachNode(),
+      nodeIdDraft: "foreach-1"
+    })
+
+    const text = wrapper.text()
+    const formButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().trim() === "Form")
+
+    expect(text).toContain("Foreach")
+    expect(text).toContain("Foreach Node")
+    expect(text).toContain("Result Node ID")
+    expect(text).toContain("Body Graph (JSON)")
+    expect(text).toContain("Open Visual Body Editor")
+    expect(text).toContain("The visual body editor reuses the same body JSON as its source of truth.")
+    expect(formButton?.attributes("disabled")).toBeUndefined()
   })
 })

@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { buildDetailStructuredFields, describeVisualCompatibilityReason, flowStatusLabelKey } from "@/stores/flow"
 import type {
+  FlowBindingSourceKind,
   FlowInputBindingDraft,
+  FlowSourceDraft,
+  FlowTransformExprMode,
   FlowNodeDetailState,
   FlowNodeDraft,
   FlowNodeKind,
@@ -37,6 +40,7 @@ const emit = defineEmits<{
   (event: "update:nodeDetailPath", value: string): void
   (event: "load-node-detail"): void
   (event: "open-method"): void
+  (event: "edit-foreach-body"): void
   (event: "open-field-binding", field: VisualFieldModel): void
   (event: "clear-field-binding", pointer: string): void
   (event: "commit-field-literal", field: VisualFieldModel): void
@@ -62,8 +66,9 @@ const updateNodeDetailPath = (event: Event) => {
 }
 
 const emitNodeKindChange = (event: Event) => {
-  const value = String((event.target as HTMLSelectElement | null)?.value ?? "call")
-  emit("node-kind-change", value === "compose" || value === "set_var" ? value : "call")
+  const value = String((event.target as HTMLSelectElement | null)?.value ?? "call") as FlowNodeKind
+  const allowedKinds: FlowNodeKind[] = ["call", "compose", "transform", "set_var", "branch", "foreach", "subflow"]
+  emit("node-kind-change", allowedKinds.includes(value) ? value : "call")
 }
 
 const emitBindingSourceKindChange = (binding: FlowInputBindingDraft, event: Event) => {
@@ -93,6 +98,100 @@ const visualFieldInputId = (field: VisualFieldModel) => inspectorFieldId(`visual
 const visualFieldLabelId = (field: VisualFieldModel) => `${visualFieldInputId(field)}-label`
 const visualFieldHelpId = (field: VisualFieldModel) => `${visualFieldInputId(field)}-help`
 const composeBindingInputId = (index: number, suffix: string) => inspectorFieldId(`binding-${index}-${suffix}`)
+const sourceInputId = (prefix: string, suffix: string) => inspectorFieldId(`${prefix}-${suffix}`)
+
+const transformExprModes: Array<{ value: FlowTransformExprMode; label: string }> = [
+  { value: "literal", label: "Literal" },
+  { value: "source", label: "Source" },
+  { value: "op", label: "Operation" },
+  { value: "object", label: "Object" },
+  { value: "array", label: "Array" }
+]
+
+const transformOps = [
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "mod",
+  "neg",
+  "abs",
+  "min",
+  "max",
+  "eq",
+  "ne",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "and",
+  "or",
+  "not",
+  "coalesce",
+  "if",
+  "concat",
+  "lower",
+  "upper",
+  "trim",
+  "len"
+]
+
+const branchMatchOps = ["eq", "ne", "gt", "gte", "lt", "lte", "exists"]
+
+const normalizeSourceKind = (raw: string): FlowBindingSourceKind => {
+  switch (raw) {
+    case "node_result":
+    case "trigger":
+    case "flow_meta":
+    case "run_meta":
+    case "flow_var":
+      return raw
+    default:
+      return "trigger"
+  }
+}
+
+const resetSourceDraftForKind = (source: FlowSourceDraft, sourceKind: FlowBindingSourceKind) => {
+  source.sourceKind = sourceKind
+  source.nodeId = ""
+  source.path = ""
+  source.name = ""
+  source.field = sourceKind === "flow_meta" ? "flow_id" : sourceKind === "run_meta" ? "run_id" : ""
+}
+
+const emitSourceKindChange = (source: FlowSourceDraft, event: Event) => {
+  resetSourceDraftForKind(source, normalizeSourceKind(String((event.target as HTMLSelectElement | null)?.value ?? "trigger")))
+  emit("commit-history")
+}
+
+const createBranchCaseKey = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `branch-case-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
+const addBranchCase = () => {
+  if (!props.selectedNode) return
+  props.selectedNode.branchCases.push({
+    key: createBranchCaseKey(),
+    name: "",
+    source: {
+      sourceKind: "trigger",
+      nodeId: "",
+      path: "",
+      field: "",
+      name: ""
+    },
+    op: "eq",
+    valueJson: "null"
+  })
+  emit("commit-history")
+}
+
+const removeBranchCase = (index: number) => {
+  if (!props.selectedNode) return
+  props.selectedNode.branchCases.splice(index, 1)
+  emit("commit-history")
+}
 
 const visualCompatibilityReasonCategory = (reason: VisualCompatibilityReason) => {
   switch (reason.code) {
@@ -135,6 +234,44 @@ const visualCompatibilityReasonHelp = (reason: VisualCompatibilityReason) => {
 const visibleVisualCompatibilityReasons = computed(() =>
   (props.selectedCallVisualForm?.compatibility.reasons ?? []).filter((reason) => reason.code !== "missing_schema")
 )
+
+const supportsFormMode = computed(() =>
+  ["call", "compose", "transform", "set_var", "branch", "foreach", "subflow"].includes(props.selectedNode?.kind ?? "")
+)
+
+const nodeKindLabel = computed(() => {
+  switch (props.selectedNode?.kind) {
+    case "compose":
+      return t("Compose")
+    case "transform":
+      return t("Transform")
+    case "set_var":
+      return t("Set Var")
+    case "branch":
+      return t("Branch")
+    case "foreach":
+      return t("Foreach")
+    case "subflow":
+      return t("Subflow")
+    default:
+      return t("Call")
+  }
+})
+
+const jsonOnlyKindSummary = computed(() => {
+  switch (props.selectedNode?.kind) {
+    case "transform":
+      return t("Transform nodes evaluate a structured expression tree and produce a local result without calling a capability.")
+    case "branch":
+      return t("Branch nodes match ordered cases and route execution through edges that declare edge.case.")
+    case "foreach":
+      return t("Foreach nodes iterate an array source and execute a nested body graph. Ordinary mode edits the outer fields while the body graph stays as JSON.")
+    case "subflow":
+      return t("Subflow nodes synchronously execute another flow on the same executor and can optionally read one result node.")
+    default:
+      return t("This node kind currently uses Advanced JSON authoring.")
+  }
+})
 
 const hasLoadedNodeDetail = computed(
   () =>
@@ -224,7 +361,11 @@ const structuredDetailFields = computed(() =>
               >
                 <option value="call">{{ t("Call") }}</option>
                 <option value="compose">{{ t("Compose") }}</option>
+                <option value="transform">{{ t("Transform") }}</option>
                 <option value="set_var">{{ t("Set Var") }}</option>
+                <option value="branch">{{ t("Branch") }}</option>
+                <option value="foreach">{{ t("Foreach") }}</option>
+                <option value="subflow">{{ t("Subflow") }}</option>
               </select>
             </div>
 
@@ -286,13 +427,18 @@ const structuredDetailFields = computed(() =>
                   {{ t("Spec Mode") }}
                 </p>
                 <p class="mt-1 text-[11px] text-muted-foreground">
-                  {{ t("Form mode edits the supported fields directly. Advanced JSON is the escape hatch for full spec editing.") }}
+                  {{
+                    supportsFormMode
+                      ? t("Form mode edits the supported fields directly. Advanced JSON is the escape hatch for full spec editing.")
+                      : t("This node kind currently uses Advanced JSON authoring. Ordinary form controls are not available yet.")
+                  }}
                 </p>
               </div>
               <div class="flex gap-2" role="group" :aria-labelledby="inspectorFieldId('spec-mode-label')">
                 <Button
                   size="sm"
                   :variant="selectedNode.specEditorMode === 'form' ? 'default' : 'outline'"
+                  :disabled="!supportsFormMode"
                   @click="emit('toggle-spec-mode', 'form')"
                 >
                   {{ t("Form") }}
@@ -532,16 +678,686 @@ const structuredDetailFields = computed(() =>
               </div>
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-else-if="selectedNode.kind === 'transform'" class="space-y-4">
               <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  {{ selectedNode.kind === "set_var" ? t("Set Var Node") : t("Compose Node") }}
+                  {{ t("Transform Node") }}
+                </p>
+                <p class="mt-2 text-sm text-muted-foreground">
+                  {{ t("Transform evaluates one structured expression and writes the computed result into the current node output.") }}
+                </p>
+              </div>
+
+              <div>
+                <label :for="inspectorFieldId('transform-expr-mode')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Expression Mode") }}
+                </label>
+                <select
+                  :id="inspectorFieldId('transform-expr-mode')"
+                  v-model="selectedNode.transformExprMode"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @change="emit('commit-history')"
+                >
+                  <option v-for="mode in transformExprModes" :key="mode.value" :value="mode.value">
+                    {{ t(mode.label) }}
+                  </option>
+                </select>
+              </div>
+
+              <div v-if="selectedNode.transformExprMode === 'literal'">
+                <label :for="inspectorFieldId('transform-literal')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Literal (JSON)") }}
+                </label>
+                <textarea
+                  :id="inspectorFieldId('transform-literal')"
+                  v-model="selectedNode.transformLiteralJson"
+                  rows="8"
+                  class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Enter any valid JSON value. The transform result will be this literal value.") }}
+                </p>
+              </div>
+
+              <div v-else-if="selectedNode.transformExprMode === 'source'" class="space-y-4">
+                <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        {{ t("Source") }}
+                      </p>
+                      <p class="mt-1 text-[11px] text-muted-foreground">
+                        {{ t("Source mode reuses the same trigger/meta/ancestor/local-var binding contract as other flow inputs.") }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label :for="sourceInputId('transform-source', 'kind')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Source Kind") }}
+                      </label>
+                      <select
+                        :id="sourceInputId('transform-source', 'kind')"
+                        :value="selectedNode.transformSource.sourceKind"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        @change="emitSourceKindChange(selectedNode.transformSource, $event)"
+                      >
+                        <option value="node_result">{{ t("Ancestor Result") }}</option>
+                        <option value="trigger">{{ t("Trigger") }}</option>
+                        <option value="flow_meta">{{ t("Flow Meta") }}</option>
+                        <option value="run_meta">{{ t("Run Meta") }}</option>
+                        <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                      </select>
+                    </div>
+
+                    <label class="mt-6 flex items-center gap-2 text-xs text-muted-foreground md:mt-7">
+                      <input
+                        :id="sourceInputId('transform-source', 'required')"
+                        v-model="selectedNode.transformSourceRequired"
+                        type="checkbox"
+                        class="h-4 w-4 rounded border"
+                        @change="emit('commit-history')"
+                      />
+                      <span>{{ t("Required source") }}</span>
+                    </label>
+                  </div>
+
+                  <div v-if="selectedNode.transformSource.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label :for="sourceInputId('transform-source', 'ancestor-node')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Ancestor Node") }}
+                      </label>
+                      <select
+                        :id="sourceInputId('transform-source', 'ancestor-node')"
+                        v-model="selectedNode.transformSource.nodeId"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        @change="emit('commit-history')"
+                      >
+                        <option value="">
+                          {{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}
+                        </option>
+                        <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                          {{ ancestorId }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label :for="sourceInputId('transform-source', 'result-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Result Path") }}
+                      </label>
+                      <input
+                        :id="sourceInputId('transform-source', 'result-path')"
+                        v-model="selectedNode.transformSource.path"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="/user/id"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+                  </div>
+
+                  <div v-else-if="selectedNode.transformSource.sourceKind === 'trigger'" class="mt-3">
+                    <label :for="sourceInputId('transform-source', 'trigger-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Trigger Path") }}
+                    </label>
+                    <input
+                      :id="sourceInputId('transform-source', 'trigger-path')"
+                      v-model="selectedNode.transformSource.path"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      placeholder="/payload/name"
+                      @blur="emit('commit-history')"
+                    />
+                  </div>
+
+                  <div
+                    v-else-if="selectedNode.transformSource.sourceKind === 'flow_meta' || selectedNode.transformSource.sourceKind === 'run_meta'"
+                    class="mt-3"
+                  >
+                    <label :for="sourceInputId('transform-source', 'meta-field')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Meta Field") }}
+                    </label>
+                    <select
+                      :id="sourceInputId('transform-source', 'meta-field')"
+                      v-model="selectedNode.transformSource.field"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      @change="emit('commit-history')"
+                    >
+                      <option v-if="selectedNode.transformSource.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
+                      <option v-if="selectedNode.transformSource.sourceKind === 'run_meta'" value="run_id">run_id</option>
+                    </select>
+                  </div>
+
+                  <div v-else-if="selectedNode.transformSource.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label :for="sourceInputId('transform-source', 'flow-var-name')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Local Var Name") }}
+                      </label>
+                      <input
+                        :id="sourceInputId('transform-source', 'flow-var-name')"
+                        v-model="selectedNode.transformSource.name"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="session_token"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+
+                    <div>
+                      <label :for="sourceInputId('transform-source', 'flow-var-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Value Path") }}
+                      </label>
+                      <input
+                        :id="sourceInputId('transform-source', 'flow-var-path')"
+                        v-model="selectedNode.transformSource.path"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="/payload/id"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="selectedNode.transformExprMode === 'op'" class="space-y-4">
+                <div>
+                  <label :for="inspectorFieldId('transform-op')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ t("Operation") }}
+                  </label>
+                  <select
+                    :id="inspectorFieldId('transform-op')"
+                    v-model="selectedNode.transformOp"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    @change="emit('commit-history')"
+                  >
+                    <option v-for="op in transformOps" :key="op" :value="op">
+                      {{ op }}
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label :for="inspectorFieldId('transform-args')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ t("Arguments (JSON Array)") }}
+                  </label>
+                  <textarea
+                    :id="inspectorFieldId('transform-args')"
+                    v-model="selectedNode.transformArgsJson"
+                    rows="10"
+                    class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                    @blur="emit('commit-history')"
+                  />
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    {{ t("Each array entry should be a nested transform expression object, for example {\"literal\": 1}.") }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-else-if="selectedNode.transformExprMode === 'object'">
+                <label :for="inspectorFieldId('transform-object')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Object Entries (JSON)") }}
+                </label>
+                <textarea
+                  :id="inspectorFieldId('transform-object')"
+                  v-model="selectedNode.transformObjectJson"
+                  rows="10"
+                  class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Use an object whose values are nested transform expression objects.") }}
+                </p>
+              </div>
+
+              <div v-else>
+                <label :for="inspectorFieldId('transform-array')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Array Items (JSON)") }}
+                </label>
+                <textarea
+                  :id="inspectorFieldId('transform-array')"
+                  v-model="selectedNode.transformArrayJson"
+                  rows="10"
+                  class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Use a JSON array whose entries are nested transform expression objects.") }}
+                </p>
+              </div>
+            </div>
+
+            <div v-else-if="selectedNode.kind === 'branch'" class="space-y-4">
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Branch Node") }}
+                </p>
+                <p class="mt-2 text-sm text-muted-foreground">
+                  {{ t("Branch checks ordered cases and routes execution through edges whose edge.case matches the selected case.") }}
+                </p>
+              </div>
+
+              <div>
+                <label :for="inspectorFieldId('branch-default-case')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Default Case") }}
+                </label>
+                <select
+                  :id="inspectorFieldId('branch-default-case')"
+                  v-model="selectedNode.branchDefaultCase"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  @change="emit('commit-history')"
+                >
+                  <option value="">{{ t("No default case") }}</option>
+                  <option v-for="branchCase in selectedNode.branchCases" :key="branchCase.key" :value="branchCase.name">
+                    {{ branchCase.name || t("Unnamed case") }}
+                  </option>
+                </select>
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("If no case matches, branch activates this route. The edge itself still needs the matching edge.case value.") }}
+                </p>
+              </div>
+
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {{ t("Cases") }}
+                    </p>
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {{ t("Cases run in order. Keep case names aligned with outgoing branch edge.case values.") }}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" @click="addBranchCase">{{ t("Add Case") }}</Button>
+                </div>
+
+                <div
+                  v-if="!selectedNode.branchCases.length"
+                  class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground"
+                >
+                  {{ t("No branch cases yet. Add at least one case before wiring outgoing routes.") }}
+                </div>
+
+                <div v-else class="mt-4 space-y-3">
+                  <div
+                    v-for="(branchCase, index) in selectedNode.branchCases"
+                    :key="branchCase.key"
+                    class="rounded-lg border border-border/70 bg-background/90 p-4"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                          {{ t("Case {index}", { index: index + 1 }) }}
+                        </p>
+                        <p class="mt-1 text-[11px] text-muted-foreground">
+                          {{ t("The first matching case wins. Use exact case names again on outgoing branch edges.") }}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="ghost" @click="removeBranchCase(index)">{{ t("Remove") }}</Button>
+                    </div>
+
+                    <div class="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'name')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Case Name") }}
+                        </label>
+                        <input
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'name')"
+                          v-model="branchCase.name"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="approved"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'op')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Match Op") }}
+                        </label>
+                        <select
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'op')"
+                          v-model="branchCase.op"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          @change="emit('commit-history')"
+                        >
+                          <option v-for="op in branchMatchOps" :key="op" :value="op">
+                            {{ op }}
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'source-kind')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Source Kind") }}
+                        </label>
+                        <select
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'source-kind')"
+                          :value="branchCase.source.sourceKind"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          @change="emitSourceKindChange(branchCase.source, $event)"
+                        >
+                          <option value="node_result">{{ t("Ancestor Result") }}</option>
+                          <option value="trigger">{{ t("Trigger") }}</option>
+                          <option value="flow_meta">{{ t("Flow Meta") }}</option>
+                          <option value="run_meta">{{ t("Run Meta") }}</option>
+                          <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div v-if="branchCase.source.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'ancestor-node')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Ancestor Node") }}
+                        </label>
+                        <select
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'ancestor-node')"
+                          v-model="branchCase.source.nodeId"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          @change="emit('commit-history')"
+                        >
+                          <option value="">
+                            {{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}
+                          </option>
+                          <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                            {{ ancestorId }}
+                          </option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'result-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Result Path") }}
+                        </label>
+                        <input
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'result-path')"
+                          v-model="branchCase.source.path"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="/payload/status"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+                    </div>
+
+                    <div v-else-if="branchCase.source.sourceKind === 'trigger'" class="mt-3">
+                      <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'trigger-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Trigger Path") }}
+                      </label>
+                      <input
+                        :id="sourceInputId(`branch-case-${branchCase.key}`, 'trigger-path')"
+                        v-model="branchCase.source.path"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="/payload/status"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+
+                    <div
+                      v-else-if="branchCase.source.sourceKind === 'flow_meta' || branchCase.source.sourceKind === 'run_meta'"
+                      class="mt-3"
+                    >
+                      <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'meta-field')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Meta Field") }}
+                      </label>
+                      <select
+                        :id="sourceInputId(`branch-case-${branchCase.key}`, 'meta-field')"
+                        v-model="branchCase.source.field"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        @change="emit('commit-history')"
+                      >
+                        <option v-if="branchCase.source.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
+                        <option v-if="branchCase.source.sourceKind === 'run_meta'" value="run_id">run_id</option>
+                      </select>
+                    </div>
+
+                    <div v-else-if="branchCase.source.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'flow-var-name')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Local Var Name") }}
+                        </label>
+                        <input
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'flow-var-name')"
+                          v-model="branchCase.source.name"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="session_token"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+
+                      <div>
+                        <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'flow-var-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          {{ t("Value Path") }}
+                        </label>
+                        <input
+                          :id="sourceInputId(`branch-case-${branchCase.key}`, 'flow-var-path')"
+                          v-model="branchCase.source.path"
+                          class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                          placeholder="/payload/status"
+                          @blur="emit('commit-history')"
+                        />
+                      </div>
+                    </div>
+
+                    <div v-if="branchCase.op !== 'exists'" class="mt-3">
+                      <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'value-json')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Match Value (JSON)") }}
+                      </label>
+                      <textarea
+                        :id="sourceInputId(`branch-case-${branchCase.key}`, 'value-json')"
+                        v-model="branchCase.valueJson"
+                        rows="5"
+                        class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="selectedNode.kind === 'foreach'" class="space-y-4">
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Foreach Node") }}
+                </p>
+                <p class="mt-2 text-sm text-muted-foreground">
+                  {{ t("Foreach reads an array source, runs the nested body graph once per item, and collects one body node result into the final array.") }}
+                </p>
+              </div>
+
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {{ t("Source") }}
+                    </p>
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {{ t("Foreach source reuses the same trigger/meta/ancestor/local-var binding contract as other flow inputs.") }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="mt-4 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label :for="sourceInputId('foreach-source', 'kind')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Source Kind") }}
+                    </label>
+                    <select
+                      :id="sourceInputId('foreach-source', 'kind')"
+                      :value="selectedNode.foreachSource.sourceKind"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      @change="emitSourceKindChange(selectedNode.foreachSource, $event)"
+                    >
+                      <option value="node_result">{{ t("Ancestor Result") }}</option>
+                      <option value="trigger">{{ t("Trigger") }}</option>
+                      <option value="flow_meta">{{ t("Flow Meta") }}</option>
+                      <option value="run_meta">{{ t("Run Meta") }}</option>
+                      <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                    </select>
+                  </div>
+
+                  <label class="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      :id="sourceInputId('foreach-source', 'required')"
+                      v-model="selectedNode.foreachRequired"
+                      type="checkbox"
+                      class="h-4 w-4 rounded border"
+                      @change="emit('commit-history')"
+                    />
+                    <span>{{ t("Required source") }}</span>
+                  </label>
+                </div>
+
+                <div v-if="selectedNode.foreachSource.sourceKind === 'node_result'" class="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label :for="sourceInputId('foreach-source', 'ancestor-node')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Ancestor Node") }}
+                    </label>
+                    <select
+                      :id="sourceInputId('foreach-source', 'ancestor-node')"
+                      v-model="selectedNode.foreachSource.nodeId"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      @change="emit('commit-history')"
+                    >
+                      <option value="">
+                        {{ ancestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}
+                      </option>
+                      <option v-for="ancestorId in ancestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                        {{ ancestorId }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label :for="sourceInputId('foreach-source', 'result-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Result Path") }}
+                    </label>
+                    <input
+                      :id="sourceInputId('foreach-source', 'result-path')"
+                      v-model="selectedNode.foreachSource.path"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      placeholder="/items"
+                      @blur="emit('commit-history')"
+                    />
+                  </div>
+                </div>
+
+                <div v-else-if="selectedNode.foreachSource.sourceKind === 'trigger'" class="mt-3">
+                  <label :for="sourceInputId('foreach-source', 'trigger-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Trigger Path") }}
+                  </label>
+                  <input
+                    :id="sourceInputId('foreach-source', 'trigger-path')"
+                    v-model="selectedNode.foreachSource.path"
+                    class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                    placeholder="/items"
+                    @blur="emit('commit-history')"
+                  />
+                </div>
+
+                <div
+                  v-else-if="selectedNode.foreachSource.sourceKind === 'flow_meta' || selectedNode.foreachSource.sourceKind === 'run_meta'"
+                  class="mt-3"
+                >
+                  <label :for="sourceInputId('foreach-source', 'meta-field')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Meta Field") }}
+                  </label>
+                  <select
+                    :id="sourceInputId('foreach-source', 'meta-field')"
+                    v-model="selectedNode.foreachSource.field"
+                    class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                    @change="emit('commit-history')"
+                  >
+                    <option v-if="selectedNode.foreachSource.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
+                    <option v-if="selectedNode.foreachSource.sourceKind === 'run_meta'" value="run_id">run_id</option>
+                  </select>
+                </div>
+
+                <div v-else-if="selectedNode.foreachSource.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label :for="sourceInputId('foreach-source', 'flow-var-name')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Local Var Name") }}
+                    </label>
+                    <input
+                      :id="sourceInputId('foreach-source', 'flow-var-name')"
+                      v-model="selectedNode.foreachSource.name"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      placeholder="items_batch"
+                      @blur="emit('commit-history')"
+                    />
+                  </div>
+
+                  <div>
+                    <label :for="sourceInputId('foreach-source', 'flow-var-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Value Path") }}
+                    </label>
+                    <input
+                      :id="sourceInputId('foreach-source', 'flow-var-path')"
+                      v-model="selectedNode.foreachSource.path"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      placeholder="/items"
+                      @blur="emit('commit-history')"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label :for="inspectorFieldId('foreach-result-node-id')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Result Node ID") }}
+                </label>
+                <input
+                  :id="inspectorFieldId('foreach-result-node-id')"
+                  v-model="selectedNode.foreachResultNodeId"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="item_result"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Each iteration reads this body node result and appends it to the final array output.") }}
+                </p>
+              </div>
+
+              <div>
+                <label :for="inspectorFieldId('foreach-body')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Body Graph (JSON)") }}
+                </label>
+                <div class="mt-2 flex justify-end">
+                  <Button type="button" variant="outline" size="sm" @click="emit('edit-foreach-body')">
+                    {{ t("Open Visual Body Editor") }}
+                  </Button>
+                </div>
+                <textarea
+                  :id="inspectorFieldId('foreach-body')"
+                  v-model="selectedNode.foreachBodyJson"
+                  rows="12"
+                  class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                  @blur="emit('commit-history')"
+                />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("Ordinary mode covers the outer foreach fields. The visual body editor reuses the same body JSON as its source of truth.") }}
+                </p>
+              </div>
+            </div>
+
+            <div v-else-if="selectedNode.kind === 'compose' || selectedNode.kind === 'set_var' || selectedNode.kind === 'subflow'" class="space-y-4">
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{
+                    selectedNode.kind === "set_var"
+                      ? t("Set Var Node")
+                      : selectedNode.kind === "subflow"
+                        ? t("Subflow Node")
+                        : t("Compose Node")
+                  }}
                 </p>
                 <p class="mt-2 text-sm text-muted-foreground">
                   {{
                     selectedNode.kind === "set_var"
                       ? t("Set var nodes materialize a JSON value, write it to a flow-local variable for the current run, and mirror it as the node result.")
-                      : t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.")
+                      : selectedNode.kind === "subflow"
+                        ? t("Subflow nodes materialize an input payload, synchronously execute another flow on the same executor, and can optionally read one result node.")
+                        : t("Compose nodes do not call capabilities. They build a JSON result locally from template + bindings.")
                   }}
                 </p>
               </div>
@@ -562,13 +1378,53 @@ const structuredDetailFields = computed(() =>
                 </p>
               </div>
 
+              <div v-else-if="selectedNode.kind === 'subflow'" class="space-y-4">
+                <div>
+                  <label :for="inspectorFieldId('subflow-id')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ t("Flow ID") }}
+                  </label>
+                  <input
+                    :id="inspectorFieldId('subflow-id')"
+                    v-model="selectedNode.subflowId"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    placeholder="123e4567-e89b-12d3-a456-426614174000"
+                    @blur="emit('commit-history')"
+                  />
+                </div>
+
+                <div>
+                  <label :for="inspectorFieldId('subflow-result-node-id')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {{ t("Result Node ID (Optional)") }}
+                  </label>
+                  <input
+                    :id="inspectorFieldId('subflow-result-node-id')"
+                    v-model="selectedNode.subflowResultNodeId"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    placeholder="final_result"
+                    @blur="emit('commit-history')"
+                  />
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    {{ t("Leave blank to keep the default subflow summary result. Set a node ID to read one child node result back into this node.") }}
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label :for="inspectorFieldId('compose-template')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  {{ t("Template (JSON)") }}
+                  {{ selectedNode.kind === "subflow" ? t("Input Template (JSON)") : t("Template (JSON)") }}
                 </label>
                 <textarea
+                  v-if="selectedNode.kind !== 'subflow'"
                   :id="inspectorFieldId('compose-template')"
                   v-model="selectedNode.composeTemplate"
+                  rows="9"
+                  class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+                  @blur="emit('commit-history')"
+                />
+                <textarea
+                  v-else
+                  :id="inspectorFieldId('compose-template')"
+                  v-model="selectedNode.subflowInputTemplate"
                   rows="9"
                   class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
                   @blur="emit('commit-history')"
@@ -577,6 +1433,8 @@ const structuredDetailFields = computed(() =>
                   {{
                     selectedNode.kind === "set_var"
                       ? t("Set var starts from this JSON template, applies bindings, then writes the result into the flow-local variable.")
+                      : selectedNode.kind === "subflow"
+                        ? t("Subflow starts from this JSON object, applies bindings, then uses the result as the child flow trigger input.")
                       : t("Compose starts from this JSON template and applies the same binding list as call nodes.")
                   }}
                 </p>
@@ -589,7 +1447,11 @@ const structuredDetailFields = computed(() =>
                       {{ t("Input Bindings") }}
                     </p>
                     <p class="mt-1 text-[11px] text-muted-foreground">
-                      {{ t("Bindings can read trigger data, flow/run metadata, ancestor node results, or flow-local vars from the same run.") }}
+                      {{
+                        selectedNode.kind === "subflow"
+                          ? t("Bindings materialize the child flow input object from trigger data, flow/run metadata, ancestor node results, or flow-local vars.")
+                          : t("Bindings can read trigger data, flow/run metadata, ancestor node results, or flow-local vars from the same run.")
+                      }}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" @click="emit('add-binding')">{{ t("Add Binding") }}</Button>
@@ -599,7 +1461,11 @@ const structuredDetailFields = computed(() =>
                   v-if="!selectedNode.inputs.length"
                   class="mt-4 rounded-lg border border-dashed border-border/60 px-4 py-5 text-center text-xs text-muted-foreground"
                 >
-                  {{ t("No bindings yet. Nodes can still run with their template alone.") }}
+                  {{
+                    selectedNode.kind === "subflow"
+                      ? t("No bindings yet. The child flow will receive the input template exactly as written.")
+                      : t("No bindings yet. Nodes can still run with their template alone.")
+                  }}
                 </div>
 
                 <div v-else class="mt-4 space-y-3">
@@ -614,7 +1480,11 @@ const structuredDetailFields = computed(() =>
                           {{ t("Binding {index}", { index: index + 1 }) }}
                         </p>
                         <p class="mt-1 text-[11px] text-muted-foreground">
-                          {{ t("Destination writes into the template. Source chooses where the value comes from.") }}
+                          {{
+                            selectedNode.kind === "subflow"
+                              ? t("Destination writes into the child flow input template. Source chooses where the value comes from.")
+                              : t("Destination writes into the template. Source chooses where the value comes from.")
+                          }}
                         </p>
                       </div>
                       <Button size="sm" variant="ghost" @click="emit('remove-binding', index)">{{ t("Remove") }}</Button>
@@ -757,6 +1627,38 @@ const structuredDetailFields = computed(() =>
                       <span>{{ t("Required binding") }}</span>
                     </label>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="space-y-4">
+              <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ nodeKindLabel }}
+                </p>
+                <p class="mt-2 text-sm text-muted-foreground">
+                  {{ jsonOnlyKindSummary }}
+                </p>
+              </div>
+
+              <div class="rounded-xl border border-sky-500/30 bg-sky-500/10 p-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+                      {{ t("Advanced JSON only") }}
+                    </p>
+                    <p class="mt-2 text-sm text-foreground">
+                      {{ t("This node kind is supported for safe JSON authoring. The editor preserves the spec and layout, but ordinary form controls are not available yet.") }}
+                    </p>
+                  </div>
+                  <Button
+                    v-if="selectedNode.specEditorMode !== 'json'"
+                    size="sm"
+                    variant="outline"
+                    @click="emit('toggle-spec-mode', 'json')"
+                  >
+                    {{ t("Open Advanced JSON") }}
+                  </Button>
                 </div>
               </div>
             </div>

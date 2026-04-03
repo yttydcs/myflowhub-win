@@ -45,6 +45,7 @@ const deployForm = reactive({
   trigger: {
     type: "interval",
     everyMs: 60000,
+    cronExpr: "",
     eventMode: "publish",
     eventName: "",
     eventTopic: "",
@@ -88,6 +89,7 @@ const loadProjects = async () => {
 const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
   type: trigger.type,
   everyMs: trigger.everyMs,
+  cronExpr: trigger.cronExpr,
   eventMode: trigger.eventMode,
   eventName: trigger.eventName,
   eventTopic: trigger.eventTopic,
@@ -97,6 +99,7 @@ const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
 
 const triggerTypeOptions = computed(() => [
   { value: "interval" as const, label: t("Interval") },
+  { value: "cron" as const, label: t("Cron") },
   { value: "event" as const, label: t("Event") },
   { value: "var_changed" as const, label: t("Variable Changed") }
 ])
@@ -581,6 +584,15 @@ onMounted(async () => {
               type="number"
               min="1"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+
+          <div v-else-if="deployForm.trigger.type === 'cron'">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Cron Expression") }}</label>
+            <input
+              v-model="deployForm.trigger.cronExpr"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="0 */5 * * *"
             />
           </div>
 

@@ -41,8 +41,9 @@ const nowIso = () => new Date().toISOString()
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type FlowTriggerDraft = {
-  type: "interval" | "event" | "var_changed"
+  type: "interval" | "cron" | "event" | "var_changed"
   everyMs: number
+  cronExpr: string
   eventMode: "publish" | "received" | "any"
   eventName: string
   eventTopic: string
@@ -133,9 +134,10 @@ const parsePositiveNodeId = (input: string | number) => {
 const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
   const triggerType = String(input?.type ?? "interval").trim().toLowerCase()
   const type: FlowTriggerDraft["type"] =
-    triggerType === "event" || triggerType === "var_changed" ? triggerType : "interval"
+    triggerType === "cron" || triggerType === "event" || triggerType === "var_changed" ? triggerType : "interval"
 
   const everyMs = Number(input?.every_ms ?? input?.everyMs ?? 60000)
+  const cronExpr = String(input?.cron ?? input?.cronExpr ?? "").trim()
   const eventModeRaw = String(input?.event_mode ?? input?.eventMode ?? "publish").trim().toLowerCase()
   const eventMode: FlowTriggerDraft["eventMode"] =
     eventModeRaw === "received" || eventModeRaw === "any" ? eventModeRaw : "publish"
@@ -148,6 +150,7 @@ const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
   return {
     type,
     everyMs: everyMs > 0 ? Math.trunc(everyMs) : 60000,
+    cronExpr,
     eventMode,
     eventName,
     eventTopic,
@@ -158,6 +161,16 @@ const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
 
 const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }) => {
   const strict = Boolean(options?.strict)
+  if (trigger.type === "cron") {
+    const cron = trigger.cronExpr.trim()
+    if (strict && !cron) {
+      throw new Error(t("Cron trigger requires an expression."))
+    }
+    return {
+      type: "cron",
+      cron
+    }
+  }
   if (trigger.type === "event") {
     const eventName = trigger.eventName.trim()
     const eventTopic = trigger.eventTopic.trim()
@@ -499,6 +512,10 @@ const mapSummary = (input: FlowSummaryWire) => {
 
 const formatTriggerLabel = (trigger: any, fallbackEveryMs = 0) => {
   const type = String(trigger?.type ?? "").trim().toLowerCase()
+  if (type === "cron") {
+    const cron = String(trigger?.cron ?? trigger?.cronExpr ?? "").trim()
+    return cron ? t("Cron · {cron}", { cron }) : t(flowTriggerTypeLabelKey(type))
+  }
   if (type === "event") {
     const mode = t(flowEventModeLabelKey(String(trigger?.event_mode ?? "publish")))
     const eventName = String(trigger?.event_name ?? "").trim()

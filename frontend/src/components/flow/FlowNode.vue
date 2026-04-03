@@ -49,8 +49,16 @@ const kindLabel = computed(() => {
   switch (kind.value) {
     case "compose":
       return t("Compose")
+    case "transform":
+      return t("Transform")
     case "set_var":
       return t("Set Var")
+    case "branch":
+      return t("Branch")
+    case "foreach":
+      return t("Foreach")
+    case "subflow":
+      return t("Subflow")
     default:
       return t("Call")
   }

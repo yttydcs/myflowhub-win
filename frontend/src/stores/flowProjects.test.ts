@@ -38,6 +38,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const createTrigger = (): FlowTriggerDraft => ({
   type: "interval",
   everyMs: 60000,
+  cronExpr: "",
   eventMode: "publish",
   eventName: "",
   eventTopic: "",
@@ -178,5 +179,65 @@ describe("flowProjects store", () => {
 
     expect(listSimple).not.toHaveBeenCalled()
     expect(setSimple).not.toHaveBeenCalled()
+  })
+
+  it("normalizes cron triggers and deploys them with the cron wire", async () => {
+    persistedProjects = [
+      {
+        project_id: "project-1",
+        flow_id: "550e8400-e29b-41d4-a716-446655440000",
+        name: "Cron Project",
+        trigger: { type: "cron", cron: "0 */5 * * *" },
+        graph: {
+          nodes: [{ id: "node-1", kind: "call", spec: { method: "demo::call", args_template: {} } }],
+          edges: []
+        },
+        updated_at: "2026-03-27T12:00:00.000Z"
+      }
+    ]
+
+    await store.loadProjects()
+
+    expect(store.state.projects[0]?.trigger).toEqual({
+      type: "cron",
+      everyMs: 60000,
+      cronExpr: "0 */5 * * *",
+      eventMode: "publish",
+      eventName: "",
+      eventTopic: "",
+      varOwner: 0,
+      varName: ""
+    })
+
+    listSimple.mockResolvedValue({ code: 1, flows: [] })
+    setSimple.mockResolvedValue({ code: 1 })
+
+    await expect(
+      store.deployProject({
+        projectId: "project-1",
+        nodeId: "12",
+        trigger: {
+          ...createTrigger(),
+          type: "cron",
+          cronExpr: "0 */5 * * *"
+        },
+        overwrite: false
+      })
+    ).resolves.toEqual({ overwriteRequired: false })
+
+    expect(setSimple).toHaveBeenCalledWith(
+      7,
+      9,
+      expect.objectContaining({
+        executor_node: 12,
+        flow_id: "550e8400-e29b-41d4-a716-446655440000",
+        trigger: { type: "cron", cron: "0 */5 * * *" }
+      })
+    )
+    expect(store.state.projects[0]?.trigger).toMatchObject({
+      type: "cron",
+      cronExpr: "0 */5 * * *"
+    })
+    expect(persistedProjects[0]?.trigger).toEqual({ type: "cron", cron: "0 */5 * * *" })
   })
 })

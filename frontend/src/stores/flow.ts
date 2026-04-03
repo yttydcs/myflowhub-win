@@ -45,7 +45,8 @@ export type FlowSummary = {
   lastStatus: string
 }
 
-export type FlowNodeKind = "call" | "compose" | "set_var"
+export type FlowNodeKind = "call" | "compose" | "transform" | "set_var" | "branch" | "foreach" | "subflow"
+export type FlowTriggerType = "interval" | "cron" | "event" | "var_changed"
 export type FlowSpecEditorMode = "form" | "json"
 export type FlowBindingSourceKind = "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var" | ""
 
@@ -57,6 +58,25 @@ export type FlowInputBindingDraft = {
   field: string
   name: string
   required: boolean
+}
+
+export type FlowSourceDraft = {
+  sourceKind: FlowBindingSourceKind
+  nodeId: string
+  path: string
+  field: string
+  name: string
+}
+
+export type FlowTransformExprMode = "literal" | "source" | "op" | "object" | "array"
+export type FlowBranchMatchOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "exists"
+
+export type FlowBranchCaseDraft = {
+  key: string
+  name: string
+  source: FlowSourceDraft
+  op: FlowBranchMatchOp
+  valueJson: string
 }
 
 export type FlowNodeDraft = {
@@ -71,6 +91,23 @@ export type FlowNodeDraft = {
   composeTemplate: string
   setVarName: string
   inputs: FlowInputBindingDraft[]
+  transformExprMode: FlowTransformExprMode
+  transformLiteralJson: string
+  transformSource: FlowSourceDraft
+  transformSourceRequired: boolean
+  transformOp: string
+  transformArgsJson: string
+  transformObjectJson: string
+  transformArrayJson: string
+  branchCases: FlowBranchCaseDraft[]
+  branchDefaultCase: string
+  foreachSource: FlowSourceDraft
+  foreachRequired: boolean
+  foreachBodyJson: string
+  foreachResultNodeId: string
+  subflowId: string
+  subflowInputTemplate: string
+  subflowResultNodeId: string
   specEditorMode: FlowSpecEditorMode
   specJson: string
   x: number
@@ -80,6 +117,7 @@ export type FlowNodeDraft = {
 export type FlowEdge = {
   from: string
   to: string
+  case?: string
 }
 
 export type FlowPayload = {
@@ -158,6 +196,8 @@ export const flowStatusLabelKey = (status: string) => {
 export const flowTriggerTypeLabelKey = (type: string) => {
   const normalized = String(type ?? "").trim().toLowerCase()
   switch (normalized) {
+    case "cron":
+      return "Cron"
     case "event":
       return "Event"
     case "var_changed":
@@ -196,9 +236,10 @@ export type ExecCapabilityRoute = {
 type FlowDraftSnapshot = {
   flowId: string
   flowName: string
-  triggerType: "interval" | "event" | "var_changed"
+  triggerType: FlowTriggerType
   eventMode: "publish" | "received" | "any"
   everyMs: number
+  cronExpr: string
   eventName: string
   eventTopic: string
   varOwner: number
@@ -223,9 +264,10 @@ type FlowState = {
   flows: FlowSummary[]
   flowId: string
   flowName: string
-  triggerType: "interval" | "event" | "var_changed"
+  triggerType: FlowTriggerType
   eventMode: "publish" | "received" | "any"
   everyMs: number
+  cronExpr: string
   eventName: string
   eventTopic: string
   varOwner: number
@@ -262,6 +304,7 @@ const state = reactive<FlowState>({
   triggerType: "interval",
   eventMode: "publish",
   everyMs: 60000,
+  cronExpr: "",
   eventName: "",
   eventTopic: "",
   varOwner: 0,
@@ -305,12 +348,55 @@ let execCapabilityLoadEpoch = 0
 let execCapabilityCacheVersion = 0
 const pendingCapabilityHydrations = new Map<string, Promise<boolean>>()
 const FLOW_LOCAL_VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+const FLOW_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const FLOW_BRANCH_MATCH_OPS = new Set<FlowBranchMatchOp>(["eq", "ne", "gt", "gte", "lt", "lte", "exists"])
+const FLOW_TRANSFORM_OPS = new Set([
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "mod",
+  "neg",
+  "abs",
+  "min",
+  "max",
+  "eq",
+  "ne",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "and",
+  "or",
+  "not",
+  "coalesce",
+  "if",
+  "concat",
+  "lower",
+  "upper",
+  "trim",
+  "len"
+])
 
-const cloneBindingDraft = (binding: FlowInputBindingDraft): FlowInputBindingDraft => ({ ...binding })
+const cloneBindingDraft = (binding?: FlowInputBindingDraft): FlowInputBindingDraft => ({
+  ...defaultInputBinding(),
+  ...(binding ?? {})
+})
+const cloneSourceDraft = (source?: FlowSourceDraft): FlowSourceDraft => ({
+  ...defaultSourceDraft("trigger"),
+  ...(source ?? {})
+})
+const cloneBranchCaseDraft = (item: FlowBranchCaseDraft): FlowBranchCaseDraft => ({
+  ...item,
+  source: cloneSourceDraft(item.source)
+})
 
 const cloneNodeDraft = (node: FlowNodeDraft): FlowNodeDraft => ({
   ...node,
-  inputs: node.inputs.map(cloneBindingDraft)
+  inputs: (node.inputs ?? []).map(cloneBindingDraft),
+  transformSource: cloneSourceDraft(node.transformSource),
+  branchCases: (node.branchCases ?? []).map(cloneBranchCaseDraft),
+  foreachSource: cloneSourceDraft(node.foreachSource)
 })
 
 const cloneEdge = (edge: FlowEdge): FlowEdge => ({ ...edge })
@@ -329,6 +415,7 @@ const takeSnapshot = (): FlowDraftSnapshot => ({
   triggerType: state.triggerType,
   eventMode: state.eventMode,
   everyMs: state.everyMs,
+  cronExpr: state.cronExpr,
   eventName: state.eventName,
   eventTopic: state.eventTopic,
   varOwner: state.varOwner,
@@ -368,6 +455,7 @@ const applySnapshot = (snapshot: FlowDraftSnapshot) => {
   state.triggerType = snapshot.triggerType
   state.eventMode = snapshot.eventMode
   state.everyMs = snapshot.everyMs
+  state.cronExpr = snapshot.cronExpr ?? ""
   state.eventName = snapshot.eventName
   state.eventTopic = snapshot.eventTopic
   state.varOwner = snapshot.varOwner
@@ -763,10 +851,53 @@ const normalizeNodeKind = (raw: any): FlowNodeKind => {
   switch (normalized) {
     case "compose":
       return "compose"
+    case "transform":
+      return "transform"
     case "set_var":
       return "set_var"
+    case "branch":
+      return "branch"
+    case "foreach":
+      return "foreach"
+    case "subflow":
+      return "subflow"
     default:
       return "call"
+  }
+}
+
+const supportsFormMode = (kind: FlowNodeKind) =>
+  kind === "call" ||
+  kind === "compose" ||
+  kind === "transform" ||
+  kind === "set_var" ||
+  kind === "branch" ||
+  kind === "foreach" ||
+  kind === "subflow"
+
+const defaultSpecEditorMode = (kind: FlowNodeKind): FlowSpecEditorMode => (supportsFormMode(kind) ? "form" : "json")
+
+const kindDefaultSpec = (kind: FlowNodeKind): Record<string, any> => {
+  switch (kind) {
+    case "compose":
+      return { template: {} }
+    case "transform":
+      return { expr: { literal: null } }
+    case "set_var":
+      return { name: "", template: null }
+    case "branch":
+      return { cases: [] }
+    case "foreach":
+      return {
+        source: { kind: "trigger" },
+        required: true,
+        body: { nodes: [], edges: [] },
+        result_node_id: ""
+      }
+    case "subflow":
+      return { flow_id: "", input_template: {} }
+    default:
+      return { method: "", args_template: {} }
   }
 }
 
@@ -793,6 +924,323 @@ const defaultInputBinding = (): FlowInputBindingDraft => ({
   name: "",
   required: false
 })
+
+const defaultSourceDraft = (sourceKind: FlowBindingSourceKind = "trigger"): FlowSourceDraft => ({
+  sourceKind,
+  nodeId: "",
+  path: "",
+  field: sourceKind === "run_meta" ? "run_id" : sourceKind === "flow_meta" ? "flow_id" : "",
+  name: ""
+})
+
+const defaultTransformDraft = () => ({
+  transformExprMode: "literal" as FlowTransformExprMode,
+  transformLiteralJson: "null",
+  transformSource: defaultSourceDraft("trigger"),
+  transformSourceRequired: true,
+  transformOp: "add",
+  transformArgsJson: "[]",
+  transformObjectJson: "{}",
+  transformArrayJson: "[]"
+})
+
+const defaultForeachBodyGraph = () => ({
+  nodes: [] as any[],
+  edges: [] as any[]
+})
+
+const defaultForeachDraft = () => ({
+  foreachSource: defaultSourceDraft("trigger"),
+  foreachRequired: true,
+  foreachBodyJson: formatJSONText(defaultForeachBodyGraph(), defaultForeachBodyGraph()),
+  foreachResultNodeId: ""
+})
+
+const defaultAdvancedNodeFields = () => ({
+  ...defaultTransformDraft(),
+  branchCases: [] as FlowBranchCaseDraft[],
+  branchDefaultCase: "",
+  ...defaultForeachDraft(),
+  subflowId: "",
+  subflowInputTemplate: "{}",
+  subflowResultNodeId: ""
+})
+
+const newBranchCaseKey = () => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
+  return `branch_case_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+const createBranchCaseDraft = (input?: Partial<FlowBranchCaseDraft>): FlowBranchCaseDraft => ({
+  key: String(input?.key ?? "").trim() || newBranchCaseKey(),
+  name: String(input?.name ?? "").trim(),
+  source: cloneSourceDraft(input?.source ?? defaultSourceDraft("trigger")),
+  op: FLOW_BRANCH_MATCH_OPS.has(input?.op as FlowBranchMatchOp) ? (input?.op as FlowBranchMatchOp) : "eq",
+  valueJson: String(input?.valueJson ?? "null").trim() || "null"
+})
+
+const hasOnlyKeys = (value: Record<string, any>, allowed: string[]) =>
+  Object.keys(value).every((key) => allowed.includes(key))
+
+const parseSourceDraft = (raw: any, fallbackKind: FlowBindingSourceKind = "trigger"): FlowSourceDraft => {
+  const sourceKind = normalizeBindingSourceKind(raw?.kind) || fallbackKind
+  return {
+    sourceKind,
+    nodeId: String(raw?.node_id ?? "").trim(),
+    path: String(raw?.path ?? "").trim(),
+    field:
+      sourceKind === "run_meta"
+        ? "run_id"
+        : sourceKind === "flow_meta"
+          ? "flow_id"
+          : String(raw?.field ?? "").trim(),
+    name: String(raw?.name ?? "").trim()
+  }
+}
+
+const buildSourceSpec = (input: {
+  nodeId: string
+  label: string
+  source: FlowSourceDraft
+  ancestors: Map<string, Set<string>>
+}): Record<string, any> => {
+  const nodeId = input.nodeId.trim() || t("Unnamed")
+  const label = input.label
+  const source = input.source
+  switch (source.sourceKind) {
+    case "node_result": {
+      const sourceNodeId = source.nodeId.trim()
+      if (!sourceNodeId) {
+        throw new Error(t("Node {nodeId} {label}: source node is required.", { nodeId, label }))
+      }
+      const allowedAncestors = input.ancestors.get(nodeId) ?? new Set<string>()
+      if (!allowedAncestors.has(sourceNodeId)) {
+        throw new Error(t("Node {nodeId} {label}: source node must be an ancestor.", { nodeId, label }))
+      }
+      validateJSONPointer(
+        source.path,
+        t("Node {nodeId} {label}: result path must be a valid JSON Pointer.", { nodeId, label })
+      )
+      const out: Record<string, any> = {
+        kind: "node_result",
+        node_id: sourceNodeId
+      }
+      if (source.path.trim()) {
+        out.path = source.path.trim()
+      }
+      return out
+    }
+    case "trigger": {
+      validateJSONPointer(
+        source.path,
+        t("Node {nodeId} {label}: trigger path must be a valid JSON Pointer.", { nodeId, label })
+      )
+      const out: Record<string, any> = { kind: "trigger" }
+      if (source.path.trim()) {
+        out.path = source.path.trim()
+      }
+      return out
+    }
+    case "flow_meta":
+      return { kind: "flow_meta", field: "flow_id" }
+    case "run_meta":
+      return { kind: "run_meta", field: "run_id" }
+    case "flow_var": {
+      const name = assertValidFlowLocalVarName(
+        normalizeFlowLocalVarName(source.name),
+        t("Node {nodeId} {label}: flow local var name is required.", { nodeId, label }),
+        t("Node {nodeId} {label}: flow local var name is invalid.", { nodeId, label })
+      )
+      validateJSONPointer(
+        source.path,
+        t("Node {nodeId} {label}: flow local var path must be a valid JSON Pointer.", { nodeId, label })
+      )
+      const out: Record<string, any> = { kind: "flow_var", name }
+      if (source.path.trim()) {
+        out.path = source.path.trim()
+      }
+      return out
+    }
+    default:
+      throw new Error(t("Node {nodeId} {label}: source kind is required.", { nodeId, label }))
+  }
+}
+
+const buildLooseSourceSpec = (source: FlowSourceDraft): Record<string, any> => {
+  switch (source.sourceKind) {
+    case "node_result":
+      return {
+        kind: "node_result",
+        ...(source.nodeId.trim() ? { node_id: source.nodeId.trim() } : {}),
+        ...(source.path.trim() ? { path: source.path.trim() } : {})
+      }
+    case "flow_meta":
+      return { kind: "flow_meta", field: "flow_id" }
+    case "run_meta":
+      return { kind: "run_meta", field: "run_id" }
+    case "flow_var":
+      return {
+        kind: "flow_var",
+        ...(source.name.trim() ? { name: source.name.trim() } : {}),
+        ...(source.path.trim() ? { path: source.path.trim() } : {})
+      }
+    case "trigger":
+    default:
+      return {
+        kind: "trigger",
+        ...(source.path.trim() ? { path: source.path.trim() } : {})
+      }
+  }
+}
+
+const parseTransformDraft = (parsed: Record<string, any>) => {
+  const defaults = defaultTransformDraft()
+  const allowedTopLevel = hasOnlyKeys(parsed, ["expr", "_ui"])
+  if (!allowedTopLevel) {
+    return {
+      ...defaults,
+      specEditorMode: "json" as FlowSpecEditorMode
+    }
+  }
+  if (!("expr" in parsed)) {
+    return {
+      ...defaults,
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  const expr = parsed?.expr
+  if (!isJSONObject(expr)) {
+    return {
+      ...defaults,
+      specEditorMode: "json" as FlowSpecEditorMode
+    }
+  }
+  if ("literal" in expr && hasOnlyKeys(expr, ["literal"])) {
+    return {
+      ...defaults,
+      transformExprMode: "literal" as FlowTransformExprMode,
+      transformLiteralJson: formatJSONText((expr as Record<string, any>).literal, null),
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  if ("source" in expr && hasOnlyKeys(expr, ["source", "required"]) && isJSONObject(expr.source)) {
+    return {
+      ...defaults,
+      transformExprMode: "source" as FlowTransformExprMode,
+      transformSource: parseSourceDraft(expr.source, "trigger"),
+      transformSourceRequired: Boolean(expr.required ?? true),
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  if ("op" in expr && hasOnlyKeys(expr, ["op", "args"])) {
+    const op = String(expr.op ?? "").trim().toLowerCase()
+    if (!FLOW_TRANSFORM_OPS.has(op)) {
+      return {
+        ...defaults,
+        specEditorMode: "json" as FlowSpecEditorMode
+      }
+    }
+    return {
+      ...defaults,
+      transformExprMode: "op" as FlowTransformExprMode,
+      transformOp: op,
+      transformArgsJson: formatJSONText(Array.isArray(expr.args) ? expr.args : [], []),
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  if ("object" in expr && hasOnlyKeys(expr, ["object"]) && isJSONObject(expr.object)) {
+    return {
+      ...defaults,
+      transformExprMode: "object" as FlowTransformExprMode,
+      transformObjectJson: formatJSONText(expr.object, {}),
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  if ("array" in expr && hasOnlyKeys(expr, ["array"]) && Array.isArray(expr.array)) {
+    return {
+      ...defaults,
+      transformExprMode: "array" as FlowTransformExprMode,
+      transformArrayJson: formatJSONText(expr.array, []),
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  return {
+    ...defaults,
+    specEditorMode: "json" as FlowSpecEditorMode
+  }
+}
+
+const parseBranchDraft = (parsed: Record<string, any>) => {
+  const branchCases: FlowBranchCaseDraft[] = []
+  const allowedTopLevel = hasOnlyKeys(parsed, ["cases", "default_case", "_ui"])
+  const cases = Array.isArray(parsed?.cases) ? parsed.cases : []
+  let supported = allowedTopLevel
+  for (const item of cases) {
+    if (!isJSONObject(item) || !hasOnlyKeys(item, ["name", "match"]) || !isJSONObject(item.match)) {
+      supported = false
+      break
+    }
+    const match = item.match as Record<string, any>
+    if (!hasOnlyKeys(match, ["source", "op", "value"]) || !isJSONObject(match.source)) {
+      supported = false
+      break
+    }
+    const op = String(match.op ?? "").trim().toLowerCase() as FlowBranchMatchOp
+    if (!FLOW_BRANCH_MATCH_OPS.has(op)) {
+      supported = false
+      break
+    }
+    branchCases.push(
+      createBranchCaseDraft({
+        name: String(item.name ?? "").trim(),
+        source: parseSourceDraft(match.source, "trigger"),
+        op,
+        valueJson: formatJSONText("value" in match ? match.value : null, null)
+      })
+    )
+  }
+  return {
+    branchCases,
+    branchDefaultCase: String(parsed?.default_case ?? "").trim(),
+    specEditorMode: supported ? ("form" as FlowSpecEditorMode) : ("json" as FlowSpecEditorMode)
+  }
+}
+
+const parseSubflowDraft = (parsed: Record<string, any>) => {
+  const flowId = String(parsed?.flow_id ?? "").trim()
+  const inputTemplate = "input_template" in parsed ? parsed.input_template : {}
+  const isSupported =
+    hasOnlyKeys(parsed, ["flow_id", "input_template", "inputs", "result_node_id", "_ui"]) &&
+    isJSONObject(inputTemplate)
+  return {
+    subflowId: flowId,
+    subflowInputTemplate: formatJSONText(inputTemplate, {}),
+    subflowResultNodeId: String(parsed?.result_node_id ?? "").trim(),
+    specEditorMode: isSupported ? ("form" as FlowSpecEditorMode) : ("json" as FlowSpecEditorMode)
+  }
+}
+
+const parseForeachDraft = (parsed: Record<string, any>) => {
+  const defaults = defaultForeachDraft()
+  const sourceSupported = !("source" in parsed) || isJSONObject(parsed.source)
+  const body = "body" in parsed ? parsed.body : defaultForeachBodyGraph()
+  const bodySupported = isJSONObject(body) && Array.isArray(body.nodes) && Array.isArray(body.edges)
+  const supported =
+    hasOnlyKeys(parsed, ["source", "required", "body", "result_node_id", "_ui"]) && sourceSupported && bodySupported
+  return {
+    ...defaults,
+    foreachSource:
+      "source" in parsed && isJSONObject(parsed.source)
+        ? parseSourceDraft(parsed.source, "trigger")
+        : defaults.foreachSource,
+    foreachRequired: Boolean(parsed?.required ?? true),
+    foreachBodyJson: formatJSONText(bodySupported ? body : defaultForeachBodyGraph(), defaultForeachBodyGraph()),
+    foreachResultNodeId: String(parsed?.result_node_id ?? "").trim(),
+    specEditorMode: supported ? ("form" as FlowSpecEditorMode) : ("json" as FlowSpecEditorMode)
+  }
+}
 
 const normalizeSpecObject = (spec: any) => {
   let parsed = spec
@@ -832,44 +1280,80 @@ const parseSpecDraft = (kind: FlowNodeKind, spec: any) => {
   const ui = parsed?._ui ?? {}
   const x = Number(ui?.x)
   const y = Number(ui?.y)
+  const base = {
+    method: "",
+    target: 0,
+    argsTemplate: "{}",
+    composeTemplate: "{}",
+    setVarName: "",
+    inputs: [] as FlowInputBindingDraft[],
+    ...defaultAdvancedNodeFields(),
+    specEditorMode: defaultSpecEditorMode(kind),
+    specJson: formatJSONText(parsed, {}),
+    x: Number.isFinite(x) ? x : undefined,
+    y: Number.isFinite(y) ? y : undefined
+  }
   if (kind === "compose") {
     return {
-      method: "",
-      target: 0,
-      argsTemplate: "{}",
+      ...base,
       composeTemplate: formatJSONText(parsed?.template, {}),
-      setVarName: "",
       inputs: parseInputBindings(parsed?.inputs),
-      specJson: formatJSONText(parsed, {}),
-      x: Number.isFinite(x) ? x : undefined,
-      y: Number.isFinite(y) ? y : undefined
+      specEditorMode: "form" as FlowSpecEditorMode
     }
   }
   if (kind === "set_var") {
     return {
-      method: "",
-      target: 0,
-      argsTemplate: "{}",
+      ...base,
       composeTemplate: formatJSONText("template" in parsed ? parsed.template : null, null),
       setVarName: String(parsed?.name ?? "").trim(),
       inputs: parseInputBindings(parsed?.inputs),
-      specJson: formatJSONText(parsed, {}),
-      x: Number.isFinite(x) ? x : undefined,
-      y: Number.isFinite(y) ? y : undefined
+      specEditorMode: "form" as FlowSpecEditorMode
+    }
+  }
+  if (kind === "transform") {
+    const next = parseTransformDraft(parsed)
+    return {
+      ...base,
+      ...next
+    }
+  }
+  if (kind === "branch") {
+    const next = parseBranchDraft(parsed)
+    return {
+      ...base,
+      ...next
+    }
+  }
+  if (kind === "foreach") {
+    const next = parseForeachDraft(parsed)
+    return {
+      ...base,
+      ...next
+    }
+  }
+  if (kind === "subflow") {
+    const next = parseSubflowDraft(parsed)
+    return {
+      ...base,
+      ...next,
+      inputs: parseInputBindings(parsed?.inputs)
+    }
+  }
+  if (!supportsFormMode(kind)) {
+    return {
+      ...base,
+      specEditorMode: "json" as FlowSpecEditorMode
     }
   }
   const method = String(parsed?.method ?? "")
   const target = Number(parsed?.target ?? 0)
   return {
+    ...base,
     method,
     target,
     argsTemplate: formatJSONText(parsed?.args_template ?? parsed?.args, {}),
-    composeTemplate: "{}",
-    setVarName: "",
     inputs: parseInputBindings(parsed?.inputs),
-    specJson: formatJSONText(parsed, {}),
-    x: Number.isFinite(x) ? x : undefined,
-    y: Number.isFinite(y) ? y : undefined
+    specEditorMode: "form" as FlowSpecEditorMode
   }
 }
 
@@ -882,12 +1366,7 @@ const defaultNodePosition = (index: number) => {
 const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNodeDraft => {
   const pos = defaultNodePosition(index)
   const composeTemplate = kind === "set_var" ? "null" : "{}"
-  const initialSpec =
-    kind === "compose"
-      ? { template: {} }
-      : kind === "set_var"
-        ? { name: "", template: null }
-        : { method: "", args_template: {} }
+  const initialSpec = kindDefaultSpec(kind)
   return {
     id,
     kind,
@@ -900,7 +1379,8 @@ const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNod
     composeTemplate,
     setVarName: "",
     inputs: [],
-    specEditorMode: "form",
+    ...defaultAdvancedNodeFields(),
+    specEditorMode: defaultSpecEditorMode(kind),
     specJson: formatJSONText(initialSpec, {}),
     x: pos.x,
     y: pos.y
@@ -910,10 +1390,35 @@ const createNodeDraft = (id: string, kind: FlowNodeKind, index: number): FlowNod
 const mapNode = (input: any, index: number): FlowNodeDraft => {
   const sourceKind = String(input?.kind ?? "").toLowerCase()
   const kind = normalizeNodeKind(sourceKind)
-  const { method, target, argsTemplate, composeTemplate, setVarName, inputs, specJson, x, y } = parseSpecDraft(
-    kind,
-    input?.spec
-  )
+  const {
+    method,
+    target,
+    argsTemplate,
+    composeTemplate,
+    setVarName,
+    inputs,
+    transformExprMode,
+    transformLiteralJson,
+    transformSource,
+    transformSourceRequired,
+    transformOp,
+    transformArgsJson,
+    transformObjectJson,
+    transformArrayJson,
+    branchCases,
+    branchDefaultCase,
+    foreachSource,
+    foreachRequired,
+    foreachBodyJson,
+    foreachResultNodeId,
+    subflowId,
+    subflowInputTemplate,
+    subflowResultNodeId,
+    specEditorMode,
+    specJson,
+    x,
+    y
+  } = parseSpecDraft(kind, input?.spec)
   let mappedTarget = Number.isFinite(target) ? Number(target) : 0
   if (mappedTarget < 0) mappedTarget = 0
   if (sourceKind === "local") {
@@ -932,7 +1437,24 @@ const mapNode = (input: any, index: number): FlowNodeDraft => {
     composeTemplate,
     setVarName,
     inputs,
-    specEditorMode: "form",
+    transformExprMode,
+    transformLiteralJson,
+    transformSource,
+    transformSourceRequired,
+    transformOp,
+    transformArgsJson,
+    transformObjectJson,
+    transformArrayJson,
+    branchCases,
+    branchDefaultCase,
+    foreachSource,
+    foreachRequired,
+    foreachBodyJson,
+    foreachResultNodeId,
+    subflowId,
+    subflowInputTemplate,
+    subflowResultNodeId,
+    specEditorMode,
     specJson,
     x: Number.isFinite(x) ? Number(x) : pos.x,
     y: Number.isFinite(y) ? Number(y) : pos.y
@@ -941,8 +1463,21 @@ const mapNode = (input: any, index: number): FlowNodeDraft => {
 
 const mapEdge = (input: any): FlowEdge => ({
   from: String(input?.from ?? "").trim(),
-  to: String(input?.to ?? "").trim()
+  to: String(input?.to ?? "").trim(),
+  case: String(input?.case ?? "").trim() || undefined
 })
+
+export const createGraphEditorStateFromDraft = (graphSource: any): FlowGraphEditorState => {
+  const graph = graphSource && typeof graphSource === "object" && "graph" in graphSource ? graphSource.graph : graphSource
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
+  const edges = Array.isArray(graph?.edges) ? graph.edges : []
+  return {
+    nodes: nodes.map((node: any, index: number) => mapNode(node, index)),
+    edges: edges.map(mapEdge),
+    selectedNodeIndex: -1,
+    selectedEdgeIndex: -1
+  }
+}
 
 const mapExecCapabilityRoute = (input: any): ExecCapabilityRoute => {
   const providerNode = Number(input?.provider_node ?? 0)
@@ -1030,6 +1565,7 @@ const newDraft = () => {
   state.triggerType = "interval"
   state.eventMode = "publish"
   state.everyMs = 60000
+  state.cronExpr = ""
   state.eventName = ""
   state.eventTopic = ""
   state.varOwner = 0
@@ -1515,6 +2051,106 @@ const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
       _ui: ui
     }
   }
+  if (node.kind === "transform") {
+    const mode = node.transformExprMode || "literal"
+    if (mode === "source") {
+      return {
+        expr: {
+          source: buildLooseSourceSpec(node.transformSource),
+          required: Boolean(node.transformSourceRequired)
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "op") {
+      return {
+        expr: {
+          op: String(node.transformOp ?? "").trim().toLowerCase(),
+          args: tryParseJSONText(node.transformArgsJson, [])
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "object") {
+      return {
+        expr: {
+          object: tryParseJSONText(node.transformObjectJson, {})
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "array") {
+      return {
+        expr: {
+          array: tryParseJSONText(node.transformArrayJson, [])
+        },
+        _ui: ui
+      }
+    }
+    return {
+      expr: {
+        literal: tryParseJSONText(node.transformLiteralJson, null)
+      },
+      _ui: ui
+    }
+  }
+  if (node.kind === "branch") {
+    return {
+      cases: node.branchCases.map((item) => {
+        const op = FLOW_BRANCH_MATCH_OPS.has(item.op) ? item.op : "eq"
+        return {
+          name: item.name.trim(),
+          match: {
+            source: buildLooseSourceSpec(item.source),
+            op,
+            ...(op === "exists" ? {} : { value: tryParseJSONText(item.valueJson, null) })
+          }
+        }
+      }),
+      ...(node.branchDefaultCase.trim() ? { default_case: node.branchDefaultCase.trim() } : {}),
+      _ui: ui
+    }
+  }
+  if (node.kind === "foreach") {
+    const parsedBody = tryParseJSONText(node.foreachBodyJson, defaultForeachBodyGraph())
+    const body = isJSONObject(parsedBody) ? { ...parsedBody } : defaultForeachBodyGraph()
+    if (!Array.isArray(body.nodes)) {
+      body.nodes = []
+    }
+    if (!Array.isArray(body.edges)) {
+      body.edges = []
+    }
+    return {
+      source: buildLooseSourceSpec(node.foreachSource),
+      required: Boolean(node.foreachRequired),
+      body,
+      result_node_id: node.foreachResultNodeId.trim(),
+      _ui: ui
+    }
+  }
+  if (node.kind === "subflow") {
+    const inputTemplate = tryParseJSONText(node.subflowInputTemplate, {})
+    return {
+      flow_id: node.subflowId.trim(),
+      input_template: isJSONObject(inputTemplate) ? inputTemplate : {},
+      ...(looseInputs.length ? { inputs: looseInputs } : {}),
+      ...(node.subflowResultNodeId.trim() ? { result_node_id: node.subflowResultNodeId.trim() } : {}),
+      _ui: ui
+    }
+  }
+  if (!supportsFormMode(node.kind)) {
+    const parsed = (() => {
+      try {
+        return parseSpecJsonObject(node)
+      } catch {
+        return kindDefaultSpec(node.kind)
+      }
+    })()
+    return {
+      ...parsed,
+      _ui: ui
+    }
+  }
 
   const target = Number(node.target || 0)
   return {
@@ -1525,6 +2161,37 @@ const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
     _ui: ui
   }
 }
+
+const buildLooseExportSpecFromNode = (node: FlowNodeDraft) => {
+  if (node.specEditorMode !== "json" && supportsFormMode(node.kind)) {
+    return buildLooseSpecFromNode(node)
+  }
+  const parsed = parseSpecJsonObject(node)
+  const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+  return {
+    ...parsed,
+    _ui: ui
+  }
+}
+
+export const exportLooseGraphDraftFromEditorState = (snapshot: FlowGraphEditorState): FlowGraphDraft => ({
+  nodes: (Array.isArray(snapshot?.nodes) ? snapshot.nodes : []).map((node) => {
+    const id = node.id.trim()
+    return {
+      id,
+      kind: node.kind,
+      allow_fail: Boolean(node.allowFail),
+      retry: Math.max(0, Math.trunc(Number(node.retry || 0))),
+      timeout_ms: Math.max(0, Math.trunc(Number(node.timeoutMs || 0))),
+      spec: buildLooseExportSpecFromNode(node)
+    }
+  }),
+  edges: (Array.isArray(snapshot?.edges) ? snapshot.edges : []).map((edge) => ({
+    from: edge.from.trim(),
+    to: edge.to.trim(),
+    ...(edge.case?.trim() ? { case: edge.case.trim() } : {})
+  }))
+})
 
 const addEdge = (from: string, to: string) => {
   const fromId = from.trim()
@@ -1608,10 +2275,13 @@ const autoLayoutTB = () => {
 }
 
 const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
+  if (!supportsFormMode(node.kind)) {
+    throw new Error(t("Node kind {kind} only supports Advanced JSON mode right now.", { kind: node.kind }))
+  }
   const nodeId = node.id.trim() || t("Unnamed")
   const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
-  const inputs = buildInputBindings(node, ancestors)
   if (node.kind === "compose") {
+    const inputs = buildInputBindings(node, ancestors)
     return {
       template: parseComposeTemplateObject(node),
       ...(inputs.length ? { inputs } : {}),
@@ -1619,6 +2289,7 @@ const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>)
     }
   }
   if (node.kind === "set_var") {
+    const inputs = buildInputBindings(node, ancestors)
     const name = assertValidFlowLocalVarName(
       normalizeFlowLocalVarName(node.setVarName),
       t("Node {nodeId} requires a flow local var name.", { nodeId }),
@@ -1635,6 +2306,187 @@ const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>)
       _ui: ui
     }
   }
+  if (node.kind === "transform") {
+    const mode = node.transformExprMode || "literal"
+    if (mode === "source") {
+      return {
+        expr: {
+          source: buildSourceSpec({
+            nodeId,
+            label: t("transform source"),
+            source: node.transformSource,
+            ancestors
+          }),
+          required: Boolean(node.transformSourceRequired)
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "op") {
+      const op = String(node.transformOp ?? "").trim().toLowerCase()
+      if (!FLOW_TRANSFORM_OPS.has(op)) {
+        throw new Error(t("Node {nodeId} transform op is invalid.", { nodeId }))
+      }
+      const args = parseTemplateValue(
+        node.transformArgsJson,
+        t("Node {nodeId} transform args must be valid JSON.", { nodeId }),
+        "[]"
+      )
+      if (!Array.isArray(args)) {
+        throw new Error(t("Node {nodeId} transform args must be a JSON array.", { nodeId }))
+      }
+      return {
+        expr: {
+          op,
+          args
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "object") {
+      const objectExpr = parseTemplateValue(
+        node.transformObjectJson,
+        t("Node {nodeId} transform object must be valid JSON.", { nodeId }),
+        "{}"
+      )
+      if (!isJSONObject(objectExpr)) {
+        throw new Error(t("Node {nodeId} transform object must be a JSON object.", { nodeId }))
+      }
+      return {
+        expr: {
+          object: objectExpr
+        },
+        _ui: ui
+      }
+    }
+    if (mode === "array") {
+      const arrayExpr = parseTemplateValue(
+        node.transformArrayJson,
+        t("Node {nodeId} transform array must be valid JSON.", { nodeId }),
+        "[]"
+      )
+      if (!Array.isArray(arrayExpr)) {
+        throw new Error(t("Node {nodeId} transform array must be a JSON array.", { nodeId }))
+      }
+      return {
+        expr: {
+          array: arrayExpr
+        },
+        _ui: ui
+      }
+    }
+    return {
+      expr: {
+        literal: parseTemplateValue(
+          node.transformLiteralJson,
+          t("Node {nodeId} transform literal must be valid JSON.", { nodeId }),
+          "null"
+        )
+      },
+      _ui: ui
+    }
+  }
+  if (node.kind === "branch") {
+    const seen = new Set<string>()
+    const cases = node.branchCases.map((item, index) => {
+      const name = item.name.trim()
+      if (!name) {
+        throw new Error(t("Node {nodeId} branch case {index} requires a name.", { nodeId, index: index + 1 }))
+      }
+      if (seen.has(name)) {
+        throw new Error(t("Node {nodeId} branch case name {name} is duplicated.", { nodeId, name }))
+      }
+      seen.add(name)
+      const op = FLOW_BRANCH_MATCH_OPS.has(item.op) ? item.op : ""
+      if (!op) {
+        throw new Error(t("Node {nodeId} branch case {name} match op is invalid.", { nodeId, name }))
+      }
+      return {
+        name,
+        match: {
+          source: buildSourceSpec({
+            nodeId,
+            label: t("branch case {name}", { name }),
+            source: item.source,
+            ancestors
+          }),
+          op,
+          ...(op === "exists"
+            ? {}
+            : {
+                value: parseTemplateValue(
+                  item.valueJson,
+                  t("Node {nodeId} branch case {name} value must be valid JSON.", { nodeId, name }),
+                  "null"
+                )
+              })
+        }
+      }
+    })
+    const defaultCase = node.branchDefaultCase.trim()
+    if (defaultCase && !seen.has(defaultCase)) {
+      throw new Error(t("Node {nodeId} default case must match an existing branch case.", { nodeId }))
+    }
+    return {
+      cases,
+      ...(defaultCase ? { default_case: defaultCase } : {}),
+      _ui: ui
+    }
+  }
+  if (node.kind === "foreach") {
+    const body = parseTemplateValue(
+      node.foreachBodyJson,
+      t("Node {nodeId} foreach body must be valid JSON.", { nodeId }),
+      JSON.stringify(defaultForeachBodyGraph())
+    )
+    if (!isJSONObject(body)) {
+      throw new Error(t("Node {nodeId} foreach body must be a JSON object.", { nodeId }))
+    }
+    if (!Array.isArray(body.nodes)) {
+      throw new Error(t("Node {nodeId} foreach body must include a nodes array.", { nodeId }))
+    }
+    if (!Array.isArray(body.edges)) {
+      throw new Error(t("Node {nodeId} foreach body must include an edges array.", { nodeId }))
+    }
+    const resultNodeId = node.foreachResultNodeId.trim()
+    if (!resultNodeId) {
+      throw new Error(t("Node {nodeId} foreach result node ID is required.", { nodeId }))
+    }
+    return {
+      source: buildSourceSpec({
+        nodeId,
+        label: t("foreach source"),
+        source: node.foreachSource,
+        ancestors
+      }),
+      required: Boolean(node.foreachRequired),
+      body,
+      result_node_id: resultNodeId,
+      _ui: ui
+    }
+  }
+  if (node.kind === "subflow") {
+    const inputs = buildInputBindings(node, ancestors)
+    const flowId = node.subflowId.trim()
+    if (!FLOW_UUID_PATTERN.test(flowId)) {
+      throw new Error(t("Node {nodeId} subflow flow_id must be a UUID.", { nodeId }))
+    }
+    const inputTemplate = parseTemplateValue(
+      node.subflowInputTemplate,
+      t("Node {nodeId} subflow input template must be valid JSON.", { nodeId }),
+      "{}"
+    )
+    if (!isJSONObject(inputTemplate)) {
+      throw new Error(t("Node {nodeId} subflow input template must be a JSON object.", { nodeId }))
+    }
+    return {
+      flow_id: flowId,
+      input_template: inputTemplate,
+      ...(inputs.length ? { inputs } : {}),
+      ...(node.subflowResultNodeId.trim() ? { result_node_id: node.subflowResultNodeId.trim() } : {}),
+      _ui: ui
+    }
+  }
 
   const method = node.method.trim()
   if (!method) {
@@ -1644,6 +2496,7 @@ const buildFormSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>)
   if (!Number.isFinite(target) || target < 0) {
     throw new Error(t("Node {nodeId} target must be a non-negative number.", { nodeId }))
   }
+  const inputs = buildInputBindings(node, ancestors)
   return {
     ...(target > 0 ? { target: Math.trunc(target) } : {}),
     method,
@@ -1768,16 +2621,18 @@ const parseSpecJsonObject = (node: FlowNodeDraft) => {
 const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) => {
   const nodeId = node.id.trim() || t("Unnamed")
   const parsed = parseSpecJsonObject(node)
-  const inputs = buildInputBindings(
-    {
-      ...node,
-      inputs: parseInputBindings(parsed.inputs)
-    },
-    ancestors
-  )
   const ui = { x: Math.round(Number(node.x || 0)), y: Math.round(Number(node.y || 0)) }
+  const buildParsedInputs = () =>
+    buildInputBindings(
+      {
+        ...node,
+        inputs: parseInputBindings(parsed.inputs)
+      },
+      ancestors
+    )
 
   if (node.kind === "compose") {
+    const inputs = buildParsedInputs()
     if (!("template" in parsed)) {
       throw new Error(t("Node {nodeId} compose spec requires template.", { nodeId }))
     }
@@ -1789,6 +2644,7 @@ const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<strin
     }
   }
   if (node.kind === "set_var") {
+    const inputs = buildParsedInputs()
     const name = assertValidFlowLocalVarName(
       normalizeFlowLocalVarName(parsed.name),
       t("Node {nodeId} set_var spec requires name.", { nodeId }),
@@ -1805,6 +2661,22 @@ const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<strin
     }
     return normalizedSpec
   }
+  if (node.kind === "transform" || node.kind === "branch" || node.kind === "foreach") {
+    return {
+      ...parsed,
+      _ui: ui
+    }
+  }
+  if (node.kind === "subflow") {
+    const inputs = buildParsedInputs()
+    const normalizedSpec: Record<string, any> = { ...parsed, _ui: ui }
+    if (inputs.length) {
+      normalizedSpec.inputs = inputs
+    } else {
+      delete normalizedSpec.inputs
+    }
+    return normalizedSpec
+  }
 
   const method = String(parsed.method ?? "").trim()
   if (!method) {
@@ -1814,6 +2686,7 @@ const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<strin
   if (!Number.isFinite(target) || target < 0) {
     throw new Error(t("Node {nodeId} target must be a non-negative number.", { nodeId }))
   }
+  const inputs = buildParsedInputs()
   const normalizedSpec: Record<string, any> = { ...parsed, method, _ui: ui }
   if (target > 0) {
     normalizedSpec.target = Math.trunc(target)
@@ -1836,7 +2709,7 @@ const buildAdvancedSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<strin
 }
 
 const buildSpec = (node: FlowNodeDraft, ancestors: Map<string, Set<string>>) =>
-  node.specEditorMode === "json" ? buildAdvancedSpec(node, ancestors) : buildFormSpec(node, ancestors)
+  node.specEditorMode === "json" || !supportsFormMode(node.kind) ? buildAdvancedSpec(node, ancestors) : buildFormSpec(node, ancestors)
 
 const listAncestorNodeIds = (nodeId: string) => {
   const trimmed = nodeId.trim()
@@ -1969,7 +2842,33 @@ const setNodeKind = (nodeId: string, kind: FlowNodeKind) => {
   if (node.kind === kind) {
     return false
   }
-  if (kind === "compose") {
+  if (!supportsFormMode(kind)) {
+    node.kind = kind
+    node.specEditorMode = "json"
+    node.specJson = formatJSONText(kindDefaultSpec(kind), {})
+    commitHistory()
+    return true
+  }
+  if (kind === "transform") {
+    const defaults = defaultTransformDraft()
+    node.transformExprMode = node.transformExprMode || defaults.transformExprMode
+    node.transformLiteralJson = node.transformLiteralJson.trim() || defaults.transformLiteralJson
+    node.transformSource = cloneSourceDraft(node.transformSource?.sourceKind ? node.transformSource : defaults.transformSource)
+    node.transformOp = String(node.transformOp ?? "").trim() || defaults.transformOp
+    node.transformArgsJson = node.transformArgsJson.trim() || defaults.transformArgsJson
+    node.transformObjectJson = node.transformObjectJson.trim() || defaults.transformObjectJson
+    node.transformArrayJson = node.transformArrayJson.trim() || defaults.transformArrayJson
+  } else if (kind === "branch") {
+    node.branchCases = node.branchCases.map(cloneBranchCaseDraft)
+  } else if (kind === "foreach") {
+    const defaults = defaultForeachDraft()
+    node.foreachSource = cloneSourceDraft(node.foreachSource?.sourceKind ? node.foreachSource : defaults.foreachSource)
+    node.foreachRequired = typeof node.foreachRequired === "boolean" ? node.foreachRequired : defaults.foreachRequired
+    node.foreachBodyJson = String(node.foreachBodyJson ?? "").trim() || defaults.foreachBodyJson
+    node.foreachResultNodeId = String(node.foreachResultNodeId ?? "").trim()
+  } else if (kind === "subflow") {
+    node.subflowInputTemplate = node.subflowInputTemplate.trim() || "{}"
+  } else if (kind === "compose") {
     node.composeTemplate = node.composeTemplate.trim() || preferObjectTemplateText(node.argsTemplate, "{}")
     node.method = ""
     node.target = 0
@@ -1981,7 +2880,7 @@ const setNodeKind = (nodeId: string, kind: FlowNodeKind) => {
     node.argsTemplate = node.argsTemplate.trim() || preferObjectTemplateText(node.composeTemplate, "{}")
   }
   node.kind = kind
-  node.specEditorMode = "form"
+  node.specEditorMode = defaultSpecEditorMode(kind)
   node.specJson = formatJSONText(buildLooseSpecFromNode(node), {})
   commitHistory()
   return true
@@ -2001,18 +2900,41 @@ const setNodeSpecEditorMode = (nodeId: string, mode: FlowSpecEditorMode) => {
     commitHistory()
     return true
   }
+  if (!supportsFormMode(node.kind)) {
+    throw new Error(t("Node kind {kind} only supports Advanced JSON mode right now.", { kind: node.kind }))
+  }
 
   const ids = collectNodeIds()
   const topology = buildTopology(ids, state.edges)
   const ancestors = buildAncestorMap(topology.order, topology.parents)
   const normalizedSpec = buildAdvancedSpec(node, ancestors)
   const next = parseSpecDraft(node.kind, normalizedSpec)
+  if (next.specEditorMode !== "form") {
+    throw new Error(t("Node kind {kind} advanced spec contains fields that ordinary mode cannot represent yet.", { kind: node.kind }))
+  }
   node.method = next.method
   node.target = Number.isFinite(next.target) && next.target > 0 ? Math.trunc(next.target) : 0
   node.argsTemplate = next.argsTemplate
   node.composeTemplate = next.composeTemplate
   node.setVarName = next.setVarName
-  node.inputs = next.inputs.map((binding) => ({ ...binding }))
+  node.inputs = next.inputs.map(cloneBindingDraft)
+  node.transformExprMode = next.transformExprMode
+  node.transformLiteralJson = next.transformLiteralJson
+  node.transformSource = cloneSourceDraft(next.transformSource)
+  node.transformSourceRequired = next.transformSourceRequired
+  node.transformOp = next.transformOp
+  node.transformArgsJson = next.transformArgsJson
+  node.transformObjectJson = next.transformObjectJson
+  node.transformArrayJson = next.transformArrayJson
+  node.branchCases = next.branchCases.map(cloneBranchCaseDraft)
+  node.branchDefaultCase = next.branchDefaultCase
+  node.foreachSource = cloneSourceDraft(next.foreachSource)
+  node.foreachRequired = next.foreachRequired
+  node.foreachBodyJson = next.foreachBodyJson
+  node.foreachResultNodeId = next.foreachResultNodeId
+  node.subflowId = next.subflowId
+  node.subflowInputTemplate = next.subflowInputTemplate
+  node.subflowResultNodeId = next.subflowResultNodeId
   node.specJson = formatJSONText(normalizedSpec, {})
   node.specEditorMode = "form"
   commitHistory()
@@ -2026,7 +2948,8 @@ const buildGraph = () => {
   const ids = collectNodeIds()
   const edges = state.edges.map((edge) => ({
     from: edge.from.trim(),
-    to: edge.to.trim()
+    to: edge.to.trim(),
+    ...(edge.case?.trim() ? { case: edge.case.trim() } : {})
   }))
   const topology = buildTopology(ids, edges)
   const ancestors = buildAncestorMap(topology.order, topology.parents)
@@ -2048,6 +2971,16 @@ const buildGraph = () => {
 
 const buildTrigger = () => {
   const triggerType = state.triggerType
+  if (triggerType === "cron") {
+    const cron = state.cronExpr.trim()
+    if (!cron) {
+      throw new Error(t("Cron trigger requires an expression."))
+    }
+    return {
+      type: "cron",
+      cron
+    }
+  }
   if (triggerType === "event") {
     const eventName = state.eventName.trim()
     const eventTopic = state.eventTopic.trim()
@@ -2250,11 +3183,9 @@ const handleGetResp = (data: any) => {
 }
 
 const applyGraphDraft = (graphSource: any, successMessage: string) => {
-  const graph = graphSource && typeof graphSource === "object" && "graph" in graphSource ? graphSource.graph : graphSource
-  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : []
-  const edges = Array.isArray(graph?.edges) ? graph.edges : []
-  state.nodes = nodes.map((node: any, index: number) => mapNode(node, index))
-  state.edges = edges.map(mapEdge)
+  const snapshot = createGraphEditorStateFromDraft(graphSource)
+  state.nodes = snapshot.nodes
+  state.edges = snapshot.edges
   state.selectedNodeIndex = -1
   state.selectedEdgeIndex = -1
   resetStatusState()
@@ -2269,13 +3200,14 @@ const applyFlowPayload = (data: any, successMessage: string, refreshStatus: bool
   state.flowName = String(data?.name ?? "").trim()
   const trigger = data?.trigger ?? {}
   const triggerType = String(trigger?.type ?? trigger?.triggerType ?? "interval").trim().toLowerCase()
-  if (triggerType === "event" || triggerType === "var_changed") {
+  if (triggerType === "cron" || triggerType === "event" || triggerType === "var_changed") {
     state.triggerType = triggerType
   } else {
     state.triggerType = "interval"
   }
   const everyMs = Number(trigger?.every_ms ?? trigger?.everyMs ?? 0)
   state.everyMs = everyMs > 0 ? everyMs : 60000
+  state.cronExpr = String(trigger?.cron ?? "").trim()
   const rawEventMode = String(trigger?.event_mode ?? trigger?.eventMode ?? "publish").trim().toLowerCase()
   if (rawEventMode === "received" || rawEventMode === "any") {
     state.eventMode = rawEventMode
@@ -2382,25 +3314,15 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
   }
 }
 
-const ensureNodeCapabilityLoaded = async (nodeId: string) => {
-  const trimmedNodeId = String(nodeId ?? "").trim()
-  if (!trimmedNodeId) {
-    return false
-  }
-  const node = state.nodes.find((item) => item.id.trim() === trimmedNodeId)
-  if (!node || node.kind !== "call") {
-    return false
-  }
-  const method = node.method.trim()
-  if (!method) {
-    return false
-  }
-  const providerNode = node.target > 0 ? Math.trunc(node.target) : resolveCurrentExecutorNodeOrZero()
-  if (!providerNode || hasExecCapabilityRoute(method, providerNode)) {
+const ensureCapabilityRouteLoaded = async (method: string, providerNode: number) => {
+  const normalizedMethod = String(method ?? "").trim()
+  const normalizedProvider =
+    Number.isFinite(providerNode) && providerNode > 0 ? Math.trunc(providerNode) : 0
+  if (!normalizedMethod || !normalizedProvider || hasExecCapabilityRoute(normalizedMethod, normalizedProvider)) {
     return false
   }
 
-  const hydrationKey = `${providerNode}|${method}`
+  const hydrationKey = `${normalizedProvider}|${normalizedMethod}`
   const pending = pendingCapabilityHydrations.get(hydrationKey)
   if (pending) {
     return pending
@@ -2410,12 +3332,12 @@ const ensureNodeCapabilityLoaded = async (nodeId: string) => {
     const cacheVersion = execCapabilityCacheVersion
     const loadEpoch = beginExecCapabilityLoad()
     try {
-      const routes = await fetchExecCapabilityRoutes(providerNode, method)
+      const routes = await fetchExecCapabilityRoutes(normalizedProvider, normalizedMethod)
       if (cacheVersion !== execCapabilityCacheVersion) {
         return false
       }
       const matched = routes.filter(
-        (route) => route.providerNode === providerNode && route.method === method
+        (route) => route.providerNode === normalizedProvider && route.method === normalizedMethod
       )
       if (!matched.length) {
         return false
@@ -2433,6 +3355,26 @@ const ensureNodeCapabilityLoaded = async (nodeId: string) => {
   } finally {
     pendingCapabilityHydrations.delete(hydrationKey)
   }
+}
+
+const ensureNodeCapabilityLoaded = async (nodeId: string) => {
+  const trimmedNodeId = String(nodeId ?? "").trim()
+  if (!trimmedNodeId) {
+    return false
+  }
+  const node = state.nodes.find((item) => item.id.trim() === trimmedNodeId)
+  if (!node || node.kind !== "call") {
+    return false
+  }
+  const method = node.method.trim()
+  if (!method) {
+    return false
+  }
+  const providerNode = node.target > 0 ? Math.trunc(node.target) : resolveCurrentExecutorNodeOrZero()
+  if (!providerNode || hasExecCapabilityRoute(method, providerNode)) {
+    return false
+  }
+  return ensureCapabilityRouteLoaded(method, providerNode)
 }
 
 const applyCallCapability = (key: string) => {
@@ -2631,6 +3573,7 @@ export const useFlowStore = () => {
     normalizeCallTarget,
     queryExecCapabilities,
     ensureNodeCapabilityLoaded,
+    ensureCapabilityRouteLoaded,
     applyCallCapability,
     applyExecCapability: applyCallCapability,
     setFieldLiteralValue: setNodeFieldLiteralValue,
@@ -2641,6 +3584,16 @@ export const useFlowStore = () => {
     resetNodeDetail,
     setNodeKind,
     setNodeSpecEditorMode,
+    setSelectedEdgeCase: (value: string) => {
+      const idx = state.selectedEdgeIndex
+      if (idx < 0 || idx >= state.edges.length) {
+        throw new Error(t("Edge does not exist."))
+      }
+      const trimmed = String(value ?? "").trim()
+      const edge = state.edges[idx]
+      edge.case = trimmed || undefined
+      commitHistory()
+    },
     undo,
     selectEdgeByEndpoints: (from: string, to: string) => {
       const fromId = from.trim()

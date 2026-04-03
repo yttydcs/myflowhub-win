@@ -24,6 +24,11 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-04-03_win-flow-foreach-body-call-authoring.md](2026-04-03_win-flow-foreach-body-call-authoring.md)
+  - [2026-04-03_win-flow-foreach-body-visual-editor.md](2026-04-03_win-flow-foreach-body-visual-editor.md)
+  - [2026-04-03_win-flow-foreach-form-authoring.md](2026-04-03_win-flow-foreach-form-authoring.md)
+  - [2026-04-03_win-flow-advanced-node-forms.md](2026-04-03_win-flow-advanced-node-forms.md)
+  - [2026-04-03_win-flow-orchestrator-editor.md](2026-04-03_win-flow-orchestrator-editor.md)
   - [2026-04-01_win-mcp-full-chain-smoke.md](2026-04-01_win-mcp-full-chain-smoke.md)
   - [2026-03-31_win-stream-windows-trim.md](2026-03-31_win-stream-windows-trim.md)
   - [2026-03-31_win-stream-product-tabs.md](2026-03-31_win-stream-product-tabs.md)

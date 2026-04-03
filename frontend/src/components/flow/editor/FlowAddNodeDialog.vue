@@ -32,7 +32,15 @@ const kindDescription = computed(() =>
     ? t("Call nodes execute a capability and can bind ancestor outputs into args.")
     : props.nodeKind === "compose"
       ? t("Compose nodes build local JSON output from template + bindings.")
-      : t("Set var nodes materialize a value and write it to a flow-local variable for this run.")
+      : props.nodeKind === "transform"
+        ? t("Transform nodes evaluate a structured expression tree and produce a local result.")
+        : props.nodeKind === "set_var"
+          ? t("Set var nodes materialize a value and write it to a flow-local variable for this run.")
+          : props.nodeKind === "branch"
+            ? t("Branch nodes match ordered cases and route execution through edge.case labels.")
+            : props.nodeKind === "foreach"
+              ? t("Foreach nodes iterate an array source and execute a nested body graph.")
+              : t("Subflow nodes synchronously execute another flow on the same executor.")
 )
 </script>
 
@@ -68,7 +76,7 @@ const kindDescription = computed(() =>
           <p :id="kindGroupLabelId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {{ t("Kind") }}
           </p>
-          <div class="mt-2 grid grid-cols-3 gap-2" role="group" :aria-labelledby="kindGroupLabelId">
+          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" :aria-labelledby="kindGroupLabelId">
             <button
               type="button"
               class="rounded-md border px-3 py-2 text-sm transition"
@@ -98,6 +106,19 @@ const kindDescription = computed(() =>
             <button
               type="button"
               class="rounded-md border px-3 py-2 text-sm transition"
+              :aria-pressed="props.nodeKind === 'transform'"
+              :class="
+                props.nodeKind === 'transform'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background text-foreground'
+              "
+              @click="emit('update:nodeKind', 'transform')"
+            >
+              {{ t("Transform") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-2 text-sm transition"
               :aria-pressed="props.nodeKind === 'set_var'"
               :class="
                 props.nodeKind === 'set_var'
@@ -107,6 +128,45 @@ const kindDescription = computed(() =>
               @click="emit('update:nodeKind', 'set_var')"
             >
               {{ t("Set Var") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-2 text-sm transition"
+              :aria-pressed="props.nodeKind === 'branch'"
+              :class="
+                props.nodeKind === 'branch'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background text-foreground'
+              "
+              @click="emit('update:nodeKind', 'branch')"
+            >
+              {{ t("Branch") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-2 text-sm transition"
+              :aria-pressed="props.nodeKind === 'foreach'"
+              :class="
+                props.nodeKind === 'foreach'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background text-foreground'
+              "
+              @click="emit('update:nodeKind', 'foreach')"
+            >
+              {{ t("Foreach") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-2 text-sm transition"
+              :aria-pressed="props.nodeKind === 'subflow'"
+              :class="
+                props.nodeKind === 'subflow'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border/70 bg-background text-foreground'
+              "
+              @click="emit('update:nodeKind', 'subflow')"
+            >
+              {{ t("Subflow") }}
             </button>
           </div>
           <p :id="dialogDescriptionId" class="mt-1 text-[11px] text-muted-foreground">
