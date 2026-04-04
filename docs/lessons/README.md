@@ -27,6 +27,9 @@
 - [frontend-build-babel-parser-missing.md](frontend-build-babel-parser-missing.md)
   - 症状：`failed to load config from frontend/vite.config.ts`、`Cannot find module '@babel/parser'`
   - 关键词：`@babel/parser`、`@vue/compiler-core`、`Compiling frontend`、`Cannot find module`
+- [frontend-build-empty-node-modules.md](frontend-build-empty-node-modules.md)
+  - 症状：`Installing frontend dependencies: Done.` 后仍报 `Cannot find module '...vite/bin/vite.js'`
+  - 关键词：`vite/bin/vite.js`、`empty node_modules`、`package.json.md5`、`wails build`
 - [flow-body-spec-mode-normalization.md](flow-body-spec-mode-normalization.md)
   - 症状：`foreach.body` 内高级节点明明已支持表单，但窗口里仍只显示 `Advanced JSON`，或找不到 `Add Binding`
   - 关键词：`normalizeBodySessionSnapshot`、`createBodyNodeDraft`、`specEditorMode`、`foreach.body`
