@@ -67,3 +67,48 @@ func TestDetailRespJSONShape(t *testing.T) {
 		t.Fatalf("unexpected node payload: %+v", resp.Node)
 	}
 }
+
+func TestCancelRunValidation(t *testing.T) {
+	svc := New(nil, nil)
+
+	if _, err := svc.CancelRunSimple(1, 2, CancelRunReq{}); err == nil {
+		t.Fatal("expected req_id validation error")
+	}
+	if _, err := svc.CancelRunSimple(1, 2, CancelRunReq{ReqID: "req-1"}); err == nil {
+		t.Fatal("expected flow_id validation error")
+	}
+	if _, err := svc.CancelRunSimple(1, 2, CancelRunReq{ReqID: "req-1", FlowID: "flow-1"}); err == nil {
+		t.Fatal("expected run_id validation error")
+	}
+}
+
+func TestListRunsValidation(t *testing.T) {
+	svc := New(nil, nil)
+
+	if _, err := svc.ListRunsSimple(1, 2, ListRunsReq{}); err == nil {
+		t.Fatal("expected req_id validation error")
+	}
+	if _, err := svc.ListRunsSimple(1, 2, ListRunsReq{ReqID: "req-1"}); err == nil {
+		t.Fatal("expected flow_id validation error")
+	}
+}
+
+func TestExtractCodeMsgWithCancelRunResp(t *testing.T) {
+	code, msg := extractCodeMsg(&CancelRunResp{
+		Code: 205,
+		Msg:  "cancelled",
+	})
+	if code != 205 || msg != "cancelled" {
+		t.Fatalf("unexpected code/msg: %d %q", code, msg)
+	}
+}
+
+func TestExtractCodeMsgWithListRunsResp(t *testing.T) {
+	code, msg := extractCodeMsg(&ListRunsResp{
+		Code: 201,
+		Msg:  "runs ok",
+	})
+	if code != 201 || msg != "runs ok" {
+		t.Fatalf("unexpected code/msg: %d %q", code, msg)
+	}
+}

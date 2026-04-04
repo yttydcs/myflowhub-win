@@ -18,6 +18,9 @@ const store = useFlowStore()
 const execCapQuerySimple = vi.fn()
 const detailSimple = vi.fn()
 const statusSimple = vi.fn()
+const runSimple = vi.fn()
+const listRunsSimple = vi.fn()
+const cancelRunSimple = vi.fn()
 
 const emptyStatusState = {
   status: "",
@@ -220,12 +223,18 @@ beforeEach(() => {
   execCapQuerySimple.mockReset()
   detailSimple.mockReset()
   statusSimple.mockReset()
+  runSimple.mockReset()
+  listRunsSimple.mockReset()
+  cancelRunSimple.mockReset()
   ;(window as any).go = {
     flow: {
       FlowService: {
         ExecCapQuerySimple: execCapQuerySimple,
         DetailSimple: detailSimple,
-        StatusSimple: statusSimple
+        StatusSimple: statusSimple,
+        RunSimple: runSimple,
+        ListRunsSimple: listRunsSimple,
+        CancelRunSimple: cancelRunSimple
       }
     }
   }
@@ -738,6 +747,70 @@ describe("flow store", () => {
       ]
     })
     expect(store.state.statusRunId).toBe("run-fresh")
+  })
+
+  it("loads run history into state and keeps current run when present", async () => {
+    store.state.statusRunId = "run-2"
+    listRunsSimple.mockResolvedValue({
+      code: 1,
+      runs: [
+        { run_id: "run-1", status: "failed" },
+        { run_id: "run-2", status: "running" }
+      ]
+    })
+
+    await store.listRunsFlow(20)
+
+    expect(listRunsSimple).toHaveBeenCalledWith(
+      1,
+      100,
+      expect.objectContaining({
+        flow_id: "flow-1",
+        limit: 20
+      })
+    )
+    expect(store.state.runHistory).toEqual([
+      {
+        runId: "run-1",
+        status: "failed",
+        code: 0,
+        msg: "",
+        startedAt: "",
+        endedAt: ""
+      },
+      {
+        runId: "run-2",
+        status: "running",
+        code: 0,
+        msg: "",
+        startedAt: "",
+        endedAt: ""
+      }
+    ])
+    expect(store.state.statusRunId).toBe("run-2")
+  })
+
+  it("cancels the selected run and refreshes status/history", async () => {
+    store.state.statusRunId = "run-2"
+    cancelRunSimple.mockResolvedValue({
+      code: 1,
+      run_id: "run-2"
+    })
+    listRunsSimple.mockResolvedValue({ code: 1, runs: [{ run_id: "run-2", status: "cancelled" }] })
+    statusSimple.mockResolvedValue({ code: 1, run_id: "run-2", status: "cancelled", executor_node: 100, nodes: [] })
+
+    await store.cancelRunFlow()
+
+    expect(cancelRunSimple).toHaveBeenCalledWith(
+      1,
+      100,
+      expect.objectContaining({
+        flow_id: "flow-1",
+        run_id: "run-2"
+      })
+    )
+    expect(store.state.statusRunId).toBe("run-2")
+    expect(store.state.lastStatus.status).toBe("cancelled")
   })
 
   it("formats the selected call node output schema as JSON text", () => {

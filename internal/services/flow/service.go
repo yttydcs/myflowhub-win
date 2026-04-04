@@ -94,6 +94,33 @@ func (s *FlowService) RunSimple(sourceID, targetID uint32, req flow.RunReq) (flo
 	return s.Run(ctx, sourceID, targetID, req)
 }
 
+func (s *FlowService) CancelRun(ctx context.Context, sourceID, targetID uint32, req CancelRunReq) (CancelRunResp, error) {
+	if strings.TrimSpace(req.ReqID) == "" {
+		return CancelRunResp{}, errors.New("req_id is required")
+	}
+	if strings.TrimSpace(req.FlowID) == "" {
+		return CancelRunResp{}, errors.New("flow_id is required")
+	}
+	if strings.TrimSpace(req.RunID) == "" {
+		return CancelRunResp{}, errors.New("run_id is required")
+	}
+	payload, err := transport.EncodeMessage(actionCancelRun, req)
+	if err != nil {
+		return CancelRunResp{}, err
+	}
+	var resp CancelRunResp
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, actionCancelRun, actionCancelRunResp, &resp, req.FlowID); err != nil {
+		return CancelRunResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *FlowService) CancelRunSimple(sourceID, targetID uint32, req CancelRunReq) (CancelRunResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
+	defer cancel()
+	return s.CancelRun(ctx, sourceID, targetID, req)
+}
+
 func (s *FlowService) Status(ctx context.Context, sourceID, targetID uint32, req flow.StatusReq) (flow.StatusResp, error) {
 	if strings.TrimSpace(req.ReqID) == "" {
 		return flow.StatusResp{}, errors.New("req_id is required")
@@ -116,6 +143,30 @@ func (s *FlowService) StatusSimple(sourceID, targetID uint32, req flow.StatusReq
 	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
 	defer cancel()
 	return s.Status(ctx, sourceID, targetID, req)
+}
+
+func (s *FlowService) ListRuns(ctx context.Context, sourceID, targetID uint32, req ListRunsReq) (ListRunsResp, error) {
+	if strings.TrimSpace(req.ReqID) == "" {
+		return ListRunsResp{}, errors.New("req_id is required")
+	}
+	if strings.TrimSpace(req.FlowID) == "" {
+		return ListRunsResp{}, errors.New("flow_id is required")
+	}
+	payload, err := transport.EncodeMessage(actionListRuns, req)
+	if err != nil {
+		return ListRunsResp{}, err
+	}
+	var resp ListRunsResp
+	if err := s.sendAndAwait(ctx, sourceID, targetID, payload, actionListRuns, actionListRunsResp, &resp, req.FlowID); err != nil {
+		return ListRunsResp{}, err
+	}
+	return resp, nil
+}
+
+func (s *FlowService) ListRunsSimple(sourceID, targetID uint32, req ListRunsReq) (ListRunsResp, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultFlowTimeout)
+	defer cancel()
+	return s.ListRuns(ctx, sourceID, targetID, req)
 }
 
 func (s *FlowService) List(ctx context.Context, sourceID, targetID uint32, req flow.ListReq) (flow.ListResp, error) {
@@ -401,6 +452,16 @@ func extractCodeMsg(v any) (int, string) {
 		}
 		return t.Code, t.Msg
 	case *flow.StatusResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *CancelRunResp:
+		if t == nil {
+			return 0, ""
+		}
+		return t.Code, t.Msg
+	case *ListRunsResp:
 		if t == nil {
 			return 0, ""
 		}

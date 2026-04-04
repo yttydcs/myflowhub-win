@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import { LayoutGrid, Link2Off, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
+import { Ban, History, LayoutGrid, Link2Off, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -18,8 +18,12 @@ interface Props {
   hasSelectedEdge: boolean
   runBusy: boolean
   statusBusy: boolean
+  runHistoryBusy: boolean
+  cancelBusy: boolean
   canRunFlow: boolean
   canRefreshStatus: boolean
+  canListRuns: boolean
+  canCancelRun: boolean
   flowStatusLabel: string
   currentRunIdLabel: string
 }
@@ -36,6 +40,8 @@ const emit = defineEmits<{
   (e: "save-project"): void
   (e: "run-flow"): void
   (e: "refresh-status"): void
+  (e: "load-run-history"): void
+  (e: "cancel-run"): void
 }>()
 
 const { t } = useI18n()
@@ -86,6 +92,28 @@ const hasRuntimeSummary = computed(() => Boolean(props.flowStatusLabel) || Boole
           >
             <RefreshCw class="h-4 w-4" aria-hidden="true" />
             <span class="sr-only">{{ t("Refresh Status") }}</span>
+          </Button>
+        </Tooltip>
+        <Tooltip :content="t('Run History')" side="bottom">
+          <Button
+            size="icon"
+            variant="outline"
+            :disabled="props.runHistoryBusy || props.loading || !props.canListRuns"
+            @click="emit('load-run-history')"
+          >
+            <History class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">{{ t("Run History") }}</span>
+          </Button>
+        </Tooltip>
+        <Tooltip :content="t('Cancel Run')" side="bottom">
+          <Button
+            size="icon"
+            variant="outline"
+            :disabled="props.cancelBusy || props.loading || !props.canCancelRun"
+            @click="emit('cancel-run')"
+          >
+            <Ban class="h-4 w-4" aria-hidden="true" />
+            <span class="sr-only">{{ t("Cancel Run") }}</span>
           </Button>
         </Tooltip>
         <Tooltip :content="t('Add Node')" side="bottom">

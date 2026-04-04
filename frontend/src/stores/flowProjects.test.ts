@@ -14,6 +14,7 @@ const sessionStore = {
 const flowProjectsState = vi.fn()
 const saveFlowProjectsState = vi.fn()
 const listSimple = vi.fn()
+const getSimple = vi.fn()
 const setSimple = vi.fn()
 
 let persistedProjects: any[] = []
@@ -67,6 +68,7 @@ beforeEach(() => {
   flowProjectsState.mockReset()
   saveFlowProjectsState.mockReset()
   listSimple.mockReset()
+  getSimple.mockReset()
   setSimple.mockReset()
 
   flowProjectsState.mockImplementation(async () => ({
@@ -96,6 +98,7 @@ beforeEach(() => {
     flow: {
       FlowService: {
         ListSimple: listSimple,
+        GetSimple: getSimple,
         SetSimple: setSimple
       }
     }
@@ -348,5 +351,31 @@ describe("flowProjects store", () => {
     ).rejects.toThrow("Cron trigger does not support dedup window.")
 
     expect(setSimple).not.toHaveBeenCalled()
+  })
+
+  it("keeps deployment entries and surfaces trigger enrichment errors when GetSimple fails", async () => {
+    listSimple.mockResolvedValue({
+      code: 1,
+      flows: [
+        {
+          flow_id: "550e8400-e29b-41d4-a716-446655440000",
+          name: "Deployed Flow",
+          every_ms: 60000,
+          last_status: "running",
+          last_run_id: "run-1"
+        }
+      ]
+    })
+    getSimple.mockRejectedValue(new Error("detail transport timeout"))
+
+    await store.loadDeployments("12")
+
+    expect(store.state.deployments).toHaveLength(1)
+    expect(store.state.deployments[0]).toMatchObject({
+      flowId: "550e8400-e29b-41d4-a716-446655440000",
+      trigger: null,
+      triggerError: "detail transport timeout",
+      lastRunId: "run-1"
+    })
   })
 })

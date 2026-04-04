@@ -7,8 +7,8 @@ const (
 	actionDetailResp = "detail_resp"
 )
 
-// DetailReq stays local to the Win app until shared proto exposes flow.detail.
-// The JSON shape matches the existing frontend/runtime contract.
+// DetailReq remains a Win-local alias for the detail request flow.
+// It intentionally matches protoflow.DetailReq JSON shape for compatibility.
 type DetailReq struct {
 	ReqID        string `json:"req_id"`
 	OriginNode   uint32 `json:"origin_node,omitempty"`

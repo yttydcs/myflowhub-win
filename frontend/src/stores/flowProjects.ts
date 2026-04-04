@@ -70,6 +70,7 @@ export type FlowDeploymentRecord = {
   name: string
   everyMs: number
   trigger: Record<string, any> | null
+  triggerError: string
   triggerLabel: string
   lastStatus: string
   lastRunId: string
@@ -647,6 +648,7 @@ const loadDeployments = async (nodeIdInput: string | number) => {
 
     const deployments = await mapWithConcurrency(summaries, 6, async (summary) => {
       let trigger: Record<string, any> | null = null
+      let triggerError = ""
       try {
         const getResp = await callFlow<any>("GetSimple", sourceID, hubID, {
           req_id: newReqId(),
@@ -656,9 +658,12 @@ const loadDeployments = async (nodeIdInput: string | number) => {
         })
         if (Number(getResp?.code ?? 0) === 1) {
           trigger = getResp?.trigger && typeof getResp.trigger === "object" ? { ...getResp.trigger } : null
+        } else {
+          triggerError = String(getResp?.msg ?? t("Flow load failed."))
         }
-      } catch {
+      } catch (err) {
         trigger = null
+        triggerError = String((err as Error)?.message ?? err ?? t("Flow load failed."))
       }
 
       return {
@@ -666,6 +671,7 @@ const loadDeployments = async (nodeIdInput: string | number) => {
         name: summary.name,
         everyMs: summary.everyMs,
         trigger,
+        triggerError,
         triggerLabel: formatTriggerLabel(trigger, summary.everyMs),
         lastStatus: summary.lastStatus,
         lastRunId: summary.lastRunId

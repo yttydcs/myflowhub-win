@@ -156,6 +156,15 @@ export type FlowStatus = {
   nodes: FlowStatusNode[]
 }
 
+export type FlowRunHistoryItem = {
+  runId: string
+  status: string
+  code: number
+  msg: string
+  startedAt: string
+  endedAt: string
+}
+
 export type FlowNodeDetailState = {
   loading: boolean
   error: string
@@ -292,6 +301,8 @@ type FlowState = {
   selectedEdgeIndex: number
   statusRunId: string
   lastStatus: FlowStatus
+  runHistory: FlowRunHistoryItem[]
+  runHistoryLoading: boolean
   nodeDetail: FlowNodeDetailState
   execCapabilities: ExecCapabilityRoute[]
   execCapabilitiesLoading: boolean
@@ -331,6 +342,8 @@ const state = reactive<FlowState>({
   selectedEdgeIndex: -1,
   statusRunId: "",
   lastStatus: createEmptyFlowStatus(),
+  runHistory: [],
+  runHistoryLoading: false,
   nodeDetail: {
     loading: false,
     error: "",
@@ -354,6 +367,8 @@ const state = reactive<FlowState>({
 const resetStatusState = () => {
   state.statusRunId = ""
   state.lastStatus = createEmptyFlowStatus()
+  state.runHistory = []
+  state.runHistoryLoading = false
 }
 
 const MAX_HISTORY = 120
@@ -646,6 +661,31 @@ const mapSummary = (input: any): FlowSummary => ({
   everyMs: Number(input?.every_ms ?? input?.everyMs ?? 0),
   lastRunId: String(input?.last_run_id ?? input?.lastRunId ?? ""),
   lastStatus: String(input?.last_status ?? input?.lastStatus ?? "")
+})
+
+const mapRunHistoryItem = (input: any): FlowRunHistoryItem => ({
+  runId: String(input?.run_id ?? input?.runId ?? ""),
+  status: String(input?.status ?? ""),
+  code: Number(input?.code ?? 0),
+  msg: String(input?.msg ?? ""),
+  startedAt: String(
+    input?.started_at ??
+      input?.start_at ??
+      input?.startedAt ??
+      input?.startAt ??
+      input?.started_at_ms ??
+      input?.startedAtMs ??
+      ""
+  ),
+  endedAt: String(
+    input?.ended_at ??
+      input?.finished_at ??
+      input?.endedAt ??
+      input?.finishedAt ??
+      input?.ended_at_ms ??
+      input?.endedAtMs ??
+      ""
+  )
 })
 
 const formatJSONText = (value: any, fallback: any = {}) => {
@@ -3517,7 +3557,31 @@ const runFlow = async () => {
     flow_id: flowId
   }
   const resp = await callFlow<any>("RunSimple", sourceID, hubID, req)
-  handleRunResp(resp)
+  await handleRunResp(resp)
+}
+
+const listRunsFlow = async (limit?: number) => {
+  const { sourceID, hubID } = ensureIdentity()
+  const executorNode = resolveTargetNode()
+  const flowId = state.flowId.trim()
+  if (!flowId) {
+    throw new Error(t("Flow ID is required."))
+  }
+  const parsedLimit = Number(limit)
+  const req = {
+    req_id: newReqId(),
+    origin_node: sourceID,
+    executor_node: executorNode,
+    flow_id: flowId,
+    ...(Number.isFinite(parsedLimit) && parsedLimit > 0 ? { limit: Math.trunc(parsedLimit) } : {})
+  }
+  state.runHistoryLoading = true
+  try {
+    const resp = await callFlow<any>("ListRunsSimple", sourceID, hubID, req)
+    handleListRunsResp(resp)
+  } finally {
+    state.runHistoryLoading = false
+  }
 }
 
 const statusFlow = async (runId?: string) => {
@@ -3536,6 +3600,28 @@ const statusFlow = async (runId?: string) => {
   }
   const resp = await callFlow<any>("StatusSimple", sourceID, hubID, req)
   handleStatusResp(resp)
+}
+
+const cancelRunFlow = async (runId?: string) => {
+  const { sourceID, hubID } = ensureIdentity()
+  const executorNode = resolveTargetNode()
+  const flowId = state.flowId.trim()
+  if (!flowId) {
+    throw new Error(t("Flow ID is required."))
+  }
+  const resolvedRunID = String(runId ?? state.statusRunId ?? "").trim()
+  if (!resolvedRunID) {
+    throw new Error(t("Run ID is required."))
+  }
+  const req = {
+    req_id: newReqId(),
+    origin_node: sourceID,
+    executor_node: executorNode,
+    flow_id: flowId,
+    run_id: resolvedRunID
+  }
+  const resp = await callFlow<any>("CancelRunSimple", sourceID, hubID, req)
+  await handleCancelRunResp(resp)
 }
 
 const loadNodeDetail = async (nodeId: string, runId?: string, path?: string) => {
@@ -3892,7 +3978,7 @@ const handleSetResp = (data: any) => {
   void listFlows().catch(() => {})
 }
 
-const handleRunResp = (data: any) => {
+const handleRunResp = async (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
   if (code !== 1) {
@@ -3902,7 +3988,30 @@ const handleRunResp = (data: any) => {
   const runId = String(data?.run_id ?? "")
   state.statusRunId = runId
   setMessage(t("Flow run started."), "success")
-  void statusFlow(runId).catch(() => {})
+  const refreshTasks: Promise<unknown>[] = [statusFlow(runId)]
+  if (runId) {
+    refreshTasks.unshift(listRunsFlow(20))
+  }
+  await Promise.allSettled(refreshTasks)
+}
+
+const handleListRunsResp = (data: any) => {
+  const code = Number(data?.code ?? 0)
+  const msg = String(data?.msg ?? "")
+  if (code !== 1) {
+    setMessage(msg || t("Flow run history failed."), "error")
+    return
+  }
+  const runs = Array.isArray(data?.runs) ? data.runs : []
+  state.runHistory = runs.map(mapRunHistoryItem).filter((item) => item.runId.trim().length > 0)
+  if (state.statusRunId.trim()) {
+    const hasCurrent = state.runHistory.some((item) => item.runId === state.statusRunId.trim())
+    if (!hasCurrent && state.runHistory.length > 0) {
+      state.statusRunId = state.runHistory[0].runId
+    }
+  } else if (state.runHistory.length > 0) {
+    state.statusRunId = state.runHistory[0].runId
+  }
 }
 
 const handleStatusResp = (data: any) => {
@@ -3931,6 +4040,21 @@ const handleStatusResp = (data: any) => {
     }
   }
   setMessage(t("Status updated."), "success")
+}
+
+const handleCancelRunResp = async (data: any) => {
+  const code = Number(data?.code ?? 0)
+  const msg = String(data?.msg ?? "")
+  if (code !== 1) {
+    setMessage(msg || t("Cancel run failed."), "error")
+    return
+  }
+  const runID = String(data?.run_id ?? "").trim()
+  if (runID) {
+    state.statusRunId = runID
+  }
+  setMessage(t("Run cancellation requested."), "success")
+  await Promise.allSettled([listRunsFlow(20), statusFlow(runID || state.statusRunId)])
 }
 
 const handleDetailResp = (data: any, requestedNodeId: string, requestedRunId: string, requestedPath: string) => {
@@ -4016,6 +4140,8 @@ export const useFlowStore = () => {
     removeSelectedNode,
     redo,
     runFlow,
+    listRunsFlow,
+    cancelRunFlow,
     saveFlow,
     loadFromPayload,
     loadGraphDraft,

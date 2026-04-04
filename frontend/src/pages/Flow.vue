@@ -480,6 +480,9 @@ onMounted(async () => {
             <p><span class="font-semibold text-foreground">{{ t("Trigger:") }}</span> {{ deploymentTriggerLabel(item) }}</p>
             <p><span class="font-semibold text-foreground">{{ t("Last run ID") }}:</span> {{ item.lastRunId || "-" }}</p>
           </div>
+          <p v-if="item.triggerError" class="mt-2 text-xs text-amber-600">
+            {{ t("Trigger details unavailable") }}: {{ item.triggerError }}
+          </p>
         </article>
 
         <div v-if="!flowProjects.state.deployments.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">

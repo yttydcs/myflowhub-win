@@ -72,6 +72,8 @@ const loadedProjectName = ref("")
 const saveBusy = ref(false)
 const runBusy = ref(false)
 const statusBusy = ref(false)
+const runHistoryBusy = ref(false)
+const cancelBusy = ref(false)
 const addNodeOpen = ref(false)
 const methodDialogOpen = ref(false)
 const fieldBindingDialogOpen = ref(false)
@@ -204,6 +206,10 @@ const recoveryStorageKey = computed(() =>
 const rootGraphSignature = computed(() => flowStore.graphEditorSignature())
 const canRunFlow = computed(() => Boolean(flowStore.state.flowId.trim()))
 const canRefreshStatus = computed(() => Boolean(flowStore.state.flowId.trim()))
+const canListRuns = computed(() => Boolean(flowStore.state.flowId.trim()))
+const canCancelRun = computed(
+  () => Boolean(flowStore.state.flowId.trim()) && Boolean(flowStore.state.statusRunId.trim())
+)
 const flowStatusLabel = computed(() => {
   const status = flowStore.state.lastStatus.status.trim()
   return status ? t(flowStatusLabelKey(status)) : ""
@@ -2173,6 +2179,32 @@ const refreshFlowStatus = async () => {
   }
 }
 
+const loadRunHistory = async (options?: { silent?: boolean }) => {
+  runHistoryBusy.value = true
+  try {
+    await flowStore.listRunsFlow(50)
+  } catch (err) {
+    console.warn(err)
+    if (!options?.silent) {
+      toast.errorOf(err, t("Failed to load run history."))
+    }
+  } finally {
+    runHistoryBusy.value = false
+  }
+}
+
+const cancelCurrentRun = async () => {
+  cancelBusy.value = true
+  try {
+    await flowStore.cancelRunFlow(flowStore.state.statusRunId.trim())
+  } catch (err) {
+    console.warn(err)
+    toast.errorOf(err, t("Failed to cancel flow run."))
+  } finally {
+    cancelBusy.value = false
+  }
+}
+
 const saveProject = async () => {
   const id = projectId.value
   if (!id) {
@@ -2238,6 +2270,7 @@ const loadProject = async () => {
     flowStore.state.flowId = project.flowId
     flowStore.state.flowName = project.name || ""
     flowStore.loadGraphDraft(project.graph)
+    void loadRunHistory({ silent: true })
     nodeIdDraft.value = selectedNode.value?.id ?? ""
     updateSavedBaseline(project.updatedAt)
     maybeRestoreRecoveryDraft(project)
@@ -2522,6 +2555,8 @@ onUnmounted(() => {
       :save-busy="saveBusy"
       :run-busy="runBusy"
       :status-busy="statusBusy"
+      :run-history-busy="runHistoryBusy || flowStore.state.runHistoryLoading"
+      :cancel-busy="cancelBusy"
       :loading="loading"
       :can-undo="canUndo"
       :can-redo="canRedo"
@@ -2529,6 +2564,8 @@ onUnmounted(() => {
       :has-selected-edge="bodyEditorActive ? bodyEditorSession?.snapshot.selectedEdgeIndex >= 0 : flowStore.state.selectedEdgeIndex >= 0"
       :can-run-flow="canRunFlow"
       :can-refresh-status="canRefreshStatus"
+      :can-list-runs="canListRuns"
+      :can-cancel-run="canCancelRun"
       :flow-status-label="flowStatusLabel"
       :current-run-id-label="currentRunIdLabel"
       @add-node="openAddNodeDialog"
@@ -2540,7 +2577,27 @@ onUnmounted(() => {
       @save-project="saveProject"
       @run-flow="runCurrentFlow"
       @refresh-status="refreshFlowStatus"
+      @load-run-history="loadRunHistory"
+      @cancel-run="cancelCurrentRun"
     />
+
+    <div v-if="!loading" class="border-b border-border/60 bg-card/85 px-5 py-3">
+      <div class="flex flex-wrap items-center gap-3 text-xs">
+        <label class="font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Selected Run") }}</label>
+        <select
+          v-model="flowStore.state.statusRunId"
+          class="h-8 min-w-[220px] rounded-md border border-input bg-background px-2 text-xs text-foreground"
+        >
+          <option value="">{{ t("Latest run") }}</option>
+          <option v-for="item in flowStore.state.runHistory" :key="item.runId" :value="item.runId">
+            {{ item.runId }} · {{ t(flowStatusLabelKey(item.status || "unknown")) }}
+          </option>
+        </select>
+        <span class="text-muted-foreground">
+          {{ t("{count} runs", { count: flowStore.state.runHistory.length }) }}
+        </span>
+      </div>
+    </div>
 
     <div v-if="loading" class="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
       {{ t("Loading project...") }}

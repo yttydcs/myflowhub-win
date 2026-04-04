@@ -124,10 +124,22 @@ type fakeBackend struct {
 		req      protoflow.RunReq
 		called   bool
 	}
+	flowCancelRunArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.CancelRunReq
+		called   bool
+	}
 	flowStatusArgs struct {
 		sourceID uint32
 		targetID uint32
 		req      protoflow.StatusReq
+		called   bool
+	}
+	flowListRunsArgs struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.ListRunsReq
 		called   bool
 	}
 	flowListArgs struct {
@@ -358,6 +370,15 @@ func (f *fakeBackend) FlowRun(_ context.Context, sourceID, targetID uint32, req 
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
 	return protoflow.RunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: "run-1"}, nil
 }
+func (f *fakeBackend) FlowCancelRun(_ context.Context, sourceID, targetID uint32, req flowsvc.CancelRunReq) (flowsvc.CancelRunResp, error) {
+	f.flowCancelRunArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.CancelRunReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return flowsvc.CancelRunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "cancelled"}, nil
+}
 func (f *fakeBackend) FlowStatus(_ context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error) {
 	f.flowStatusArgs = struct {
 		sourceID uint32
@@ -366,6 +387,23 @@ func (f *fakeBackend) FlowStatus(_ context.Context, sourceID, targetID uint32, r
 		called   bool
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
 	return protoflow.StatusResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "succeeded"}, nil
+}
+func (f *fakeBackend) FlowListRuns(_ context.Context, sourceID, targetID uint32, req flowsvc.ListRunsReq) (flowsvc.ListRunsResp, error) {
+	f.flowListRunsArgs = struct {
+		sourceID uint32
+		targetID uint32
+		req      flowsvc.ListRunsReq
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
+	return flowsvc.ListRunsResp{
+		Code:         1,
+		ReqID:        req.ReqID,
+		FlowID:       req.FlowID,
+		ExecutorNode: req.ExecutorNode,
+		Runs: []flowsvc.RunSummary{
+			{RunID: "run-1", Status: "running"},
+		},
+	}, nil
 }
 func (f *fakeBackend) FlowList(_ context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error) {
 	f.flowListArgs = struct {
@@ -415,7 +453,9 @@ func TestFlowToolsRegistered(t *testing.T) {
 		"myflowhub_flow_get",
 		"myflowhub_flow_set",
 		"myflowhub_flow_run",
+		"myflowhub_flow_cancel_run",
 		"myflowhub_flow_status",
+		"myflowhub_flow_list_runs",
 		"myflowhub_flow_delete",
 	} {
 		if !names[name] {
@@ -626,6 +666,75 @@ func TestFlowStatusUsesExplicitExecutorNode(t *testing.T) {
 	}
 	if backend.flowStatusArgs.req.ExecutorNode != 88 || backend.flowStatusArgs.req.RunID != "run-9" {
 		t.Fatalf("unexpected flow status request: %+v", backend.flowStatusArgs.req)
+	}
+}
+
+func TestFlowCancelRunUsesExplicitExecutorNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		allowWrite:       true,
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_cancel_run").Handler(context.Background(), json.RawMessage(`{"flow_id":"flow-1","run_id":"run-9","executor_node":88}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.flowCancelRunArgs.called {
+		t.Fatal("expected FlowCancelRun() called")
+	}
+	if backend.flowCancelRunArgs.sourceID != 7 || backend.flowCancelRunArgs.targetID != 9 {
+		t.Fatalf("unexpected flow cancel transport route: %+v", backend.flowCancelRunArgs)
+	}
+	if backend.flowCancelRunArgs.req.ExecutorNode != 88 || backend.flowCancelRunArgs.req.RunID != "run-9" {
+		t.Fatalf("unexpected flow cancel request: %+v", backend.flowCancelRunArgs.req)
+	}
+}
+
+func TestFlowListRunsUsesExplicitExecutorNode(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_list_runs").Handler(context.Background(), json.RawMessage(`{"flow_id":"flow-1","executor_node":88,"limit":10}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.flowListRunsArgs.called {
+		t.Fatal("expected FlowListRuns() called")
+	}
+	if backend.flowListRunsArgs.sourceID != 7 || backend.flowListRunsArgs.targetID != 9 {
+		t.Fatalf("unexpected flow list_runs transport route: %+v", backend.flowListRunsArgs)
+	}
+	if backend.flowListRunsArgs.req.ExecutorNode != 88 || backend.flowListRunsArgs.req.Limit != 10 {
+		t.Fatalf("unexpected flow list_runs request: %+v", backend.flowListRunsArgs.req)
+	}
+}
+
+func TestFlowCancelRunBlockedWhenWriteDisabled(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       false,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_flow_cancel_run").Handler(context.Background(), json.RawMessage(`{"flow_id":"flow-1","run_id":"run-1"}`))
+	if !result.IsError {
+		t.Fatalf("expected error result, got %#v", result)
+	}
+	if backend.flowCancelRunArgs.called {
+		t.Fatal("expected FlowCancelRun() not called when allow_write=false")
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "write_disabled" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+	if !strings.Contains(payload.Hint, "myflowhub_flow_cancel_run") {
+		t.Fatalf("expected cancel_run hint, got %#v", payload)
 	}
 }
 

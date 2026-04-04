@@ -430,10 +430,22 @@ func (r *Runtime) FlowRun(ctx context.Context, sourceID, targetID uint32, req pr
 	return r.flow.Run(timeoutCtx, sourceID, targetID, req)
 }
 
+func (r *Runtime) FlowCancelRun(ctx context.Context, sourceID, targetID uint32, req flowsvc.CancelRunReq) (flowsvc.CancelRunResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.CancelRun(timeoutCtx, sourceID, targetID, req)
+}
+
 func (r *Runtime) FlowStatus(ctx context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error) {
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
 	return r.flow.Status(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) FlowListRuns(ctx context.Context, sourceID, targetID uint32, req flowsvc.ListRunsReq) (flowsvc.ListRunsResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.flow.ListRuns(timeoutCtx, sourceID, targetID, req)
 }
 
 func (r *Runtime) FlowList(ctx context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error) {

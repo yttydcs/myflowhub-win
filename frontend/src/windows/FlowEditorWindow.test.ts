@@ -26,6 +26,8 @@ const queryExecCapabilities = vi.fn(async () => undefined)
 const ensureNodeCapabilityLoaded = vi.fn(async () => false)
 const runFlow = vi.fn(async () => undefined)
 const statusFlow = vi.fn(async () => undefined)
+const listRunsFlow = vi.fn(async () => undefined)
+const cancelRunFlow = vi.fn(async () => undefined)
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({
@@ -62,7 +64,9 @@ vi.mock("@/stores/flow", async () => {
       queryExecCapabilities,
       ensureNodeCapabilityLoaded,
       runFlow,
-      statusFlow
+      statusFlow,
+      listRunsFlow,
+      cancelRunFlow
     })
   }
 })
@@ -75,11 +79,13 @@ const FlowEditorToolbarStub = defineComponent({
     flowStatusLabel: { type: String, default: "" },
     currentRunIdLabel: { type: String, default: "" }
   },
-  emits: ["run-flow", "refresh-status", "save-project"],
+  emits: ["run-flow", "refresh-status", "load-run-history", "cancel-run", "save-project"],
   template: `
     <div data-test="toolbar" :data-flow-status-label="flowStatusLabel" :data-current-run-id-label="currentRunIdLabel">
       <button data-test="run-flow" type="button" @click="$emit('run-flow')">Run</button>
       <button data-test="refresh-status" type="button" @click="$emit('refresh-status')">Refresh</button>
+      <button data-test="load-run-history" type="button" @click="$emit('load-run-history')">History</button>
+      <button data-test="cancel-run" type="button" @click="$emit('cancel-run')">Cancel</button>
       <button data-test="save-project" type="button" @click="$emit('save-project')">Save</button>
     </div>
   `
@@ -183,6 +189,8 @@ describe("FlowEditorWindow", () => {
     ensureNodeCapabilityLoaded.mockResolvedValue(false)
     runFlow.mockResolvedValue(undefined)
     statusFlow.mockResolvedValue(undefined)
+    listRunsFlow.mockResolvedValue(undefined)
+    cancelRunFlow.mockResolvedValue(undefined)
     projectsStore.saveProjectGraph.mockResolvedValue({
       id: "project-1",
       flowId: "project-1",
@@ -361,6 +369,77 @@ describe("FlowEditorWindow", () => {
     await flushAsync()
 
     expect(runFlow).toHaveBeenCalled()
+  })
+
+  it("loads run history on project open and from the toolbar", async () => {
+    const flowStore = useFlowStore()
+    listRunsFlow.mockImplementation(async () => {
+      flowStore.state.runHistory = [
+        {
+          runId: "run-2",
+          status: "running",
+          code: 1,
+          msg: "",
+          startedAt: "2026-03-25T12:00:00.000Z",
+          endedAt: ""
+        }
+      ]
+      flowStore.state.statusRunId = "run-2"
+    })
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowEdgeInspector: FlowEdgeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    expect(listRunsFlow).toHaveBeenCalledWith(50)
+    expect(wrapper.text()).toContain("1 runs")
+    expect(wrapper.findAll("option").some((option) => option.text().includes("run-2"))).toBe(true)
+
+    listRunsFlow.mockClear()
+    await wrapper.get('[data-test="load-run-history"]').trigger("click")
+    await flushAsync()
+
+    expect(listRunsFlow).toHaveBeenCalledWith(50)
+  })
+
+  it("cancels the selected run from the toolbar", async () => {
+    const flowStore = useFlowStore()
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowEdgeInspector: FlowEdgeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    flowStore.state.statusRunId = "run-1"
+    await nextTick()
+
+    await wrapper.get('[data-test="cancel-run"]').trigger("click")
+    await flushAsync()
+
+    expect(cancelRunFlow).toHaveBeenCalledWith("run-1")
   })
 
   it("renders the edge inspector for selected branch edges", async () => {
