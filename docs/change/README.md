@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-04-04_win-flow-p0-authoring-closure.md](2026-04-04_win-flow-p0-authoring-closure.md)
   - [2026-04-03_win-flow-foreach-body-call-authoring.md](2026-04-03_win-flow-foreach-body-call-authoring.md)
   - [2026-04-03_win-flow-foreach-body-visual-editor.md](2026-04-03_win-flow-foreach-body-visual-editor.md)
   - [2026-04-03_win-flow-foreach-form-authoring.md](2026-04-03_win-flow-foreach-form-authoring.md)

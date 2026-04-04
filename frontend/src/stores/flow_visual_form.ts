@@ -17,6 +17,8 @@ export type VisualBindingSource =
   | { kind: "trigger"; path: string; required: boolean }
   | { kind: "flow_meta"; field: "flow_id"; required: boolean }
   | { kind: "run_meta"; field: "run_id"; required: boolean }
+  | { kind: "loop_item"; path: string; required: boolean }
+  | { kind: "loop_index"; required: boolean }
   | { kind: "flow_var"; name: string; path: string; required: boolean }
 
 export type FieldVisualState = {
@@ -122,6 +124,17 @@ const toVisualBindingSource = (binding: FlowInputBindingLike): VisualBindingSour
         field: "run_id",
         required: binding.required
       }
+    case "loop_item":
+      return {
+        kind: "loop_item",
+        path: binding.path,
+        required: binding.required
+      }
+    case "loop_index":
+      return {
+        kind: "loop_index",
+        required: binding.required
+      }
     case "flow_var":
       return {
         kind: "flow_var",
@@ -149,6 +162,10 @@ export const describeFieldBinding = (source: VisualBindingSource | null) => {
       return t("Flow metadata · {field}", { field: source.field })
     case "run_meta":
       return t("Run metadata · {field}", { field: source.field })
+    case "loop_item":
+      return source.path ? t("Loop item at {path}", { path: source.path }) : t("Loop item")
+    case "loop_index":
+      return t("Loop index")
     case "flow_var":
       return source.path
         ? t("Flow local var {name} at {path}", { name: source.name || "?", path: source.path })
@@ -355,6 +372,28 @@ export const setBindingForPointer = (
         nodeId: "",
         path: "",
         field: source.field,
+        name: "",
+        required: source.required
+      })
+      break
+    case "loop_item":
+      next.push({
+        to: pointer,
+        sourceKind: "loop_item",
+        nodeId: "",
+        path: source.path,
+        field: "",
+        name: "",
+        required: source.required
+      })
+      break
+    case "loop_index":
+      next.push({
+        to: pointer,
+        sourceKind: "loop_index",
+        nodeId: "",
+        path: "",
+        field: "",
         name: "",
         required: source.required
       })

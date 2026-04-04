@@ -65,6 +65,7 @@ const createCallNode = (): FlowNodeDraft => ({
   kind: "call",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "demo::missing-schema",
   target: 0,
@@ -84,6 +85,7 @@ const createSetVarNode = (): FlowNodeDraft => ({
   kind: "set_var",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -113,6 +115,7 @@ const createTransformNode = (): FlowNodeDraft => ({
   kind: "transform",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -141,6 +144,7 @@ const createBranchNode = (): FlowNodeDraft => ({
   kind: "branch",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -177,6 +181,7 @@ const createSubflowNode = (): FlowNodeDraft => ({
   kind: "subflow",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -210,6 +215,7 @@ const createForeachNode = (): FlowNodeDraft => ({
   kind: "foreach",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -502,5 +508,16 @@ describe("FlowNodeInspector", () => {
     expect(text).toContain("Open Visual Body Editor")
     expect(text).toContain("The visual body editor reuses the same body JSON as its source of truth.")
     expect(formButton?.attributes("disabled")).toBeUndefined()
+  })
+
+  it("renders retry backoff while keeping loop sources out of root inspectors", () => {
+    const wrapper = mountInspector({
+      selectedNode: createForeachNode(),
+      nodeIdDraft: "foreach-1"
+    })
+
+    expect(wrapper.text()).toContain("Retry Backoff (ms)")
+    expect(wrapper.find('option[value="loop_item"]').exists()).toBe(false)
+    expect(wrapper.find('option[value="loop_index"]').exists()).toBe(false)
   })
 })

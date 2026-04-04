@@ -63,6 +63,7 @@ const createCallNode = (id: string, overrides: Partial<FlowNodeDraft> = {}): Flo
   kind: "call",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "varstore::get",
   target: 0,
@@ -83,6 +84,7 @@ const createSetVarNode = (id: string, overrides: Partial<FlowNodeDraft> = {}): F
   kind: "set_var",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -108,6 +110,7 @@ const createJsonOnlyNode = (
   kind,
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "",
   target: 0,
@@ -128,6 +131,24 @@ const createJsonOnlyNode = (
   x: 0,
   y: 0,
   ...overrides
+})
+
+const createValidForeachBodyGraph = (resultNodeId = "item_result") => ({
+  nodes: [
+    {
+      id: resultNodeId,
+      kind: "compose",
+      allow_fail: false,
+      retry: 1,
+      retry_backoff_ms: 0,
+      timeout_ms: 3000,
+      spec: {
+        template: {},
+        _ui: { x: 0, y: 0 }
+      }
+    }
+  ],
+  edges: []
 })
 
 const loadGraph = (nodes: FlowNodeDraft[], edges: FlowEdge[] = [], selection?: Partial<FlowGraphEditorState>) => {
@@ -938,7 +959,7 @@ describe("flow store", () => {
             spec: {
               source: { kind: "trigger", path: "/items" },
               required: true,
-              body: { nodes: [], edges: [] },
+              body: createValidForeachBodyGraph(),
               result_node_id: "item_result",
               _ui: { x: 400, y: 0 }
             }
@@ -1010,7 +1031,7 @@ describe("flow store", () => {
         name: ""
       },
       foreachRequired: true,
-      foreachBodyJson: JSON.stringify({ nodes: [], edges: [] }, null, 2),
+      foreachBodyJson: JSON.stringify(createValidForeachBodyGraph(), null, 2),
       foreachResultNodeId: "item_result"
     })
     expect(store.state.nodes[3]).toMatchObject({
@@ -1222,9 +1243,8 @@ describe("flow store", () => {
   it("rejects switching unsupported advanced transform JSON back to form", () => {
     loadGraph([
       createJsonOnlyNode("transform1", "transform", {
-        expr: {
-          script: "return 1"
-        }
+        expr: { literal: 1 },
+        preserve_raw_script: "return 1"
       })
     ])
 
@@ -1277,7 +1297,7 @@ describe("flow store", () => {
       {
         source: { kind: "flow_var", name: "items_batch", path: "/items" },
         required: true,
-        body: { nodes: [], edges: [] },
+        body: createValidForeachBodyGraph("done"),
         result_node_id: "done"
       },
       null,
@@ -1295,7 +1315,7 @@ describe("flow store", () => {
         name: "items_batch"
       },
       foreachRequired: true,
-      foreachBodyJson: JSON.stringify({ nodes: [], edges: [] }, null, 2),
+      foreachBodyJson: JSON.stringify(createValidForeachBodyGraph("done"), null, 2),
       foreachResultNodeId: "done"
     })
   })
@@ -1305,7 +1325,7 @@ describe("flow store", () => {
       createJsonOnlyNode("foreach1", "foreach", {
         source: { kind: "trigger", path: "/items" },
         required: true,
-        body: { nodes: [], edges: [] },
+        body: createValidForeachBodyGraph("done"),
         result_node_id: "done",
         max_parallel: 4
       })
@@ -1313,6 +1333,196 @@ describe("flow store", () => {
 
     expect(() => store.setNodeSpecEditorMode("foreach1", "form")).toThrowError(
       "Node kind foreach advanced spec contains fields that ordinary mode cannot represent yet."
+    )
+  })
+
+  it("round-trips retry_backoff_ms and max_active_runs without collapsing zero to null", () => {
+    store.loadFromPayload({
+      flow_id: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Flow 1",
+      max_active_runs: 0,
+      trigger: { type: "event", event_name: "demo.created" },
+      graph: {
+        nodes: [
+          {
+            id: "call1",
+            kind: "call",
+            allow_fail: false,
+            retry: 2,
+            retry_backoff_ms: 250,
+            timeout_ms: 3000,
+            spec: {
+              method: "demo::call",
+              args_template: {},
+              _ui: { x: 0, y: 0 }
+            }
+          }
+        ],
+        edges: []
+      }
+    })
+
+    expect(store.state.maxActiveRuns).toBe(0)
+    expect(store.state.nodes[0]?.retryBackoffMs).toBe(250)
+
+    const payload = store.exportPayload()
+
+    expect(payload.max_active_runs).toBe(0)
+    expect(payload.graph.nodes[0]).toMatchObject({
+      id: "call1",
+      retry: 2,
+      retry_backoff_ms: 250,
+      timeout_ms: 3000
+    })
+  })
+
+  it("preserves missing max_active_runs as null on load and export", () => {
+    store.loadFromPayload({
+      flow_id: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Flow 1",
+      trigger: { type: "interval", every_ms: 60000 },
+      graph: {
+        nodes: [
+          {
+            id: "call1",
+            kind: "call",
+            allow_fail: false,
+            retry: 1,
+            retry_backoff_ms: 0,
+            timeout_ms: 3000,
+            spec: {
+              method: "demo::call",
+              args_template: {},
+              _ui: { x: 0, y: 0 }
+            }
+          }
+        ],
+        edges: []
+      }
+    })
+
+    expect(store.state.maxActiveRuns).toBeNull()
+    expect(store.exportPayload()).not.toHaveProperty("max_active_runs")
+  })
+
+  it("keeps root loop sources in advanced json and allows them inside foreach body graphs", () => {
+    const rootSnapshot = createGraphEditorStateFromDraft({
+      nodes: [
+        {
+          id: "transform1",
+          kind: "transform",
+          allow_fail: false,
+          retry: 1,
+          retry_backoff_ms: 0,
+          timeout_ms: 3000,
+          spec: {
+            expr: {
+              source: { kind: "loop_item", path: "/value" },
+              required: true
+            },
+            _ui: { x: 0, y: 0 }
+          }
+        }
+      ],
+      edges: []
+    })
+    const bodySnapshot = createGraphEditorStateFromDraft(
+      {
+        nodes: [
+          {
+            id: "transform1",
+            kind: "transform",
+            allow_fail: false,
+            retry: 1,
+            retry_backoff_ms: 0,
+            timeout_ms: 3000,
+            spec: {
+              expr: {
+                source: { kind: "loop_item", path: "/value" },
+                required: true
+              },
+              _ui: { x: 0, y: 0 }
+            }
+          },
+          {
+            id: "branch1",
+            kind: "branch",
+            allow_fail: false,
+            retry: 1,
+            retry_backoff_ms: 0,
+            timeout_ms: 3000,
+            spec: {
+              cases: [
+                {
+                  name: "first",
+                  match: {
+                    source: { kind: "loop_index", path: "/invalid" },
+                    op: "eq",
+                    value: 0
+                  }
+                }
+              ],
+              _ui: { x: 40, y: 0 }
+            }
+          }
+        ],
+        edges: []
+      },
+      { allowLoopSources: true }
+    )
+
+    expect(rootSnapshot.nodes[0]?.specEditorMode).toBe("json")
+    expect(bodySnapshot.nodes[0]).toMatchObject({
+      specEditorMode: "form",
+      transformExprMode: "source",
+      transformSource: {
+        sourceKind: "loop_item",
+        nodeId: "",
+        path: "/value",
+        field: "",
+        name: ""
+      }
+    })
+    expect(bodySnapshot.nodes[1]?.specEditorMode).toBe("json")
+  })
+
+  it("rejects loop sources on root call-field bindings", () => {
+    loadGraph([createCallNode("call1")])
+
+    expect(() =>
+      store.setFieldBinding("call1", "/name", {
+        kind: "loop_item",
+        path: "/value",
+        required: true
+      } as any)
+    ).toThrowError("Loop sources are only available inside foreach body graphs.")
+  })
+
+  it("rejects unsupported dedup windows for interval and cron triggers", () => {
+    loadGraph([createCallNode("call1")])
+    store.state.flowId = "550e8400-e29b-41d4-a716-446655440000"
+
+    store.state.triggerType = "interval"
+    store.state.dedupWindowMs = 5
+    expect(() => store.exportPayload()).toThrowError("Interval trigger does not support dedup window.")
+
+    store.state.triggerType = "cron"
+    store.state.cronExpr = "0 */5 * * *"
+    expect(() => store.exportPayload()).toThrowError("Cron trigger does not support dedup window.")
+  })
+
+  it("rejects subflow self-calls on strict export", () => {
+    store.state.flowId = "550e8400-e29b-41d4-a716-446655440000"
+    loadGraph([
+      createJsonOnlyNode("sub1", "subflow", {
+        flow_id: "550e8400-e29b-41d4-a716-446655440000",
+        input_template: {},
+        result_node_id: "done"
+      })
+    ])
+
+    expect(() => store.exportPayload()).toThrowError(
+      "Node sub1 subflow flow_id must not call the current flow itself."
     )
   })
 
@@ -1408,6 +1618,7 @@ describe("flow store", () => {
           kind: "call",
           allow_fail: false,
           retry: 1,
+          retry_backoff_ms: 0,
           timeout_ms: 3000,
           spec: {
             method: "demo::inner",

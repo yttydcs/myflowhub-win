@@ -47,6 +47,7 @@ export type FlowTriggerDraft = {
   eventMode: "publish" | "received" | "any"
   eventName: string
   eventTopic: string
+  dedupWindowMs: number
   varOwner: number
   varName: string
 }
@@ -55,6 +56,7 @@ export type FlowProjectRecord = {
   projectId: string
   flowId: string
   name: string
+  maxActiveRuns: number | null
   trigger: FlowTriggerDraft
   graph: {
     nodes: Array<Record<string, any>>
@@ -131,6 +133,33 @@ const parsePositiveNodeId = (input: string | number) => {
   return parsed
 }
 
+const normalizeOptionalNonNegativeInteger = (value: unknown) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null
+}
+
+const assertOptionalNonNegativeInteger = (value: unknown, label: string) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(t("{label} must be a non-negative number.", { label }))
+  }
+  return Math.trunc(parsed)
+}
+
+const assertNonNegativeInteger = (value: unknown, label: string) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(t("{label} must be a non-negative number.", { label }))
+  }
+  return Math.trunc(parsed)
+}
+
 const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
   const triggerType = String(input?.type ?? "interval").trim().toLowerCase()
   const type: FlowTriggerDraft["type"] =
@@ -143,6 +172,7 @@ const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
     eventModeRaw === "received" || eventModeRaw === "any" ? eventModeRaw : "publish"
   const eventName = String(input?.event_name ?? input?.eventName ?? "").trim()
   const eventTopic = String(input?.event_topic ?? input?.eventTopic ?? "").trim()
+  const dedupWindowMs = normalizeOptionalNonNegativeInteger(input?.dedup_window_ms ?? input?.dedupWindowMs) ?? 0
   const ownerRaw = Number(input?.var_owner ?? input?.varOwner ?? 0)
   const varOwner = Number.isFinite(ownerRaw) && ownerRaw > 0 ? Math.trunc(ownerRaw) : 0
   const varName = String(input?.var_name ?? input?.varName ?? "").trim()
@@ -154,6 +184,7 @@ const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
     eventMode,
     eventName,
     eventTopic,
+    dedupWindowMs,
     varOwner,
     varName
   }
@@ -161,10 +192,17 @@ const normalizeTriggerDraft = (input: any): FlowTriggerDraft => {
 
 const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }) => {
   const strict = Boolean(options?.strict)
+  const dedupWindowMs = assertNonNegativeInteger(
+    trigger.dedupWindowMs ?? 0,
+    t("Trigger dedup window")
+  )
   if (trigger.type === "cron") {
     const cron = trigger.cronExpr.trim()
     if (strict && !cron) {
       throw new Error(t("Cron trigger requires an expression."))
+    }
+    if (strict && dedupWindowMs > 0) {
+      throw new Error(t("Cron trigger does not support dedup window."))
     }
     return {
       type: "cron",
@@ -181,6 +219,9 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
       type: "event",
       event_mode: trigger.eventMode
     }
+    if (dedupWindowMs > 0) {
+      out.dedup_window_ms = dedupWindowMs
+    }
     if (eventName) {
       out.event_name = eventName
     }
@@ -193,6 +234,9 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
     const out: Record<string, any> = {
       type: "var_changed"
     }
+    if (dedupWindowMs > 0) {
+      out.dedup_window_ms = dedupWindowMs
+    }
     if (trigger.varOwner > 0) {
       out.var_owner = Math.trunc(trigger.varOwner)
     }
@@ -203,6 +247,9 @@ const toTriggerWire = (trigger: FlowTriggerDraft, options?: { strict?: boolean }
   }
   if (strict && (!Number.isFinite(trigger.everyMs) || trigger.everyMs <= 0)) {
     throw new Error(t("EveryMs must be a positive number."))
+  }
+  if (strict && dedupWindowMs > 0) {
+    throw new Error(t("Interval trigger does not support dedup window."))
   }
   return {
     type: "interval",
@@ -302,6 +349,7 @@ const normalizeProject = (input: any): FlowProjectRecord | null => {
     return null
   }
   const name = String(input?.name ?? "").trim()
+  const maxActiveRuns = normalizeOptionalNonNegativeInteger(input?.maxActiveRuns ?? input?.max_active_runs)
   const trigger = normalizeTriggerDraft(input?.trigger ?? {})
   const graph = normalizeGraph(input?.graph ?? {})
   const updatedAt = String(input?.updatedAt ?? input?.updated_at ?? "").trim() || nowIso()
@@ -309,6 +357,7 @@ const normalizeProject = (input: any): FlowProjectRecord | null => {
     projectId,
     flowId,
     name,
+    maxActiveRuns,
     trigger,
     graph,
     updatedAt
@@ -343,6 +392,7 @@ const toProjectWire = (project: FlowProjectRecord) => {
     project_id: normalized.projectId,
     flow_id: normalized.flowId,
     name: normalized.name,
+    ...(normalized.maxActiveRuns === null ? {} : { max_active_runs: normalized.maxActiveRuns }),
     trigger: toTriggerWire(normalized.trigger),
     graph: normalized.graph,
     updated_at: normalized.updatedAt
@@ -390,6 +440,7 @@ const createProject = async (input: { projectId?: string; flowId?: string; name?
     projectId,
     flowId,
     name: String(input?.name ?? "").trim(),
+    maxActiveRuns: null,
     trigger: normalizeTriggerDraft({ type: "interval", every_ms: 60000 }),
     graph: { nodes: [], edges: [] },
     updatedAt: nowIso()
@@ -399,7 +450,12 @@ const createProject = async (input: { projectId?: string; flowId?: string; name?
   return project
 }
 
-const updateProjectMeta = async (input: { projectId: string; flowId: string; name?: string }) => {
+const updateProjectMeta = async (input: {
+  projectId: string
+  flowId: string
+  name?: string
+  maxActiveRuns?: string | number | null
+}) => {
   const trimmedProjectID = String(input?.projectId ?? "").trim()
   if (!trimmedProjectID) {
     throw new Error(t("Project ID is required."))
@@ -414,6 +470,7 @@ const updateProjectMeta = async (input: { projectId: string; flowId: string; nam
     ...latest[idx],
     flowId: ensureUniqueFlowID(latest, input.flowId, trimmedProjectID),
     name: String(input?.name ?? "").trim(),
+    maxActiveRuns: assertOptionalNonNegativeInteger(input?.maxActiveRuns, t("Max active runs")),
     updatedAt: nowIso()
   }
   latest.splice(idx, 1, next)
@@ -475,6 +532,7 @@ const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
     ...current,
     flowId: ensureUniqueFlowID(latest, normalizedPayloadFlowID, trimmedProjectID),
     name: String(payload?.name ?? "").trim(),
+    maxActiveRuns: assertOptionalNonNegativeInteger(payload?.max_active_runs ?? (payload as any)?.maxActiveRuns, t("Max active runs")),
     trigger: normalizeTriggerDraft(payload?.trigger ?? {}),
     graph: normalizeGraph(payload?.graph ?? {}),
     updatedAt: nowIso()
@@ -664,6 +722,7 @@ const deployProject = async (input: {
     executor_node: targetNodeID,
     flow_id: flowId,
     name: project.name,
+    ...(project.maxActiveRuns === null ? {} : { max_active_runs: project.maxActiveRuns }),
     trigger: toTriggerWire(trigger, { strict: true }),
     graph: project.graph
   })

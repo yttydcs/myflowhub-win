@@ -530,6 +530,7 @@ const activeCallVisualForm = computed<NodeVisualFormModel | null>(() =>
 const activeBindableAncestorNodeOptions = computed(() =>
   bodyEditorActive.value ? bodyBindableAncestorNodeOptions.value : bindableAncestorNodeOptions.value
 )
+const allowLoopBindingSources = computed(() => bodyEditorActive.value)
 
 const selectedNodeOutputSchemaText = computed(() => {
   const node = selectedNode.value
@@ -570,6 +571,79 @@ const cloneGraphEditorState = (snapshot: FlowGraphEditorState): FlowGraphEditorS
       selectedEdgeIndex: Number.isInteger(snapshot?.selectedEdgeIndex) ? Number(snapshot.selectedEdgeIndex) : -1
     })
   ) as FlowGraphEditorState
+
+const normalizeFlowId = (value: unknown) => String(value ?? "").trim().toLowerCase()
+
+const collectSubflowTargetsFromGraph = (graph: unknown, out = new Set<string>()) => {
+  const nodes = Array.isArray((graph as any)?.nodes) ? (graph as any).nodes : []
+  for (const node of nodes) {
+    const kind = String(node?.kind ?? "").trim().toLowerCase()
+    const spec = isJSONObject(node?.spec) ? node.spec : null
+    if (!spec) {
+      continue
+    }
+    if (kind === "subflow") {
+      const flowId = normalizeFlowId(spec.flow_id)
+      if (flowId) {
+        out.add(flowId)
+      }
+      continue
+    }
+    if (kind === "foreach" && isJSONObject(spec.body)) {
+      collectSubflowTargetsFromGraph(spec.body, out)
+    }
+  }
+  return out
+}
+
+const buildLocalSubflowDependencyMap = (
+  projects: FlowProjectRecord[],
+  current: { projectId: string; flowId: string; graph: unknown }
+) => {
+  const dependencies = new Map<string, Set<string>>()
+  for (const project of projects) {
+    const isCurrent = project.projectId === current.projectId
+    const flowId = normalizeFlowId(isCurrent ? current.flowId : project.flowId)
+    if (!flowId) {
+      continue
+    }
+    dependencies.set(flowId, collectSubflowTargetsFromGraph(isCurrent ? current.graph : project.graph))
+  }
+  if (!dependencies.has(normalizeFlowId(current.flowId))) {
+    dependencies.set(normalizeFlowId(current.flowId), collectSubflowTargetsFromGraph(current.graph))
+  }
+  return dependencies
+}
+
+const findRecursiveSubflowChain = (startFlowId: string, dependencies: Map<string, Set<string>>) => {
+  const visited = new Set<string>()
+  const visiting = new Set<string>()
+  const stack: string[] = []
+
+  const dfs = (flowId: string): string[] | null => {
+    if (visiting.has(flowId)) {
+      const startIndex = stack.indexOf(flowId)
+      return startIndex >= 0 ? [...stack.slice(startIndex), flowId] : [flowId, flowId]
+    }
+    if (visited.has(flowId)) {
+      return null
+    }
+    visiting.add(flowId)
+    stack.push(flowId)
+    for (const targetFlowId of dependencies.get(flowId) ?? []) {
+      const cycle = dfs(targetFlowId)
+      if (cycle) {
+        return cycle
+      }
+    }
+    stack.pop()
+    visiting.delete(flowId)
+    visited.add(flowId)
+    return null
+  }
+
+  return dfs(startFlowId)
+}
 
 const foreachBodySeedSpec = (kind: FlowNodeKind): Record<string, any> => {
   switch (kind) {
@@ -615,7 +689,7 @@ const createBodyNodeDraft = (id: string, kind: FlowNodeKind, index: number): Flo
         }
       ],
       edges: []
-    }).nodes[0] ?? null
+    }, { allowLoopSources: true }).nodes[0] ?? null
   if (!node) {
     throw new Error(t("Failed to create body node draft."))
   }
@@ -708,7 +782,7 @@ const openForeachBodyEditor = () => {
     if (!Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
       throw new Error(t("Foreach body must include nodes and edges arrays."))
     }
-    const snapshot = normalizeBodySessionSnapshot(createGraphEditorStateFromDraft(body))
+    const snapshot = normalizeBodySessionSnapshot(createGraphEditorStateFromDraft(body, { allowLoopSources: true }))
     bodyEditorSession.value = {
       parentNodeId: node.id,
       snapshot,
@@ -776,7 +850,7 @@ const setBodySelectedNodeSpecMode = (mode: "form" | "json") => {
       }
     ],
     edges: []
-  })
+  }, { allowLoopSources: true })
   const next = nextSnapshot.nodes[0] ?? null
   if (!next || next.specEditorMode !== "form") {
     throw new Error(
@@ -829,6 +903,12 @@ const setBodyNodeFieldBinding = (node: FlowNodeDraft, pointer: string, source: V
   } else if (source.kind === "run_meta") {
     if (source.field !== "run_id") {
       throw new Error(t("Run meta field must be run_id."))
+    }
+  } else if (source.kind === "loop_item") {
+    validateJSONPointer(source.path, t("Loop item path must be a valid JSON Pointer."))
+  } else if (source.kind === "loop_index") {
+    if (source.path?.trim()) {
+      throw new Error(t("Loop index does not accept a JSON Pointer path."))
     }
   } else if (source.kind === "flow_var") {
     source.name = assertValidFlowLocalVarName(
@@ -1057,6 +1137,24 @@ const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
     fieldBindingDraft.required = source.required
     return
   }
+  if (source?.kind === "loop_item") {
+    fieldBindingDraft.sourceKind = "loop_item"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = source.path
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = ""
+    fieldBindingDraft.required = source.required
+    return
+  }
+  if (source?.kind === "loop_index") {
+    fieldBindingDraft.sourceKind = "loop_index"
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = ""
+    fieldBindingDraft.required = source.required
+    return
+  }
   if (source?.kind === "flow_var") {
     fieldBindingDraft.sourceKind = "flow_var"
     fieldBindingDraft.nodeId = ""
@@ -1092,6 +1190,8 @@ const onFieldBindingSourceKindChange = (sourceKind: string) => {
     sourceKind === "node_result" ||
     sourceKind === "flow_meta" ||
     sourceKind === "run_meta" ||
+    (allowLoopBindingSources.value && sourceKind === "loop_item") ||
+    (allowLoopBindingSources.value && sourceKind === "loop_index") ||
     sourceKind === "flow_var"
       ? sourceKind
       : "trigger"
@@ -1110,6 +1210,20 @@ const onFieldBindingSourceKindChange = (sourceKind: string) => {
     return
   }
   if (fieldBindingDraft.sourceKind === "flow_var") {
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = ""
+    return
+  }
+  if (fieldBindingDraft.sourceKind === "loop_item") {
+    fieldBindingDraft.nodeId = ""
+    fieldBindingDraft.path = ""
+    fieldBindingDraft.field = ""
+    fieldBindingDraft.name = ""
+    return
+  }
+  if (fieldBindingDraft.sourceKind === "loop_index") {
     fieldBindingDraft.nodeId = ""
     fieldBindingDraft.path = ""
     fieldBindingDraft.field = ""
@@ -1141,6 +1255,17 @@ const buildVisualBindingSource = (): VisualBindingSource => {
       return {
         kind: "run_meta",
         field: "run_id",
+        required: fieldBindingDraft.required
+      }
+    case "loop_item":
+      return {
+        kind: "loop_item",
+        path: fieldBindingDraft.path,
+        required: fieldBindingDraft.required
+      }
+    case "loop_index":
+      return {
+        kind: "loop_index",
         required: fieldBindingDraft.required
       }
     case "flow_var":
@@ -2060,7 +2185,27 @@ const saveProject = async () => {
   }
   saveBusy.value = true
   try {
+    const project = projectsStore.getProjectByID(id)
+    if (!project) {
+      throw new Error(t("Project not found."))
+    }
     const graph = flowStore.exportGraphDraft()
+    const localProjects = Array.isArray((projectsStore as any)?.state?.projects)
+      ? (((projectsStore as any).state.projects as FlowProjectRecord[]) ?? [])
+      : []
+    const dependencyMap = buildLocalSubflowDependencyMap(localProjects, {
+      projectId: id,
+      flowId: project.flowId,
+      graph
+    })
+    const recursiveChain = findRecursiveSubflowChain(normalizeFlowId(project.flowId), dependencyMap)
+    if (recursiveChain && recursiveChain.length > 1) {
+      throw new Error(
+        t("Subflow recursion detected across local projects: {chain}", {
+          chain: recursiveChain.join(" -> ")
+        })
+      )
+    }
     const saved = await projectsStore.saveProjectGraph(id, graph)
     loadedProjectName.value = saved.name || saved.flowId || id
     updateSavedBaseline(saved.updatedAt)
@@ -2090,6 +2235,8 @@ const loadProject = async () => {
       throw new Error(t("Project not found."))
     }
     loadedProjectName.value = project.name || project.flowId
+    flowStore.state.flowId = project.flowId
+    flowStore.state.flowName = project.name || ""
     flowStore.loadGraphDraft(project.graph)
     nodeIdDraft.value = selectedNode.value?.id ?? ""
     updateSavedBaseline(project.updatedAt)
@@ -2263,7 +2410,7 @@ watch(
       if (!body || typeof body !== "object" || Array.isArray(body) || !Array.isArray(body.nodes) || !Array.isArray(body.edges)) {
         throw new Error(t("Foreach body must include nodes and edges arrays."))
       }
-      const nextSnapshot = normalizeBodySessionSnapshot(createGraphEditorStateFromDraft(body))
+      const nextSnapshot = normalizeBodySessionSnapshot(createGraphEditorStateFromDraft(body, { allowLoopSources: true }))
       const nextSignature = graphSignatureOf(nextSnapshot)
       if (nextSignature === graphSignatureOf(session.snapshot)) {
         session.syncedSignature = nextSignature
@@ -2539,6 +2686,7 @@ onUnmounted(() => {
       :open="fieldBindingDialogOpen"
       :active-binding-field="activeBindingField"
       :bindable-ancestor-node-options="activeBindableAncestorNodeOptions"
+      :allow-loop-sources="allowLoopBindingSources"
       :field-binding-draft="fieldBindingDraft"
       @close="closeFieldBindingDialog"
       @apply="applyFieldBinding"

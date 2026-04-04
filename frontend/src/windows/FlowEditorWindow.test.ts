@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setLocale } from "@/i18n"
 
 const projectsStore = {
+  state: {
+    projects: [] as any[]
+  },
   loadProjects: vi.fn(async () => undefined),
   getProjectByID: vi.fn(),
   saveProjectGraph: vi.fn()
@@ -190,6 +193,7 @@ describe("FlowEditorWindow", () => {
         edges: []
       }
     })
+    projectsStore.state.projects = []
     flowStore.newDraft()
     flowStore.loadGraphEditorState({
       nodes: [],
@@ -692,6 +696,85 @@ describe("FlowEditorWindow", () => {
     const foreachNode = flowStore.state.nodes.find((node) => node.id === "foreach1")
     const bodyGraph = JSON.parse(foreachNode?.foreachBodyJson ?? "{}")
     expect(bodyGraph.nodes[0].spec.inputs).toHaveLength(1)
+  })
+
+  it("blocks saving when local project graphs form a recursive subflow chain", async () => {
+    const flowA = "550e8400-e29b-41d4-a716-446655440000"
+    const flowB = "123e4567-e89b-12d3-a456-426614174000"
+
+    projectsStore.state.projects = [
+      {
+        projectId: "project-1",
+        flowId: flowA,
+        graph: {
+          nodes: [
+            {
+              id: "sub1",
+              kind: "subflow",
+              allow_fail: false,
+              retry: 1,
+              timeout_ms: 3000,
+              spec: {
+                flow_id: flowB,
+                input_template: {},
+                _ui: { x: 0, y: 0 }
+              }
+            }
+          ],
+          edges: []
+        }
+      },
+      {
+        projectId: "project-2",
+        flowId: flowB,
+        graph: {
+          nodes: [
+            {
+              id: "sub2",
+              kind: "subflow",
+              allow_fail: false,
+              retry: 1,
+              timeout_ms: 3000,
+              spec: {
+                flow_id: flowA,
+                input_template: {},
+                _ui: { x: 0, y: 0 }
+              }
+            }
+          ],
+          edges: []
+        }
+      }
+    ]
+    projectsStore.getProjectByID.mockReturnValue({
+      id: "project-1",
+      flowId: flowA,
+      name: "Project 1",
+      updatedAt: "2026-03-25T12:00:00.000Z",
+      graph: projectsStore.state.projects[0].graph
+    })
+
+    const wrapper = mount(FlowEditorWindow, {
+      global: {
+        stubs: {
+          FlowEditorToolbar: FlowEditorToolbarStub,
+          FlowCanvas: FlowCanvasStub,
+          FlowNodeInspector: FlowNodeInspectorStub,
+          FlowEdgeInspector: FlowEdgeInspectorStub,
+          FlowMethodPickerDialog: FlowMethodPickerDialogStub,
+          FlowFieldBindingDialog: SimpleStub,
+          FlowAddNodeDialog: SimpleStub
+        }
+      }
+    })
+
+    await flushAsync()
+
+    await wrapper.get('[data-test="save-project"]').trigger("click")
+    await flushAsync()
+
+    expect(projectsStore.saveProjectGraph).not.toHaveBeenCalled()
+    expect(toastStore.errorOf).toHaveBeenCalled()
   })
 
   it("saves body editor graph changes through the root project graph export", async () => {

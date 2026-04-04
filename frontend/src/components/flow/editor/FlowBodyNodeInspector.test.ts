@@ -32,6 +32,7 @@ const createBaseNode = (): FlowNodeDraft => ({
   kind: "call",
   allowFail: false,
   retry: 1,
+  retryBackoffMs: 0,
   timeoutMs: 3000,
   method: "demo::inner",
   target: 0,
@@ -198,5 +199,31 @@ describe("FlowBodyNodeInspector", () => {
     expect(addBindingButton).toBeTruthy()
     await addBindingButton!.trigger("click")
     expect(wrapper.emitted("add-binding")).toHaveLength(1)
+  })
+
+  it("exposes loop sources and retry backoff inside body inspectors", () => {
+    const wrapper = mountInspector({
+      selectedNode: {
+        ...createBaseNode(),
+        id: "inner-transform",
+        kind: "transform",
+        method: "",
+        transformExprMode: "source",
+        transformSource: {
+          sourceKind: "trigger",
+          nodeId: "",
+          path: "/payload/value",
+          field: "",
+          name: ""
+        },
+        specEditorMode: "form"
+      },
+      nodeIdDraft: "inner-transform",
+      selectedCallVisualForm: null
+    })
+
+    expect(wrapper.text()).toContain("Retry Backoff (ms)")
+    expect(wrapper.find('option[value="loop_item"]').exists()).toBe(true)
+    expect(wrapper.find('option[value="loop_index"]').exists()).toBe(true)
   })
 })

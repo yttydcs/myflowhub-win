@@ -42,6 +42,7 @@ const createTrigger = (): FlowTriggerDraft => ({
   eventMode: "publish",
   eventName: "",
   eventTopic: "",
+  dedupWindowMs: 0,
   varOwner: 0,
   varName: ""
 })
@@ -50,6 +51,7 @@ const createProjectRecord = (overrides: Partial<FlowProjectRecord> = {}): FlowPr
   projectId: "project-1",
   flowId: "550e8400-e29b-41d4-a716-446655440000",
   name: "Demo Project",
+  maxActiveRuns: null,
   trigger: createTrigger(),
   graph: {
     nodes: [],
@@ -205,6 +207,7 @@ describe("flowProjects store", () => {
       eventMode: "publish",
       eventName: "",
       eventTopic: "",
+      dedupWindowMs: 0,
       varOwner: 0,
       varName: ""
     })
@@ -239,5 +242,111 @@ describe("flowProjects store", () => {
       cronExpr: "0 */5 * * *"
     })
     expect(persistedProjects[0]?.trigger).toEqual({ type: "cron", cron: "0 */5 * * *" })
+  })
+
+  it("persists max_active_runs without collapsing zero to null", async () => {
+    persistedProjects = [
+      {
+        project_id: "project-1",
+        flow_id: "550e8400-e29b-41d4-a716-446655440000",
+        name: "Demo Project",
+        trigger: { type: "interval", every_ms: 60000 },
+        graph: { nodes: [], edges: [] },
+        updated_at: "2026-03-27T12:00:00.000Z"
+      }
+    ]
+
+    await store.updateProjectMeta({
+      projectId: "project-1",
+      flowId: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Demo Project",
+      maxActiveRuns: 0
+    })
+
+    expect(store.state.projects[0]?.maxActiveRuns).toBe(0)
+    expect(persistedProjects[0]?.max_active_runs).toBe(0)
+  })
+
+  it("deploys event trigger dedup windows through the wire", async () => {
+    store.state.projects = [
+      createProjectRecord({
+        graph: {
+          nodes: [{ id: "node-1", kind: "call", spec: { method: "demo::call", args_template: {} } }],
+          edges: []
+        }
+      })
+    ]
+
+    listSimple.mockResolvedValue({ code: 1, flows: [] })
+    setSimple.mockResolvedValue({ code: 1 })
+
+    await expect(
+      store.deployProject({
+        projectId: "project-1",
+        nodeId: "12",
+        trigger: {
+          ...createTrigger(),
+          type: "event",
+          eventName: "demo.created",
+          dedupWindowMs: 1500
+        },
+        overwrite: false
+      })
+    ).resolves.toEqual({ overwriteRequired: false })
+
+    expect(setSimple).toHaveBeenCalledWith(
+      7,
+      9,
+      expect.objectContaining({
+        executor_node: 12,
+        trigger: {
+          type: "event",
+          event_mode: "publish",
+          event_name: "demo.created",
+          dedup_window_ms: 1500
+        }
+      })
+    )
+  })
+
+  it("rejects unsupported interval and cron dedup windows before deploy", async () => {
+    store.state.projects = [
+      createProjectRecord({
+        graph: {
+          nodes: [{ id: "node-1", kind: "call", spec: { method: "demo::call", args_template: {} } }],
+          edges: []
+        }
+      })
+    ]
+    listSimple.mockResolvedValue({ code: 1, flows: [] })
+
+    await expect(
+      store.deployProject({
+        projectId: "project-1",
+        nodeId: "12",
+        trigger: {
+          ...createTrigger(),
+          type: "interval",
+          dedupWindowMs: 1
+        },
+        overwrite: false
+      })
+    ).rejects.toThrow("Interval trigger does not support dedup window.")
+
+    await expect(
+      store.deployProject({
+        projectId: "project-1",
+        nodeId: "12",
+        trigger: {
+          ...createTrigger(),
+          type: "cron",
+          cronExpr: "0 */5 * * *",
+          dedupWindowMs: 1
+        },
+        overwrite: false
+      })
+    ).rejects.toThrow("Cron trigger does not support dedup window.")
+
+    expect(setSimple).not.toHaveBeenCalled()
   })
 })

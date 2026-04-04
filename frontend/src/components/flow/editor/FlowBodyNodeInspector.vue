@@ -129,6 +129,8 @@ const normalizeSourceKind = (raw: string): FlowBindingSourceKind => {
     case "trigger":
     case "flow_meta":
     case "run_meta":
+    case "loop_item":
+    case "loop_index":
     case "flow_var":
       return raw
     default:
@@ -320,7 +322,7 @@ const supportsFormMode = computed(() =>
             </div>
           </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
+          <div class="grid gap-4 md:grid-cols-3">
             <div>
               <label :for="inspectorFieldId('retry')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Retry") }}
@@ -328,6 +330,20 @@ const supportsFormMode = computed(() =>
               <input
                 :id="inspectorFieldId('retry')"
                 v-model.number="selectedNode.retry"
+                type="number"
+                min="0"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                @blur="emit('commit-history')"
+              />
+            </div>
+
+            <div>
+              <label :for="inspectorFieldId('retry-backoff-ms')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Retry Backoff (ms)") }}
+              </label>
+              <input
+                :id="inspectorFieldId('retry-backoff-ms')"
+                v-model.number="selectedNode.retryBackoffMs"
                 type="number"
                 min="0"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -675,6 +691,8 @@ const supportsFormMode = computed(() =>
                         <option value="trigger">{{ t("Trigger") }}</option>
                         <option value="flow_meta">{{ t("Flow Meta") }}</option>
                         <option value="run_meta">{{ t("Run Meta") }}</option>
+                        <option value="loop_item">{{ t("Loop Item") }}</option>
+                        <option value="loop_index">{{ t("Loop Index") }}</option>
                         <option value="flow_var">{{ t("Flow Local Var") }}</option>
                       </select>
                     </div>
@@ -754,6 +772,23 @@ const supportsFormMode = computed(() =>
                       <option v-if="selectedNode.transformSource.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
                       <option v-if="selectedNode.transformSource.sourceKind === 'run_meta'" value="run_id">run_id</option>
                     </select>
+                  </div>
+
+                  <div v-else-if="selectedNode.transformSource.sourceKind === 'loop_item'" class="mt-3">
+                    <label :for="sourceInputId('transform-source', 'loop-item-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ t("Loop Item Path") }}
+                    </label>
+                    <input
+                      :id="sourceInputId('transform-source', 'loop-item-path')"
+                      v-model="selectedNode.transformSource.path"
+                      class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                      placeholder="/payload/id"
+                      @blur="emit('commit-history')"
+                    />
+                  </div>
+
+                  <div v-else-if="selectedNode.transformSource.sourceKind === 'loop_index'" class="mt-3 rounded-lg border border-border/70 bg-background/90 px-3 py-3 text-xs text-muted-foreground">
+                    {{ t("Loop index is the current foreach iteration index and does not take a JSON Pointer path.") }}
                   </div>
 
                   <div v-else-if="selectedNode.transformSource.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
@@ -967,6 +1002,8 @@ const supportsFormMode = computed(() =>
                           <option value="trigger">{{ t("Trigger") }}</option>
                           <option value="flow_meta">{{ t("Flow Meta") }}</option>
                           <option value="run_meta">{{ t("Run Meta") }}</option>
+                          <option value="loop_item">{{ t("Loop Item") }}</option>
+                          <option value="loop_index">{{ t("Loop Index") }}</option>
                           <option value="flow_var">{{ t("Flow Local Var") }}</option>
                         </select>
                       </div>
@@ -1035,6 +1072,23 @@ const supportsFormMode = computed(() =>
                         <option v-if="branchCase.source.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
                         <option v-if="branchCase.source.sourceKind === 'run_meta'" value="run_id">run_id</option>
                       </select>
+                    </div>
+
+                    <div v-else-if="branchCase.source.sourceKind === 'loop_item'" class="mt-3">
+                      <label :for="sourceInputId(`branch-case-${branchCase.key}`, 'loop-item-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Loop Item Path") }}
+                      </label>
+                      <input
+                        :id="sourceInputId(`branch-case-${branchCase.key}`, 'loop-item-path')"
+                        v-model="branchCase.source.path"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="/payload/id"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+
+                    <div v-else-if="branchCase.source.sourceKind === 'loop_index'" class="mt-3 rounded-lg border border-border/70 bg-background/90 px-3 py-3 text-xs text-muted-foreground">
+                      {{ t("Loop index is the current foreach iteration index and does not take a JSON Pointer path.") }}
                     </div>
 
                     <div v-else-if="branchCase.source.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
@@ -1119,6 +1173,8 @@ const supportsFormMode = computed(() =>
                       <option value="trigger">{{ t("Trigger") }}</option>
                       <option value="flow_meta">{{ t("Flow Meta") }}</option>
                       <option value="run_meta">{{ t("Run Meta") }}</option>
+                      <option value="loop_item">{{ t("Loop Item") }}</option>
+                      <option value="loop_index">{{ t("Loop Index") }}</option>
                       <option value="flow_var">{{ t("Flow Local Var") }}</option>
                     </select>
                   </div>
@@ -1198,6 +1254,23 @@ const supportsFormMode = computed(() =>
                     <option v-if="selectedNode.foreachSource.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
                     <option v-if="selectedNode.foreachSource.sourceKind === 'run_meta'" value="run_id">run_id</option>
                   </select>
+                </div>
+
+                <div v-else-if="selectedNode.foreachSource.sourceKind === 'loop_item'" class="mt-3">
+                  <label :for="sourceInputId('foreach-source', 'loop-item-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {{ t("Loop Item Path") }}
+                  </label>
+                  <input
+                    :id="sourceInputId('foreach-source', 'loop-item-path')"
+                    v-model="selectedNode.foreachSource.path"
+                    class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                    placeholder="/payload/id"
+                    @blur="emit('commit-history')"
+                  />
+                </div>
+
+                <div v-else-if="selectedNode.foreachSource.sourceKind === 'loop_index'" class="mt-3 rounded-lg border border-border/70 bg-background/90 px-3 py-3 text-xs text-muted-foreground">
+                  {{ t("Loop index is the current foreach iteration index and does not take a JSON Pointer path.") }}
                 </div>
 
                 <div v-else-if="selectedNode.foreachSource.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">
@@ -1440,6 +1513,8 @@ const supportsFormMode = computed(() =>
                           <option value="trigger">{{ t("Trigger") }}</option>
                           <option value="flow_meta">{{ t("Flow Meta") }}</option>
                           <option value="run_meta">{{ t("Run Meta") }}</option>
+                          <option value="loop_item">{{ t("Loop Item") }}</option>
+                          <option value="loop_index">{{ t("Loop Index") }}</option>
                           <option value="flow_var">{{ t("Flow Local Var") }}</option>
                         </select>
                       </div>
@@ -1508,6 +1583,23 @@ const supportsFormMode = computed(() =>
                         <option v-if="binding.sourceKind === 'flow_meta'" value="flow_id">flow_id</option>
                         <option v-if="binding.sourceKind === 'run_meta'" value="run_id">run_id</option>
                       </select>
+                    </div>
+
+                    <div v-else-if="binding.sourceKind === 'loop_item'" class="mt-3">
+                      <label :for="composeBindingInputId(index, 'loop-item-path')" class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ t("Loop Item Path") }}
+                      </label>
+                      <input
+                        :id="composeBindingInputId(index, 'loop-item-path')"
+                        v-model="binding.path"
+                        class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        placeholder="/payload/id"
+                        @blur="emit('commit-history')"
+                      />
+                    </div>
+
+                    <div v-else-if="binding.sourceKind === 'loop_index'" class="mt-3 rounded-lg border border-border/70 bg-background/90 px-3 py-3 text-xs text-muted-foreground">
+                      {{ t("Loop index is the current foreach iteration index and does not take a JSON Pointer path.") }}
                     </div>
 
                     <div v-else-if="binding.sourceKind === 'flow_var'" class="mt-3 grid gap-3 md:grid-cols-2">

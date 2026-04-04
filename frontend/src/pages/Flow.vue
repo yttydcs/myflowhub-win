@@ -33,7 +33,8 @@ const metaDialogOpen = ref(false)
 const metaForm = reactive({
   projectId: "",
   projectName: "",
-  flowId: ""
+  flowId: "",
+  maxActiveRuns: ""
 })
 
 const deployDialogOpen = ref(false)
@@ -49,6 +50,7 @@ const deployForm = reactive({
     eventMode: "publish",
     eventName: "",
     eventTopic: "",
+    dedupWindowMs: 0,
     varOwner: 0,
     varName: ""
   } as FlowTriggerDraft
@@ -93,6 +95,7 @@ const normalizeTriggerDraft = (trigger: FlowTriggerDraft) => ({
   eventMode: trigger.eventMode,
   eventName: trigger.eventName,
   eventTopic: trigger.eventTopic,
+  dedupWindowMs: trigger.dedupWindowMs,
   varOwner: trigger.varOwner,
   varName: trigger.varName
 })
@@ -163,6 +166,7 @@ const openMetaDialog = (projectId: string) => {
   metaForm.projectId = project.projectId
   metaForm.projectName = project.name
   metaForm.flowId = project.flowId
+  metaForm.maxActiveRuns = project.maxActiveRuns === null ? "" : String(project.maxActiveRuns)
   metaDialogOpen.value = true
 }
 
@@ -171,7 +175,8 @@ const saveMeta = async () => {
     await flowProjects.updateProjectMeta({
       projectId: metaForm.projectId,
       name: metaForm.projectName,
-      flowId: metaForm.flowId
+      flowId: metaForm.flowId,
+      maxActiveRuns: metaForm.maxActiveRuns
     })
     metaDialogOpen.value = false
     toast.success(t("Project metadata saved."))
@@ -534,9 +539,21 @@ onMounted(async () => {
               :placeholder="t('Required')"
             />
           </div>
+          <div>
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Active Runs") }}</label>
+            <input
+              v-model="metaForm.maxActiveRuns"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              :placeholder="t('Blank keeps legacy behavior; 0 means unlimited')"
+            />
+          </div>
         </div>
         <p class="mt-4 text-xs text-muted-foreground">
-          {{ t("flow_id must stay unique among local projects because it is the deployment identity used on target nodes.") }}
+          {{
+            t(
+              "flow_id must stay unique among local projects because it is the deployment identity used on target nodes. max_active_runs keeps blank vs 0 distinct: blank preserves legacy behavior, 0 means unlimited."
+            )
+          }}
         </p>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="metaDialogOpen = false">{{ t("Cancel") }}</Button>
@@ -622,6 +639,15 @@ onMounted(async () => {
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
+              <input
+                v-model.number="deployForm.trigger.dedupWindowMs"
+                type="number"
+                min="0"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
           </template>
 
           <template v-else>
@@ -641,11 +667,24 @@ onMounted(async () => {
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               />
             </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
+              <input
+                v-model.number="deployForm.trigger.dedupWindowMs"
+                type="number"
+                min="0"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
           </template>
         </div>
 
         <p class="mt-4 text-xs text-muted-foreground">
-          {{ t("Deployment only sends flow.set; it does not trigger run. Trigger edits here will be saved back as project default.") }}
+          {{
+            t(
+              "Deployment only sends flow.set; it does not trigger run. Trigger edits here will be saved back as project default. dedup_window_ms only applies to event and variable-changed triggers."
+            )
+          }}
         </p>
 
         <div class="mt-6 flex justify-end gap-2">

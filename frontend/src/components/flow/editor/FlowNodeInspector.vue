@@ -390,7 +390,7 @@ const structuredDetailFields = computed(() =>
             </div>
           </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
+          <div class="grid gap-4 md:grid-cols-3">
             <div>
               <label :for="inspectorFieldId('retry')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Retry") }}
@@ -398,6 +398,20 @@ const structuredDetailFields = computed(() =>
               <input
                 :id="inspectorFieldId('retry')"
                 v-model.number="selectedNode.retry"
+                type="number"
+                min="0"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                @blur="emit('commit-history')"
+              />
+            </div>
+
+            <div>
+              <label :for="inspectorFieldId('retry-backoff-ms')" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Retry Backoff (ms)") }}
+              </label>
+              <input
+                :id="inspectorFieldId('retry-backoff-ms')"
+                v-model.number="selectedNode.retryBackoffMs"
                 type="number"
                 min="0"
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"

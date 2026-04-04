@@ -10,6 +10,7 @@ const props = defineProps<{
   open: boolean
   activeBindingField: VisualFieldModel | null
   bindableAncestorNodeOptions: string[]
+  allowLoopSources?: boolean
   fieldBindingDraft: {
     sourceKind: FlowBindingSourceKind
     nodeId: string
@@ -36,6 +37,7 @@ const nodeResultPathInputId = "flow-field-binding-result-path"
 const triggerPathInputId = "flow-field-binding-trigger-path"
 const flowVarNameInputId = "flow-field-binding-flow-var-name"
 const flowVarPathInputId = "flow-field-binding-flow-var-path"
+const loopItemPathInputId = "flow-field-binding-loop-item-path"
 const requiredBindingInputId = "flow-field-binding-required"
 
 const draftSourcePreview = computed(() => {
@@ -57,6 +59,17 @@ const draftSourcePreview = computed(() => {
       return describeFieldBinding({
         kind: "run_meta",
         field: "run_id",
+        required: props.fieldBindingDraft.required
+      })
+    case "loop_item":
+      return describeFieldBinding({
+        kind: "loop_item",
+        path: props.fieldBindingDraft.path.trim(),
+        required: props.fieldBindingDraft.required
+      })
+    case "loop_index":
+      return describeFieldBinding({
+        kind: "loop_index",
         required: props.fieldBindingDraft.required
       })
     case "flow_var":
@@ -84,6 +97,10 @@ const sourceHelpText = computed(() => {
       return t("Read stable flow metadata without a JSON path.")
     case "run_meta":
       return t("Read stable run metadata without a JSON path.")
+    case "loop_item":
+      return t("Read the current foreach loop item. Optional JSON Pointer reads a nested field from the item.")
+    case "loop_index":
+      return t("Read the current foreach loop index as a number.")
     case "flow_var":
       return t("Read a flow-local variable from the current run. This is not varstore.")
     case "trigger":
@@ -164,6 +181,8 @@ const canApply = computed(() => {
             <option value="trigger">{{ t("Trigger") }}</option>
             <option value="flow_meta">{{ t("Flow Meta") }}</option>
             <option value="run_meta">{{ t("Run Meta") }}</option>
+            <option v-if="allowLoopSources" value="loop_item">{{ t("Loop Item") }}</option>
+            <option v-if="allowLoopSources" value="loop_index">{{ t("Loop Index") }}</option>
             <option value="flow_var">{{ t("Flow Local Var") }}</option>
           </select>
         </div>
@@ -262,12 +281,29 @@ const canApply = computed(() => {
           </div>
         </div>
 
+        <div v-else-if="fieldBindingDraft.sourceKind === 'loop_item'">
+          <label :for="loopItemPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Loop Item Path (Optional)") }}
+          </label>
+          <input
+            :id="loopItemPathInputId"
+            v-model="fieldBindingDraft.path"
+            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            placeholder="/payload/id"
+          />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            {{ t("Path can stay empty to read the whole current loop item.") }}
+          </p>
+        </div>
+
         <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
           {{
             fieldBindingDraft.sourceKind === "flow_meta"
               ? t("This field will read from flow meta: flow_id.")
               : fieldBindingDraft.sourceKind === "run_meta"
                 ? t("This field will read from run meta: run_id.")
+                : fieldBindingDraft.sourceKind === "loop_index"
+                  ? t("This field will read the current loop index.")
                 : t("This field will read from a flow-local variable in the current run.")
           }}
         </div>

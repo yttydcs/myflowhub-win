@@ -6,6 +6,7 @@
 - 本规范同时覆盖 `foreach.body` 会话内 `call/compose/transform/set_var/branch/foreach/subflow` 的最小 form/json authoring 契约。
 - 本规范不修改 Flow 运行时协议、DAG 校验规则或 `args_template + inputs` 的执行语义。
 - 本规范同时覆盖项目部署对话框中的 trigger authoring，以及 `branch` 出边 `edge.case` 的最小编辑契约。
+- 本规范同时覆盖 node-level `retry_backoff_ms`、flow-level `max_active_runs`，以及 trigger `dedup_window_ms` 的 Win-side authoring 契约。
 
 ## Interfaces / Contracts
 
@@ -27,6 +28,8 @@
 
 - `cron` 当前不扩展 timezone 字段。
 - 严格保存路径中，空 `cron` 表达式必须显式报错，不得静默回退到 `interval`。
+- `event` / `var_changed` trigger 允许 authoring `dedup_window_ms`；`interval` / `cron` 在严格保存路径中若 `dedup_window_ms > 0` 必须显式失败。
+- flow / project metadata 必须支持 `max_active_runs`；本地草稿中必须保留“未设置”和 `0` 的差异，导出 wire 时仅在非 `null` 时写入 `max_active_runs`。
 
 ### 1. 普通模式适用范围
 
@@ -49,6 +52,7 @@
   - `foreach`
   - `subflow`
 - Inspector 的 `kind` 选择器必须支持上述节点。
+- 所有根图与 body inspector 必须暴露 `retry_backoff_ms`，并把它稳定映射到 node wire 的 `retry_backoff_ms`。
 - 节点切换时沿用现有最小迁移策略：
   - `compose` / `set_var` 共享 `template + inputs`
   - `call` 与 `compose` / `set_var` 切换时，尽量复用已有 JSON 模板内容
@@ -168,9 +172,11 @@ type MethodVisualSchema = {
   - `body` 是 JSON object
   - `body.nodes` / `body.edges` 是数组
   - `result_node_id` 非空
+  - 严格保存时 `body` 必须递归通过 DAG 校验，且 `result_node_id` 必须存在于 body graph
 - `subflow` 普通模式必须校验：
   - `flow_id` 是 UUID
   - `input_template` 是 JSON object
+  - 若当前 flow_id 已知，则 `flow_id` 不得等于当前 flow_id
 - 当 `transform`、`branch`、`foreach`、`subflow` 的高级 JSON 含有当前普通模式无法表达的额外字段时，切回普通模式必须显式失败。
 
 ### 6.2 Foreach body 保留契约
@@ -202,6 +208,11 @@ type MethodVisualSchema = {
 - body 会话中的 `branch` ordinary mode 继续复用 case 列表与 `default_case` 编辑契约。
 - body 会话中的 `foreach` ordinary mode 只覆盖外层字段；其嵌套 `body` 继续以内联 JSON 文本维护，不提供递归可视化 body 会话。
 - body 会话中的 `node_result` source/binding 祖先集合必须基于当前 body 子图拓扑计算，不能引用根图无关节点。
+- body 会话中的 source / binding 编辑必须额外暴露：
+  - `loop_item`
+  - `loop_index`
+- `loop_item` / `loop_index` 只允许出现在 `foreach.body`；根图 editor 和 field-binding dialog 不得暴露它们。
+- `loop_index` 不接受 `path`；若高级 JSON 携带非空 `path`，必须回退到 `Advanced JSON` 或在严格保存时显式失败。
 
 ### 7. 引用来源契约
 
@@ -221,6 +232,12 @@ type MethodVisualSchema = {
   - 必须填写 `name`
   - `path` 可选，默认根变量值
   - UI 需明确提示其语义为“当前 flow run 的局部变量”，不是 `varstore`
+- `loop_item`
+  - 仅允许在 `foreach.body` 内出现
+  - `path` 可选，默认当前 item 根值
+- `loop_index`
+  - 仅允许在 `foreach.body` 内出现
+  - 不接受 `path`
 
 `flow_var` 不仅用于 `call` 字段级绑定，也必须用于 `compose` / `set_var` 的手工 binding 编辑器。
 
@@ -315,6 +332,8 @@ type VisualBindingSource =
   | { kind: "trigger"; path: string; required: boolean }
   | { kind: "flow_meta"; field: "flow_id"; required: boolean }
   | { kind: "run_meta"; field: "run_id"; required: boolean }
+  | { kind: "loop_item"; path: string; required: boolean }
+  | { kind: "loop_index"; required: boolean }
   | { kind: "flow_var"; name: string; path: string; required: boolean }
 
 type FieldVisualState = {
@@ -325,7 +344,7 @@ type FieldVisualState = {
 
 type FlowInputBindingDraft = {
   to: string
-  sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var"
+  sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "loop_item" | "loop_index" | "flow_var"
   nodeId: string
   path: string
   field: string
@@ -337,6 +356,7 @@ type FlowNodeDraft = {
   kind: "call" | "compose" | "transform" | "set_var" | "branch" | "foreach" | "subflow"
   method: string
   target: number
+  retryBackoffMs: number
   argsTemplate: string
   composeTemplate: string
   setVarName: string
@@ -344,7 +364,7 @@ type FlowNodeDraft = {
   transformExprMode: "literal" | "source" | "op" | "object" | "array"
   transformLiteralJson: string
   transformSource: {
-    sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var"
+    sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "loop_item" | "loop_index" | "flow_var"
     nodeId: string
     path: string
     field: string
@@ -359,7 +379,7 @@ type FlowNodeDraft = {
     key: string
     name: string
     source: {
-      sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var"
+      sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "loop_item" | "loop_index" | "flow_var"
       nodeId: string
       path: string
       field: string
@@ -370,7 +390,7 @@ type FlowNodeDraft = {
   }>
   branchDefaultCase: string
   foreachSource: {
-    sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "flow_var"
+    sourceKind: "" | "node_result" | "trigger" | "flow_meta" | "run_meta" | "loop_item" | "loop_index" | "flow_var"
     nodeId: string
     path: string
     field: string
@@ -391,6 +411,7 @@ type FlowTriggerDraft = {
   eventMode: "publish" | "received" | "any"
   eventName: string
   eventTopic: string
+  dedupWindowMs: number
   varOwner: number
   varName: string
 }
@@ -404,10 +425,17 @@ type FlowEdgeDraft = {
 
 ### 4. Trigger / Edge wire mapping
 
+- flow metadata 在保存时必须支持：
+  - `max_active_runs`
+  - `null` 表示省略该字段
+  - `0` 必须被稳定保留为 `max_active_runs: 0`
+- node metadata 在保存时必须支持：
+  - `retry_backoff_ms`
 - `interval` 继续映射为 `{ type: "interval", every_ms }`
 - `cron` 映射为 `{ type: "cron", cron }`
-- `event` 继续映射为 `{ type: "event", event_mode, event_name?, event_topic? }`
-- `var_changed` 继续映射为 `{ type: "var_changed", var_owner?, var_name? }`
+- `event` 继续映射为 `{ type: "event", event_mode, event_name?, event_topic?, dedup_window_ms? }`
+- `var_changed` 继续映射为 `{ type: "var_changed", var_owner?, var_name?, dedup_window_ms? }`
+- `interval` / `cron` 在严格保存路径中不得导出 `dedup_window_ms > 0`
 - graph edge 在保存时必须保留 `case`：
 
 ```json
@@ -428,8 +456,14 @@ type FlowEdgeDraft = {
   - 前端立即提示，不写回无效配置
 - `node_result` 非祖先引用：
   - 前端立即拦截
+- `loop_item` / `loop_index` 出现在根图，或 `loop_index` 携带 `path`：
+  - 前端立即拦截或回退 `Advanced JSON`
 - `flow_var.name` 为空：
   - 前端立即提示，不写回无效配置
+- `retry_backoff_ms`、`max_active_runs` 或 `dedup_window_ms` 非法：
+  - 前端立即提示，不写回无效配置
+- `subflow.flow_id` 直接指向当前 flow，或当前本地项目图可判定递归链：
+  - 前端在保存 / 部署前显式失败
 - 当前节点 spec 超出普通模式表达范围：
   - 给出明确原因
   - 仅保留 `Advanced JSON`
@@ -455,3 +489,4 @@ type FlowEdgeDraft = {
 ## Related Changes
 
 - [2026-03-22_win-flow-data-dag-editor.md](../change/2026-03-22_win-flow-data-dag-editor.md)
+- [2026-04-04_win-flow-p0-authoring-closure.md](../change/2026-04-04_win-flow-p0-authoring-closure.md)

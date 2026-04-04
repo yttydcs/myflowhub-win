@@ -29,8 +29,14 @@
   - flow meta
   - run meta
   - flow local var
+- `foreach.body` 内的最小 ordinary mode source / binding 编辑还必须支持：
+  - `loop_item`
+  - `loop_index`
 - 编辑器必须支持创建 `set_var` 节点。
 - 编辑器必须支持 `trigger.type=cron` 的读取、编辑和保存。
+- 节点 authoring 必须支持 `retry_backoff_ms`。
+- flow / project metadata authoring 必须支持 `max_active_runs`。
+- `event` / `var_changed` trigger authoring 必须支持 `dedup_window_ms`，且 `interval` / `cron` 配置 `dedup_window_ms > 0` 时必须显式失败。
 - `set_var` 节点必须支持在普通模式下编辑：
   - 局部变量名
   - `template`
@@ -76,6 +82,7 @@
 - `foreach.body` 内 `branch` 节点必须支持 case 列表与 `default_case` 的最小普通模式 authoring。
 - `foreach.body` 内 `foreach` 节点必须支持外层字段普通模式 authoring，但其嵌套 `body` 继续以内联 JSON 文本维护。
 - `foreach.body` 的可视化编辑不能引入第二套持久化 graph 真相源；所有变更都必须同步回父节点的 `body` JSON。
+- 前端严格保存路径必须拒绝 `subflow.flow_id` 直接指向当前 flow；若本地 project graph 已足够判定递归链，也必须在保存前显式拒绝。
 - `branch` 的出边必须支持最小 `edge.case` 编辑，且保存时不得丢失。
 - `compose` / `set_var` 的 binding 编辑器都必须支持 `flow_var` 作为来源。
 - 普通模式编辑结果必须稳定映射回底层 `args_template + inputs`。
@@ -107,11 +114,15 @@
 - 用户新增一个 `set_var` 节点，为局部变量填写名字，并从 trigger、祖先节点结果或已有 flow local var 物化变量值。
 - 用户在 `compose` 或 `set_var` 节点里手动维护 bindings，并选择 flow local var 作为来源。
 - 用户在项目部署对话框中把 trigger 改为 `cron`，填写表达式后直接部署到目标节点。
+- 用户在 `foreach.body` 里需要直接读取当前 item 或当前 index，而不是手写底层 `source.kind`。
+- 用户需要为节点配置固定退避时间，为 flow 配置并发上限，并且要求 `0` 与“未设置”在本地草稿里仍可区分。
+- 用户为 `event` / `var_changed` flow 配置 dedup window，并希望在不支持的 trigger 组合上看到本地显式报错。
 - 用户读取已有 `transform/branch/subflow` flow 时，可以在普通模式下直接维护关键字段，而不是被迫手写整段 spec。
 - 用户读取已有 `foreach` flow 时，可以在普通模式下维护外层字段，并进入显式 body 编辑会话可视化维护内部 DAG。
 - 用户在 `foreach.body` 里选中 `call` 节点后，可以直接选择 capability 方法，并为字段填写 literal 或绑定上游来源。
 - 用户在 `foreach.body` 里选中 `transform/branch/set_var/subflow/compose` 节点后，可以直接在普通模式下维护关键字段，而不是回到整段父节点 JSON。
 - 用户在 `foreach.body` 里选中嵌套 `foreach` 节点后，可以继续维护外层字段，但其内层 `body` 仍保持 JSON 文本边界。
+- 用户保存包含 `subflow` 的本地 project 时，若当前 project 图和本地已知项目图已经能拼出递归调用链，前端应在写盘前直接阻止保存。
 - 用户为 `branch` 节点的出边填写 `edge.case`，保存后路由语义保持不变。
 - 用户遇到复杂方法或高级配置时，退回 `Advanced JSON`。
 - 用户切换方法后，编辑器按该方法重新生成可编辑字段。
@@ -163,6 +174,11 @@
 29. body 编辑会话中的 `call` 节点必须允许打开方法选择器，并把选中的 `method + target` 稳定写回 body 节点草稿。
 30. body 编辑会话中的 `call` 字段编辑必须复用与根图相同的 schema-driven ordinary mode 规则，稳定写回 `args_template + inputs`。
 31. body 编辑会话中的 bindings/source 校验必须继续遵守现有来源契约，其中 `node_result` 仅允许引用当前 body 子图内的祖先节点。
+32. `foreach.body` 中的 source / binding 编辑必须暴露 `loop_item` 与 `loop_index`；根图不得暴露或接受这两个来源。
+33. 节点 authoring 必须支持 `retry_backoff_ms`，并在严格保存时拒绝负数。
+34. flow / project metadata authoring 必须支持 `max_active_runs`，并在本地草稿与 wire 间保留“未设置”与 `0` 的区别。
+35. `event` / `var_changed` trigger 必须支持 `dedup_window_ms`；`interval` / `cron` 上若 `dedup_window_ms > 0`，前端必须在保存 / 部署前显式失败。
+36. 前端严格保存路径必须拒绝 `subflow.flow_id == current flow_id`；若当前本地项目集足以判定递归 subflow 链，也必须在保存前拒绝。
 
 ## Non-functional Requirements
 
@@ -195,8 +211,12 @@
 - `flow_var.name` 为空或不合法。
 - `branch` 出边未保留 `edge.case` 导致路由语义丢失。
 - `branch.default_case` 指向不存在 case。
+- `loop_index` 被错误地配置了 JSON Pointer path。
 - `transform.expr` 若超出当前顶层模式支持范围，切回普通模式必须显式失败。
 - `subflow.flow_id` 非 UUID。
+- `subflow.flow_id` 指向当前 flow，或当前 project 与本地已知 project 之间形成递归调用链。
+- `retry_backoff_ms`、`max_active_runs` 或 `dedup_window_ms` 为负数。
+- `interval` / `cron` trigger 被错误地配置了 `dedup_window_ms > 0`。
 - `foreach.body` 若被错误表单化展开，会造成嵌套 graph 丢失。
 - `foreach.body` 若在可视化编辑期间脱离父节点 JSON 真相源，保存、恢复草稿或撤销重做会丢失内层改动。
 - 用户把节点切换到 `set_var` 后，原有 `compose` / `call` 模板如何最小迁移。
@@ -217,6 +237,10 @@
 11. 编辑器可通过显式 body 编辑会话可视化维护 `foreach.body` 的内部 DAG，并在保存时写回父节点 `body`。
 12. `branch` 的 `edge.case` 在读取、编辑、保存后保持不丢失。
 13. 编辑器可在 `foreach.body` 中以普通模式读取并保存 `compose/transform/set_var/branch/foreach/subflow` 的最小支持字段。
+14. 根图不会读取或保存 `loop_item` / `loop_index`，而 `foreach.body` 可以稳定读取、编辑并严格保存它们。
+15. 节点的 `retry_backoff_ms` 与 flow 的 `max_active_runs` 可在 Win 中读取、编辑、保存，并保持 `0` 与“未设置”的预期语义。
+16. `event` / `var_changed` 的 `dedup_window_ms` 可在 Win 中 authoring 并写回 wire；`interval` / `cron` 非法组合会在本地显式失败。
+17. Win 会在保存前拒绝直接 subflow 自调用和当前本地项目集可判定的递归 subflow 链。
 
 ## Related Specs
 
@@ -227,3 +251,4 @@
 ## Related Changes
 
 - [2026-03-22_win-flow-data-dag-editor.md](../change/2026-03-22_win-flow-data-dag-editor.md)
+- [2026-04-04_win-flow-p0-authoring-closure.md](../change/2026-04-04_win-flow-p0-authoring-closure.md)
