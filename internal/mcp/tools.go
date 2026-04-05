@@ -47,9 +47,9 @@ type Backend interface {
 	FlowSet(ctx context.Context, sourceID, targetID uint32, req protoflow.SetReq) (protoflow.SetResp, error)
 	FlowDelete(ctx context.Context, sourceID, targetID uint32, req flowsvc.DeleteReq) (flowsvc.DeleteResp, error)
 	FlowRun(ctx context.Context, sourceID, targetID uint32, req protoflow.RunReq) (protoflow.RunResp, error)
-	FlowCancelRun(ctx context.Context, sourceID, targetID uint32, req flowsvc.CancelRunReq) (flowsvc.CancelRunResp, error)
+	FlowCancelRun(ctx context.Context, sourceID, targetID uint32, req protoflow.CancelRunReq) (protoflow.CancelRunResp, error)
 	FlowStatus(ctx context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error)
-	FlowListRuns(ctx context.Context, sourceID, targetID uint32, req flowsvc.ListRunsReq) (flowsvc.ListRunsResp, error)
+	FlowListRuns(ctx context.Context, sourceID, targetID uint32, req protoflow.ListRunsReq) (protoflow.ListRunsResp, error)
 	FlowList(ctx context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error)
 	FlowGet(ctx context.Context, sourceID, targetID uint32, req protoflow.GetReq) (protoflow.GetResp, error)
 	VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error)
@@ -1794,16 +1794,16 @@ func normalizeFlowRunReq(args flowRunArgs, route flowRoute) (protoflow.RunReq, e
 	}, nil
 }
 
-func normalizeFlowCancelRunReq(args flowCancelRunArgs, route flowRoute) (flowsvc.CancelRunReq, error) {
+func normalizeFlowCancelRunReq(args flowCancelRunArgs, route flowRoute) (protoflow.CancelRunReq, error) {
 	flowID := strings.TrimSpace(args.FlowID)
 	if flowID == "" {
-		return flowsvc.CancelRunReq{}, errors.New("flow_id is required")
+		return protoflow.CancelRunReq{}, errors.New("flow_id is required")
 	}
 	runID := strings.TrimSpace(args.RunID)
 	if runID == "" {
-		return flowsvc.CancelRunReq{}, errors.New("run_id is required")
+		return protoflow.CancelRunReq{}, errors.New("run_id is required")
 	}
-	return flowsvc.CancelRunReq{
+	return protoflow.CancelRunReq{
 		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
@@ -1826,19 +1826,19 @@ func normalizeFlowStatusReq(args flowStatusArgs, route flowRoute) (protoflow.Sta
 	}, nil
 }
 
-func normalizeFlowListRunsReq(args flowListRunsArgs, route flowRoute) (flowsvc.ListRunsReq, error) {
+func normalizeFlowListRunsReq(args flowListRunsArgs, route flowRoute) (protoflow.ListRunsReq, error) {
 	flowID := strings.TrimSpace(args.FlowID)
 	if flowID == "" {
-		return flowsvc.ListRunsReq{}, errors.New("flow_id is required")
+		return protoflow.ListRunsReq{}, errors.New("flow_id is required")
 	}
-	req := flowsvc.ListRunsReq{
+	req := protoflow.ListRunsReq{
 		ReqID:        ensureReqID(args.ReqID),
 		OriginNode:   route.SourceID,
 		ExecutorNode: route.ExecutorNode,
 		FlowID:       flowID,
 	}
 	if args.Limit != nil {
-		req.Limit = int(*args.Limit)
+		req.Limit = *args.Limit
 	}
 	return req, nil
 }

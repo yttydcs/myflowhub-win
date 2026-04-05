@@ -127,7 +127,7 @@ type fakeBackend struct {
 	flowCancelRunArgs struct {
 		sourceID uint32
 		targetID uint32
-		req      flowsvc.CancelRunReq
+		req      protoflow.CancelRunReq
 		called   bool
 	}
 	flowStatusArgs struct {
@@ -139,7 +139,7 @@ type fakeBackend struct {
 	flowListRunsArgs struct {
 		sourceID uint32
 		targetID uint32
-		req      flowsvc.ListRunsReq
+		req      protoflow.ListRunsReq
 		called   bool
 	}
 	flowListArgs struct {
@@ -370,14 +370,14 @@ func (f *fakeBackend) FlowRun(_ context.Context, sourceID, targetID uint32, req 
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
 	return protoflow.RunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: "run-1"}, nil
 }
-func (f *fakeBackend) FlowCancelRun(_ context.Context, sourceID, targetID uint32, req flowsvc.CancelRunReq) (flowsvc.CancelRunResp, error) {
+func (f *fakeBackend) FlowCancelRun(_ context.Context, sourceID, targetID uint32, req protoflow.CancelRunReq) (protoflow.CancelRunResp, error) {
 	f.flowCancelRunArgs = struct {
 		sourceID uint32
 		targetID uint32
-		req      flowsvc.CancelRunReq
+		req      protoflow.CancelRunReq
 		called   bool
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
-	return flowsvc.CancelRunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "cancelled"}, nil
+	return protoflow.CancelRunResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "cancelled"}, nil
 }
 func (f *fakeBackend) FlowStatus(_ context.Context, sourceID, targetID uint32, req protoflow.StatusReq) (protoflow.StatusResp, error) {
 	f.flowStatusArgs = struct {
@@ -388,19 +388,19 @@ func (f *fakeBackend) FlowStatus(_ context.Context, sourceID, targetID uint32, r
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
 	return protoflow.StatusResp{Code: 1, ReqID: req.ReqID, FlowID: req.FlowID, RunID: req.RunID, Status: "succeeded"}, nil
 }
-func (f *fakeBackend) FlowListRuns(_ context.Context, sourceID, targetID uint32, req flowsvc.ListRunsReq) (flowsvc.ListRunsResp, error) {
+func (f *fakeBackend) FlowListRuns(_ context.Context, sourceID, targetID uint32, req protoflow.ListRunsReq) (protoflow.ListRunsResp, error) {
 	f.flowListRunsArgs = struct {
 		sourceID uint32
 		targetID uint32
-		req      flowsvc.ListRunsReq
+		req      protoflow.ListRunsReq
 		called   bool
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
-	return flowsvc.ListRunsResp{
+	return protoflow.ListRunsResp{
 		Code:         1,
 		ReqID:        req.ReqID,
 		FlowID:       req.FlowID,
 		ExecutorNode: req.ExecutorNode,
-		Runs: []flowsvc.RunSummary{
+		Runs: []protoflow.RunSummary{
 			{RunID: "run-1", Status: "running"},
 		},
 	}, nil
