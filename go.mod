@@ -6,11 +6,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/yttydcs/myflowhub-core v0.4.9
-	github.com/yttydcs/myflowhub-proto v0.1.5
+	github.com/yttydcs/myflowhub-proto v0.1.7
 	github.com/yttydcs/myflowhub-sdk v0.1.13
 )
-
-replace github.com/yttydcs/myflowhub-proto => ../../worktrees/proto-server-release-align
 
 require (
 	github.com/bep/debounce v1.2.1 // indirect
