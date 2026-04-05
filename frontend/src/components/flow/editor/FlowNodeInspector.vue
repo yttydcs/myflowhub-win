@@ -4,7 +4,16 @@ import { X } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
-import { buildDetailStructuredFields, describeVisualCompatibilityReason, flowStatusLabelKey } from "@/stores/flow"
+import {
+  buildDetailStructuredFields,
+  describeVisualCompatibilityReason,
+  flowBindingSourceKindLabelKey,
+  flowBranchMatchOpOptions,
+  flowNodeKindLabelKey,
+  flowNodeKindOptions,
+  flowStatusLabelKey,
+  rootFlowBindingSourceKindOptions
+} from "@/stores/flow"
 import type {
   FlowBindingSourceKind,
   FlowInputBindingDraft,
@@ -67,8 +76,7 @@ const updateNodeDetailPath = (event: Event) => {
 
 const emitNodeKindChange = (event: Event) => {
   const value = String((event.target as HTMLSelectElement | null)?.value ?? "call") as FlowNodeKind
-  const allowedKinds: FlowNodeKind[] = ["call", "compose", "transform", "set_var", "branch", "foreach", "subflow"]
-  emit("node-kind-change", allowedKinds.includes(value) ? value : "call")
+  emit("node-kind-change", flowNodeKindOptions.includes(value) ? value : "call")
 }
 
 const emitBindingSourceKindChange = (binding: FlowInputBindingDraft, event: Event) => {
@@ -136,19 +144,8 @@ const transformOps = [
   "len"
 ]
 
-const branchMatchOps = ["eq", "ne", "gt", "gte", "lt", "lte", "exists"]
-
 const normalizeSourceKind = (raw: string): FlowBindingSourceKind => {
-  switch (raw) {
-    case "node_result":
-    case "trigger":
-    case "flow_meta":
-    case "run_meta":
-    case "flow_var":
-      return raw
-    default:
-      return "trigger"
-  }
+  return rootFlowBindingSourceKindOptions.find((kind) => kind === raw) ?? "trigger"
 }
 
 const resetSourceDraftForKind = (source: FlowSourceDraft, sourceKind: FlowBindingSourceKind) => {
@@ -235,9 +232,7 @@ const visibleVisualCompatibilityReasons = computed(() =>
   (props.selectedCallVisualForm?.compatibility.reasons ?? []).filter((reason) => reason.code !== "missing_schema")
 )
 
-const supportsFormMode = computed(() =>
-  ["call", "compose", "transform", "set_var", "branch", "foreach", "subflow"].includes(props.selectedNode?.kind ?? "")
-)
+const supportsFormMode = computed(() => Boolean(props.selectedNode && flowNodeKindOptions.includes(props.selectedNode.kind)))
 
 const nodeKindLabel = computed(() => {
   switch (props.selectedNode?.kind) {
@@ -359,13 +354,9 @@ const structuredDetailFields = computed(() =>
                 class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 @change="emitNodeKindChange"
               >
-                <option value="call">{{ t("Call") }}</option>
-                <option value="compose">{{ t("Compose") }}</option>
-                <option value="transform">{{ t("Transform") }}</option>
-                <option value="set_var">{{ t("Set Var") }}</option>
-                <option value="branch">{{ t("Branch") }}</option>
-                <option value="foreach">{{ t("Foreach") }}</option>
-                <option value="subflow">{{ t("Subflow") }}</option>
+                <option v-for="kind in flowNodeKindOptions" :key="kind" :value="kind">
+                  {{ t(flowNodeKindLabelKey(kind)) }}
+                </option>
               </select>
             </div>
 
@@ -758,11 +749,9 @@ const structuredDetailFields = computed(() =>
                         class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
                         @change="emitSourceKindChange(selectedNode.transformSource, $event)"
                       >
-                        <option value="node_result">{{ t("Ancestor Result") }}</option>
-                        <option value="trigger">{{ t("Trigger") }}</option>
-                        <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                        <option value="run_meta">{{ t("Run Meta") }}</option>
-                        <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                        <option v-for="kind in rootFlowBindingSourceKindOptions" :key="kind" :value="kind">
+                          {{ t(flowBindingSourceKindLabelKey(kind)) }}
+                        </option>
                       </select>
                     </div>
 
@@ -1032,7 +1021,7 @@ const structuredDetailFields = computed(() =>
                           class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
                           @change="emit('commit-history')"
                         >
-                          <option v-for="op in branchMatchOps" :key="op" :value="op">
+                          <option v-for="op in flowBranchMatchOpOptions" :key="op" :value="op">
                             {{ op }}
                           </option>
                         </select>
@@ -1050,11 +1039,9 @@ const structuredDetailFields = computed(() =>
                           class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
                           @change="emitSourceKindChange(branchCase.source, $event)"
                         >
-                          <option value="node_result">{{ t("Ancestor Result") }}</option>
-                          <option value="trigger">{{ t("Trigger") }}</option>
-                          <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                          <option value="run_meta">{{ t("Run Meta") }}</option>
-                          <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                          <option v-for="kind in rootFlowBindingSourceKindOptions" :key="kind" :value="kind">
+                            {{ t(flowBindingSourceKindLabelKey(kind)) }}
+                          </option>
                         </select>
                       </div>
                     </div>
@@ -1202,11 +1189,9 @@ const structuredDetailFields = computed(() =>
                       class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
                       @change="emitSourceKindChange(selectedNode.foreachSource, $event)"
                     >
-                      <option value="node_result">{{ t("Ancestor Result") }}</option>
-                      <option value="trigger">{{ t("Trigger") }}</option>
-                      <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                      <option value="run_meta">{{ t("Run Meta") }}</option>
-                      <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                    <option v-for="kind in rootFlowBindingSourceKindOptions" :key="kind" :value="kind">
+                      {{ t(flowBindingSourceKindLabelKey(kind)) }}
+                    </option>
                     </select>
                   </div>
 
@@ -1528,11 +1513,9 @@ const structuredDetailFields = computed(() =>
                           class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs"
                           @change="emitBindingSourceKindChange(binding, $event)"
                         >
-                          <option value="node_result">{{ t("Ancestor Result") }}</option>
-                          <option value="trigger">{{ t("Trigger") }}</option>
-                          <option value="flow_meta">{{ t("Flow Meta") }}</option>
-                          <option value="run_meta">{{ t("Run Meta") }}</option>
-                          <option value="flow_var">{{ t("Flow Local Var") }}</option>
+                          <option v-for="kind in rootFlowBindingSourceKindOptions" :key="kind" :value="kind">
+                            {{ t(flowBindingSourceKindLabelKey(kind)) }}
+                          </option>
                         </select>
                       </div>
                     </div>

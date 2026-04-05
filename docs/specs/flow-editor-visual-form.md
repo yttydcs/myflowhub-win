@@ -8,6 +8,16 @@
 - 本规范同时覆盖项目部署对话框中的 trigger authoring，以及 `branch` 出边 `edge.case` 的最小编辑契约。
 - 本规范同时覆盖 node-level `retry_backoff_ms`、flow-level `max_active_runs`，以及 trigger `dedup_window_ms` 的 Win-side authoring 契约。
 
+## Canonical Contract Consumption Boundary
+
+- Win 侧 `FlowNodeKind`、`FlowBindingSourceKind`、`FlowBranchMatchOp` 的 canonical truth 必须消费由 Proto 同步进来的 `frontend/src/generated/flow_contract.ts`。
+- Win 不再本地重写完整的 kind/source/op unions 或 literal option arrays；若 Proto contract 变更，应先同步 generated artifact，再更新 Win 的 draft 投影与 UI 行为。
+- Win 仍然拥有以下本地职责：
+  - draft state、表单字段、标签文案、普通模式映射
+  - root graph 与 `foreach.body` 对 source kind 的可见性过滤，例如 root 不暴露 `loop_item` / `loop_index`
+  - strict export / ordinary-mode fallback 的前端校验与错误提示
+- Proto generated artifact 只提供 canonical contract 产物，不承载 Win 的 UI draft model，也不替代本规范中的 ordinary-mode 边界定义。
+
 ## Interfaces / Contracts
 
 ### 0. Trigger authoring 契约
