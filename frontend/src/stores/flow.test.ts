@@ -1,12 +1,22 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  FLOW_BINDING_SOURCE_KINDS,
+  FLOW_BRANCH_MATCH_OPS,
+  FLOW_NODE_KINDS
+} from "@/generated/flow_contract"
 import { setLocale } from "@/i18n"
 import {
+  bodyFlowBindingSourceKindOptions,
   buildDetailStructuredFields,
   createGraphEditorStateFromDraft,
   exportLooseGraphDraftFromEditorState,
+  flowBindingSourceKindOptions,
+  flowBranchMatchOpOptions,
+  flowNodeKindOptions,
   flowStatusLabelKey,
+  rootFlowBindingSourceKindOptions,
   useFlowStore,
   type ExecCapabilityRoute,
   type FlowEdge,
@@ -241,6 +251,16 @@ beforeEach(() => {
 })
 
 describe("flow store", () => {
+  it("consumes canonical contract options from the generated artifact", () => {
+    expect(flowNodeKindOptions).toEqual([...FLOW_NODE_KINDS])
+    expect(flowBindingSourceKindOptions).toEqual([...FLOW_BINDING_SOURCE_KINDS])
+    expect(rootFlowBindingSourceKindOptions).toEqual(
+      FLOW_BINDING_SOURCE_KINDS.filter((kind) => kind !== "loop_item" && kind !== "loop_index")
+    )
+    expect(bodyFlowBindingSourceKindOptions).toEqual([...FLOW_BINDING_SOURCE_KINDS])
+    expect(flowBranchMatchOpOptions).toEqual([...FLOW_BRANCH_MATCH_OPS])
+  })
+
   it("lists ancestors in graph order and rejects non-ancestor bindings", () => {
     loadGraph(
       [createCallNode("n1"), createCallNode("n2"), createCallNode("n3")],

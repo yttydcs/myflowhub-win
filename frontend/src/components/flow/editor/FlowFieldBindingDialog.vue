@@ -4,7 +4,14 @@ import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { useI18n } from "@/i18n"
-import { describeFieldBinding, type FlowBindingSourceKind, type VisualFieldModel } from "@/stores/flow"
+import {
+  bodyFlowBindingSourceKindOptions,
+  describeFieldBinding,
+  flowBindingSourceKindLabelKey,
+  rootFlowBindingSourceKindOptions,
+  type FlowBindingSourceKind,
+  type VisualFieldModel
+} from "@/stores/flow"
 
 const props = defineProps<{
   open: boolean
@@ -121,6 +128,12 @@ const canApply = computed(() => {
   }
   return true
 })
+
+const sourceKindOptions = computed(() =>
+  (props.allowLoopSources ? bodyFlowBindingSourceKindOptions : rootFlowBindingSourceKindOptions).filter(
+    (kind) => kind !== "node_result" || props.bindableAncestorNodeOptions.length > 0
+  )
+)
 </script>
 
 <template>
@@ -177,13 +190,9 @@ const canApply = computed(() => {
             class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             @change="emit('source-kind-change', String(($event.target as HTMLSelectElement | null)?.value ?? 'trigger'))"
           >
-            <option v-if="bindableAncestorNodeOptions.length" value="node_result">{{ t("Ancestor Result") }}</option>
-            <option value="trigger">{{ t("Trigger") }}</option>
-            <option value="flow_meta">{{ t("Flow Meta") }}</option>
-            <option value="run_meta">{{ t("Run Meta") }}</option>
-            <option v-if="allowLoopSources" value="loop_item">{{ t("Loop Item") }}</option>
-            <option v-if="allowLoopSources" value="loop_index">{{ t("Loop Index") }}</option>
-            <option value="flow_var">{{ t("Flow Local Var") }}</option>
+            <option v-for="kind in sourceKindOptions" :key="kind" :value="kind">
+              {{ t(flowBindingSourceKindLabelKey(kind)) }}
+            </option>
           </select>
         </div>
 

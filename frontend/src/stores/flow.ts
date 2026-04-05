@@ -1,5 +1,13 @@
 import { reactive } from "vue"
 import { t } from "@/i18n"
+import {
+  FLOW_BINDING_SOURCE_KINDS as CANONICAL_FLOW_BINDING_SOURCE_KINDS,
+  FLOW_BRANCH_MATCH_OPS as CANONICAL_FLOW_BRANCH_MATCH_OPS,
+  FLOW_NODE_KINDS as CANONICAL_FLOW_NODE_KINDS,
+  type FlowBindingSourceKind as CanonicalFlowBindingSourceKind,
+  type FlowBranchMatchOp,
+  type FlowNodeKind
+} from "@/generated/flow_contract"
 import { readValueAtPointer } from "./flow_json_pointer"
 import { type MethodVisualSchema } from "./flow_method_schemas"
 import { resolveMethodVisualSchema, type CapabilityRouteSchemaSource } from "./flow_schema_resolver"
@@ -45,18 +53,74 @@ export type FlowSummary = {
   lastStatus: string
 }
 
-export type FlowNodeKind = "call" | "compose" | "transform" | "set_var" | "branch" | "foreach" | "subflow"
 export type FlowTriggerType = "interval" | "cron" | "event" | "var_changed"
 export type FlowSpecEditorMode = "form" | "json"
-export type FlowBindingSourceKind =
-  | "node_result"
-  | "trigger"
-  | "flow_meta"
-  | "run_meta"
-  | "loop_item"
-  | "loop_index"
-  | "flow_var"
-  | ""
+export type { FlowBranchMatchOp, FlowNodeKind } from "@/generated/flow_contract"
+export type FlowBindingSourceKind = CanonicalFlowBindingSourceKind | ""
+export const flowNodeKindOptions: FlowNodeKind[] = [...CANONICAL_FLOW_NODE_KINDS]
+export const flowBindingSourceKindOptions: CanonicalFlowBindingSourceKind[] = [...CANONICAL_FLOW_BINDING_SOURCE_KINDS]
+export const flowBranchMatchOpOptions: FlowBranchMatchOp[] = [...CANONICAL_FLOW_BRANCH_MATCH_OPS]
+export const rootFlowBindingSourceKindOptions: CanonicalFlowBindingSourceKind[] = flowBindingSourceKindOptions.filter(
+  (kind) => kind !== "loop_item" && kind !== "loop_index"
+)
+export const bodyFlowBindingSourceKindOptions: CanonicalFlowBindingSourceKind[] = [...flowBindingSourceKindOptions]
+
+export const flowNodeKindLabelKey = (kind: FlowNodeKind) => {
+  switch (kind) {
+    case "compose":
+      return "Compose"
+    case "transform":
+      return "Transform"
+    case "set_var":
+      return "Set Var"
+    case "branch":
+      return "Branch"
+    case "foreach":
+      return "Foreach"
+    case "subflow":
+      return "Subflow"
+    default:
+      return "Call"
+  }
+}
+
+export const flowBindingSourceKindLabelKey = (kind: CanonicalFlowBindingSourceKind) => {
+  switch (kind) {
+    case "node_result":
+      return "Ancestor Result"
+    case "flow_meta":
+      return "Flow Meta"
+    case "run_meta":
+      return "Run Meta"
+    case "loop_item":
+      return "Loop Item"
+    case "loop_index":
+      return "Loop Index"
+    case "flow_var":
+      return "Flow Local Var"
+    default:
+      return "Trigger"
+  }
+}
+
+export const flowBranchMatchOpLabelKey = (op: FlowBranchMatchOp) => {
+  switch (op) {
+    case "eq":
+      return "Equals"
+    case "ne":
+      return "Not Equals"
+    case "gt":
+      return "Greater Than"
+    case "gte":
+      return "Greater Than or Equal"
+    case "lt":
+      return "Less Than"
+    case "lte":
+      return "Less Than or Equal"
+    default:
+      return "Exists"
+  }
+}
 
 export type FlowInputBindingDraft = {
   to: string
@@ -77,7 +141,6 @@ export type FlowSourceDraft = {
 }
 
 export type FlowTransformExprMode = "literal" | "source" | "op" | "object" | "array"
-export type FlowBranchMatchOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "exists"
 
 export type FlowBranchCaseDraft = {
   key: string
@@ -380,7 +443,9 @@ let execCapabilityCacheVersion = 0
 const pendingCapabilityHydrations = new Map<string, Promise<boolean>>()
 const FLOW_LOCAL_VAR_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 const FLOW_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const FLOW_BRANCH_MATCH_OPS = new Set<FlowBranchMatchOp>(["eq", "ne", "gt", "gte", "lt", "lte", "exists"])
+const FLOW_NODE_KIND_SET = new Set<string>(CANONICAL_FLOW_NODE_KINDS)
+const FLOW_BINDING_SOURCE_KIND_SET = new Set<string>(CANONICAL_FLOW_BINDING_SOURCE_KINDS)
+const FLOW_BRANCH_MATCH_OP_SET = new Set<string>(CANONICAL_FLOW_BRANCH_MATCH_OPS)
 const FLOW_TRANSFORM_OPS = new Set([
   "add",
   "sub",
@@ -926,22 +991,7 @@ const createNodeDetailState = (nodeId = "", runId = ""): FlowNodeDetailState => 
 
 const normalizeNodeKind = (raw: any): FlowNodeKind => {
   const normalized = String(raw ?? "").trim().toLowerCase()
-  switch (normalized) {
-    case "compose":
-      return "compose"
-    case "transform":
-      return "transform"
-    case "set_var":
-      return "set_var"
-    case "branch":
-      return "branch"
-    case "foreach":
-      return "foreach"
-    case "subflow":
-      return "subflow"
-    default:
-      return "call"
-  }
+  return FLOW_NODE_KIND_SET.has(normalized) ? (normalized as FlowNodeKind) : "call"
 }
 
 const hasOwn = (value: unknown, key: string) =>
@@ -949,14 +999,7 @@ const hasOwn = (value: unknown, key: string) =>
 
 const isLoopSourceKind = (kind: FlowBindingSourceKind) => kind === "loop_item" || kind === "loop_index"
 
-const supportsFormMode = (kind: FlowNodeKind) =>
-  kind === "call" ||
-  kind === "compose" ||
-  kind === "transform" ||
-  kind === "set_var" ||
-  kind === "branch" ||
-  kind === "foreach" ||
-  kind === "subflow"
+const supportsFormMode = (kind: FlowNodeKind) => FLOW_NODE_KIND_SET.has(kind)
 
 const defaultSpecEditorMode = (kind: FlowNodeKind): FlowSpecEditorMode => (supportsFormMode(kind) ? "form" : "json")
 
@@ -986,18 +1029,7 @@ const kindDefaultSpec = (kind: FlowNodeKind): Record<string, any> => {
 
 const normalizeBindingSourceKind = (raw: any): FlowBindingSourceKind => {
   const normalized = String(raw ?? "").trim().toLowerCase()
-  switch (normalized) {
-    case "node_result":
-    case "trigger":
-    case "flow_meta":
-    case "run_meta":
-    case "loop_item":
-    case "loop_index":
-    case "flow_var":
-      return normalized
-    default:
-      return ""
-  }
+  return FLOW_BINDING_SOURCE_KIND_SET.has(normalized) ? (normalized as CanonicalFlowBindingSourceKind) : ""
 }
 
 const defaultInputBinding = (): FlowInputBindingDraft => ({
@@ -1062,7 +1094,7 @@ const createBranchCaseDraft = (input?: Partial<FlowBranchCaseDraft>): FlowBranch
   key: String(input?.key ?? "").trim() || newBranchCaseKey(),
   name: String(input?.name ?? "").trim(),
   source: cloneSourceDraft(input?.source ?? defaultSourceDraft("trigger")),
-  op: FLOW_BRANCH_MATCH_OPS.has(input?.op as FlowBranchMatchOp) ? (input?.op as FlowBranchMatchOp) : "eq",
+  op: FLOW_BRANCH_MATCH_OP_SET.has(String(input?.op ?? "")) ? (input?.op as FlowBranchMatchOp) : "eq",
   valueJson: String(input?.valueJson ?? "null").trim() || "null"
 })
 
@@ -1337,7 +1369,7 @@ const parseBranchDraft = (parsed: Record<string, any>, options: ParseDraftOption
       break
     }
     const op = String(match.op ?? "").trim().toLowerCase() as FlowBranchMatchOp
-    if (!FLOW_BRANCH_MATCH_OPS.has(op)) {
+    if (!FLOW_BRANCH_MATCH_OP_SET.has(op)) {
       supported = false
       break
     }
@@ -2307,7 +2339,7 @@ const buildLooseSpecFromNode = (node: FlowNodeDraft) => {
   if (node.kind === "branch") {
     return {
       cases: node.branchCases.map((item) => {
-        const op = FLOW_BRANCH_MATCH_OPS.has(item.op) ? item.op : "eq"
+        const op = FLOW_BRANCH_MATCH_OP_SET.has(item.op) ? item.op : "eq"
         return {
           name: item.name.trim(),
           match: {
@@ -2623,7 +2655,7 @@ const validateRawBranchSpec = (input: {
     }
     const match = item.match as Record<string, any>
     const op = String(match.op ?? "").trim().toLowerCase() as FlowBranchMatchOp
-    if (!FLOW_BRANCH_MATCH_OPS.has(op)) {
+    if (!FLOW_BRANCH_MATCH_OP_SET.has(op)) {
       throw new Error(t("Node {nodeId} branch case {name} match op is invalid.", { nodeId: input.nodeId, name }))
     }
     validateRawSourceSpec({
@@ -2802,7 +2834,7 @@ const buildFormSpec = (
         throw new Error(t("Node {nodeId} branch case name {name} is duplicated.", { nodeId, name }))
       }
       seen.add(name)
-      const op = FLOW_BRANCH_MATCH_OPS.has(item.op) ? item.op : ""
+      const op = FLOW_BRANCH_MATCH_OP_SET.has(item.op) ? item.op : ""
       if (!op) {
         throw new Error(t("Node {nodeId} branch case {name} match op is invalid.", { nodeId, name }))
       }
