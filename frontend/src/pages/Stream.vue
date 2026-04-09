@@ -70,6 +70,7 @@ const subscribeDialog = reactive({
 
 const sourceDialogOpen = ref(false)
 const consumerDialogOpen = ref(false)
+const controlDialogOpen = ref(false)
 
 const selfNodeId = computed(() => Number(sessionStore.auth.nodeId || 0))
 const hubId = computed(() => Number(sessionStore.auth.hubId || 0))
@@ -109,7 +110,7 @@ const heroDescription = computed(() => {
   if (activeTab.value === "consumer") {
     return t("Keep local consumers in a simple list, review current bindings, and subscribe through a dedicated dialog only when you need to change them.")
   }
-  return t("Browse remote catalogs, connect compatible endpoints, and open runtime output windows from the control tab.")
+  return t("Choose control pairs through a focused dialog, then inspect runtime deliveries and open output windows from the control tab.")
 })
 
 const tabButtonClass = (tab: StreamTab) => [
@@ -188,6 +189,9 @@ const closeSubscribeDialog = () => {
   subscribeQuery.kind = ""
   subscribeQuery.tag = ""
   subscribeQuery.selectedSourceId = ""
+}
+const closeControlDialog = () => {
+  controlDialogOpen.value = false
 }
 
 const withToast = async (action: () => Promise<unknown>, ok: string, fail: string) => {
@@ -310,6 +314,18 @@ const openSubscribeDialog = async (consumerId: string) => {
   }
 }
 
+const openControlDialog = async () => {
+  if (!controlSourceQuery.producer && selfNodeId.value > 0) controlSourceQuery.producer = String(selfNodeId.value)
+  if (!controlConsumerQuery.consumer && selfNodeId.value > 0) controlConsumerQuery.consumer = String(selfNodeId.value)
+  controlDialogOpen.value = true
+  if (catalogSources.value.length && catalogConsumers.value.length) return
+  try {
+    await Promise.all([refreshControlSourcesRaw(), refreshControlConsumersRaw()])
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
 const subscribeFromDialog = () =>
   withToast(
     async () => {
@@ -330,13 +346,15 @@ const subscribeFromDialog = () =>
 const connectSelected = () =>
   selectedControlSource.value && selectedControlConsumer.value
     ? withToast(
-        () =>
-          stream.connect({
+        async () => {
+          await stream.connect({
             producer: selectedControlSource.value!.producer,
             sourceId: selectedControlSource.value!.sourceId,
             consumer: selectedControlConsumer.value!.consumer,
             consumerId: selectedControlConsumer.value!.consumerId
-          }),
+          })
+          closeControlDialog()
+        },
         "Delivery connected.",
         "Failed to connect delivery."
       )
@@ -345,12 +363,14 @@ const connectSelected = () =>
 const subscribeSelected = () =>
   selectedControlSource.value && selectedControlConsumer.value
     ? withToast(
-        () =>
-          stream.subscribe({
+        async () => {
+          await stream.subscribe({
             producer: selectedControlSource.value!.producer,
             sourceId: selectedControlSource.value!.sourceId,
             consumerId: selectedControlConsumer.value!.consumerId
-          }),
+          })
+          closeControlDialog()
+        },
         "Subscribed.",
         "Failed to subscribe."
       )
@@ -543,210 +563,129 @@ watch(
       </section>
     </section>
 
-    <section v-else class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_380px]">
-      <div class="grid gap-6 xl:grid-cols-2">
-        <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-          <CardHeader :title="t('Source Catalog')" :description="t('Query producer catalogs and keep control selections focused here.')" title-class="text-lg">
-            <template #actions>
-              <Button variant="outline" size="sm" @click="refreshControlSources">
-                <ScanSearch class="mr-2 h-4 w-4" />
-                {{ t("Refresh") }}
-              </Button>
-            </template>
-          </CardHeader>
+    <section v-else class="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+      <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
+        <CardHeader :title="t('Control Target')" :description="t('Leave target aligned with Hub unless you are routing control requests elsewhere.')" title-class="text-lg">
+          <template #actions>
+            <Button variant="outline" size="sm" @click="refreshControlPlane">
+              <RefreshCw class="mr-2 h-4 w-4" />
+              {{ t("Refresh All") }}
+            </Button>
+          </template>
+        </CardHeader>
 
-          <div class="mt-4 rounded-2xl border border-border/60 bg-background/70 p-3">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="sm:col-span-2">
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Producer Node ID") }}</label>
-                <input v-model="controlSourceQuery.producer" :class="['mt-2', inputClass]" :placeholder="t('Producer Node ID')" />
-              </div>
-              <div>
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Kind") }}</label>
-                <select v-model="controlSourceQuery.kind" :class="['mt-2', inputClass]">
-                  <option value="">{{ t("All kinds") }}</option>
-                  <option v-for="kind in streamKinds" :key="kind" :value="kind">{{ kind }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Tag") }}</label>
-                <input v-model="controlSourceQuery.tag" :class="['mt-2', inputClass]" :placeholder="t('Tag filter')" />
-              </div>
-            </div>
+        <div class="mt-4">
+          <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Control Target") }}</label>
+          <div class="mt-2 flex items-center gap-2 rounded-2xl border border-border/60 bg-background/70 px-3">
+            <Target class="h-4 w-4 text-muted-foreground" />
+            <input v-model="targetIdText" class="h-10 flex-1 bg-transparent text-sm outline-none" :placeholder="t('Hub ID')" />
           </div>
+        </div>
 
-          <div class="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-            <button
-              v-for="source in catalogSources"
-              :key="source.sourceId"
-              type="button"
-              class="w-full rounded-2xl border p-4 text-left transition"
-              :class="stream.state.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
-              @click="stream.selectSource(source.sourceId)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <p class="truncate text-sm font-semibold">{{ source.name || source.sourceId }}</p>
-                    <Badge :class="kindToneClass(source.kind)">{{ source.kind }}</Badge>
-                    <Badge variant="secondary">{{ t("Producer {id}", { id: source.producer }) }}</Badge>
-                  </div>
-                  <p class="mt-2 text-xs text-muted-foreground">{{ source.sourceId }}</p>
-                </div>
-              </div>
-            </button>
-            <div v-if="!catalogSources.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
-              {{ t("No sources loaded yet.") }}
-            </div>
-          </div>
-        </section>
-
-        <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-          <CardHeader :title="t('Consumer Catalog')" :description="t('Query consumer endpoints and compare them before connecting.')" title-class="text-lg">
-            <template #actions>
-              <Button variant="outline" size="sm" @click="refreshControlConsumers">
-                <ScanSearch class="mr-2 h-4 w-4" />
-                {{ t("Refresh") }}
-              </Button>
-            </template>
-          </CardHeader>
-
-          <div class="mt-4 rounded-2xl border border-border/60 bg-background/70 p-3">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="sm:col-span-2">
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Consumer Node ID") }}</label>
-                <input v-model="controlConsumerQuery.consumer" :class="['mt-2', inputClass]" :placeholder="t('Consumer Node ID')" />
-              </div>
-              <div>
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Kind") }}</label>
-                <select v-model="controlConsumerQuery.kind" :class="['mt-2', inputClass]">
-                  <option value="">{{ t("All kinds") }}</option>
-                  <option v-for="kind in streamKinds" :key="kind" :value="kind">{{ kind }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Tag") }}</label>
-                <input v-model="controlConsumerQuery.tag" :class="['mt-2', inputClass]" :placeholder="t('Tag filter')" />
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-            <button
-              v-for="consumer in catalogConsumers"
-              :key="consumer.consumerId"
-              type="button"
-              class="w-full rounded-2xl border p-4 text-left transition"
-              :class="stream.state.selectedConsumerId === consumer.consumerId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
-              @click="stream.selectConsumer(consumer.consumerId)"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <p class="truncate text-sm font-semibold">{{ consumer.name || consumer.consumerId }}</p>
-                    <Badge :class="kindToneClass(consumer.kind)">{{ consumer.kind }}</Badge>
-                    <Badge variant="secondary">{{ t("Consumer {id}", { id: consumer.consumer }) }}</Badge>
-                  </div>
-                  <p class="mt-2 text-xs text-muted-foreground">{{ consumer.consumerId }}</p>
-                </div>
-              </div>
-            </button>
-            <div v-if="!catalogConsumers.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
-              {{ t("No consumers loaded yet.") }}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <aside class="space-y-6">
-        <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-          <CardHeader :title="t('Control Target')" :description="t('Leave target aligned with Hub unless you are routing control requests elsewhere.')" title-class="text-lg">
-            <template #actions>
-              <Button variant="outline" size="sm" @click="refreshControlPlane">
-                <RefreshCw class="mr-2 h-4 w-4" />
-                {{ t("Refresh All") }}
-              </Button>
-            </template>
-          </CardHeader>
-
-          <div class="mt-4">
-            <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Control Target") }}</label>
-            <div class="mt-2 flex items-center gap-2 rounded-2xl border border-border/60 bg-background/70 px-3">
-              <Target class="h-4 w-4 text-muted-foreground" />
-              <input v-model="targetIdText" class="h-10 flex-1 bg-transparent text-sm outline-none" :placeholder="t('Hub ID')" />
-            </div>
-          </div>
-
-          <div class="mt-5 rounded-2xl border border-border/60 bg-background/70 p-4">
+        <div class="mt-5 rounded-2xl border border-border/60 bg-background/70 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <Cable class="h-4 w-4 text-muted-foreground" />
-              <p class="text-sm font-semibold">{{ t("Connect Pair") }}</p>
+              <p class="text-sm font-semibold">{{ t("Selected Pair") }}</p>
             </div>
-            <p class="mt-2 text-xs text-muted-foreground">{{ t("Choose one source and one consumer, then connect or subscribe from this focused panel.") }}</p>
-            <div class="mt-4 flex flex-wrap gap-2">
-              <Button :disabled="!canConnect" @click="connectSelected">{{ t("Connect") }}</Button>
-              <Button variant="outline" :disabled="!canSubscribe" @click="subscribeSelected">{{ t("Subscribe") }}</Button>
-            </div>
-            <p v-if="selectedControlSource && selectedControlConsumer && !canConnect" class="mt-3 text-xs text-rose-600">
-              {{ t("Source kind and consumer kind must match.") }}
-            </p>
-          </div>
-        </section>
-
-        <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
-          <CardHeader :title="t('Runtime Deliveries')" :description="t('Inspect deliveries and send lightweight runtime signals from one place.')" title-class="text-lg">
-            <template #actions>
-              <Badge variant="secondary">{{ t("Observed {count}", { count: deliveries.length }) }}</Badge>
-            </template>
-          </CardHeader>
-
-          <div class="mt-4 flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" @click="refreshDeliveries">{{ t("Refresh") }}</Button>
-            <Button variant="outline" :disabled="!selectedDelivery" @click="disconnectSelected">{{ t("Disconnect") }}</Button>
-            <Button variant="outline" :disabled="!selectedDelivery" @click="unsubscribeSelected">{{ t("Unsubscribe") }}</Button>
-            <Button variant="ghost" :disabled="!selectedDelivery" @click="signalSelected('pause')">
-              <Pause class="mr-2 h-4 w-4" />
-              {{ t("Pause") }}
-            </Button>
-            <Button variant="ghost" :disabled="!selectedDelivery" @click="signalSelected('resume')">
-              <Play class="mr-2 h-4 w-4" />
-              {{ t("Resume") }}
+            <Button data-stream-open-control-picker @click="openControlDialog">
+              {{ t(selectedControlSource || selectedControlConsumer ? "Change Pair" : "Select Pair") }}
             </Button>
           </div>
+          <p class="mt-2 text-xs text-muted-foreground">
+            {{ t("Use a focused picker for remote source and consumer selection, instead of leaving both catalogs on the page.") }}
+          </p>
 
-          <div class="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
-            <article
-              v-for="delivery in deliveries"
-              :key="delivery.deliveryId"
-              data-stream-delivery-row
-              class="flex cursor-pointer flex-col gap-3 rounded-2xl border p-4 text-card-foreground transition md:flex-row md:items-center md:justify-between"
-              :class="stream.state.selectedDeliveryId === delivery.deliveryId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
-              @click="stream.selectDelivery(delivery.deliveryId)"
-            >
-              <div class="min-w-0 flex-1">
+          <div class="mt-4 grid gap-3">
+            <div class="rounded-2xl border border-border/60 bg-card/90 p-4">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Selected Source") }}</p>
+              <div v-if="selectedControlSource" class="mt-3 min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <p class="truncate text-sm font-semibold">{{ deliverySummary(delivery) }}</p>
-                  <Badge :class="kindToneClass(delivery.kind)">{{ delivery.kind }}</Badge>
-                  <Badge variant="secondary">{{ delivery.state || t("Observed") }}</Badge>
+                  <p class="truncate text-sm font-semibold">{{ selectedControlSource.name || selectedControlSource.sourceId }}</p>
+                  <Badge :class="kindToneClass(selectedControlSource.kind)">{{ selectedControlSource.kind }}</Badge>
+                  <Badge variant="secondary">{{ t("Producer {id}", { id: selectedControlSource.producer }) }}</Badge>
                 </div>
-                <p class="mt-1 truncate text-xs text-muted-foreground">{{ delivery.deliveryId }}</p>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}
-                </p>
+                <p class="mt-2 truncate text-xs text-muted-foreground">{{ selectedControlSource.sourceId }}</p>
               </div>
-              <div class="flex flex-wrap items-center gap-2 md:justify-end">
-                <span class="text-xs text-muted-foreground">{{ formatTimestamp(delivery.updatedAt) }}</span>
-                <Button variant="outline" size="sm" data-stream-open-delivery-window @click.stop="openDeliveryWindow(delivery.deliveryId)">
-                  {{ t("Output Window") }}
-                </Button>
+              <p v-else class="mt-3 text-sm text-muted-foreground">{{ t("No source selected yet.") }}</p>
+            </div>
+
+            <div class="rounded-2xl border border-border/60 bg-card/90 p-4">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Selected Consumer") }}</p>
+              <div v-if="selectedControlConsumer" class="mt-3 min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-sm font-semibold">{{ selectedControlConsumer.name || selectedControlConsumer.consumerId }}</p>
+                  <Badge :class="kindToneClass(selectedControlConsumer.kind)">{{ selectedControlConsumer.kind }}</Badge>
+                  <Badge variant="secondary">{{ t("Consumer {id}", { id: selectedControlConsumer.consumer }) }}</Badge>
+                </div>
+                <p class="mt-2 truncate text-xs text-muted-foreground">{{ selectedControlConsumer.consumerId }}</p>
               </div>
-            </article>
-            <div v-if="!deliveries.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
-              {{ t("No known deliveries yet.") }}
+              <p v-else class="mt-3 text-sm text-muted-foreground">{{ t("No consumer selected yet.") }}</p>
             </div>
           </div>
-        </section>
-      </aside>
+
+          <p v-if="selectedControlSource && selectedControlConsumer && !canConnect" class="mt-4 text-xs text-rose-600">
+            {{ t("Source kind and consumer kind must match.") }}
+          </p>
+          <p v-else-if="selectedControlSource && selectedControlConsumer && !canSubscribe" class="mt-4 text-xs text-muted-foreground">
+            {{ t("Subscribe only works when the selected consumer belongs to this node.") }}
+          </p>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-border/60 bg-card/90 p-5 text-card-foreground shadow-sm">
+        <CardHeader :title="t('Runtime Deliveries')" :description="t('Inspect deliveries and send lightweight runtime signals from one place.')" title-class="text-lg">
+          <template #actions>
+            <Badge variant="secondary">{{ t("Observed {count}", { count: deliveries.length }) }}</Badge>
+          </template>
+        </CardHeader>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" @click="refreshDeliveries">{{ t("Refresh") }}</Button>
+          <Button variant="outline" :disabled="!selectedDelivery" @click="disconnectSelected">{{ t("Disconnect") }}</Button>
+          <Button variant="outline" :disabled="!selectedDelivery" @click="unsubscribeSelected">{{ t("Unsubscribe") }}</Button>
+          <Button variant="ghost" :disabled="!selectedDelivery" @click="signalSelected('pause')">
+            <Pause class="mr-2 h-4 w-4" />
+            {{ t("Pause") }}
+          </Button>
+          <Button variant="ghost" :disabled="!selectedDelivery" @click="signalSelected('resume')">
+            <Play class="mr-2 h-4 w-4" />
+            {{ t("Resume") }}
+          </Button>
+        </div>
+
+        <div class="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+          <article
+            v-for="delivery in deliveries"
+            :key="delivery.deliveryId"
+            data-stream-delivery-row
+            class="flex cursor-pointer flex-col gap-3 rounded-2xl border p-4 text-card-foreground transition md:flex-row md:items-center md:justify-between"
+            :class="stream.state.selectedDeliveryId === delivery.deliveryId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-background/70 hover:border-border'"
+            @click="stream.selectDelivery(delivery.deliveryId)"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="truncate text-sm font-semibold">{{ deliverySummary(delivery) }}</p>
+                <Badge :class="kindToneClass(delivery.kind)">{{ delivery.kind }}</Badge>
+                <Badge variant="secondary">{{ delivery.state || t("Observed") }}</Badge>
+              </div>
+              <p class="mt-1 truncate text-xs text-muted-foreground">{{ delivery.deliveryId }}</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 md:justify-end">
+              <span class="text-xs text-muted-foreground">{{ formatTimestamp(delivery.updatedAt) }}</span>
+              <Button variant="outline" size="sm" data-stream-open-delivery-window @click.stop="openDeliveryWindow(delivery.deliveryId)">
+                {{ t("Output Window") }}
+              </Button>
+            </div>
+          </article>
+          <div v-if="!deliveries.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
+            {{ t("No known deliveries yet.") }}
+          </div>
+        </div>
+      </section>
     </section>
 
     <Overlay :open="sourceDialogOpen" closeOnBackdrop trapFocus :initial-focus-selector="`#${sourceNameInputId}`" @close="closeSourceDialog">
@@ -817,6 +756,153 @@ watch(
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="closeConsumerDialog">{{ t("Cancel") }}</Button>
           <Button data-stream-submit-consumer @click="submitConsumer">{{ t("Create Consumer") }}</Button>
+        </div>
+      </div>
+    </Overlay>
+
+    <Overlay :open="controlDialogOpen" closeOnBackdrop trapFocus @close="closeControlDialog">
+      <div data-stream-control-dialog class="w-full max-w-5xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+        <CardHeader
+          :title="t('Control Pair Picker')"
+          :description="t('Choose a source and a consumer from the current control target, then connect or subscribe without expanding the main page.')"
+          title-class="text-lg"
+        >
+          <template #actions>
+            <Badge variant="secondary">{{ t("Target {id}", { id: resolvedTargetId || "-" }) }}</Badge>
+          </template>
+        </CardHeader>
+
+        <div class="mt-5 grid gap-6 xl:grid-cols-2">
+          <section class="rounded-2xl border border-border/60 bg-background/70 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-semibold">{{ t("Select Source") }}</p>
+              <Button variant="outline" size="sm" @click="refreshControlSources">
+                <ScanSearch class="mr-2 h-4 w-4" />
+                {{ t("Refresh") }}
+              </Button>
+            </div>
+
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Producer Node ID") }}</label>
+                <input v-model="controlSourceQuery.producer" :class="['mt-2', inputClass]" :placeholder="t('Producer Node ID')" />
+              </div>
+              <div>
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Kind") }}</label>
+                <select v-model="controlSourceQuery.kind" :class="['mt-2', inputClass]">
+                  <option value="">{{ t("All kinds") }}</option>
+                  <option v-for="kind in streamKinds" :key="kind" :value="kind">{{ kind }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Tag") }}</label>
+                <input v-model="controlSourceQuery.tag" :class="['mt-2', inputClass]" :placeholder="t('Tag filter')" />
+              </div>
+            </div>
+
+            <div class="mt-4 max-h-[320px] space-y-3 overflow-y-auto pr-1">
+              <button
+                v-for="source in catalogSources"
+                :key="source.sourceId"
+                type="button"
+                data-stream-control-source-row
+                class="w-full rounded-2xl border p-4 text-left transition"
+                :class="stream.state.selectedSourceId === source.sourceId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-card/90 hover:border-border'"
+                @click="stream.selectSource(source.sourceId)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="truncate text-sm font-semibold">{{ source.name || source.sourceId }}</p>
+                      <Badge :class="kindToneClass(source.kind)">{{ source.kind }}</Badge>
+                      <Badge variant="secondary">{{ t("Producer {id}", { id: source.producer }) }}</Badge>
+                    </div>
+                    <p class="mt-2 text-xs text-muted-foreground">{{ source.sourceId }}</p>
+                  </div>
+                </div>
+              </button>
+              <div v-if="!catalogSources.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
+                {{ t("No sources loaded yet.") }}
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-border/60 bg-background/70 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-semibold">{{ t("Select Consumer") }}</p>
+              <Button variant="outline" size="sm" @click="refreshControlConsumers">
+                <ScanSearch class="mr-2 h-4 w-4" />
+                {{ t("Refresh") }}
+              </Button>
+            </div>
+
+            <div class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Consumer Node ID") }}</label>
+                <input v-model="controlConsumerQuery.consumer" :class="['mt-2', inputClass]" :placeholder="t('Consumer Node ID')" />
+              </div>
+              <div>
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Kind") }}</label>
+                <select v-model="controlConsumerQuery.kind" :class="['mt-2', inputClass]">
+                  <option value="">{{ t("All kinds") }}</option>
+                  <option v-for="kind in streamKinds" :key="kind" :value="kind">{{ kind }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ t("Tag") }}</label>
+                <input v-model="controlConsumerQuery.tag" :class="['mt-2', inputClass]" :placeholder="t('Tag filter')" />
+              </div>
+            </div>
+
+            <div class="mt-4 max-h-[320px] space-y-3 overflow-y-auto pr-1">
+              <button
+                v-for="consumer in catalogConsumers"
+                :key="consumer.consumerId"
+                type="button"
+                data-stream-control-consumer-row
+                class="w-full rounded-2xl border p-4 text-left transition"
+                :class="stream.state.selectedConsumerId === consumer.consumerId ? 'border-primary/50 bg-primary/10 shadow-sm' : 'border-border/60 bg-card/90 hover:border-border'"
+                @click="stream.selectConsumer(consumer.consumerId)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="truncate text-sm font-semibold">{{ consumer.name || consumer.consumerId }}</p>
+                      <Badge :class="kindToneClass(consumer.kind)">{{ consumer.kind }}</Badge>
+                      <Badge variant="secondary">{{ t("Consumer {id}", { id: consumer.consumer }) }}</Badge>
+                    </div>
+                    <p class="mt-2 text-xs text-muted-foreground">{{ consumer.consumerId }}</p>
+                  </div>
+                </div>
+              </button>
+              <div v-if="!catalogConsumers.length" class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground">
+                {{ t("No consumers loaded yet.") }}
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="mt-6 rounded-2xl border border-border/60 bg-background/70 p-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-sm font-semibold">{{ t("Connect Pair") }}</p>
+            <Badge v-if="selectedControlSource" :class="kindToneClass(selectedControlSource.kind)">{{ selectedControlSource.kind }}</Badge>
+            <Badge v-if="selectedControlConsumer" variant="secondary">{{ t("Consumer {id}", { id: selectedControlConsumer.consumer }) }}</Badge>
+          </div>
+          <p class="mt-2 text-xs text-muted-foreground">{{ t("Choose one source and one consumer, then connect or subscribe from this focused panel.") }}</p>
+          <p v-if="selectedControlSource" class="mt-3 text-xs text-muted-foreground">{{ selectedControlSource.sourceId }}</p>
+          <p v-if="selectedControlConsumer" class="mt-1 text-xs text-muted-foreground">{{ selectedControlConsumer.consumerId }}</p>
+          <p v-if="selectedControlSource && selectedControlConsumer && !canConnect" class="mt-3 text-xs text-rose-600">
+            {{ t("Source kind and consumer kind must match.") }}
+          </p>
+          <p v-else-if="selectedControlSource && selectedControlConsumer && !canSubscribe" class="mt-3 text-xs text-muted-foreground">
+            {{ t("Subscribe only works when the selected consumer belongs to this node.") }}
+          </p>
+        </div>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="closeControlDialog">{{ t("Cancel") }}</Button>
+          <Button variant="outline" :disabled="!canSubscribe" data-stream-submit-control-subscribe @click="subscribeSelected">{{ t("Subscribe") }}</Button>
+          <Button :disabled="!canConnect" data-stream-submit-control-connect @click="connectSelected">{{ t("Connect") }}</Button>
         </div>
       </div>
     </Overlay>

@@ -377,6 +377,39 @@ describe("Stream page", () => {
     })
   })
 
+  it("opens the control pair picker and connects the selected source and consumer", async () => {
+    const wrapper = mountPage()
+
+    await Promise.resolve()
+    await nextTick()
+
+    await wrapper.get("[data-stream-tab='control']").trigger("click")
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain("Source Catalog")
+    expect(wrapper.text()).not.toContain("Consumer Catalog")
+
+    await wrapper.get("[data-stream-open-control-picker]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(wrapper.find("[data-stream-control-dialog]").exists()).toBe(true)
+
+    await wrapper.get("[data-stream-control-source-row]").trigger("click")
+    await wrapper.get("[data-stream-control-consumer-row]").trigger("click")
+    await wrapper.get("[data-stream-submit-control-connect]").trigger("click")
+    await Promise.resolve()
+    await nextTick()
+
+    expect(streamStore.connect).toHaveBeenCalledWith({
+      producer: streamState.sources[0].producer,
+      sourceId: streamState.sources[0].sourceId,
+      consumer: streamState.consumers[0].consumer,
+      consumerId: streamState.consumers[0].consumerId
+    })
+    expect(wrapper.find("[data-stream-control-dialog]").exists()).toBe(false)
+  })
+
   it("opens a dedicated delivery output window from the control tab", async () => {
     streamState.deliveries = [
       {
