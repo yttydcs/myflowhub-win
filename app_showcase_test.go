@@ -116,13 +116,19 @@ func TestNormalizeShowcaseWidget_TargetAndTypeDefaults(t *testing.T) {
 						TargetID: 3,
 						Var:      &ShowcaseVarWidget{OwnerID: 8, Name: "c", Mode: "progress", Type: ""},
 					},
+					{
+						ID:       "w5",
+						Kind:     "var",
+						TargetID: 4,
+						Var:      &ShowcaseVarWidget{OwnerID: 9, Name: "d", Mode: "line_chart", Type: ""},
+					},
 				},
 			},
 		},
 	})
 	screen := cfg.Screens[0]
-	if len(screen.Widgets) != 4 {
-		t.Fatalf("expected 4 widgets got %d", len(screen.Widgets))
+	if len(screen.Widgets) != 5 {
+		t.Fatalf("expected 5 widgets got %d", len(screen.Widgets))
 	}
 	if screen.Widgets[0].TargetID != 1 {
 		t.Fatalf("expected target default 1 got %d", screen.Widgets[0].TargetID)
@@ -138,6 +144,35 @@ func TestNormalizeShowcaseWidget_TargetAndTypeDefaults(t *testing.T) {
 	}
 	if screen.Widgets[3].Var == nil || screen.Widgets[3].Var.Type != "float64" {
 		t.Fatalf("expected progress type default float64 got %+v", screen.Widgets[3].Var)
+	}
+	if screen.Widgets[4].Var == nil || screen.Widgets[4].Var.Type != "float64" {
+		t.Fatalf("expected line_chart type default float64 got %+v", screen.Widgets[4].Var)
+	}
+}
+
+func TestNormalizeShowcaseVarChart_DefaultsAndClamps(t *testing.T) {
+	out := normalizeShowcaseVarChart(ShowcaseVarChart{})
+	if out.RangeMs != showcaseLineChartDefaultRangeMs || out.BucketMs != showcaseLineChartDefaultBucketMs {
+		t.Fatalf("unexpected chart defaults: %+v", out)
+	}
+
+	explicit := normalizeShowcaseVarChart(ShowcaseVarChart{
+		RangeMs:  6 * 60 * 60 * 1000,
+		BucketMs: 5 * 60 * 1000,
+	})
+	if explicit.RangeMs != 6*60*60*1000 || explicit.BucketMs != 5*60*1000 {
+		t.Fatalf("expected explicit chart values preserved got %+v", explicit)
+	}
+
+	clamped := normalizeShowcaseVarChart(ShowcaseVarChart{
+		RangeMs:  5 * 60 * 1000,
+		BucketMs: 10 * 60 * 1000,
+	})
+	if clamped.RangeMs != 5*60*1000 {
+		t.Fatalf("expected range preserved got %+v", clamped)
+	}
+	if clamped.BucketMs != showcaseLineChartDefaultBucketMs {
+		t.Fatalf("expected invalid bucket reset to default got %+v", clamped)
 	}
 }
 

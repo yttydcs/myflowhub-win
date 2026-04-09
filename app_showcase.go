@@ -88,11 +88,12 @@ type ShowcaseTopicButton struct {
 type ShowcaseVarWidget struct {
 	OwnerID    uint32             `json:"ownerId"`
 	Name       string             `json:"name"`
-	Mode       string             `json:"mode,omitempty"` // auto|display|metric|badge|progress|slider|switch
+	Mode       string             `json:"mode,omitempty"` // auto|display|metric|badge|progress|line_chart|slider|switch
 	Visibility string             `json:"visibility,omitempty"`
 	Type       string             `json:"type,omitempty"` // optional; empty means "do not override"
 	Slider     *ShowcaseVarSlider `json:"slider,omitempty"`
 	Switch     *ShowcaseVarSwitch `json:"switch,omitempty"`
+	Chart      *ShowcaseVarChart  `json:"chart,omitempty"`
 }
 
 type ShowcaseVarSlider struct {
@@ -106,6 +107,18 @@ type ShowcaseVarSwitch struct {
 	OnValue  string `json:"onValue,omitempty"`
 	OffValue string `json:"offValue,omitempty"`
 }
+
+type ShowcaseVarChart struct {
+	RangeMs  int64 `json:"rangeMs,omitempty"`
+	BucketMs int64 `json:"bucketMs,omitempty"`
+}
+
+const (
+	showcaseLineChartDefaultRangeMs  int64 = 60 * 60 * 1000
+	showcaseLineChartDefaultBucketMs int64 = 60 * 1000
+	showcaseLineChartMinBucketMs     int64 = 10 * 1000
+	showcaseLineChartMaxRangeMs      int64 = 24 * 60 * 60 * 1000
+)
 
 func (a *App) ShowcaseConfig() (ShowcaseConfig, error) {
 	if a.store == nil {
@@ -515,7 +528,7 @@ func normalizeShowcaseVarWidget(v ShowcaseVarWidget) ShowcaseVarWidget {
 	v.Type = strings.TrimSpace(v.Type)
 	if v.Type == "" {
 		switch v.Mode {
-		case "slider", "progress":
+		case "slider", "progress", "line_chart":
 			v.Type = "float64"
 		case "switch":
 			v.Type = "bool"
@@ -537,6 +550,13 @@ func normalizeShowcaseVarWidget(v ShowcaseVarWidget) ShowcaseVarWidget {
 	}
 	*sw = normalizeShowcaseVarSwitch(*sw)
 	v.Switch = sw
+
+	chart := v.Chart
+	if chart == nil {
+		chart = &ShowcaseVarChart{RangeMs: showcaseLineChartDefaultRangeMs, BucketMs: showcaseLineChartDefaultBucketMs}
+	}
+	*chart = normalizeShowcaseVarChart(*chart)
+	v.Chart = chart
 
 	return v
 }
@@ -566,10 +586,23 @@ func normalizeShowcaseVarSwitch(s ShowcaseVarSwitch) ShowcaseVarSwitch {
 	return s
 }
 
+func normalizeShowcaseVarChart(c ShowcaseVarChart) ShowcaseVarChart {
+	if c.RangeMs < showcaseLineChartMinBucketMs || c.RangeMs > showcaseLineChartMaxRangeMs {
+		c.RangeMs = showcaseLineChartDefaultRangeMs
+	}
+	if c.BucketMs < showcaseLineChartMinBucketMs || c.BucketMs > c.RangeMs {
+		c.BucketMs = showcaseLineChartDefaultBucketMs
+	}
+	if c.BucketMs > c.RangeMs {
+		c.BucketMs = c.RangeMs
+	}
+	return c
+}
+
 func normalizeVarMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case "", "auto", "display", "metric", "badge", "progress", "slider", "switch":
+	case "", "auto", "display", "metric", "badge", "progress", "line_chart", "slider", "switch":
 		if mode == "" {
 			return "auto"
 		}

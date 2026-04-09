@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-04-09_win-showcase-line-chart.md](2026-04-09_win-showcase-line-chart.md)
   - [2026-04-05_win-v0.0.15.md](2026-04-05_win-v0.0.15.md)
   - [2026-04-04_win-frontend-empty-node-modules-guard.md](2026-04-04_win-frontend-empty-node-modules-guard.md)
   - [2026-04-04_win-flow-p0-authoring-closure.md](2026-04-04_win-flow-p0-authoring-closure.md)

@@ -10,6 +10,14 @@ import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useI18n } from "@/i18n"
 import { parseFloatInput, parseIntegerInput } from "@/lib/numberInput"
+import {
+  ensureShowcaseChartOption,
+  normalizeShowcaseLineChartConfig,
+  SHOWCASE_LINE_CHART_BUCKET_OPTIONS,
+  SHOWCASE_LINE_CHART_DEFAULT_BUCKET_MS,
+  SHOWCASE_LINE_CHART_DEFAULT_RANGE_MS,
+  SHOWCASE_LINE_CHART_RANGE_OPTIONS
+} from "@/lib/showcaseChart"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
@@ -192,6 +200,8 @@ const widgetDialog = reactive({
   sliderMax: "100",
   sliderStep: "1",
   sliderThrottleMs: "50",
+  chartRangeMs: String(SHOWCASE_LINE_CHART_DEFAULT_RANGE_MS),
+  chartBucketMs: String(SHOWCASE_LINE_CHART_DEFAULT_BUCKET_MS),
   switchOnValue: "true",
   switchOffValue: "false"
 })
@@ -211,7 +221,7 @@ const varQuickPickDialog = reactive({
 const loadedMineVarQuickPickItems = ref<VarQuickPickItem[]>([])
 
 const defaultTypeForMode = (mode: VarWidgetMode) => {
-  if (mode === "slider" || mode === "progress") return "float64"
+  if (mode === "slider" || mode === "progress" || mode === "line_chart") return "float64"
   if (mode === "switch") return "bool"
   return "string"
 }
@@ -219,7 +229,20 @@ const defaultTypeForMode = (mode: VarWidgetMode) => {
 const lastModeForType = ref<VarWidgetMode>("auto")
 const widgetDialogUsesRange = computed(() => widgetDialog.varMode === "slider" || widgetDialog.varMode === "progress")
 const widgetDialogUsesSliderControls = computed(() => widgetDialog.varMode === "slider")
+const widgetDialogUsesChartSettings = computed(() => widgetDialog.varMode === "line_chart")
 const widgetDialogUsesSwitchSettings = computed(() => widgetDialog.varMode === "switch")
+const normalizedWidgetDialogChart = computed(() =>
+  normalizeShowcaseLineChartConfig({
+    rangeMs: Number.parseInt(widgetDialog.chartRangeMs, 10),
+    bucketMs: Number.parseInt(widgetDialog.chartBucketMs, 10)
+  })
+)
+const chartRangeOptions = computed(() =>
+  ensureShowcaseChartOption(SHOWCASE_LINE_CHART_RANGE_OPTIONS, normalizedWidgetDialogChart.value.rangeMs)
+)
+const chartBucketOptions = computed(() =>
+  ensureShowcaseChartOption(SHOWCASE_LINE_CHART_BUCKET_OPTIONS, normalizedWidgetDialogChart.value.bucketMs)
+)
 
 const resetWidgetDialog = () => {
   widgetDialog.mode = "create"
@@ -240,6 +263,8 @@ const resetWidgetDialog = () => {
   widgetDialog.sliderMax = "100"
   widgetDialog.sliderStep = "1"
   widgetDialog.sliderThrottleMs = "50"
+  widgetDialog.chartRangeMs = String(SHOWCASE_LINE_CHART_DEFAULT_RANGE_MS)
+  widgetDialog.chartBucketMs = String(SHOWCASE_LINE_CHART_DEFAULT_BUCKET_MS)
   widgetDialog.switchOnValue = "true"
   widgetDialog.switchOffValue = "false"
 }
@@ -275,6 +300,9 @@ const openEditWidget = (widget: ShowcaseWidget) => {
     widgetDialog.sliderMax = String(widget.var.slider?.max ?? 100)
     widgetDialog.sliderStep = String(widget.var.slider?.step ?? 1)
     widgetDialog.sliderThrottleMs = String(widget.var.slider?.throttleMs ?? 50)
+    const chart = normalizeShowcaseLineChartConfig(widget.var.chart)
+    widgetDialog.chartRangeMs = String(chart.rangeMs)
+    widgetDialog.chartBucketMs = String(chart.bucketMs)
     widgetDialog.switchOnValue = widget.var.switch?.onValue ?? "true"
     widgetDialog.switchOffValue = widget.var.switch?.offValue ?? "false"
   }
@@ -497,6 +525,7 @@ const submitWidgetDialog = async () => {
     const mode = widgetDialog.varMode
     const modeUsesRange = mode === "slider" || mode === "progress"
     const modeUsesSliderControls = mode === "slider"
+    const modeUsesChartSettings = mode === "line_chart"
     const visibility = widgetDialog.visibility.trim() || "public"
     const type = widgetDialog.varType.trim() || defaultTypeForMode(mode)
     if (!type) throw new Error(t("Variable type is required."))
@@ -512,6 +541,16 @@ const submitWidgetDialog = async () => {
     if (modeUsesSliderControls && sliderStep <= 0) {
       throw new Error(t("Step must be greater than 0."))
     }
+    const chartRangeMsRaw = modeUsesChartSettings
+      ? parsePositiveInt(widgetDialog.chartRangeMs, "Range")
+      : SHOWCASE_LINE_CHART_DEFAULT_RANGE_MS
+    const chartBucketMsRaw = modeUsesChartSettings
+      ? parsePositiveInt(widgetDialog.chartBucketMs, "Granularity")
+      : SHOWCASE_LINE_CHART_DEFAULT_BUCKET_MS
+    const chart = normalizeShowcaseLineChartConfig({
+      rangeMs: chartRangeMsRaw,
+      bucketMs: chartBucketMsRaw
+    })
     const onValue = widgetDialog.switchOnValue.trim()
     const offValue = widgetDialog.switchOffValue.trim()
     if (mode === "switch" && (!onValue || !offValue)) {
@@ -540,6 +579,7 @@ const submitWidgetDialog = async () => {
           visibility,
           type,
           slider: { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs },
+          chart,
           switch: switchSetting
         }
       })
@@ -555,6 +595,7 @@ const submitWidgetDialog = async () => {
       widget.var.visibility = visibility
       widget.var.type = type
       widget.var.slider = { min: sliderMin, max: sliderMax, step: sliderStep, throttleMs }
+      widget.var.chart = chart
       widget.var.switch = switchSetting
     }
     await syncDraftSubscriptions()
@@ -1584,6 +1625,7 @@ onBeforeUnmount(() => {
                   <option value="metric">{{ t("Metric") }}</option>
                   <option value="badge">{{ t("Badge") }}</option>
                   <option value="progress">{{ t("Progress") }}</option>
+                  <option value="line_chart">{{ t("Line Chart") }}</option>
                   <option value="slider">{{ t("Slider") }}</option>
                   <option value="switch">{{ t("Switch") }}</option>
                 </select>
@@ -1604,10 +1646,15 @@ onBeforeUnmount(() => {
                 </label>
                 <input v-model="widgetDialog.varType" :class="inputClass" :placeholder="t('float64 / bool / string')" />
               </div>
-              <div v-if="widgetDialogUsesRange" class="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-3">
+              <div
+                v-if="widgetDialogUsesRange || widgetDialogUsesChartSettings"
+                class="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-3"
+              >
                 <p class="text-xs text-muted-foreground">
                   {{
-                    widgetDialogUsesSliderControls
+                    widgetDialogUsesChartSettings
+                      ? t("Line chart uses frontend in-memory samples only. Range and granularity control the visible window, not backend history.")
+                      : widgetDialogUsesSliderControls
                       ? t("Slider writes values back. Range, step, and throttle stay active.")
                       : t("Progress is display-only. It reuses Min and Max as the visual range.")
                   }}
@@ -1641,6 +1688,25 @@ onBeforeUnmount(() => {
                   </Tooltip>
                 </label>
                 <input v-model="widgetDialog.sliderThrottleMs" :class="inputClass" />
+              </div>
+            </div>
+
+            <div v-if="widgetDialogUsesChartSettings" class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Range") }}</label>
+                <select v-model="widgetDialog.chartRangeMs" :class="inputClass">
+                  <option v-for="option in chartRangeOptions" :key="`chart-range-${option.value}`" :value="String(option.value)">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Granularity") }}</label>
+                <select v-model="widgetDialog.chartBucketMs" :class="inputClass">
+                  <option v-for="option in chartBucketOptions" :key="`chart-bucket-${option.value}`" :value="String(option.value)">
+                    {{ option.label }}
+                  </option>
+                </select>
               </div>
             </div>
 

@@ -1,6 +1,13 @@
 import { reactive } from "vue"
 import { t } from "@/i18n"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
+import {
+  appendShowcaseLineChartSample,
+  buildShowcaseLineChart,
+  type ShowcaseLineChartConfig,
+  type ShowcaseLineChartSample,
+  normalizeShowcaseLineChartConfig
+} from "@/lib/showcaseChart"
 import { useToastStore } from "@/stores/toast"
 
 type WailsBinding = (...args: any[]) => Promise<any>
@@ -33,7 +40,7 @@ const callTopicBus = async <T>(method: string, ...args: any[]): Promise<T> => {
 }
 
 export type ShowcaseWidgetKind = "topic_button" | "var"
-export type VarWidgetMode = "auto" | "display" | "metric" | "badge" | "progress" | "slider" | "switch"
+export type VarWidgetMode = "auto" | "display" | "metric" | "badge" | "progress" | "line_chart" | "slider" | "switch"
 
 export type ShowcaseVarSlider = {
   min: number
@@ -47,6 +54,8 @@ export type ShowcaseVarSwitch = {
   offValue: string
 }
 
+export type ShowcaseVarChart = ShowcaseLineChartConfig
+
 export type ShowcaseVarWidget = {
   ownerId: number
   name: string
@@ -55,6 +64,7 @@ export type ShowcaseVarWidget = {
   type: string
   slider: ShowcaseVarSlider
   switch: ShowcaseVarSwitch
+  chart: ShowcaseVarChart
 }
 
 export type ShowcaseTopicButton = {
@@ -136,6 +146,19 @@ export type VarSnapshot = {
   lastUpdated: string
 }
 
+export type ShowcaseLineChartState = {
+  status: "ready" | "empty" | "insufficient"
+  ready: boolean
+  message: string
+  chart: ShowcaseVarChart
+  fromMs: number
+  toMs: number
+  points: ShowcaseLineChartSample[]
+  yMin: number
+  yMax: number
+  latestValue: string
+}
+
 export type ShowcaseState = {
   loaded: boolean
   busy: boolean
@@ -180,8 +203,10 @@ const normalizePositiveInt = (value: any, fallback: number, min: number, max: nu
 
 const defaultSlider = (): ShowcaseVarSlider => ({ min: 0, max: 100, step: 1, throttleMs: 50 })
 const defaultSwitch = (): ShowcaseVarSwitch => ({ onValue: "true", offValue: "false" })
+const defaultChart = (): ShowcaseVarChart => normalizeShowcaseLineChartConfig()
 const defaultTypeForMode = (mode: VarWidgetMode): string => {
   switch (mode) {
+    case "line_chart":
     case "slider":
     case "progress":
       return "float64"
@@ -221,6 +246,8 @@ const normalizeVarMode = (mode: any): VarWidgetMode => {
       return "badge"
     case "progress":
       return "progress"
+    case "line_chart":
+      return "line_chart"
     case "slider":
       return "slider"
     case "switch":
@@ -359,7 +386,8 @@ const normalizeVarWidget = (raw: any): ShowcaseVarWidget | null => {
     visibility: String(raw?.visibility ?? "public").trim() || "public",
     type,
     slider: normalizeSlider(raw?.slider ?? defaultSlider()),
-    switch: normalizeSwitch(raw?.switch ?? defaultSwitch())
+    switch: normalizeSwitch(raw?.switch ?? defaultSwitch()),
+    chart: normalizeShowcaseLineChartConfig(raw?.chart ?? defaultChart())
   }
 }
 
@@ -504,6 +532,7 @@ const state = reactive<ShowcaseState>({
   sliderDraft: {}
 })
 
+const chartHistory = reactive<Record<string, ShowcaseLineChartSample[]>>({})
 const activeSubs = new Set<string>()
 const sliderTimers = new Map<string, number>()
 const sliderLastSentAt = new Map<string, number>()
@@ -543,18 +572,28 @@ const parseVarResp = (payload: any) => {
   }
 }
 
+const upsertChartSample = (ownerId: number, name: string, value: string, timestampMs: number) => {
+  const parsed = Number.parseFloat(String(value ?? "").trim())
+  if (!Number.isFinite(parsed)) return
+  const key = varKey(ownerId, name)
+  chartHistory[key] = appendShowcaseLineChartSample(chartHistory[key] ?? [], { timestamp: timestampMs, value: parsed }, timestampMs)
+}
+
 const upsertSnapshot = (resp: ReturnType<typeof parseVarResp>) => {
   if (!resp) return
   const key = varKey(resp.ownerId, resp.name)
   const existing = state.values[key]
+  const timestamp = nowIso()
+  const timestampMs = Date.parse(timestamp)
   state.values[key] = {
     ownerId: resp.ownerId,
     name: resp.name,
     value: resp.value !== "" ? resp.value : existing?.value ?? "",
     visibility: resp.visibility !== "" ? resp.visibility : existing?.visibility ?? "",
     type: resp.type !== "" ? resp.type : existing?.type ?? "",
-    lastUpdated: nowIso()
+    lastUpdated: timestamp
   }
+  upsertChartSample(resp.ownerId, resp.name, state.values[key]?.value ?? "", timestampMs)
 }
 
 const removeSnapshot = (resp: ReturnType<typeof parseVarResp>) => {
@@ -832,6 +871,7 @@ const addVarWidget = async (input: {
   type: string
   slider?: Partial<ShowcaseVarSlider>
   switch?: Partial<ShowcaseVarSwitch>
+  chart?: Partial<ShowcaseVarChart>
 }) => {
   const screen = currentScreen()
   const ownerId = Number(input.ownerId ?? 0)
@@ -846,6 +886,7 @@ const addVarWidget = async (input: {
   const type = String(input.type ?? "").trim() || defaultTypeForMode(mode)
   const slider = normalizeSlider({ ...defaultSlider(), ...(input.slider ?? {}) })
   const sw = normalizeSwitch({ ...defaultSwitch(), ...(input.switch ?? {}) })
+  const chart = normalizeShowcaseLineChartConfig({ ...defaultChart(), ...(input.chart ?? {}) })
   const layout = normalizeWidgetLayout({ colSpan: input.colSpan }, screen.layout)
 
   const widget: ShowcaseWidget = {
@@ -861,7 +902,8 @@ const addVarWidget = async (input: {
       visibility,
       type,
       slider,
-      switch: sw
+      switch: sw,
+      chart
     }
   }
   screen.widgets.push(widget)
@@ -892,6 +934,58 @@ const getVarValueText = (widget: ShowcaseWidget): string => {
   if (widget.kind !== "var" || !widget.var) return ""
   const snap = valueForVar(widget.var.ownerId, widget.var.name)
   return snap?.value ?? ""
+}
+
+const lineChartState = (
+  widget: ShowcaseWidget,
+  overrides?: Partial<ShowcaseVarChart> | null
+): ShowcaseLineChartState => {
+  const fallbackChart = normalizeShowcaseLineChartConfig(overrides ?? defaultChart())
+  if (widget.kind !== "var" || !widget.var) {
+    return {
+      status: "empty",
+      ready: false,
+      message: t("No value yet."),
+      chart: fallbackChart,
+      fromMs: Date.now() - fallbackChart.rangeMs,
+      toMs: Date.now(),
+      points: [],
+      yMin: 0,
+      yMax: 0,
+      latestValue: ""
+    }
+  }
+  const chart = normalizeShowcaseLineChartConfig({
+    ...widget.var.chart,
+    ...(overrides ?? {})
+  })
+  const key = varKey(widget.var.ownerId, widget.var.name)
+  const raw = getVarValueText(widget).trim()
+  const result = buildShowcaseLineChart(chartHistory[key] ?? [], chart)
+  let message = ""
+  if (result.status === "empty") {
+    if (!raw) {
+      message = t("No value yet.")
+    } else if (!Number.isFinite(Number.parseFloat(raw))) {
+      message = t("No numeric value yet.")
+    } else {
+      message = t("No samples in selected range.")
+    }
+  } else if (result.status === "insufficient") {
+    message = t("Need more samples to draw trend.")
+  }
+  return {
+    status: result.status,
+    ready: result.status === "ready",
+    message,
+    chart,
+    fromMs: result.fromMs,
+    toMs: result.toMs,
+    points: result.points,
+    yMin: result.yMin,
+    yMax: result.yMax,
+    latestValue: raw
+  }
 }
 
 const sliderValue = (widget: ShowcaseWidget): number => {
@@ -1174,6 +1268,7 @@ export const useShowcaseStore = () => {
     enterScreen,
     getVarValueText,
     leave,
+    lineChartState,
     listScreenSummaries,
     load,
     save,
