@@ -1,10 +1,10 @@
-# Plan - MyFlowHub-Win Legacy Dialog Height And Scroll Convergence
+# Plan - MyFlowHub-Win Detached Window Session Snapshot Sync
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-varpool-node-vars-dialog-scroll`
+- Branch: `fix/win-showcase-window-session-sync`
 - Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
 - Current Stage: `4`
 
 ## Stage Records
@@ -13,383 +13,339 @@
 - `guide.md`:
   - workspace root `D:\project\MyFlowHub3\guide.md` 已阅读
   - 遵守 `AGENTS.md` 与 `$m-autoflow` 约束：实现只在 `worktrees/` 中进行，计划确认前不进入编码
-- base/worktree confirmation:
+- repo / base / worktree confirmation:
   - 控制面主仓：`D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - 主仓当前存在大量未提交改动，不能作为本轮实现目录
-  - 本轮实现 worktree：`D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
-  - 本轮只修改 `MyFlowHub-Win` 前端
+  - 主仓当前分支：`main`
+  - 本轮实现 worktree：`D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
+  - 本轮只修改 `repo/MyFlowHub-Win` 前端
+- current baseline:
+  - 新 worktree 继承了一份与本任务无关的旧 `plan.md`
+  - 已在本 worktree 内用本次会话补水修复计划替换，避免后续执行误跟旧任务
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 将 `MyFlowHub-Win` 中仍采用旧卡片式 overlay 弹窗的页面统一收敛到“视口内限高 + 内部滚动”的结构。
-- 解决 `VarPool Node Variables` 弹窗高度失控问题的同时，把同类旧弹窗一并做一致化优化。
+- 修复 `Showcase` 编辑窗口和预览窗口在 hub 已连接时仍显示 `Disconnected` 的错误状态。
+- 消除 detached window 新前端上下文里“身份已恢复，但 session 连接快照未恢复”的 disconnect 假象。
 
 #### Scope
 - Must:
-  - 盘点 `frontend/src` 中基于 `Overlay` 的卡片式弹窗
-  - 保持已经符合“限高 + flex + overflow-hidden + 内部 scroll”模式的弹窗不变
-  - 将仍缺少外层高度约束的旧弹窗收敛到统一结构
-  - 保持各弹窗现有业务交互、字段、按钮、关闭行为不变
-  - 修复滚动区可能裁切 focus ring 的问题
+  - 修复 `Showcase` 编辑页窗口和预览窗口的连接状态初始化
+  - 保证这些窗口的顶部连接状态 badge 与实际 session 状态一致
+  - 保证这些窗口里依赖 `sessionStore.connected` 的交互禁用逻辑与真实连接状态一致
+  - 复用共享会话补水逻辑，避免在多个 detached window 中复制同一段 `IsConnected` / `LastAddr` 代码
+  - 同步修复已确认存在同根因的 `TopicBusWindow`
 - Optional:
-  - 为关键代表性弹窗补结构测试，锁定本轮布局契约
+  - 让 `Home` 页复用同一套共享 helper，消除重复实现
+  - 补 detached window 代表性测试，锁定 badge / 交互 gating 的初始化行为
 - Not in scope:
-  - 不修改共享 `Overlay.vue` 的行为语义
-  - 不变更后端、store、Wails binding、分页大小或页面业务流程
-  - 不重做页面视觉风格，不把所有弹窗抽成全新共享组件
+  - 不修改 hub 连接协议、后端 session 服务、Wails runtime event 协议
+  - 不重做 `Home` 页连接 / 登录流程
+  - 不改 packaged runtime 的辅助窗口打开策略
+  - 不扩展到所有 detached window，除非验证发现它们也直接依赖 `sessionStore.connected`
 
 #### Use Cases
-- 用户在 `VarPool`、`Devices`、`File Console`、`Flow`、`Showcase`、`ShowcaseCenter`、`Stream`、`Access Policy` 等页面打开任意旧弹窗
-- 表单字段较多、列表较长、窗口高度较小或缩放较大时，弹窗仍留在视口内，主体内容可滚动
-- 操作区按钮、关闭按钮和关键上下文信息不被列表或长表单挤出屏幕
+- 用户已经在主界面连上 hub，然后从 `Showcase` 打开编辑窗口
+- 用户已经在主界面连上 hub，然后从 `Showcase` 打开预览窗口
+- 用户已经在主界面连上 hub，然后从 `TopicBus` 打开独立窗口
+- 在这些窗口中，顶部 badge、按钮禁用态和 ready-check 应与真实 session 状态一致，而不是默认回落到 `Disconnected`
 
 #### Functional Requirements
-1. 所有纳入本轮的旧式 overlay 卡片弹窗必须具备明确的最大高度约束。
-2. 弹窗主体内容超过可用视口时，必须通过内部滚动访问，而不是让整张卡片超出屏幕。
-3. 已经采用成熟模式的弹窗保持不动，避免无意义回归。
-4. 修复后不得改变各弹窗原有字段、按钮、文案、默认值和 close 行为。
-5. 对于带表单 focus ring 的滚动区，内部必须保留足够 padding，避免外圈被 overflow 裁切。
-6. 旧弹窗的优化范围必须覆盖所有当前仍明显缺少外层限高的 overlay 卡片，而不是只修个别页面。
+1. detached window 启动时必须显式恢复当前 session 的连接快照，而不只恢复 `nodeId` / `hubId`
+2. `Showcase` 编辑窗口必须在初始化完成后正确显示当前 `Connected` / `Disconnected` 状态
+3. `Showcase` 预览窗口必须在初始化完成后正确显示当前 `Connected` / `Disconnected` 状态
+4. `ShowcaseWidgetCardContent` 里的交互禁用逻辑必须基于真实连接状态，而不是 store 默认值
+5. 已确认同根因的 `TopicBusWindow` 必须一起接入共享补水逻辑，避免留下同类 bug
+6. 若 runtime snapshot 获取失败，窗口必须优雅降级，不得阻断原有 `LoadHomeState` 身份恢复流程
 
 #### Non-functional Requirements
-- 最小安全改动：
-  - 以“局部模板/类名调整”为主，不改共享 overlay 逻辑
-- 一致性：
-  - 尽量采用仓内已验证的结构模式，例如 `AccessPolicy` / `PermitIssuance` / `RegistrationApprovals` / `FlowMethodPickerDialog`
-- 可维护性：
-  - 明确区分“已合规弹窗”和“待收敛弹窗”，避免下次重复排查
-- 稳定性：
-  - 小屏、缩放和长列表/长表单场景下仍保留操作可达性
-- 可测试性：
-  - 至少补覆盖代表性旧弹窗的结构测试，必要时对复杂弹窗做页面级 smoke
+- 最小安全改动:
+  - 优先修共享前端 helper 与受影响窗口，不引入无关页面重构
+- 一致性:
+  - detached window 不再各自实现一份连接快照恢复逻辑
+- 可维护性:
+  - 会话补水逻辑放在明确的共享位置，便于后续窗口复用
+- 稳定性:
+  - 失败时保留现有事件监听与 fallback identity 流程
+- 可测试性:
+  - 至少用一条共享 helper 测试和一条窗口级测试覆盖本轮行为
 
 #### Inputs / Outputs
 - Inputs:
-  - `Overlay` 打开的各类页面/组件弹窗
-  - 各弹窗现有的表单、列表、错误态与操作区
+  - `SessionService.IsConnected`
+  - `SessionService.LastAddr`
+  - `App.HomeState`
+  - detached window 启动路径中的 `loadHomeDefaults` 或同类初始化流程
 - Outputs:
-  - 旧弹窗统一具备视口内限高与内部滚动
-  - 用户在长内容场景下不再遇到整张卡片超出视口的问题
+  - detached window 中的 `sessionStore.connected`
+  - detached window 中的 `sessionStore.addr`
+  - 正确的 UI badge 和交互 gating
 
 #### Edge Cases
-- 单页内已有局部列表滚动，但整张卡片本体仍可能超出视口
-- 弹窗主体是长表单而不是列表，操作按钮仍需固定在底部可达
-- 滚动容器内输入框获得焦点时 focus ring 被裁切
-- 短弹窗也需兼容统一结构，不能引入多余空白或布局塌陷
-- 嵌套 overlay 或复杂 picker 不能因统一结构导致内部列表不可滚
+- 主窗口尚未进入 `Home` 页，但 detached window 直接首次启动
+- `LoadHomeState` 成功，但 runtime session snapshot 查询失败
+- session 已连接但没有 `lastAddr`
+- detached window 在 profile 切换后重新加载
+- runtime event 还没推到当前窗口时，初始化补水仍应先给出正确静态快照
 
 #### Acceptance Criteria
-1. 已有成熟结构的弹窗保持不动，只优化当前缺少外层限高的旧弹窗。
-2. 纳入本轮的旧弹窗全部具备外层 `max-h + flex-col + overflow-hidden` 或等价结构。
-3. 这些弹窗的主体内容区具备内部滚动，不再把整张卡片顶出视口。
-4. 至少有代表性测试锁定本轮结构契约，并完成定向前端验证。
-5. 手工冒烟时，关键页面的长表单/长列表弹窗在较小视口下仍可操作。
+1. 在 hub 已连接的前提下，`Showcase` 编辑窗口打开后显示 `Connected`
+2. 在 hub 已连接的前提下，`Showcase` 预览窗口打开后显示 `Connected`
+3. 这两个窗口中依赖 `sessionStore.connected` 的控件不再被错误禁用
+4. `TopicBusWindow` 在同样场景下不再显示错误的 `Disconnected`
+5. 共享 helper 与代表性窗口测试通过
+6. 不引入新的 build / type / test 回归
 
 #### Risks
-- 若把滚动容器放错位置，可能导致 header / footer 跟着滚动，降低操作效率。
-- 批量改多个弹窗时，若结构不一致处理不当，容易出现局部 focus ring 裁切或多余空白。
-- 若试图走共享组件重构，改动面会迅速扩大；本轮应避免抽象过度。
+- 若把 helper 放在过于底层的位置并自动执行，可能影响已有依赖 `sessionStore` 初始空态的测试
+- 若窗口初始化顺序处理不当，可能出现 `LoadHomeState` 与连接快照写入先后覆盖问题
+- 若扩大到所有窗口，改动面会不必要地变大；本轮只修已确认依赖 `sessionStore.connected` 的窗口
 
 #### Issue List
 - 无
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 不改共享 `Overlay.vue`，而是在各旧弹窗内部收敛到一套已被仓内验证的壳层模式：
-  - 外层卡片：`flex max-h-[85vh] w-full max-w-* flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl`
-  - 主体滚动区：`mt-5 min-h-0 flex-1 overflow-y-auto`
-  - 必要时在滚动区内部再加 `px-1 py-1 pr-2`，避免 focus ring 被裁切
-- 对已经合规的弹窗不做修改，只把旧弹窗向这套模式靠齐。
-- 通过少量代表性测试锁住关键结构，不为每个弹窗都单独补一整套测试。
+- 推荐方案：在前端共享层新增 detached window 会话补水 helper，由它统一调用 `SessionService.IsConnected` / `LastAddr` 更新 `sessionStore`，然后在 `Showcase.vue`、`ShowcaseWindow.vue`、`TopicBusWindow.vue` 的启动流程中接入
+- 同时让 `Home.vue` 复用该 helper，消除同一逻辑的双份实现
 
 #### Alternatives Considered
-- 修改共享 `Overlay.vue`，让所有弹窗自动限高:
-  - 放弃。不同弹窗宽度、主体结构和滚动位置不一致，改共享层风险更高。
-- 新增通用 `DialogCard` 组件并迁移所有弹窗:
-  - 暂不采用。本轮目标是收敛旧结构，局部模板调整更小更安全。
-- 只修 `VarPool Node Variables`:
-  - 放弃。盘点后确认仓里还有一批旧弹窗同样缺少外层限高，局部修一处会继续留下同类问题。
+- 方案 A: 只在 `Showcase.vue` 和 `ShowcaseWindow.vue` 本地补 `IsConnected` / `LastAddr`
+  - 优点：改动最小
+  - 缺点：保留 `TopicBusWindow` 同类 bug，并复制一套初始化逻辑
+  - 结论：不选
+- 方案 B: 在 `session` store 暴露共享连接快照补水 helper，并接入已确认受影响的 detached windows
+  - 优点：最小共享抽象，解决 `Showcase` 和 `TopicBus` 同根因问题，也可让 `Home` 页去重
+  - 缺点：需要补测试，避免影响依赖默认 store 初值的用例
+  - 结论：选用
+- 方案 C: 自动让 `useSessionStore()` 在首次调用时直接访问后端补水
+  - 优点：调用方最少
+  - 缺点：store getter 引入隐式异步副作用，测试和调用时序更难控
+  - 结论：不选
 
 #### Module Responsibilities
-- 页面/组件中的旧弹窗：
-  - 采用统一的限高与滚动布局
-- 已合规弹窗：
-  - 作为结构参考，不改实现
-- 测试文件：
-  - 对代表性旧弹窗和已存在测试的页面增加结构断言
+- `frontend/src/stores/session.ts`
+  - 继续持有 `session.state` 事件监听
+  - 新增显式的 runtime snapshot 补水方法，负责刷新 `connected` / `addr`
+- `frontend/src/pages/Home.vue`
+  - 复用共享 helper，而不是保留本地 `refreshConnectionSnapshot`
+- `frontend/src/pages/Showcase.vue`
+  - 在编辑窗口初始化时补水 session 快照，再继续现有 `LoadHomeState` / `showcase.load` 流程
+- `frontend/src/windows/ShowcaseWindow.vue`
+  - 在预览窗口初始化时补水 session 快照，再继续现有 `LoadHomeState` / `showcase.load` 流程
+- `frontend/src/windows/TopicBusWindow.vue`
+  - 同样接入共享 helper，修复同根因 disconnect 假象
+- tests
+  - 验证共享 helper 的行为
+  - 验证代表性 detached window 能在启动时显示正确连接状态
 
 #### Data / Call Flow
-1. 页面或组件通过 `Overlay` 打开弹窗
-2. 业务逻辑、表单状态、store 调用保持不变
-3. 仅弹窗模板结构与样式类发生调整：
-  - 外层卡片受限高
-  - 中部主体承担滚动
-  - 页脚操作区保持在底部
+1. detached window mounted
+2. 页面先调用 `LoadHomeState()` 恢复 `nodeId` / `hubId` fallback
+3. 页面调用共享 session snapshot helper
+4. helper 调用 `IsConnected()`；若为 true，再补 `LastAddr()`
+5. helper 更新 `sessionStore.connected` / `sessionStore.addr`
+6. 页面继续原有 store identity 和业务加载流程
+7. 后续 runtime `session.state` 事件仍照常接管实时更新
 
-#### Interface Drafts
-- 不新增新的业务 props / events / store 接口
-- 仅在必要时增加少量 `data-*` 选择器，便于测试代表性旧弹窗结构
+#### Interface Draft
+- `frontend/src/stores/session.ts`
+  - 新增显式 helper，例如 `hydrateSessionConnectionSnapshot(): Promise<void>`
+- 该 helper:
+  - 不抛出致命错误给调用方
+  - 不清空现有 `auth` 快照
+  - 只负责更新 `connected` / `addr` / `lastStateAt`
 
 #### Error Handling and Safety
-- 保持现有各弹窗的校验、toast、错误提示和按钮禁用逻辑
-- 不因滚动结构调整吞掉错误态、空态或关闭动作
-- 对带输入控件的弹窗，滚动区保留内边距，避免 focus ring 裁切
+- `IsConnected` / `LastAddr` 失败时:
+  - 记录 `console.warn`
+  - 保留现有 session store 状态
+  - 不中断 `LoadHomeState`、`showcase.load`、`topicbus.loadPrefs` 等后续流程
+- 若 `IsConnected()` 返回 false:
+  - 只更新 `connected=false`
+  - 不强行清空本地持久化身份字段
+- runtime 事件优先级:
+  - helper 只做启动补水；连接建立 / 断开后的实时变更仍由 `session.state` 事件驱动
 
 #### Performance and Testing Strategy
-- 纯模板/样式层改动，不引入额外请求、循环或共享状态
-- 测试策略：
-  - 补至少 2 个代表性结构测试
-  - 对已有测试页面补充 class / data 断言优先
-- 定向验证：
-  - `npm exec vitest run src/pages/AccessPolicy.test.ts`
-  - `npm exec vitest run src/components/varpool/NodeVarsDialog.test.ts`
-  - 如新增其他代表性测试，则一并执行
-- 手工验证建议：
-  - `VarPool` `Node Variables`
-  - `File` `Settings` / `Preview`
-  - `Stream` `New Source` / `Control Pair Picker`
-  - `Showcase` `Edit Widget`
+- 性能:
+  - 每个 detached window 启动最多多做一次 `IsConnected` 和一次 `LastAddr` 查询
+  - 不新增轮询，不引入额外订阅
+- Tests:
+  - 新增 `frontend/src/stores/session.test.ts` 覆盖 helper 对 `connected` / `addr` 的刷新
+  - 新增 `frontend/src/windows/ShowcaseWindow.test.ts` 或等价代表性窗口测试，覆盖已连接场景下的 badge / 交互 gating
+  - 如 `TopicBusWindow` 改动面需要额外回归，再补 `frontend/src/windows/TopicBusWindow.test.ts`
+- Validation:
+  - `npm exec vitest run src/stores/session.test.ts`
+  - `npm exec vitest run src/windows/ShowcaseWindow.test.ts`
+  - 如新增 TopicBusWindow 测试，则一并执行
 
 #### Extensibility Design Points
-- 本轮收敛后，可把“旧弹窗壳层改造”作为清晰基线，后续新弹窗按同一结构编写。
-- 若未来确实要抽共享 `DialogCard`，可基于本轮收敛后的稳定结构再做，而不是带着多套旧结构直接抽象。
+- 后续若有更多 detached window 需要真实 session 快照，可复用同一 helper
+- 不把 helper 做成隐式自动执行，避免 future tests / startup 顺序失控
 
 #### Issue List
 - 无
 
 ### Stage 3.1 - Planning
 #### Project Goal and Current State
-- 当前仓内 overlay 卡片弹窗分成两类：
-  - 已合规：
-    - `frontend/src/pages/PermitIssuance.vue`
-    - `frontend/src/pages/RegistrationApprovals.vue`
-    - `frontend/src/pages/AccessPolicy.vue` 中 `roleEditorDialog` / `rolePermissionPickerDialog`
-    - `frontend/src/components/flow/editor/FlowMethodPickerDialog.vue`
-  - 待收敛：
-    - `frontend/src/layout/AppShell.vue` 中 incoming transfer dialog
-    - `frontend/src/pages/Devices.vue` 中 `nodeInfo` / `config` / `edit config`
-    - `frontend/src/pages/File.vue` 中 `settings` / `download` / `offer` / `offerNodePicker` / `addNode` / `addNodePicker` / `newFolder` / `preview`
-    - `frontend/src/pages/Flow.vue` 中 `create` / `meta` / `deploy` / `nodePicker`
-    - `frontend/src/pages/Showcase.vue` 中 `layout` / `widget` / `varQuickPick`
-    - `frontend/src/pages/ShowcaseCenter.vue` 中 `create` / `rename`
-    - `frontend/src/pages/Stream.vue` 中 `source` / `consumer` / `control` / `subscribe`
-    - `frontend/src/pages/VarPool.vue` 中 `create variable` / `add watch` / `update variable`
-    - `frontend/src/components/varpool/NodeVarsDialog.vue`
-    - `frontend/src/components/flow/editor/FlowAddNodeDialog.vue`
-    - `frontend/src/components/flow/editor/FlowFieldBindingDialog.vue`
-    - `frontend/src/pages/AccessPolicy.vue` 中 `nodeOverrideDialog` / `defaultAccessDialog`
-- 这些旧弹窗普遍只有 `max-w-*`，缺少外层 `max-h` 约束；部分虽然内部某个列表已经会滚，但整张卡片本体仍可能超出视口。
+- 当前 `Showcase` 编辑窗口、预览窗口和 `TopicBusWindow` 都会直接读取 `sessionStore.connected` 渲染 badge 或 ready-check
+- 这些窗口的启动路径只调用 `LoadHomeState()` 恢复 `nodeId` / `hubId`，没有像 `Home.vue` 那样显式调用 `IsConnected()` / `LastAddr()`
+- `session` store 默认 `connected=false`，所以 detached window 在新前端上下文里会先落到错误的 `Disconnected`
+- 这是 detached window 冷启动补水缺失，不是 hub 实际断开
 
 #### Docs Governance Routing Decision
-- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口。
+- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
 - Canonical destination:
-  - 稳定需求 / 规格：本轮不改
+  - 稳定需求 / 规格：不改
   - 执行控制面：worktree 根 `plan.md`
-  - 完成结果：`docs/change/2026-04-14_win-dialog-height-scroll-convergence.md`
-  - lessons：暂不新增，stage 4 再判断是否值得沉淀为“Win 弹窗结构基线”
+  - 完成结果：`docs/change/2026-04-14_win-showcase-window-session-sync.md`
+  - lessons：stage 4 再判断是否需要新增 detached window 会话补水 lesson
 - Requirements impact: `none`
 - Specs impact: `none`
 - Related requirements:
-  - 未找到与 Win 弹窗统一高度约束直接对应的稳定 requirements 文档
+  - `docs/requirements/showcase-display-widgets.md`
 - Related specs:
-  - `docs/specs/flow-editor-accessibility.md`（仅作为 editor 弹层可访问性与 overlay 行为参考）
+  - `docs/specs/showcase-display-widgets.md`
 - Related lessons:
-  - `docs/lessons/README.md`（已检查，无直接对应的弹窗高度 lesson）
-- Related change context:
-  - `docs/change/2026-02-24_win-overlay-mask.md`
-  - `docs/change/2026-03-03_varpool-dialog-subprefs.md`
-  - `docs/change/2026-03-27_win-access-policy-role-dialog-refine.md`
+  - `docs/lessons/wails-packaged-aux-window-fallback.md`
+  - `docs/lessons/detached-window-session-snapshot-hydration.md`
+  - `docs/lessons/frontend-vitest-junction-preserve-symlinks.md`
 
 #### Executable Task List
-- [x] `DHC-1` 定义旧弹窗统一壳层模式并收敛 `VarPool` / `Devices` / `AccessPolicy` / `AppShell`
-- [x] `DHC-2` 收敛 `File` / `Flow` / `Showcase` / `ShowcaseCenter` / `Stream`
-- [x] `DHC-3` 收敛 flow editor 旧弹窗组件
-- [x] `DHC-4` 补代表性测试并完成定向验证
+- [x] `SWS-1` 提取共享 session runtime snapshot helper，并让 `Home.vue` 复用
+- [x] `SWS-2` 接入 `Showcase` 编辑页、`ShowcaseWindow`、`TopicBusWindow`
+- [x] `SWS-3` 补测试并完成定向验证
 
 #### Task Details
-##### `DHC-1` - 核心旧弹窗收敛
+##### `SWS-1` - Shared Session Snapshot Hydration
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
 - Goal:
-  - 先覆盖最直接暴露给用户且已确认存在问题的一组核心弹窗
+  - 把 `IsConnected` / `LastAddr` 连接快照恢复逻辑集中到共享 helper
 - Files / Modules:
-  - `frontend/src/components/varpool/NodeVarsDialog.vue`
-  - `frontend/src/pages/VarPool.vue`
-  - `frontend/src/pages/Devices.vue`
-  - `frontend/src/pages/AccessPolicy.vue`
-  - `frontend/src/layout/AppShell.vue`
-- Write Set:
-  - 上述 5 个文件
-- Acceptance:
-  - 这些旧弹窗均采用外层限高 + 主体滚动
-  - `AccessPolicy` 的 legacy dialogs 不落后于其 role dialogs
-- Test Points:
-  - `VarPool Node Variables`
-  - `AccessPolicy` 代表性结构断言
-- Rollback:
-  - 回退上述 5 个文件中的弹窗结构调整
-
-##### `DHC-2` - 页面级旧弹窗批量收敛
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll\plan.md`
-- Goal:
-  - 把主要业务页面仍停留在旧模式的弹窗统一收敛
-- Files / Modules:
-  - `frontend/src/pages/File.vue`
-  - `frontend/src/pages/Flow.vue`
-  - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/pages/ShowcaseCenter.vue`
-  - `frontend/src/pages/Stream.vue`
-- Write Set:
-  - 上述 5 个文件
-- Acceptance:
-  - 这些页面中所有旧式 overlay 卡片均不再只有裸 `max-w`
-  - 长表单 / 长列表弹窗保留底部操作区可达
-- Test Points:
-  - 手工冒烟 `File` / `Showcase` / `Stream`
-- Rollback:
-  - 回退上述 5 个文件中的弹窗结构调整
-
-##### `DHC-3` - Flow editor 旧弹窗组件收敛
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll\plan.md`
-- Goal:
-  - 让 editor 相关旧弹窗和现有 `FlowMethodPickerDialog` 结构对齐
-- Files / Modules:
-  - `frontend/src/components/flow/editor/FlowAddNodeDialog.vue`
-  - `frontend/src/components/flow/editor/FlowFieldBindingDialog.vue`
+  - `frontend/src/stores/session.ts`
+  - `frontend/src/pages/Home.vue`
 - Write Set:
   - 上述 2 个文件
 - Acceptance:
-  - editor 弹窗具备视口内限高与滚动
-  - 焦点管理与现有 dialog 语义保持不变
-- Test Points:
-  - 如有现成测试则补结构断言，否则通过定向 smoke 验证
+  - 共享 helper 能更新 `sessionStore.connected` / `sessionStore.addr`
+  - `Home.vue` 继续保留现有行为，但不再自己维护重复逻辑
+- Tests:
+  - `frontend/src/stores/session.test.ts`
 - Rollback:
-  - 回退上述 2 个文件
+  - 回退 helper 与 `Home.vue` 对其的引用
 
-##### `DHC-4` - 代表性测试与验证
+##### `SWS-2` - Detached Window Consumers
 - Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-varpool-node-vars-dialog-scroll\plan.md`
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
 - Goal:
-  - 用少量测试锁定结构契约，并确认这轮批量收敛没有破坏前端测试环境
+  - 修复已确认受影响的 detached window disconnect 假象
 - Files / Modules:
-  - `frontend/src/components/varpool/NodeVarsDialog.test.ts`
-  - `frontend/src/pages/AccessPolicy.test.ts`
-  - `frontend/src/components/flow/editor/FlowFieldBindingDialog.test.ts`
-  - 如需要，再补 1 个代表性页面或组件测试
+  - `frontend/src/pages/Showcase.vue`
+  - `frontend/src/windows/ShowcaseWindow.vue`
+  - `frontend/src/windows/TopicBusWindow.vue`
 - Write Set:
-  - 以上测试文件
+  - 上述 3 个文件
 - Acceptance:
-  - 代表性结构测试通过
-  - 定向 Vitest 命令通过
-- Test Points:
-  - `npm exec vitest run src/components/varpool/NodeVarsDialog.test.ts`
-  - `npm exec vitest run src/pages/AccessPolicy.test.ts`
-  - `npm exec vitest run src/components/flow/editor/FlowFieldBindingDialog.test.ts`
+  - 这些窗口初始化后使用真实 session 快照
+  - UI badge 和依赖 `sessionStore.connected` 的 gating 与真实状态一致
+- Tests:
+  - `frontend/src/windows/ShowcaseWindow.test.ts`
+  - 如有必要，`frontend/src/windows/TopicBusWindow.test.ts`
 - Rollback:
-  - 删除新增测试并回退测试断言
+  - 回退窗口初始化中的 helper 调用
+
+##### `SWS-3` - Verification
+- Owner: 主Agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
+- Goal:
+  - 用测试和定向检查锁定本轮修复
+- Files / Modules:
+  - `frontend/src/stores/session.test.ts`
+  - `frontend/src/windows/ShowcaseWindow.test.ts`
+  - 如需要，再加 `frontend/src/windows/TopicBusWindow.test.ts`
+- Write Set:
+  - 上述测试文件
+- Acceptance:
+  - 共享 helper 测试通过
+  - detached window 代表性测试通过
+  - 定向 `vitest` 通过
+- Tests:
+  - `node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run src/lib/auxWindow.test.ts src/stores/session.test.ts src/windows/ShowcaseWindow.test.ts`
+- Rollback:
+  - 删除新增测试并回退相关实现
 
 #### Dependencies
-- 现有 `Overlay` 可承载自定义高度和内部滚动结构
-- 已合规弹窗提供可复用的模板参考
-- 前端测试环境可运行 Vue 组件测试
+- `SessionService` 已提供 `IsConnected` / `LastAddr`
+- `LoadHomeState` 继续作为 identity fallback 来源
+- 现有 detached window 测试基建可用
 
 #### Risks and Notes
-- 本轮是范围扩大后的统一收敛，必须控制在结构层，不扩展到共享 overlay 行为重构。
-- `AccessPolicy` 里存在“部分弹窗已合规、部分仍旧式”的混合状态，本轮需要一并对齐。
-- 某些短表单弹窗虽然当前内容不长，也会纳入统一壳层，以免后续字段增长再次复发。
-- 若实施中发现某一类弹窗更适合独立策略，将返回 `3.1` 更新计划后再继续。
+- 只补“启动快照”，不改变 runtime event 订阅路径
+- `TopicBusWindow` 已确认与 `Showcase` 共用同一根因；一起修可以避免再次返工
+- `StreamSourceWindow` / `StreamDeliveryWindow` / `FlowEditorWindow` 虽也调用 `LoadHomeState`，但目前未发现它们直接以 `sessionStore.connected` 决定 badge 或 gating；本轮先不扩大范围
 
 #### Parallelism Assessment
-- 不派发子 Agent。
-- 原因：虽然文件较多，但都围绕同一类模板结构；串行修改更便于保持模式一致和统一回归。
+- 不派发子 Agent
+- 原因：改动集中在同一条会话补水链路和几个相关窗口，串行实现更容易保证时序一致和统一验证
 
 #### Issue List
 - 无
 
 阻塞：否
 进入 3.2
-禁止派发子Agent
 
-### Stage 3.2 - Implementation
-#### Execution Summary
-- `DHC-1`
-  - `frontend/src/components/varpool/NodeVarsDialog.vue`
-  - `frontend/src/pages/VarPool.vue`
-  - `frontend/src/pages/Devices.vue`
-  - `frontend/src/pages/AccessPolicy.vue`
-  - `frontend/src/layout/AppShell.vue`
-  - 将核心旧弹窗统一收敛为 `flex + max-h-[85vh] + overflow-hidden` 外层卡片，并把长内容移入独立滚动区。
-- `DHC-2`
-  - `frontend/src/pages/File.vue`
-  - `frontend/src/pages/Flow.vue`
+### Stage 3.2 - Implementation Record
+#### File-level Change Summary
+- `SWS-1`
+  - `frontend/src/stores/session.ts`
+    - 新增 `hydrateSessionConnectionSnapshot()`，集中补水 `IsConnected()` / `LastAddr()` 到 `sessionStore`
+  - `frontend/src/pages/Home.vue`
+    - 删除本地重复的连接快照刷新逻辑，改为复用共享 helper
+- `SWS-2`
   - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/pages/ShowcaseCenter.vue`
-  - `frontend/src/pages/Stream.vue`
-  - 对页面级旧式 overlay 卡片做同样壳层收敛，保留现有业务字段、按钮和关闭行为不变。
-- `DHC-3`
-  - `frontend/src/components/flow/editor/FlowAddNodeDialog.vue`
-  - `frontend/src/components/flow/editor/FlowFieldBindingDialog.vue`
-  - 让 flow editor 旧弹窗对齐已验证的 dialog 结构，同时保留焦点管理和 aria 语义。
-- `DHC-4`
-  - `frontend/src/components/varpool/NodeVarsDialog.test.ts`
-  - `frontend/src/pages/AccessPolicy.test.ts`
-  - `frontend/src/components/flow/editor/FlowFieldBindingDialog.test.ts`
-  - 新增/补充代表性结构断言，锁定限高与内部滚动契约。
+  - `frontend/src/windows/ShowcaseWindow.vue`
+  - `frontend/src/windows/TopicBusWindow.vue`
+    - 在 `loadHomeDefaults()` 中先恢复 `HomeState`，再显式补水 session snapshot，最后再设置 identity
+- `SWS-3`
+  - `frontend/src/stores/session.test.ts`
+    - 覆盖共享 helper 的 connected / disconnected 两条主路径
+  - `frontend/src/windows/ShowcaseWindow.test.ts`
+    - 覆盖 detached window 已连接启动时的 badge / widget gating 初始化
 
-#### Validation Results
-- `npm exec vitest run src/pages/AccessPolicy.test.ts`
-  - 通过，`5` 个测试全部通过。
-- `npm exec vitest run src/components/flow/editor/FlowFieldBindingDialog.test.ts`
-  - 通过，`1` 个测试通过。
-- `npm exec vitest run src/components/varpool/NodeVarsDialog.test.ts`
-  - 通过，`1` 个测试通过。
-- `rg -n -U -P '<Overlay[\\s\\S]{0,900}?<div[^>]*class="(?:(?!max-h-)[^"])*max-w-[^"]*"' frontend/src/pages frontend/src/components`
-  - 无命中，说明本轮扫描范围内未残留“overlay 卡片仍只有裸 `max-w`”的旧结构。
-- `git diff --check`
-  - 通过；仅出现仓库当前的 LF/CRLF 提示，无 patch 级格式错误。
-
-#### Issue List
-- 无
+#### Validation Notes
+- worktree 的 `frontend/node_modules` 通过 Windows junction 指向主仓依赖目录时，直接运行 Vitest 会报 `TypeError: Cannot read properties of undefined (reading 'config')`
+- 本轮验证命令改为显式使用：
+  - `node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run ...`
+- 该现象已纳入 lesson，避免后续把它误判为产品代码回归
 
 ### Stage 3.3 - Code Review
 - 需求覆盖：通过
-  - 用户提出的 `VarPool Node Variables` 限高/滚动问题已覆盖，并扩展到同类旧弹窗统一收敛。
+  - 已覆盖 Showcase 编辑页、Showcase 预览窗口、TopicBusWindow 的 session 快照补水
 - 架构合理性：通过
-  - 未修改共享 `Overlay.vue`，仅在各弹窗局部模板中收敛结构，符合最小安全改动。
+  - 共享 helper 收口到 `session` store，避免在多个 detached window 重复拼接 Wails 调用
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 本轮仅模板/样式和测试调整，不新增运行时请求或额外计算路径。
+  - 每次窗口冷启动只增加一次 `IsConnected()` 和最多一次 `LastAddr()`，无新增轮询
 - 可读性与一致性：通过
-  - 旧弹窗统一到同一壳层模式，代表性弹窗增加稳定 `data-*` 选择器便于后续测试和排查。
+  - `Home.vue` 与 detached windows 复用同一 helper，命名和职责边界清晰
 - 可扩展性与配置化：通过
-  - 形成可复用的局部 dialog shell 基线，后续新弹窗可直接沿用，无需提前抽共享组件。
+  - 后续其他 detached window 若依赖 `sessionStore.connected`，可直接复用同一补水入口
 - 稳定性与安全：通过
-  - 保持原有按钮、字段、关闭行为和 editor 焦点管理不变；滚动区补内边距避免 focus ring 裁切。
+  - Wails 查询失败时只 `console.warn`，不阻断原有 `LoadHomeState()` fallback
 - 测试覆盖情况：通过
-  - 代表性组件和页面测试已补齐并全部通过，覆盖 `NodeVarsDialog`、`AccessPolicy`、`FlowFieldBindingDialog`。
+  - 共享 helper 测试与代表性窗口测试均已通过
 - 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 未使用子Agent；所有改动均在单 worktree 内完成并已记录到任务映射。
+  - 本轮未派发子Agent
 
-#### Issue List
-- 无
-
-### Stage 4 - Change Archive
-#### Archive Outputs
-- `docs/change/2026-04-14_win-dialog-height-scroll-convergence.md`
-- `docs/lessons/win-legacy-overlay-dialog-scroll-shell.md`
-- 更新索引：
-  - `docs/change/README.md`
-  - `docs/lessons/README.md`
-
-#### Impact Record
-- Requirements impact: `none`
-- Specs impact: `none`
-- Lessons impact: `updated`
-
-#### Ready State
-- 当前 worktree 已完成实现、验证、Code Review 和 change/lessons 归档，可以进入“是否结束 workflow”确认。
+### Stage 4 - Archive Prep
+- 使用 `$m-docs` 完成 requirement/spec/lesson 影响复核
+- `Requirements impact: none`
+- `Specs impact: none`
+- `Lessons impact: updated`
+- 归档目标：
+  - `docs/change/2026-04-14_win-showcase-window-session-sync.md`
+  - `docs/lessons/detached-window-session-snapshot-hydration.md`
+  - `docs/lessons/frontend-vitest-junction-preserve-symlinks.md`

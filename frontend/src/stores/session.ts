@@ -1,6 +1,7 @@
 // Context: keeps the session store in sync with Wails bindings and shared Win frontend state.
 
 import { reactive } from "vue"
+import { IsConnected, LastAddr } from "../../wailsjs/go/session/SessionService"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 
 export type AuthSnapshot = {
@@ -70,6 +71,27 @@ const ensureListeners = () => {
   EventsOn("session.frame", (evt: any) => {
     store.lastFrameAt = nowIso()
   })
+}
+
+// Detached windows start in a fresh frontend context, so they must explicitly hydrate
+// the current runtime session snapshot before relying on `sessionStore.connected`.
+export const hydrateSessionConnectionSnapshot = async () => {
+  ensureListeners()
+  try {
+    const connected = await IsConnected()
+    store.connected = connected
+    store.lastStateAt = nowIso()
+    if (!connected) {
+      store.auth.loggedIn = false
+      return
+    }
+    const last = await LastAddr()
+    if (last) {
+      store.addr = String(last)
+    }
+  } catch (err) {
+    console.warn(err)
+  }
 }
 
 export const useSessionStore = () => {

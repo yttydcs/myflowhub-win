@@ -7,13 +7,11 @@ import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { useAppSettingsStore } from "@/stores/appSettings"
 import { useProfileStore } from "@/stores/profile"
-import { useSessionStore } from "@/stores/session"
+import { hydrateSessionConnectionSnapshot, useSessionStore } from "@/stores/session"
 import { useToastStore } from "@/stores/toast"
 import {
   Close as CloseSession,
-  Connect as ConnectSession,
-  IsConnected,
-  LastAddr
+  Connect as ConnectSession
 } from "../../wailsjs/go/session/SessionService"
 import {
   EnsureKeys,
@@ -126,22 +124,6 @@ const persistHomeState = async (patch?: Partial<HomeState>) => {
   }
 }
 
-const refreshConnectionSnapshot = async () => {
-  try {
-    const connected = await IsConnected()
-    sessionStore.connected = connected
-    if (connected) {
-      const last = await LastAddr()
-      if (last) {
-        sessionStore.addr = last
-        addr.value = last
-      }
-    }
-  } catch (err) {
-    console.warn(err)
-  }
-}
-
 const applySettingsDefaults = () => {
   const settings = appSettings.state.settings
   addr.value = settings.defaultAddr || hardcodedDefaultAddr
@@ -160,7 +142,10 @@ const loadPageState = async () => {
     toast.errorOf(err, t("Failed to load app settings."))
   }
   applySettingsDefaults()
-  await refreshConnectionSnapshot()
+  await hydrateSessionConnectionSnapshot()
+  if (sessionStore.connected && sessionStore.addr) {
+    addr.value = sessionStore.addr
+  }
   if (appSettings.state.settings.autoConnect && !sessionStore.connected && !connecting.value) {
     void connect()
   }

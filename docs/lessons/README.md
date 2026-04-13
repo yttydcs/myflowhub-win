@@ -21,6 +21,12 @@
 
 ## Current Docs
 
+- [detached-window-session-snapshot-hydration.md](detached-window-session-snapshot-hydration.md)
+  - 症状：主窗口已连接，但新开的 Showcase / TopicBus 独立窗口仍显示 `Disconnected`，且交互被错误禁用
+  - 关键词：`sessionStore.connected`、`LoadHomeState`、`IsConnected`、`LastAddr`、`detached window`
+- [frontend-vitest-junction-preserve-symlinks.md](frontend-vitest-junction-preserve-symlinks.md)
+  - 症状：Windows worktree 用 junction 复用 `node_modules` 时，Vitest 在 `describe(...)` 处报 `reading 'config'`
+  - 关键词：`preserve-symlinks`、`junction node_modules`、`vitest`、`0 test`
 - [authority-local-admin-actions.md](authority-local-admin-actions.md)
   - 症状：remote authority 下审批 / permit 管理仍 timeout、仍提示 `requires authority-local session`，或 authority 拒绝 routed source
   - 关键词：`authorityId != sourceId`、`routed source`、`requires authority-local session`、`list_register_permits`

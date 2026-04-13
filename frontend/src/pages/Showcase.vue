@@ -22,7 +22,7 @@ import {
 } from "@/lib/showcaseChart"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
-import { useSessionStore } from "@/stores/session"
+import { hydrateSessionConnectionSnapshot, useSessionStore } from "@/stores/session"
 import { useVarPoolStore } from "@/stores/varpool"
 import {
   useShowcaseStore,
@@ -66,6 +66,7 @@ const loadHomeDefaults = async () => {
   } catch (err) {
     console.warn(err)
   }
+  await hydrateSessionConnectionSnapshot()
   showcase.setIdentity(selfNodeId.value, hubId.value)
 }
 

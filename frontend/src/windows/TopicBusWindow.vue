@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 import { useProfileStore } from "@/stores/profile"
-import { useSessionStore } from "@/stores/session"
+import { hydrateSessionConnectionSnapshot, useSessionStore } from "@/stores/session"
 import { formatTopicBusTimestamp, normalizeTopicBusEvent, useTopicBusStore, type TopicBusEvent } from "@/stores/topicbus"
 import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
@@ -129,6 +129,7 @@ const loadHomeDefaults = async () => {
   } catch (err) {
     console.warn(err)
   }
+  await hydrateSessionConnectionSnapshot()
   topicbus.setIdentity(selfNodeId.value, hubId.value)
   applyInitialTarget()
   syncTopicDraft()

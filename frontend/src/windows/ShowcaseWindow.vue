@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { useI18n } from "@/i18n"
 import { clampColSpan, computeColumnsCount } from "@/lib/showcaseLayout"
 import { useProfileStore } from "@/stores/profile"
-import { useSessionStore } from "@/stores/session"
+import { hydrateSessionConnectionSnapshot, useSessionStore } from "@/stores/session"
 import { useShowcaseStore, type ShowcaseWidget } from "@/stores/showcase"
 import { useToastStore } from "@/stores/toast"
 import { HomeState as LoadHomeState } from "../../wailsjs/go/main/App"
@@ -45,6 +45,7 @@ const loadHomeDefaults = async () => {
   } catch (err) {
     console.warn(err)
   }
+  await hydrateSessionConnectionSnapshot()
   showcase.setIdentity(selfNodeId.value, hubId.value)
 }
 
