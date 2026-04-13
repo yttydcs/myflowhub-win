@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the File page for browsing remote directories, transfer tasks, and incoming offers.
+// 本文件实现 Win 前端的 `File` 页面。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import {
   ArrowUp,
@@ -1101,11 +1101,13 @@ onBeforeUnmount(() => {
           </h2>
           <Button variant="outline" @click="fileStore.closePreview">{{ t("Close") }}</Button>
         </div>
-        <p class="mt-2 text-xs text-muted-foreground">{{ fileStore.state.previewInfo }}</p>
-        <div class="mt-4 min-h-0 flex-1 overflow-y-auto">
-          <pre
-            class="rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
-          >{{ fileStore.state.previewLoading ? t("Loading...") : fileStore.state.previewText }}</pre>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <p class="text-xs text-muted-foreground">{{ fileStore.state.previewInfo }}</p>
+            <pre
+              class="rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
+            >{{ fileStore.state.previewLoading ? t("Loading...") : fileStore.state.previewText }}</pre>
+          </div>
         </div>
       </div>
     </Overlay>
