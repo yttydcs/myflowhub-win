@@ -1,3 +1,5 @@
+// Context: defines localized automation copy used by the Win frontend.
+
 import type { LocaleMessages } from "../types"
 
 export const automationZhCN: LocaleMessages = {

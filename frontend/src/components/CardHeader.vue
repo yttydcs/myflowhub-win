@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the shared card header component used by Win frontend pages.
 import { computed, useSlots } from "vue"
 
 const props = withDefaults(

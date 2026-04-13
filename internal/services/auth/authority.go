@@ -1,3 +1,5 @@
+// Context: implements the authority helper logic used by the auth backend service.
+
 package auth
 
 import (

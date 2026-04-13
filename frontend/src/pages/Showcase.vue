@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Showcase designer page for arranging screens and widgets.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Save, Settings2, Undo2 } from "lucide-vue-next"

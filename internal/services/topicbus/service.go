@@ -1,3 +1,5 @@
+// Context: implements the topicbus backend service exposed to the Win shell and Wails bindings.
+
 package topicbus
 
 import (

@@ -1,3 +1,5 @@
+// Context: assembles the Wails app shell and shared backend services that are bound into the Win frontend.
+
 package main
 
 import (

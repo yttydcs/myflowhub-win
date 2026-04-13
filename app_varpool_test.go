@@ -1,3 +1,5 @@
+// Context: covers the varpool app binding helpers and persistence rules.
+
 package main
 
 import "testing"
@@ -28,4 +30,3 @@ func TestNormalizeVarPoolSubPrefs_TrimsFiltersAndDedupes(t *testing.T) {
 		t.Fatalf("unexpected normalized pref: %+v", out[0])
 	}
 }
-

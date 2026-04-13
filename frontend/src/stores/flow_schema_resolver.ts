@@ -1,3 +1,5 @@
+// Context: keeps the flow schema resolver store in sync with Wails bindings and shared Win frontend state.
+
 import { appendJsonPointer } from "./flow_json_pointer"
 import {
   getLocalMethodVisualSchema,

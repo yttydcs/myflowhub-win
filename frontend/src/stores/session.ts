@@ -1,3 +1,5 @@
+// Context: keeps the session store in sync with Wails bindings and shared Win frontend state.
+
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 

@@ -1,3 +1,5 @@
+// Context: covers profile-scoped persistence behavior for the Win client store.
+
 package storage
 
 import (

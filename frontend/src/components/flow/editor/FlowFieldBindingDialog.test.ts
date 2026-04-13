@@ -1,3 +1,5 @@
+// Context: covers the flow field binding dialog panel behavior used by the Flow editor.
+
 // @vitest-environment jsdom
 
 import { defineComponent, reactive } from "vue"

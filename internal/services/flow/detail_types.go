@@ -1,3 +1,5 @@
+// Context: declares typed DTOs used to expose flow detail responses to the Win frontend.
+
 package flow
 
 import protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"

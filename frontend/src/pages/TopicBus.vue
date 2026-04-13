@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the TopicBus page in the Win frontend.
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"

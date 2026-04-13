@@ -1,3 +1,5 @@
+// Context: tracks the current hub connection and auth snapshot shared by backend services.
+
 package session
 
 import (

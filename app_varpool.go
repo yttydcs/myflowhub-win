@@ -1,3 +1,5 @@
+// Context: persists the VarPool watch list and subscription preferences for the Win frontend.
+
 package main
 
 import (

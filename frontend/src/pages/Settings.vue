@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Settings page in the Win frontend.
 import { computed, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"

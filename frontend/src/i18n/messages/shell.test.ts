@@ -1,3 +1,5 @@
+// Context: provides the shell test support code used by the Win desktop host.
+
 import { describe, expect, it } from "vitest"
 
 import { shellZhCN } from "./shell"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the shared toast host component used by Win frontend pages.
 import { computed } from "vue"
 import { useI18n } from "@/i18n"
 import { useToastStore, type ToastItem } from "@/stores/toast"

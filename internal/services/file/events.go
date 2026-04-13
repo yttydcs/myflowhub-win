@@ -1,3 +1,5 @@
+// Context: defines the file-service event payloads shared between the Go backend and the frontend store.
+
 package file
 
 import "time"
@@ -10,13 +12,13 @@ const (
 )
 
 type FilePrefs struct {
-	BaseDir           string `json:"baseDir"`
-	MaxSizeBytes      uint64 `json:"maxSizeBytes"`
-	MaxConcurrent     int    `json:"maxConcurrent"`
-	ChunkBytes        int    `json:"chunkBytes"`
-	IncompleteTTLSec  int64  `json:"incompleteTtlSec"`
-	WantSHA256        bool   `json:"wantSha256"`
-	AutoAccept        bool   `json:"autoAccept"`
+	BaseDir          string `json:"baseDir"`
+	MaxSizeBytes     uint64 `json:"maxSizeBytes"`
+	MaxConcurrent    int    `json:"maxConcurrent"`
+	ChunkBytes       int    `json:"chunkBytes"`
+	IncompleteTTLSec int64  `json:"incompleteTtlSec"`
+	WantSHA256       bool   `json:"wantSha256"`
+	AutoAccept       bool   `json:"autoAccept"`
 }
 
 type FileListEvent struct {

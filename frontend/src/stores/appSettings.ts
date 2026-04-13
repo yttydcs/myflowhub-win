@@ -1,3 +1,5 @@
+// Context: keeps app settings and about metadata in sync with the App Wails binding and startup UI preferences.
+
 import { reactive } from "vue"
 import { t } from "@/i18n"
 

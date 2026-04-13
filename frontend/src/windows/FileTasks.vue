@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the detached file tasks window used by the Win frontend.
 import { computed, onMounted } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"

@@ -1,3 +1,5 @@
+// Context: covers the stream backend service behavior exposed to the Win shell.
+
 package stream
 
 import (

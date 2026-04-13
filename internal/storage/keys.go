@@ -1,3 +1,5 @@
+// Context: defines stable storage keys and naming helpers for persisted Win client state.
+
 package storage
 
 import (

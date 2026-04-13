@@ -1,3 +1,5 @@
+// Context: covers the permission backend service behavior exposed to the Win shell.
+
 package permission
 
 import (

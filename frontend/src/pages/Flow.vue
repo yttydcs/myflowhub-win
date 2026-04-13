@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Flow page and coordinates the graph editor, inspectors, and run-status views.
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { PencilLine, Plus, RefreshCw, Rocket, Settings2, Trash2 } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"

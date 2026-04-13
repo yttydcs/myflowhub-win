@@ -1,3 +1,5 @@
+// Context: defines localized operations copy used by the Win frontend.
+
 import type { LocaleMessages } from "../types"
 
 export const operationsZhCN: LocaleMessages = {

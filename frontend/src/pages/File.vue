@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the File page for browsing remote directories, transfer tasks, and incoming offers.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import {
   ArrowUp,

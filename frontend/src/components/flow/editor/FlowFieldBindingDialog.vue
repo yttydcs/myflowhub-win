@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the flow field binding dialog panel or dialog used by the Flow editor.
 import { computed } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"

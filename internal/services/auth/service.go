@@ -1,3 +1,5 @@
+// Context: implements the auth backend service exposed to the Win shell and Wails bindings.
+
 package auth
 
 import (

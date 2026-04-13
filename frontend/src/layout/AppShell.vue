@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: defines the shared navigation shell used by Win frontend pages.
 import { computed, ref, watch, watchEffect, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import {

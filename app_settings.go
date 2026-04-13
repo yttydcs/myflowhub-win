@@ -1,3 +1,5 @@
+// Context: persists global app settings, build/about metadata, and startup UI preferences for the Win shell.
+
 package main
 
 import (

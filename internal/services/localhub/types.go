@@ -1,3 +1,5 @@
+// Context: implements the types helper logic used by the localhub backend service.
+
 package localhub
 
 import "time"

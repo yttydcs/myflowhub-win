@@ -1,3 +1,5 @@
+// Context: keeps the flow visual form store in sync with Wails bindings and shared Win frontend state.
+
 import { t } from "@/i18n"
 import { collectLeafPointers, deleteValueAtPointer, readValueAtPointer, setValueAtPointer } from "./flow_json_pointer"
 import type { MethodFieldSchema, MethodVisualSchema } from "./flow_method_schemas"

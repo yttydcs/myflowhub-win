@@ -1,3 +1,5 @@
+// Context: keeps Showcase designer and viewer state in sync with persisted config and backend refresh events.
+
 import { reactive } from "vue"
 import { t } from "@/i18n"
 import { EventsOn } from "../../wailsjs/runtime/runtime"

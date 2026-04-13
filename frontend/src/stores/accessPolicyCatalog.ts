@@ -1,3 +1,5 @@
+// Context: keeps the access policy catalog store in sync with Wails bindings and shared Win frontend state.
+
 export type PermissionCatalogItem = {
   perm: string
   label: string

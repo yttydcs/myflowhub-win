@@ -1,3 +1,5 @@
+// Context: covers protocol negotiation and JSON-RPC request handling for the local MCP server.
+
 package mcp
 
 import (

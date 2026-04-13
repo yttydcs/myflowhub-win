@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the reusable badge UI primitive used across the Win frontend.
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 

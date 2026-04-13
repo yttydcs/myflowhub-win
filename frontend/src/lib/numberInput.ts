@@ -1,3 +1,5 @@
+// Context: contains shared number input helpers used by the Win frontend.
+
 export type FormInputValue = string | number | boolean | null | undefined
 
 type NumericInputOptions<TBlank = never> = {

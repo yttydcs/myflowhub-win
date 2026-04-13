@@ -1,3 +1,5 @@
+// Context: implements the presets backend service exposed to the Win shell and Wails bindings.
+
 package presets
 
 import (

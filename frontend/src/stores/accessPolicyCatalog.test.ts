@@ -1,3 +1,5 @@
+// Context: covers the access policy catalog store behavior in the Win frontend.
+
 import { describe, expect, it } from "vitest"
 import {
   accessPolicyPermissionOptions,

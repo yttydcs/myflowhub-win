@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Debug page in the Win frontend.
 import { computed, reactive, ref } from "vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders a single flow node card inside the graph canvas, including selection and status affordances.
 import { computed } from "vue"
 import { Handle, Position, type NodeProps } from "@vue-flow/core"
 import { useI18n } from "@/i18n"

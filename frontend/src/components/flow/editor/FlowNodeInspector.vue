@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the flow node inspector panel or dialog used by the Flow editor.
 import { computed } from "vue"
 import { X } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"

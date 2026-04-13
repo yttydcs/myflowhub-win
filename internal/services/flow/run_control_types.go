@@ -1,3 +1,5 @@
+// Context: declares typed request and response models for flow run control actions.
+
 package flow
 
 import protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"

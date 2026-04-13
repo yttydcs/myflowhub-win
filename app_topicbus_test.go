@@ -1,3 +1,5 @@
+// Context: covers the topicbus app binding helpers and persistence rules.
+
 package main
 
 import "testing"

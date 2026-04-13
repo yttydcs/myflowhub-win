@@ -1,3 +1,5 @@
+// Context: boots the Vue frontend and installs the shared router, i18n, and shell-level providers.
+
 import { createApp } from "vue"
 import App from "./App.vue"
 import router from "./router"

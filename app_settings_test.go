@@ -1,3 +1,5 @@
+// Context: covers the settings app binding helpers and persistence rules.
+
 package main
 
 import (

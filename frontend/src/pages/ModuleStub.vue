@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the ModuleStub page in the Win frontend.
 import PageHero from "@/components/PageHero.vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the node vars dialog helper used by the VarPool page.
 import { computed, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

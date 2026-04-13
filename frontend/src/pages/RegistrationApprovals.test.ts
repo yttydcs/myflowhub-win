@@ -1,3 +1,5 @@
+// Context: covers the registration approvals page behavior in the Win frontend.
+
 // @vitest-environment jsdom
 
 import { defineComponent, nextTick, reactive } from "vue"

@@ -1,3 +1,5 @@
+// Context: covers the showcase chart helper logic used by the Win frontend.
+
 import { describe, expect, it } from "vitest"
 import {
   appendShowcaseLineChartSample,

@@ -1,3 +1,5 @@
+// Context: keeps the permit issuance store in sync with Wails bindings and shared Win frontend state.
+
 import { reactive } from "vue"
 import { callPermission, useAuthorityStore } from "@/stores/authority"
 

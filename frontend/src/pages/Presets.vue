@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Presets page in the Win frontend.
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"

@@ -1,3 +1,5 @@
+// Context: keeps the flow json pointer store in sync with Wails bindings and shared Win frontend state.
+
 import { t } from "@/i18n"
 
 const decodeJsonPointerToken = (token: string) => {

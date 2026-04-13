@@ -1,3 +1,5 @@
+// Context: keeps the flow method schemas store in sync with Wails bindings and shared Win frontend state.
+
 export type MethodFieldControl =
   | "text"
   | "textarea"

@@ -1,3 +1,5 @@
+// Context: boots the Wails desktop app, embeds the built frontend, and binds the App service surface.
+
 package main
 
 import (

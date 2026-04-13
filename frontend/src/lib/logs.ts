@@ -1,3 +1,5 @@
+// Context: contains shared logs helpers used by the Win frontend.
+
 const isPrintableAscii = (code: number) => code >= 32 && code <= 126
 
 export const toByteArray = (payload: any): Uint8Array | null => {

@@ -1,3 +1,5 @@
+// Context: declares the window.go typings used by the Win frontend Wails bindings.
+
 export {}
 
 declare global {

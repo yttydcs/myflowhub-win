@@ -1,3 +1,5 @@
+// Context: registers the Win frontend routes and startup redirects.
+
 import { createRouter, createWebHashHistory } from "vue-router"
 import Home from "@/pages/Home.vue"
 import Devices from "@/pages/Devices.vue"

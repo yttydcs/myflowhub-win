@@ -1,3 +1,5 @@
+// Context: keeps the stream store in sync with Wails bindings, runtime events, and per-delivery media state for the Stream page.
+
 import { reactive } from "vue";
 import { t } from "@/i18n";
 import { EventsOn } from "../../wailsjs/runtime/runtime";

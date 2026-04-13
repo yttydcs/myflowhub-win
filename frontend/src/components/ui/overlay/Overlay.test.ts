@@ -1,3 +1,5 @@
+// Context: provides the overlay test support code used by the Win desktop host.
+
 // @vitest-environment jsdom
 
 import { nextTick } from "vue"

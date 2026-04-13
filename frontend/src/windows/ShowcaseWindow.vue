@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the detached showcase window used by the Win frontend.
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import ShowcaseWidgetCardContent from "@/components/showcase/ShowcaseWidgetCardContent.vue"

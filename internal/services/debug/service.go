@@ -1,3 +1,5 @@
+// Context: implements the debug backend service exposed to the Win shell and Wails bindings.
+
 package debug
 
 import (

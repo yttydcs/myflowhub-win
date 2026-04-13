@@ -1,3 +1,5 @@
+// Context: covers the rendered node states and interactions used by the flow graph canvas.
+
 // @vitest-environment jsdom
 
 import { mount } from "@vue/test-utils"

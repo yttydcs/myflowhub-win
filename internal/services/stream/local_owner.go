@@ -1,3 +1,5 @@
+// Context: implements the local owner helper logic used by the stream backend service.
+
 package stream
 
 import (

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the editable flow graph canvas and translates canvas gestures back into Flow editor events.
 import { computed, markRaw } from "vue"
 import {
   VueFlow,

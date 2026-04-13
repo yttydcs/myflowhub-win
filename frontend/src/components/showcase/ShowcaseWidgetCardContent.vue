@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the showcase widget card content helper used by Showcase pages and windows.
 import { computed, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

@@ -1,3 +1,5 @@
+// Context: assembles the MyFlowHub MCP tool surface and validates arguments before calling backend services.
+
 package mcp
 
 import (

@@ -1,3 +1,5 @@
+// Context: covers the detached flow editor window behavior in the Win frontend.
+
 // @vitest-environment jsdom
 
 import { defineComponent, nextTick } from "vue"

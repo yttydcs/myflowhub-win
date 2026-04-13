@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the detached flow editor window used by the Win frontend.
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"

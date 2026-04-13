@@ -1,3 +1,5 @@
+// Context: implements the flow backend service exposed to the Win shell and Wails bindings.
+
 package flow
 
 import (

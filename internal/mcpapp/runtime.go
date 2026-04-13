@@ -1,3 +1,5 @@
+// Context: assembles the headless MCP runtime by wiring session, auth, management, flow, and varstore services without the GUI shell.
+
 package mcpapp
 
 import (

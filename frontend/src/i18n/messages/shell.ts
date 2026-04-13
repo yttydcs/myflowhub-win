@@ -1,3 +1,5 @@
+// Context: defines localized shell copy used by the Win frontend.
+
 import type { LocaleMessages } from "../types"
 
 export const shellZhCN: LocaleMessages = {

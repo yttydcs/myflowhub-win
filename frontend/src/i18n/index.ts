@@ -1,3 +1,5 @@
+// Context: assembles the i18n catalog and exports the translator used across the Win frontend.
+
 import { computed, reactive } from "vue"
 import { messages } from "./messages"
 import type { AppLocale, TranslationParams } from "./types"

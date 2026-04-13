@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Stream page for configuring sources, consumers, and active deliveries.
 import { computed, reactive, ref, watch } from "vue";
 import {
   Cable,

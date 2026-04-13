@@ -1,3 +1,5 @@
+// Context: covers the config helper logic inside the file backend service.
+
 package file
 
 import (

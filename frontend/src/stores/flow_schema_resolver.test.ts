@@ -1,3 +1,5 @@
+// Context: covers the flow schema resolver store behavior in the Win frontend.
+
 import { describe, expect, it } from "vitest"
 import { resolveMethodVisualSchema } from "./flow_schema_resolver"
 

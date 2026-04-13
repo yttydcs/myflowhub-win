@@ -1,3 +1,5 @@
+// Context: implements the permission backend service exposed to the Win shell and Wails bindings.
+
 package permission
 
 import (

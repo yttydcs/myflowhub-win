@@ -1,3 +1,5 @@
+// Context: implements the management backend service exposed to the Win shell and Wails bindings.
+
 package management
 
 import (
