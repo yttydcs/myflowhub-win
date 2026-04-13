@@ -1,73 +1,83 @@
 <script setup lang="ts">
 // Context: implements the Local Hub page for configuring, installing, and starting the embedded hub runtime.
-import { computed, onMounted, reactive, ref } from "vue"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { useI18n } from "@/i18n"
-import { useToastStore } from "@/stores/toast"
+import { computed, onMounted, reactive, ref } from "vue";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n";
+import { useToastStore } from "@/stores/toast";
 
-type WailsBinding = (...args: any[]) => Promise<any>
+type WailsBinding = (...args: any[]) => Promise<any>;
 
-const callLocalHub = async <T>(method: string, ...args: any[]): Promise<T> => {
-  const api = (window as any)?.go?.localhub?.LocalHubService
-  const fn: WailsBinding | undefined = api?.[method]
+const callLocalHub = async <T,>(method: string, ...args: any[]): Promise<T> => {
+  const api = (window as any)?.go?.localhub?.LocalHubService;
+  const fn: WailsBinding | undefined = api?.[method];
   if (!fn) {
-    throw new Error(t("LocalHub binding '{method}' unavailable", { method }))
+    throw new Error(t("LocalHub binding '{method}' unavailable", { method }));
   }
-  return fn(...args)
-}
+  return fn(...args);
+};
 
 type HubConfig = {
-  host: string
-  port: number
-  nodeId: number
-  parent: string
-  parentEnable: boolean
-  parentReconnectSec: number
-  authDefaultRole: string
-  authDefaultPerms: string
-  authNodeRoles: string
-  authRolePerms: string
-  extraArgs: string
-}
+  host: string;
+  port: number;
+  nodeId: number;
+  selfId: string;
+  parent: string;
+  parentEnable: boolean;
+  parentReconnectSec: number;
+  authDefaultRole: string;
+  authDefaultPerms: string;
+  authNodeRoles: string;
+  authRolePerms: string;
+  extraArgs: string;
+};
+
+type LaunchRequest = {
+  parentJoinPermit: string;
+};
 
 type Snapshot = {
-  supported: boolean
-  platform: string
-  arch: string
-  rootDir: string
-  binDir: string
-  logsDir: string
-  config: HubConfig
-  latestLoaded: boolean
-  latestError: string
-  latest: { tag: string; name: string; publishedAt: string; assets: any[] }
-  install: { installed: boolean; tag: string; binaryPath: string; installedAt: string }
+  supported: boolean;
+  platform: string;
+  arch: string;
+  rootDir: string;
+  binDir: string;
+  logsDir: string;
+  config: HubConfig;
+  latestLoaded: boolean;
+  latestError: string;
+  latest: { tag: string; name: string; publishedAt: string; assets: any[] };
+  install: {
+    installed: boolean;
+    tag: string;
+    binaryPath: string;
+    installedAt: string;
+  };
   run: {
-    running: boolean
-    pid: number
-    addr: string
-    startedAt: string
-    logPath: string
-    exitedAt: string
-    exitError: string
-  }
+    running: boolean;
+    pid: number;
+    addr: string;
+    startedAt: string;
+    logPath: string;
+    exitedAt: string;
+    exitError: string;
+  };
   download: {
-    active: boolean
-    stage: string
-    assetName: string
-    expectedSha256: string
-    totalBytes: number
-    doneBytes: number
-    message: string
-    error: string
-    startedAt: string
-    updatedAt: string
-  }
-}
+    active: boolean;
+    stage: string;
+    assetName: string;
+    expectedSha256: string;
+    totalBytes: number;
+    doneBytes: number;
+    message: string;
+    error: string;
+    startedAt: string;
+    updatedAt: string;
+  };
+};
 
-const toast = useToastStore()
-const { t } = useI18n()
+const toast = useToastStore();
+const { t } = useI18n();
 
 const snap = reactive<Snapshot>({
   supported: false,
@@ -80,6 +90,7 @@ const snap = reactive<Snapshot>({
     host: "127.0.0.1",
     port: 9000,
     nodeId: 1,
+    selfId: "",
     parent: "",
     parentEnable: false,
     parentReconnectSec: 3,
@@ -87,7 +98,7 @@ const snap = reactive<Snapshot>({
     authDefaultPerms: "",
     authNodeRoles: "",
     authRolePerms: "",
-    extraArgs: ""
+    extraArgs: "",
   },
   latestLoaded: false,
   latestError: "",
@@ -100,7 +111,7 @@ const snap = reactive<Snapshot>({
     startedAt: "",
     logPath: "",
     exitedAt: "",
-    exitError: ""
+    exitError: "",
   },
   download: {
     active: false,
@@ -112,14 +123,15 @@ const snap = reactive<Snapshot>({
     message: "",
     error: "",
     startedAt: "",
-    updatedAt: ""
-  }
-})
+    updatedAt: "",
+  },
+});
 
 const form = reactive({
   host: "127.0.0.1",
   port: "9000",
   nodeId: "1",
+  selfId: "",
   parent: "",
   parentEnable: false,
   parentReconnectSec: "3",
@@ -127,8 +139,12 @@ const form = reactive({
   authDefaultPerms: "",
   authNodeRoles: "",
   authRolePerms: "",
-  extraArgs: ""
-})
+  extraArgs: "",
+});
+
+const launch = reactive({
+  parentJoinPermit: "",
+});
 
 const busy = reactive({
   loading: false,
@@ -137,108 +153,111 @@ const busy = reactive({
   installing: false,
   starting: false,
   stopping: false,
-  restarting: false
-})
+  restarting: false,
+});
 
 const normalizedPort = computed(() => {
-  const raw = form.port.trim()
-  if (!raw) return 0
-  const parsed = Number.parseInt(raw, 10)
-  if (Number.isNaN(parsed)) return 0
-  return parsed
-})
+  const raw = form.port.trim();
+  if (!raw) return 0;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return 0;
+  return parsed;
+});
 
 const normalizedNodeId = computed(() => {
-  const raw = form.nodeId.trim()
-  if (!raw) return 0
-  const parsed = Number.parseInt(raw, 10)
-  if (Number.isNaN(parsed) || parsed <= 0) return 0
-  return parsed
-})
+  const raw = form.nodeId.trim();
+  if (!raw) return 0;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return 0;
+  return parsed;
+});
 
 const normalizedParentReconnectSec = computed(() => {
-  const raw = form.parentReconnectSec.trim()
-  if (!raw) return 0
-  const parsed = Number.parseInt(raw, 10)
-  if (Number.isNaN(parsed) || parsed < 0) return -1
-  return parsed
-})
+  const raw = form.parentReconnectSec.trim();
+  if (!raw) return 0;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return -1;
+  return parsed;
+});
 
 const missingParentWarning = computed(() => {
-  return Boolean(form.parentEnable && !form.parent.trim())
-})
+  return Boolean(form.parentEnable && !form.parent.trim());
+});
 
 const nonLoopbackWarning = computed(() => {
-  const host = form.host.trim().toLowerCase()
-  if (!host) return false
-  if (host === "127.0.0.1" || host === "localhost" || host === "::1") return false
-  return true
-})
+  const host = form.host.trim().toLowerCase();
+  if (!host) return false;
+  if (host === "127.0.0.1" || host === "localhost" || host === "::1")
+    return false;
+  return true;
+});
 
 const downloadProgress = computed(() => {
-  const total = Number(snap.download.totalBytes || 0)
-  const done = Number(snap.download.doneBytes || 0)
-  if (!snap.download.active) return ""
+  const total = Number(snap.download.totalBytes || 0);
+  const done = Number(snap.download.doneBytes || 0);
+  if (!snap.download.active) return "";
   if (total > 0) {
-    const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)))
-    return t("{percent}% ({done}/{total})", { percent: pct, done, total })
+    const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+    return t("{percent}% ({done}/{total})", { percent: pct, done, total });
   }
-  return t("{done} bytes", { done })
-})
+  return t("{done} bytes", { done });
+});
 
 const loadSnapshot = async () => {
-  busy.loading = true
+  busy.loading = true;
   try {
-    const data = await callLocalHub<Snapshot>("Snapshot")
-    Object.assign(snap, data)
-    form.host = snap.config.host || "127.0.0.1"
-    form.port = String(snap.config.port ?? 9000)
-    form.nodeId = String(snap.config.nodeId ?? 1)
-    form.parent = String(snap.config.parent ?? "")
-    form.parentEnable = Boolean(snap.config.parentEnable)
-    form.parentReconnectSec = String(snap.config.parentReconnectSec ?? 3)
-    form.authDefaultRole = String(snap.config.authDefaultRole ?? "")
-    form.authDefaultPerms = String(snap.config.authDefaultPerms ?? "")
-    form.authNodeRoles = String(snap.config.authNodeRoles ?? "")
-    form.authRolePerms = String(snap.config.authRolePerms ?? "")
-    form.extraArgs = String(snap.config.extraArgs ?? "")
+    const data = await callLocalHub<Snapshot>("Snapshot");
+    Object.assign(snap, data);
+    form.host = snap.config.host || "127.0.0.1";
+    form.port = String(snap.config.port ?? 9000);
+    form.nodeId = String(snap.config.nodeId ?? 1);
+    form.selfId = String(snap.config.selfId ?? "");
+    form.parent = String(snap.config.parent ?? "");
+    form.parentEnable = Boolean(snap.config.parentEnable);
+    form.parentReconnectSec = String(snap.config.parentReconnectSec ?? 3);
+    form.authDefaultRole = String(snap.config.authDefaultRole ?? "");
+    form.authDefaultPerms = String(snap.config.authDefaultPerms ?? "");
+    form.authNodeRoles = String(snap.config.authNodeRoles ?? "");
+    form.authRolePerms = String(snap.config.authRolePerms ?? "");
+    form.extraArgs = String(snap.config.extraArgs ?? "");
   } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, t("Failed to load Local Hub snapshot."))
+    console.warn(err);
+    toast.errorOf(err, t("Failed to load Local Hub snapshot."));
   } finally {
-    busy.loading = false
+    busy.loading = false;
   }
-}
+};
 
 const saveConfig = async (silent = false) => {
-  if (busy.saving) return
+  if (busy.saving) return false;
 
-  const rawPort = form.port.trim()
+  const rawPort = form.port.trim();
   if (rawPort && Number.isNaN(Number.parseInt(rawPort, 10))) {
-    toast.warn(t("Port must be a number."))
-    return
+    toast.warn(t("Port must be a number."));
+    return false;
   }
-  const nodeId = normalizedNodeId.value
+  const nodeId = normalizedNodeId.value;
   if (!nodeId) {
-    toast.warn(t("Node ID must be a positive number."))
-    return
+    toast.warn(t("Node ID must be a positive number."));
+    return false;
   }
-  const parentReconnectSec = normalizedParentReconnectSec.value
+  const parentReconnectSec = normalizedParentReconnectSec.value;
   if (parentReconnectSec < 0) {
-    toast.warn(t("Parent reconnect seconds must be 0 or a positive number."))
-    return
+    toast.warn(t("Parent reconnect seconds must be 0 or a positive number."));
+    return false;
   }
   if (form.parentEnable && !form.parent.trim()) {
-    toast.warn(t("Parent address is required when parent link is enabled."))
-    return
+    toast.warn(t("Parent address is required when parent link is enabled."));
+    return false;
   }
 
-  busy.saving = true
+  busy.saving = true;
   try {
     const payload = {
       host: form.host.trim(),
       port: normalizedPort.value,
       nodeId,
+      selfId: form.selfId.trim(),
       parent: form.parent.trim(),
       parentEnable: Boolean(form.parentEnable),
       parentReconnectSec,
@@ -246,133 +265,185 @@ const saveConfig = async (silent = false) => {
       authDefaultPerms: form.authDefaultPerms.trim(),
       authNodeRoles: form.authNodeRoles.trim(),
       authRolePerms: form.authRolePerms.trim(),
-      extraArgs: form.extraArgs
-    }
-    await callLocalHub("SaveConfig", payload)
-    await loadSnapshot()
+      extraArgs: form.extraArgs,
+    };
+    await callLocalHub("SaveConfig", payload);
+    await loadSnapshot();
     if (!silent) {
-      toast.success(t("Config saved."))
+      toast.success(t("Config saved."));
     }
+    return true;
   } catch (err) {
-    console.warn(err)
-    toast.errorOf(err, t("Failed to save config."))
+    console.warn(err);
+    toast.errorOf(err, t("Failed to save config."));
+    return false;
   } finally {
-    busy.saving = false
+    busy.saving = false;
   }
-}
+};
+
+const buildLaunchRequest = (): LaunchRequest => ({
+  parentJoinPermit: launch.parentJoinPermit.trim(),
+});
+
+const validateLaunchRequest = (req: LaunchRequest) => {
+  if (!req.parentJoinPermit) {
+    return true;
+  }
+  if (!form.parentEnable) {
+    toast.warn(t("Enable parent link before using a parent join permit."));
+    return false;
+  }
+  if (!form.parent.trim()) {
+    toast.warn(t("Parent address is required when parent link is enabled."));
+    return false;
+  }
+  if (!form.selfId.trim()) {
+    toast.warn(t("Self ID is required when parent join permit is provided."));
+    return false;
+  }
+  return true;
+};
 
 const refreshLatest = async () => {
-  if (busy.refreshing) return
-  busy.refreshing = true
+  if (busy.refreshing) return;
+  busy.refreshing = true;
   try {
-    await callLocalHub("RefreshLatest")
-    await loadSnapshot()
-    toast.success(t("Latest release refreshed."))
+    await callLocalHub("RefreshLatest");
+    await loadSnapshot();
+    toast.success(t("Latest release refreshed."));
   } catch (err) {
-    console.warn(err)
-    await loadSnapshot()
-    toast.errorOf(err, t("Failed to refresh latest release."))
+    console.warn(err);
+    await loadSnapshot();
+    toast.errorOf(err, t("Failed to refresh latest release."));
   } finally {
-    busy.refreshing = false
+    busy.refreshing = false;
   }
-}
+};
 
 const installLatest = async () => {
-  if (busy.installing) return
-  busy.installing = true
-  let timer: number | undefined
+  if (busy.installing) return;
+  busy.installing = true;
+  let timer: number | undefined;
   try {
-    const promise = callLocalHub("InstallLatest")
+    const promise = callLocalHub("InstallLatest");
     timer = window.setInterval(() => {
-      void loadSnapshot()
-    }, 500)
-    await promise
-    await loadSnapshot()
-    toast.success(t("Installed."))
+      void loadSnapshot();
+    }, 500);
+    await promise;
+    await loadSnapshot();
+    toast.success(t("Installed."));
   } catch (err) {
-    console.warn(err)
-    await loadSnapshot()
-    toast.errorOf(err, t("Install failed."))
+    console.warn(err);
+    await loadSnapshot();
+    toast.errorOf(err, t("Install failed."));
   } finally {
-    if (timer) window.clearInterval(timer)
-    busy.installing = false
+    if (timer) window.clearInterval(timer);
+    busy.installing = false;
   }
-}
+};
 
 const startHub = async () => {
-  if (busy.starting) return
-  busy.starting = true
+  if (busy.starting) return;
+  busy.starting = true;
   try {
-    await saveConfig(true)
-    await callLocalHub("Start")
-    await loadSnapshot()
-    toast.success(t("Local Hub started."), snap.run.addr || undefined)
+    const launchReq = buildLaunchRequest();
+    if (!validateLaunchRequest(launchReq)) return;
+    const saved = await saveConfig(true);
+    if (!saved) return;
+    await callLocalHub("Start", launchReq);
+    await loadSnapshot();
+    launch.parentJoinPermit = "";
+    toast.success(t("Local Hub started."), snap.run.addr || undefined);
   } catch (err) {
-    console.warn(err)
-    await loadSnapshot()
-    toast.errorOf(err, t("Failed to start hub."))
+    console.warn(err);
+    await loadSnapshot();
+    toast.errorOf(err, t("Failed to start hub."));
   } finally {
-    busy.starting = false
+    busy.starting = false;
   }
-}
+};
 
 const stopHub = async () => {
-  if (busy.stopping) return
-  busy.stopping = true
+  if (busy.stopping) return;
+  busy.stopping = true;
   try {
-    await callLocalHub("Stop")
-    await loadSnapshot()
-    toast.info(t("Local Hub stopped."))
+    await callLocalHub("Stop");
+    await loadSnapshot();
+    toast.info(t("Local Hub stopped."));
   } catch (err) {
-    console.warn(err)
-    await loadSnapshot()
-    toast.errorOf(err, t("Failed to stop hub."))
+    console.warn(err);
+    await loadSnapshot();
+    toast.errorOf(err, t("Failed to stop hub."));
   } finally {
-    busy.stopping = false
+    busy.stopping = false;
   }
-}
+};
 
 const restartHub = async () => {
-  if (busy.restarting) return
-  busy.restarting = true
+  if (busy.restarting) return;
+  busy.restarting = true;
   try {
-    await saveConfig(true)
-    await callLocalHub("Restart")
-    await loadSnapshot()
-    toast.success(t("Local Hub restarted."), snap.run.addr || undefined)
+    const launchReq = buildLaunchRequest();
+    if (!validateLaunchRequest(launchReq)) return;
+    const saved = await saveConfig(true);
+    if (!saved) return;
+    await callLocalHub("Restart", launchReq);
+    await loadSnapshot();
+    launch.parentJoinPermit = "";
+    toast.success(t("Local Hub restarted."), snap.run.addr || undefined);
   } catch (err) {
-    console.warn(err)
-    await loadSnapshot()
-    toast.errorOf(err, t("Failed to restart hub."))
+    console.warn(err);
+    await loadSnapshot();
+    toast.errorOf(err, t("Failed to restart hub."));
   } finally {
-    busy.restarting = false
+    busy.restarting = false;
   }
-}
+};
 
 onMounted(async () => {
-  await loadSnapshot()
+  await loadSnapshot();
   if (!snap.latestLoaded) {
-    void refreshLatest()
+    void refreshLatest();
   }
-})
+});
 </script>
 
 <template>
   <section class="space-y-6">
-    <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+    <section
+      class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+    >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 class="text-sm font-semibold">{{ t("Latest Release") }}</h2>
-          <p class="text-xs text-muted-foreground">{{ t("Source: GitHub Releases (myflowhub-server)") }}</p>
+          <p class="text-xs text-muted-foreground">
+            {{ t("Source: GitHub Releases (myflowhub-server)") }}
+          </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Badge v-if="snap.supported" variant="secondary">
-            {{ t("Supported: {platform}/{arch}", { platform: snap.platform, arch: snap.arch }) }}
+            {{
+              t("Supported: {platform}/{arch}", {
+                platform: snap.platform,
+                arch: snap.arch,
+              })
+            }}
           </Badge>
           <Badge v-else variant="secondary">
-            {{ t("Unsupported: {platform}/{arch}", { platform: snap.platform, arch: snap.arch }) }}
+            {{
+              t("Unsupported: {platform}/{arch}", {
+                platform: snap.platform,
+                arch: snap.arch,
+              })
+            }}
           </Badge>
-          <Button variant="outline" size="sm" :disabled="busy.loading" @click="loadSnapshot">
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="busy.loading"
+            @click="loadSnapshot"
+          >
             {{ t("Reload") }}
           </Button>
           <Button
@@ -388,21 +459,33 @@ onMounted(async () => {
 
       <div class="mt-4 grid gap-3 text-sm md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Tag") }}</p>
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
+            {{ t("Tag") }}
+          </p>
           <p class="mt-1 font-mono text-[12px]">{{ snap.latest.tag || "-" }}</p>
         </div>
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Published") }}
           </p>
-          <p class="mt-1 font-mono text-[12px]">{{ snap.latest.publishedAt || "-" }}</p>
+          <p class="mt-1 font-mono text-[12px]">
+            {{ snap.latest.publishedAt || "-" }}
+          </p>
         </div>
       </div>
 
-      <p v-if="snap.latestError" class="mt-3 text-sm text-rose-600">{{ snap.latestError }}</p>
+      <p v-if="snap.latestError" class="mt-3 text-sm text-rose-600">
+        {{ snap.latestError }}
+      </p>
     </section>
 
-    <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+    <section
+      class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+    >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 class="text-sm font-semibold">{{ t("Install") }}</h2>
@@ -413,22 +496,38 @@ onMounted(async () => {
         <div class="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            :disabled="busy.installing || snap.download.active || snap.run.running || !snap.supported"
+            :disabled="
+              busy.installing ||
+              snap.download.active ||
+              snap.run.running ||
+              !snap.supported
+            "
             @click="installLatest"
           >
-            {{ snap.install.installed ? t("Reinstall Latest") : t("Install Latest") }}
+            {{
+              snap.install.installed
+                ? t("Reinstall Latest")
+                : t("Install Latest")
+            }}
           </Button>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 text-sm md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Installed") }}
           </p>
           <p class="mt-1">
-            <span class="font-semibold">{{ snap.install.installed ? t("Yes") : t("No") }}</span>
-            <span v-if="snap.install.tag" class="ml-2 font-mono text-[12px] text-muted-foreground">
+            <span class="font-semibold">{{
+              snap.install.installed ? t("Yes") : t("No")
+            }}</span>
+            <span
+              v-if="snap.install.tag"
+              class="ml-2 font-mono text-[12px] text-muted-foreground"
+            >
               {{ snap.install.tag }}
             </span>
           </p>
@@ -438,7 +537,9 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-xl border bg-background/70 p-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Download") }}
           </p>
           <p class="mt-1 font-mono text-[12px]">
@@ -447,10 +548,15 @@ onMounted(async () => {
             </span>
             <span v-else>{{ t("Idle") }}</span>
           </p>
-          <p v-if="snap.download.active" class="mt-1 text-xs text-muted-foreground">
+          <p
+            v-if="snap.download.active"
+            class="mt-1 text-xs text-muted-foreground"
+          >
             {{ snap.download.assetName }} · {{ downloadProgress }}
           </p>
-          <p v-if="snap.download.error" class="mt-2 text-xs text-rose-600">{{ snap.download.error }}</p>
+          <p v-if="snap.download.error" class="mt-2 text-xs text-rose-600">
+            {{ snap.download.error }}
+          </p>
         </div>
       </div>
 
@@ -463,49 +569,74 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm">
+    <section
+      class="rounded-2xl border bg-card/90 p-4 text-card-foreground shadow-sm"
+    >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 class="text-sm font-semibold">{{ t("Run") }}</h2>
           <p class="text-xs text-muted-foreground">
-            {{ t("Local Hub keeps running after the Win app exits. Stop it explicitly if needed.") }}
+            {{
+              t(
+                "Local Hub keeps running after the Win app exits. Stop it explicitly if needed.",
+              )
+            }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge v-if="snap.run.running" variant="secondary">{{ t("Running") }}</Badge>
+          <Badge v-if="snap.run.running" variant="secondary">{{
+            t("Running")
+          }}</Badge>
           <Badge v-else variant="secondary">{{ t("Stopped") }}</Badge>
         </div>
       </div>
 
       <div class="mt-4 grid gap-3 md:grid-cols-2">
         <div class="rounded-xl border bg-background/70 p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Listen") }}
           </p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Host") }}</span>
+            <div
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span class="font-semibold uppercase tracking-[0.2em]">{{
+                t("Host")
+              }}</span>
               <input
                 v-model="form.host"
                 class="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 placeholder="127.0.0.1"
               />
             </div>
-            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Port") }}</span>
+            <div
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span class="font-semibold uppercase tracking-[0.2em]">{{
+                t("Port")
+              }}</span>
               <input
                 v-model="form.port"
                 class="h-7 w-24 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 placeholder="9000"
               />
             </div>
-            <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="busy.saving"
+              @click="saveConfig"
+            >
               {{ t("Save Config") }}
             </Button>
           </div>
 
           <p v-if="nonLoopbackWarning" class="mt-2 text-xs text-amber-700">
-            {{ t("Warning: non-loopback host may expose your hub to the LAN.") }}
+            {{
+              t("Warning: non-loopback host may expose your hub to the LAN.")
+            }}
           </p>
 
           <p class="mt-3 text-xs text-muted-foreground">
@@ -514,11 +645,17 @@ onMounted(async () => {
         </div>
 
         <div class="rounded-xl border bg-background/70 p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Status") }}
           </p>
-          <p class="mt-2 font-mono text-[12px]">{{ t("addr: {addr}", { addr: snap.run.addr || "-" }) }}</p>
-          <p class="mt-1 font-mono text-[12px]">{{ t("pid: {pid}", { pid: snap.run.pid || "-" }) }}</p>
+          <p class="mt-2 font-mono text-[12px]">
+            {{ t("addr: {addr}", { addr: snap.run.addr || "-" }) }}
+          </p>
+          <p class="mt-1 font-mono text-[12px]">
+            {{ t("pid: {pid}", { pid: snap.run.pid || "-" }) }}
+          </p>
           <p class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
             {{ t("log: {path}", { path: snap.run.logPath || "-" }) }}
           </p>
@@ -527,7 +664,11 @@ onMounted(async () => {
           </p>
 
           <div class="mt-3 flex flex-wrap items-center gap-2">
-            <Button size="sm" :disabled="busy.starting || snap.run.running" @click="startHub">
+            <Button
+              size="sm"
+              :disabled="busy.starting || snap.run.running"
+              @click="startHub"
+            >
               {{ t("Start") }}
             </Button>
             <Button
@@ -552,18 +693,29 @@ onMounted(async () => {
 
       <div class="mt-4 rounded-xl border bg-background/70 p-3 text-sm">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <p
+            class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+          >
             {{ t("Hub Params") }}
           </p>
-          <Button variant="outline" size="sm" :disabled="busy.saving" @click="saveConfig">
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="busy.saving"
+            @click="saveConfig"
+          >
             {{ t("Save Config") }}
           </Button>
         </div>
 
         <div class="mt-3 grid gap-3 lg:grid-cols-2">
           <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Node ID") }}</span>
+            <div
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span class="font-semibold uppercase tracking-[0.2em]">{{
+                t("Node ID")
+              }}</span>
               <input
                 v-model="form.nodeId"
                 class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground"
@@ -582,20 +734,43 @@ onMounted(async () => {
               {{ t("Parent link") }}
             </label>
 
-            <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-              <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Reconnect") }}</span>
+            <div
+              class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+            >
+              <span class="font-semibold uppercase tracking-[0.2em]">{{
+                t("Reconnect")
+              }}</span>
               <input
                 v-model="form.parentReconnectSec"
                 class="h-7 w-20 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
                 placeholder="3"
                 :disabled="!form.parentEnable"
               />
-              <span class="text-[11px] text-muted-foreground">{{ t("sec") }}</span>
+              <span class="text-[11px] text-muted-foreground">{{
+                t("sec")
+              }}</span>
             </div>
           </div>
 
-          <div class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground">
-            <span class="font-semibold uppercase tracking-[0.2em]">{{ t("Parent") }}</span>
+          <div
+            class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+          >
+            <span class="font-semibold uppercase tracking-[0.2em]">{{
+              t("Self ID")
+            }}</span>
+            <input
+              v-model="form.selfId"
+              class="h-7 w-64 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              :placeholder="t('edge-hub-01')"
+            />
+          </div>
+
+          <div
+            class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+          >
+            <span class="font-semibold uppercase tracking-[0.2em]">{{
+              t("Parent")
+            }}</span>
             <input
               v-model="form.parent"
               class="h-7 w-64 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-60"
@@ -603,15 +778,40 @@ onMounted(async () => {
               :disabled="!form.parentEnable"
             />
           </div>
+
+          <div
+            class="flex items-center gap-2 rounded-full border bg-card/90 px-3 py-1 text-xs text-muted-foreground"
+          >
+            <span class="font-semibold uppercase tracking-[0.2em]">{{
+              t("Parent Join Permit")
+            }}</span>
+            <input
+              v-model="launch.parentJoinPermit"
+              class="h-7 w-64 max-w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              :placeholder="t('permit_xxx')"
+            />
+          </div>
         </div>
 
         <p v-if="missingParentWarning" class="mt-2 text-xs text-amber-700">
           {{ t("Parent address is required when parent link is enabled.") }}
         </p>
+        <p class="mt-2 text-xs text-muted-foreground">
+          {{
+            t(
+              "Approval-mode parent networks usually require both Self ID and a one-time permit.",
+            )
+          }}
+        </p>
+        <p class="mt-1 text-xs text-muted-foreground">
+          {{ t("Used only for the next Start/Restart. Not saved in config.") }}
+        </p>
 
         <div class="mt-4 grid gap-3 lg:grid-cols-2">
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <label
+              class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+            >
               {{ t("Auth Default Role") }}
             </label>
             <input
@@ -621,7 +821,9 @@ onMounted(async () => {
             />
           </div>
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <label
+              class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+            >
               {{ t("Auth Default Perms") }}
             </label>
             <input
@@ -631,7 +833,9 @@ onMounted(async () => {
             />
           </div>
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <label
+              class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+            >
               {{ t("Auth Node Roles") }}
             </label>
             <input
@@ -641,7 +845,9 @@ onMounted(async () => {
             />
           </div>
           <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <label
+              class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+            >
               {{ t("Auth Role Perms") }}
             </label>
             <input
@@ -652,7 +858,9 @@ onMounted(async () => {
           </div>
         </div>
 
-        <details class="mt-4 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+        <details
+          class="mt-4 rounded-lg border border-border/60 bg-background/60 px-3 py-2"
+        >
           <summary
             class="cursor-pointer text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
           >
@@ -666,12 +874,15 @@ onMounted(async () => {
               placeholder="-send-workers=4\n-proc-workers=8"
             />
             <p class="mt-2 text-xs text-muted-foreground">
-              {{ t("One full argument per line. Lines starting with # are ignored.") }}
+              {{
+                t(
+                  "One full argument per line. Lines starting with # are ignored.",
+                )
+              }}
             </p>
           </div>
         </details>
       </div>
     </section>
-
   </section>
 </template>

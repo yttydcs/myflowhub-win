@@ -9,6 +9,7 @@ type Config struct {
 	Port int    `json:"port"` // 0 means auto-pick.
 
 	NodeID             int    `json:"nodeId"`
+	SelfID             string `json:"selfId,omitempty"`
 	Parent             string `json:"parent,omitempty"`
 	ParentEnable       bool   `json:"parentEnable,omitempty"`
 	ParentReconnectSec int    `json:"parentReconnectSec,omitempty"` // 0 means default.
@@ -19,6 +20,10 @@ type Config struct {
 	AuthRolePerms    string `json:"authRolePerms,omitempty"`
 
 	ExtraArgs string `json:"extraArgs,omitempty"` // One full arg per line.
+}
+
+type LaunchRequest struct {
+	ParentJoinPermit string `json:"parentJoinPermit,omitempty"`
 }
 
 type ReleaseAsset struct {

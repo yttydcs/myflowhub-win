@@ -31,6 +31,7 @@ const (
 	keyHost         = "localhub.host"
 	keyPort         = "localhub.port"
 	keyNodeID       = "localhub.node_id"
+	keySelfID       = "localhub.self_id"
 	keyParent       = "localhub.parent"
 	keyParentEnable = "localhub.parent_enable"
 	keyParentRetry  = "localhub.parent_reconnect"
@@ -111,6 +112,7 @@ func (s *LocalHubService) SaveConfig(cfg Config) (Config, error) {
 	}
 
 	cfg.Parent = strings.TrimSpace(cfg.Parent)
+	cfg.SelfID = strings.TrimSpace(cfg.SelfID)
 	if cfg.ParentEnable && cfg.Parent == "" {
 		return Config{}, errors.New("parent address is required when parent link is enabled")
 	}
@@ -320,7 +322,7 @@ func (s *LocalHubService) InstallLatest() (InstallState, error) {
 	return out, nil
 }
 
-func (s *LocalHubService) Start() (RunState, error) {
+func (s *LocalHubService) Start(req LaunchRequest) (RunState, error) {
 	if !isSupported() {
 		return RunState{}, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -348,6 +350,10 @@ func (s *LocalHubService) Start() (RunState, error) {
 	if changed && s.logs != nil {
 		s.logs.Appendf("warn", "localhub port adjusted: requested=%d actual=%d", cfg.Port, port)
 	}
+	spec, err := buildLaunchSpec(os.Environ(), cfg, req, addr)
+	if err != nil {
+		return RunState{}, err
+	}
 
 	logPath := filepath.Join(s.logsDir(), fmt.Sprintf("hub_server_%s.log", time.Now().Format("20060102_150405")))
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
@@ -358,39 +364,9 @@ func (s *LocalHubService) Start() (RunState, error) {
 		return RunState{}, err
 	}
 
-	args := []string{"-addr", addr, "-node-id", strconv.Itoa(cfg.NodeID)}
-	if cfg.ParentEnable {
-		parent := strings.TrimSpace(cfg.Parent)
-		if parent == "" {
-			_ = logFile.Close()
-			return RunState{}, errors.New("parent address is required when parent link is enabled")
-		}
-		args = append(args, "-parent", parent, "-parent-enable=true")
-		if cfg.ParentReconnectSec < 0 {
-			_ = logFile.Close()
-			return RunState{}, errors.New("parent reconnect seconds must be 0 or a positive number")
-		}
-		if cfg.ParentReconnectSec != 0 {
-			args = append(args, "-parent-reconnect", strconv.Itoa(cfg.ParentReconnectSec))
-		}
-	}
-
-	if v := strings.TrimSpace(cfg.AuthDefaultRole); v != "" {
-		args = append(args, "-auth-default-role", v)
-	}
-	if v := strings.TrimSpace(cfg.AuthDefaultPerms); v != "" {
-		args = append(args, "-auth-default-perms", v)
-	}
-	if v := strings.TrimSpace(cfg.AuthNodeRoles); v != "" {
-		args = append(args, "-auth-node-roles", v)
-	}
-	if v := strings.TrimSpace(cfg.AuthRolePerms); v != "" {
-		args = append(args, "-auth-role-perms", v)
-	}
-	args = append(args, splitExtraArgs(cfg.ExtraArgs)...)
-
-	cmd := exec.Command(bin, args...)
+	cmd := exec.Command(bin, spec.Args...)
 	cmd.Dir = filepath.Dir(bin)
+	cmd.Env = spec.Env
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	configureDetached(cmd)
@@ -473,9 +449,9 @@ func (s *LocalHubService) Stop() error {
 	return nil
 }
 
-func (s *LocalHubService) Restart() (RunState, error) {
+func (s *LocalHubService) Restart(req LaunchRequest) (RunState, error) {
 	_ = s.Stop()
-	return s.Start()
+	return s.Start(req)
 }
 
 func (s *LocalHubService) rootDir() string {
@@ -525,6 +501,7 @@ func (s *LocalHubService) loadConfigLocked() {
 		Host:               defaultHost,
 		Port:               defaultPort,
 		NodeID:             defaultNodeID,
+		SelfID:             "",
 		Parent:             "",
 		ParentEnable:       false,
 		ParentReconnectSec: defaultParentReconnectSec,
@@ -538,6 +515,7 @@ func (s *LocalHubService) loadConfigLocked() {
 		cfg.Host = s.store.GetString("", keyHost, cfg.Host)
 		cfg.Port = s.store.GetInt("", keyPort, cfg.Port)
 		cfg.NodeID = s.store.GetInt("", keyNodeID, cfg.NodeID)
+		cfg.SelfID = s.store.GetString("", keySelfID, cfg.SelfID)
 		cfg.Parent = s.store.GetString("", keyParent, cfg.Parent)
 		cfg.ParentEnable = s.store.GetBool("", keyParentEnable, cfg.ParentEnable)
 		cfg.ParentReconnectSec = s.store.GetInt("", keyParentRetry, cfg.ParentReconnectSec)
@@ -559,6 +537,7 @@ func (s *LocalHubService) loadConfigLocked() {
 		cfg.NodeID = defaultNodeID
 	}
 
+	cfg.SelfID = strings.TrimSpace(cfg.SelfID)
 	cfg.Parent = strings.TrimSpace(cfg.Parent)
 	if cfg.ParentReconnectSec < 0 {
 		cfg.ParentReconnectSec = defaultParentReconnectSec
@@ -590,6 +569,9 @@ func (s *LocalHubService) saveConfigLocked() error {
 		return err
 	}
 	if err := s.store.SetInt("", keyNodeID, s.cfg.NodeID); err != nil {
+		return err
+	}
+	if err := s.store.SetString("", keySelfID, s.cfg.SelfID); err != nil {
 		return err
 	}
 	if err := s.store.SetString("", keyParent, s.cfg.Parent); err != nil {

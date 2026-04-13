@@ -22,6 +22,7 @@
 ## Current Docs
 
 - [authority-admin-console.md](authority-admin-console.md)
+- [localhub-parent-admission.md](localhub-parent-admission.md)
 - [mcp-client.md](mcp-client.md)
 - [stream.md](stream.md)
 - [flow-editor-accessibility.md](flow-editor-accessibility.md)
