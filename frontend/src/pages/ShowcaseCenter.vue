@@ -246,14 +246,18 @@ onMounted(async () => {
     </section>
 
     <Overlay :open="createDialogOpen" @close="createDialogOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Create Blank Screen") }}</h2>
-        <p class="mt-2 text-sm text-muted-foreground">
-          {{ t("Start with an empty screen, then open the dedicated editor window to add widgets and arrange layout.") }}
-        </p>
-        <div class="mt-5">
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Screen Name") }}</label>
-          <input v-model="createForm.name" :class="inputClass" :placeholder="t('Factory overview')" />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <p class="text-sm text-muted-foreground">
+              {{ t("Start with an empty screen, then open the dedicated editor window to add widgets and arrange layout.") }}
+            </p>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Screen Name") }}</label>
+              <input v-model="createForm.name" :class="inputClass" :placeholder="t('Factory overview')" />
+            </div>
+          </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="createDialogOpen = false">{{ t("Cancel") }}</Button>
@@ -263,11 +267,13 @@ onMounted(async () => {
     </Overlay>
 
     <Overlay :open="renameDialog.open" @close="renameDialog.open = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Rename Screen") }}</h2>
-        <div class="mt-5">
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Screen Name") }}</label>
-          <input v-model="renameDialog.name" :class="inputClass" />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Screen Name") }}</label>
+            <input v-model="renameDialog.name" :class="inputClass" />
+          </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="renameDialog.open = false">{{ t("Cancel") }}</Button>

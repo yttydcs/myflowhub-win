@@ -812,72 +812,74 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <Overlay :open="settingsOpen" @close="settingsOpen = false">
-      <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("File Settings") }}</h2>
-        <div class="mt-4 grid gap-4">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Base Dir") }}
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="grid gap-4 px-1 py-1 pr-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Base Dir") }}
+              </label>
+              <input
+                v-model="prefsDraft.baseDir"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Max Size (bytes)") }}
+                </label>
+                <input
+                  v-model.number="prefsDraft.maxSizeBytes"
+                  type="number"
+                  min="0"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Max Concurrent") }}
+                </label>
+                <input
+                  v-model.number="prefsDraft.maxConcurrent"
+                  type="number"
+                  min="1"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Chunk Bytes") }}
+                </label>
+                <input
+                  v-model.number="prefsDraft.chunkBytes"
+                  type="number"
+                  min="4096"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Incomplete TTL (sec)") }}
+                </label>
+                <input
+                  v-model.number="prefsDraft.incompleteTtlSec"
+                  type="number"
+                  min="60"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-muted-foreground">
+              <input v-model="prefsDraft.wantSha256" type="checkbox" class="h-4 w-4 rounded border" />
+              {{ t("Request SHA256 for transfers") }}
             </label>
-            <input
-              v-model="prefsDraft.baseDir"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
+            <label class="flex items-center gap-2 text-sm text-muted-foreground">
+              <input v-model="prefsDraft.autoAccept" type="checkbox" class="h-4 w-4 rounded border" />
+              {{ t("Auto-accept incoming offers") }}
+            </label>
           </div>
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Max Size (bytes)") }}
-              </label>
-              <input
-                v-model.number="prefsDraft.maxSizeBytes"
-                type="number"
-                min="0"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Max Concurrent") }}
-              </label>
-              <input
-                v-model.number="prefsDraft.maxConcurrent"
-                type="number"
-                min="1"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Chunk Bytes") }}
-              </label>
-              <input
-                v-model.number="prefsDraft.chunkBytes"
-                type="number"
-                min="4096"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Incomplete TTL (sec)") }}
-              </label>
-              <input
-                v-model.number="prefsDraft.incompleteTtlSec"
-                type="number"
-                min="60"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-          </div>
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="prefsDraft.wantSha256" type="checkbox" class="h-4 w-4 rounded border" />
-            {{ t("Request SHA256 for transfers") }}
-          </label>
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="prefsDraft.autoAccept" type="checkbox" class="h-4 w-4 rounded border" />
-            {{ t("Auto-accept incoming offers") }}
-          </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="settingsOpen = false">{{ t("Cancel") }}</Button>
@@ -887,34 +889,38 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="downloadOpen" @close="downloadOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Download File") }}</h2>
-        <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-          <p>{{ t("Remote file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
-        </div>
-        <div class="mt-4 grid gap-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Save Dir (relative)") }}
-            </label>
-            <input
-              v-model="downloadForm.saveDir"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="text-sm text-muted-foreground">
+              <p>{{ t("Remote file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
+            </div>
+            <div class="grid gap-3">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Save Dir (relative)") }}
+                </label>
+                <input
+                  v-model="downloadForm.saveDir"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Save Name") }}
+                </label>
+                <input
+                  v-model="downloadForm.saveName"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+              <label class="flex items-center gap-2 text-sm text-muted-foreground">
+                <input v-model="downloadForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
+                {{ t("Request SHA256") }}
+              </label>
+            </div>
           </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Save Name") }}
-            </label>
-            <input
-              v-model="downloadForm.saveName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="downloadForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
-            {{ t("Request SHA256") }}
-          </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="downloadOpen = false">{{ t("Cancel") }}</Button>
@@ -924,41 +930,45 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="offerOpen" @close="offerOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Send Offer") }}</h2>
-        <div class="mt-4 space-y-3 text-sm text-muted-foreground">
-          <p>{{ t("Local file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
-        </div>
-        <div class="mt-4 grid gap-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Target Node ID") }}
-            </label>
-            <div class="mt-2 flex items-center gap-2">
-              <input
-                v-model="offerForm.targetId"
-                class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                :placeholder="t('Node ID')"
-              />
-              <Button type="button" variant="outline" class="h-10 px-3" @click="openOfferNodePicker">
-                {{ t("Select") }}
-              </Button>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="text-sm text-muted-foreground">
+              <p>{{ t("Local file: {path}", { path: displayPath(currentDir, selected?.name ?? "") }) }}</p>
+            </div>
+            <div class="grid gap-3">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Target Node ID") }}
+                </label>
+                <div class="mt-2 flex items-center gap-2">
+                  <input
+                    v-model="offerForm.targetId"
+                    class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    :placeholder="t('Node ID')"
+                  />
+                  <Button type="button" variant="outline" class="h-10 px-3" @click="openOfferNodePicker">
+                    {{ t("Select") }}
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Remote Dir (relative)") }}
+                </label>
+                <input
+                  v-model="offerForm.remoteDir"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('/ for root')"
+                />
+              </div>
+              <label class="flex items-center gap-2 text-sm text-muted-foreground">
+                <input v-model="offerForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
+                {{ t("Include SHA256") }}
+              </label>
             </div>
           </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Remote Dir (relative)") }}
-            </label>
-            <input
-              v-model="offerForm.remoteDir"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('/ for root')"
-            />
-          </div>
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="offerForm.wantHash" type="checkbox" class="h-4 w-4 rounded border" />
-            {{ t("Include SHA256") }}
-          </label>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="offerOpen = false">{{ t("Cancel") }}</Button>
@@ -968,7 +978,7 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="offerNodePickerOpen" closeOnBackdrop @close="offerNodePickerOpen = false">
-      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
           <h2 class="text-lg font-semibold">{{ t("Select Target Node") }}</h2>
           <button
@@ -980,14 +990,16 @@ onBeforeUnmount(() => {
             <X class="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div class="mt-4">
-          <OfferNodeTreePicker
-            :model-value="offerPickerTargetId"
-            :source-id="selfNodeId"
-            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
-            :exclude-node-id="selfNodeId"
-            @update:model-value="onOfferTargetPicked"
-          />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <OfferNodeTreePicker
+              :model-value="offerPickerTargetId"
+              :source-id="selfNodeId"
+              :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+              :exclude-node-id="selfNodeId"
+              @update:model-value="onOfferTargetPicked"
+            />
+          </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
           <Button variant="outline" @click="offerNodePickerOpen = false">{{ t("Cancel") }}</Button>
@@ -997,21 +1009,23 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="addNodeOpen" @close="addNodeOpen = false">
-      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Add Remote Node") }}</h2>
-        <div class="mt-4">
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Node ID") }}
-          </label>
-          <div class="mt-2 flex items-center gap-2">
-            <input
-              v-model="newNodeId"
-              class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Node ID')"
-            />
-            <Button type="button" variant="outline" class="h-10 px-3" @click="openAddNodePicker">
-              {{ t("Select") }}
-            </Button>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Node ID") }}
+            </label>
+            <div class="mt-2 flex items-center gap-2">
+              <input
+                v-model="newNodeId"
+                class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                :placeholder="t('Node ID')"
+              />
+              <Button type="button" variant="outline" class="h-10 px-3" @click="openAddNodePicker">
+                {{ t("Select") }}
+              </Button>
+            </div>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
@@ -1022,7 +1036,7 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="addNodePickerOpen" closeOnBackdrop @close="addNodePickerOpen = false">
-      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-start justify-between gap-3">
           <h2 class="text-lg font-semibold">{{ t("Select Remote Node") }}</h2>
           <button
@@ -1034,14 +1048,16 @@ onBeforeUnmount(() => {
             <X class="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div class="mt-4">
-          <OfferNodeTreePicker
-            :model-value="addNodePickerTargetId"
-            :source-id="selfNodeId"
-            :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
-            :exclude-node-id="selfNodeId"
-            @update:model-value="onAddNodePicked"
-          />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <OfferNodeTreePicker
+              :model-value="addNodePickerTargetId"
+              :source-id="selfNodeId"
+              :hub-id="fileStore.state.hubId || Number(sessionStore.auth.hubId || 0)"
+              :exclude-node-id="selfNodeId"
+              @update:model-value="onAddNodePicked"
+            />
+          </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
           <Button variant="outline" @click="addNodePickerOpen = false">{{ t("Cancel") }}</Button>
@@ -1051,20 +1067,24 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="newFolderOpen" @close="newFolderOpen = false">
-      <div class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("New Folder") }}</h2>
-        <p class="mt-2 text-sm text-muted-foreground">
-          {{ t("Current dir: {dir}", { dir: currentDir || "/" }) }}
-        </p>
-        <div class="mt-4">
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Folder Name") }}
-          </label>
-          <input
-            v-model="newFolderName"
-            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            @keydown.enter.prevent="confirmCreateDir"
-          />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <p class="text-sm text-muted-foreground">
+              {{ t("Current dir: {dir}", { dir: currentDir || "/" }) }}
+            </p>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Folder Name") }}
+              </label>
+              <input
+                v-model="newFolderName"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                @keydown.enter.prevent="confirmCreateDir"
+              />
+            </div>
+          </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="newFolderOpen = false">{{ t("Cancel") }}</Button>
@@ -1074,7 +1094,7 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="fileStore.state.previewOpen" @close="fileStore.closePreview">
-      <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">
             {{ t("Preview {name}", { name: fileStore.state.previewTarget?.name ?? "" }) }}
@@ -1082,9 +1102,11 @@ onBeforeUnmount(() => {
           <Button variant="outline" @click="fileStore.closePreview">{{ t("Close") }}</Button>
         </div>
         <p class="mt-2 text-xs text-muted-foreground">{{ fileStore.state.previewInfo }}</p>
-        <pre
-          class="mt-4 max-h-[60vh] overflow-y-auto rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
-        >{{ fileStore.state.previewLoading ? t("Loading...") : fileStore.state.previewText }}</pre>
+        <div class="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <pre
+            class="rounded-lg border border-border/60 bg-background/80 p-4 text-xs text-foreground"
+          >{{ fileStore.state.previewLoading ? t("Loading...") : fileStore.state.previewText }}</pre>
+        </div>
       </div>
     </Overlay>
   </section>

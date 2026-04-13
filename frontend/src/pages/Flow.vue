@@ -493,21 +493,25 @@ onMounted(async () => {
     </section>
 
     <Overlay :open="createDialogOpen" @close="createDialogOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Create Flow Project") }}</h2>
-        <div class="mt-4 grid gap-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
-            <input
-              v-model="createForm.name"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Optional')"
-            />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="grid gap-3">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
+                <input
+                  v-model="createForm.name"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('Optional')"
+                />
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              {{ t("A unique local project id and a default random flow_id will be generated automatically. You can change metadata later from the project list.") }}
+            </p>
           </div>
         </div>
-        <p class="mt-4 text-xs text-muted-foreground">
-          {{ t("A unique local project id and a default random flow_id will be generated automatically. You can change metadata later from the project list.") }}
-        </p>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="createDialogOpen = false">{{ t("Cancel") }}</Button>
           <Button @click="createProject">{{ t("Create") }}</Button>
@@ -516,49 +520,53 @@ onMounted(async () => {
     </Overlay>
 
     <Overlay :open="metaDialogOpen" @close="metaDialogOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Project Metadata") }}</h2>
-        <div class="mt-4 grid gap-4">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Project ID") }}</label>
-            <input
-              :value="metaForm.projectId"
-              disabled
-              class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
-            <input
-              v-model="metaForm.projectName"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Optional')"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Flow ID") }}</label>
-            <input
-              v-model="metaForm.flowId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Required')"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Active Runs") }}</label>
-            <input
-              v-model="metaForm.maxActiveRuns"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Blank keeps legacy behavior; 0 means unlimited')"
-            />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="grid gap-4">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Project ID") }}</label>
+                <input
+                  :value="metaForm.projectId"
+                  disabled
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("name") }}</label>
+                <input
+                  v-model="metaForm.projectName"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('Optional')"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Flow ID") }}</label>
+                <input
+                  v-model="metaForm.flowId"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('Required')"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Active Runs") }}</label>
+                <input
+                  v-model="metaForm.maxActiveRuns"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('Blank keeps legacy behavior; 0 means unlimited')"
+                />
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              {{
+                t(
+                  "flow_id must stay unique among local projects because it is the deployment identity used on target nodes. max_active_runs keeps blank vs 0 distinct: blank preserves legacy behavior, 0 means unlimited."
+                )
+              }}
+            </p>
           </div>
         </div>
-        <p class="mt-4 text-xs text-muted-foreground">
-          {{
-            t(
-              "flow_id must stay unique among local projects because it is the deployment identity used on target nodes. max_active_runs keeps blank vs 0 distinct: blank preserves legacy behavior, 0 means unlimited."
-            )
-          }}
-        </p>
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="metaDialogOpen = false">{{ t("Cancel") }}</Button>
           <Button @click="saveMeta">{{ t("Save") }}</Button>
@@ -567,129 +575,133 @@ onMounted(async () => {
     </Overlay>
 
     <Overlay :open="deployDialogOpen" @close="deployDialogOpen = false">
-      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Deploy Project") }}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{{ deployForm.projectName }} · {{ t("Flow ID") }} {{ deployForm.flowId }}</p>
 
-        <div class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Node ID") }}</label>
-            <input
-              v-model="deployForm.nodeId"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              :placeholder="t('Target node id')"
-            />
-          </div>
-          <div class="flex items-end">
-            <Button variant="outline" @click="pickNode('deploy')">{{ t("Select node") }}</Button>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Node ID") }}</label>
+                <input
+                  v-model="deployForm.nodeId"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  :placeholder="t('Target node id')"
+                />
+              </div>
+              <div class="flex items-end">
+                <Button variant="outline" @click="pickNode('deploy')">{{ t("Select node") }}</Button>
+              </div>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-3">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Trigger") }}</label>
+                <select
+                  v-model="deployForm.trigger.type"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option v-for="option in triggerTypeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
+
+              <div v-if="deployForm.trigger.type === 'interval'">
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Every (ms)") }}</label>
+                <input
+                  v-model.number="deployForm.trigger.everyMs"
+                  type="number"
+                  min="1"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                />
+              </div>
+
+              <div v-else-if="deployForm.trigger.type === 'cron'">
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Cron Expression") }}</label>
+                <input
+                  v-model="deployForm.trigger.cronExpr"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  placeholder="0 */5 * * *"
+                />
+              </div>
+
+              <template v-else-if="deployForm.trigger.type === 'event'">
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Mode") }}</label>
+                  <select
+                    v-model="deployForm.trigger.eventMode"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option v-for="option in eventModeOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Name") }}</label>
+                  <input
+                    v-model="deployForm.trigger.eventName"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Topic") }}</label>
+                  <input
+                    v-model="deployForm.trigger.eventTopic"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
+                  <input
+                    v-model.number="deployForm.trigger.dedupWindowMs"
+                    type="number"
+                    min="0"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+              </template>
+
+              <template v-else>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Owner") }}</label>
+                  <input
+                    v-model.number="deployForm.trigger.varOwner"
+                    type="number"
+                    min="0"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Name") }}</label>
+                  <input
+                    v-model="deployForm.trigger.varName"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
+                  <input
+                    v-model.number="deployForm.trigger.dedupWindowMs"
+                    type="number"
+                    min="0"
+                    class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                </div>
+              </template>
+            </div>
+
+            <p class="text-xs text-muted-foreground">
+              {{
+                t(
+                  "Deployment only sends flow.set; it does not trigger run. Trigger edits here will be saved back as project default. dedup_window_ms only applies to event and variable-changed triggers."
+                )
+              }}
+            </p>
           </div>
         </div>
-
-        <div class="mt-4 grid gap-4 md:grid-cols-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Trigger") }}</label>
-            <select
-              v-model="deployForm.trigger.type"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option v-for="option in triggerTypeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="deployForm.trigger.type === 'interval'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Every (ms)") }}</label>
-            <input
-              v-model.number="deployForm.trigger.everyMs"
-              type="number"
-              min="1"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-
-          <div v-else-if="deployForm.trigger.type === 'cron'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Cron Expression") }}</label>
-            <input
-              v-model="deployForm.trigger.cronExpr"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="0 */5 * * *"
-            />
-          </div>
-
-          <template v-else-if="deployForm.trigger.type === 'event'">
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Mode") }}</label>
-              <select
-                v-model="deployForm.trigger.eventMode"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option v-for="option in eventModeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Name") }}</label>
-              <input
-                v-model="deployForm.trigger.eventName"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Event Topic") }}</label>
-              <input
-                v-model="deployForm.trigger.eventTopic"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
-              <input
-                v-model.number="deployForm.trigger.dedupWindowMs"
-                type="number"
-                min="0"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-          </template>
-
-          <template v-else>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Owner") }}</label>
-              <input
-                v-model.number="deployForm.trigger.varOwner"
-                type="number"
-                min="0"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Var Name") }}</label>
-              <input
-                v-model="deployForm.trigger.varName"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div>
-              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Dedup Window (ms)") }}</label>
-              <input
-                v-model.number="deployForm.trigger.dedupWindowMs"
-                type="number"
-                min="0"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-          </template>
-        </div>
-
-        <p class="mt-4 text-xs text-muted-foreground">
-          {{
-            t(
-              "Deployment only sends flow.set; it does not trigger run. Trigger edits here will be saved back as project default. dedup_window_ms only applies to event and variable-changed triggers."
-            )
-          }}
-        </p>
 
         <div class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="deployDialogOpen = false">{{ t("Cancel") }}</Button>
@@ -699,44 +711,46 @@ onMounted(async () => {
     </Overlay>
 
     <Overlay :open="nodePickerOpen" @close="nodePickerOpen = false">
-      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">{{ t("Select node") }}</h2>
           <Button size="sm" variant="outline" @click="devicesStore.loadRoot">{{ t("Reload Tree") }}</Button>
         </div>
-        <div class="mt-4 max-h-[70vh] space-y-2 overflow-y-auto">
-          <article
-            v-for="{ node, depth } in visibleNodes"
-            :key="node.key"
-            class="rounded-xl border border-border/60 bg-background/70 p-3"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2" :style="{ marginLeft: `${depth * 16}px` }">
-                <button
-                  type="button"
-                  class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs"
-                  :disabled="node.duplicate || node.loading"
-                  @click="toggleNode(node)"
-                >
-                  <span v-if="node.loading">…</span>
-                  <span v-else>{{ node.expanded ? "-" : "+" }}</span>
-                </button>
-                <div>
-                  <p class="font-semibold">{{ t("Node {nodeId}", { nodeId: node.nodeId }) }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    <span v-if="node.duplicate">{{ t("Duplicate node in current tree path.") }}</span>
-                    <span v-else-if="node.error">{{ node.error }}</span>
-                    <span v-else-if="node.children">{{ t("children {count}", { count: node.children.length }) }}</span>
-                    <span v-else>{{ t("not loaded") }}</span>
-                  </p>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-2 px-1 py-1 pr-2">
+            <article
+              v-for="{ node, depth } in visibleNodes"
+              :key="node.key"
+              class="rounded-xl border border-border/60 bg-background/70 p-3"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2" :style="{ marginLeft: `${depth * 16}px` }">
+                  <button
+                    type="button"
+                    class="h-7 w-7 rounded-md border border-border/70 bg-background text-xs"
+                    :disabled="node.duplicate || node.loading"
+                    @click="toggleNode(node)"
+                  >
+                    <span v-if="node.loading">…</span>
+                    <span v-else>{{ node.expanded ? "-" : "+" }}</span>
+                  </button>
+                  <div>
+                    <p class="font-semibold">{{ t("Node {nodeId}", { nodeId: node.nodeId }) }}</p>
+                    <p class="text-xs text-muted-foreground">
+                      <span v-if="node.duplicate">{{ t("Duplicate node in current tree path.") }}</span>
+                      <span v-else-if="node.error">{{ node.error }}</span>
+                      <span v-else-if="node.children">{{ t("children {count}", { count: node.children.length }) }}</span>
+                      <span v-else>{{ t("not loaded") }}</span>
+                    </p>
+                  </div>
                 </div>
+                <Button size="sm" @click="chooseNode(node.nodeId)">{{ t("Select") }}</Button>
               </div>
-              <Button size="sm" @click="chooseNode(node.nodeId)">{{ t("Select") }}</Button>
-            </div>
-          </article>
+            </article>
 
-          <div v-if="!visibleNodes.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
-            {{ t("No tree data. Connect and login first, then reload the tree.") }}
+            <div v-if="!visibleNodes.length" class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+              {{ t("No tree data. Connect and login first, then reload the tree.") }}
+            </div>
           </div>
         </div>
       </div>

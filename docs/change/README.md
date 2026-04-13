@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-04-14_win-dialog-height-scroll-convergence.md](2026-04-14_win-dialog-height-scroll-convergence.md)
   - [2026-04-13_win-popup-build-open.md](2026-04-13_win-popup-build-open.md)
   - [2026-04-13_win-stream-desktop-capture.md](2026-04-13_win-stream-desktop-capture.md)
   - [2026-04-13_win-stream-media-io.md](2026-04-13_win-stream-media-io.md)

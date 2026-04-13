@@ -1495,7 +1495,7 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <Overlay :open="layoutDialogOpen" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeLayoutDialog">
-      <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="t('Edit Layout')"
@@ -1508,31 +1508,35 @@ onBeforeUnmount(() => {
           </template>
         </CardHeader>
 
-        <div class="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Layout Mode") }}</label>
-            <select v-model="layoutForm.mode" :class="inputClass">
-              <option value="columns">{{ t("Columns") }}</option>
-              <option value="canvas_percent">{{ t("Canvas") }}</option>
-            </select>
-          </div>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Layout Mode") }}</label>
+                <select v-model="layoutForm.mode" :class="inputClass">
+                  <option value="columns">{{ t("Columns") }}</option>
+                  <option value="canvas_percent">{{ t("Canvas") }}</option>
+                </select>
+              </div>
 
-          <div v-if="layoutForm.mode === 'columns'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Columns") }}</label>
-            <input v-model="layoutForm.maxColumns" :class="inputClass" />
-          </div>
+              <div v-if="layoutForm.mode === 'columns'">
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Max Columns") }}</label>
+                <input v-model="layoutForm.maxColumns" :class="inputClass" />
+              </div>
 
-          <div v-if="layoutForm.mode === 'columns'">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Min Column Width (px)") }}
-            </label>
-            <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
+              <div v-if="layoutForm.mode === 'columns'">
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Min Column Width (px)") }}
+                </label>
+                <input v-model="layoutForm.minColumnWidth" :class="inputClass" />
+              </div>
+            </div>
+
+            <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-4 text-xs text-muted-foreground">
+              {{ t("Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.") }}
+            </p>
           </div>
         </div>
-
-        <p v-if="layoutForm.mode === 'canvas_percent'" class="mt-4 text-xs text-muted-foreground">
-          {{ t("Canvas mode keeps direct widget manipulation in the preview. Switching from columns will initialize missing canvas positions for widgets.") }}
-        </p>
 
         <div class="mt-6 flex flex-wrap justify-end gap-2">
           <Button variant="outline" :disabled="busy" @click="closeLayoutDialog">{{ t("Cancel") }}</Button>
@@ -1542,7 +1546,7 @@ onBeforeUnmount(() => {
     </Overlay>
 
     <Overlay :open="widgetDialog.open" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="closeWidgetDialog">
-      <div class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="widgetDialog.mode === 'create' ? t('Add Widget') : t('Edit Widget')"
@@ -1554,8 +1558,10 @@ onBeforeUnmount(() => {
           </template>
         </CardHeader>
 
-        <div class="mt-5 grid gap-4">
-          <div class="grid gap-4" :class="widgetDialog.kind === 'topic_button' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <div class="grid gap-4">
+              <div class="grid gap-4" :class="widgetDialog.kind === 'topic_button' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 {{ t("Title (optional)") }}
@@ -1576,7 +1582,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div v-if="widgetDialog.kind === 'topic_button'" class="grid gap-4">
+              <div v-if="widgetDialog.kind === 'topic_button'" class="grid gap-4">
             <div class="grid gap-4 sm:grid-cols-2">
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Topic") }}</label>
@@ -1595,7 +1601,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div v-else class="grid gap-4">
+              <div v-else class="grid gap-4">
             <div class="grid gap-4 sm:grid-cols-3">
               <div>
                 <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -1733,6 +1739,8 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1749,7 +1757,7 @@ onBeforeUnmount(() => {
       closeOnBackdrop
       @close="closeVarQuickPickDialog"
     >
-      <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="t('Pick Variable')"
@@ -1763,71 +1771,75 @@ onBeforeUnmount(() => {
           </template>
         </CardHeader>
 
-        <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <input
-            v-model="varQuickPickDialog.query"
-            :class="inputClass"
-            :placeholder="t('Filter by variable name or owner node id.')"
-          />
-          <Button
-            variant="outline"
-            class="sm:mt-2"
-            :disabled="varQuickPickDialog.refreshing || !selfNodeId"
-            @click="refreshVarQuickPickMine(true)"
-          >
-            <RefreshCw class="mr-2 h-4 w-4" :class="varQuickPickDialog.refreshing ? 'animate-spin' : ''" />
-            {{ t("Refresh Mine") }}
-          </Button>
-        </div>
-
-        <div class="mt-5 grid gap-4 md:grid-cols-2">
-          <div class="rounded-xl border border-border/60 bg-background/60">
-            <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Watched") }}</p>
-              <Badge variant="outline">{{ watchedVarQuickPickItems.length }}</Badge>
-            </div>
-            <div class="max-h-72 space-y-2 overflow-auto p-3">
-              <button
-                v-for="item in watchedVarQuickPickItems"
-                :key="`watch-${item.owner}-${item.name}`"
-                type="button"
-                class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
-                @click="applyVarQuickPick(item)"
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input
+                v-model="varQuickPickDialog.query"
+                :class="inputClass"
+                :placeholder="t('Filter by variable name or owner node id.')"
+              />
+              <Button
+                variant="outline"
+                class="sm:mt-2"
+                :disabled="varQuickPickDialog.refreshing || !selfNodeId"
+                @click="refreshVarQuickPickMine(true)"
               >
-                <p class="truncate text-sm font-semibold">{{ item.name }}</p>
-                <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
-                  <Badge v-if="item.mine" variant="secondary">{{ t("mine") }}</Badge>
-                </div>
-              </button>
-              <p v-if="watchedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-                {{ t("No watched variables.") }}
-              </p>
+                <RefreshCw class="mr-2 h-4 w-4" :class="varQuickPickDialog.refreshing ? 'animate-spin' : ''" />
+                {{ t("Refresh Mine") }}
+              </Button>
             </div>
-          </div>
 
-          <div class="rounded-xl border border-border/60 bg-background/60">
-            <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Mine") }}</p>
-              <Badge variant="outline">{{ mineVarQuickPickItems.length }}</Badge>
-            </div>
-            <div class="max-h-72 space-y-2 overflow-auto p-3">
-              <button
-                v-for="item in mineVarQuickPickItems"
-                :key="`mine-${item.owner}-${item.name}`"
-                type="button"
-                class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
-                @click="applyVarQuickPick(item)"
-              >
-                <p class="truncate text-sm font-semibold">{{ item.name }}</p>
-                <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
-                  <Badge v-if="item.watched" variant="secondary">{{ t("watched") }}</Badge>
+            <div class="mt-5 grid gap-4 md:grid-cols-2">
+              <div class="rounded-xl border border-border/60 bg-background/60">
+                <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Watched") }}</p>
+                  <Badge variant="outline">{{ watchedVarQuickPickItems.length }}</Badge>
                 </div>
-              </button>
-              <p v-if="mineVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
-                {{ t("No mine variables.") }}
-              </p>
+                <div class="max-h-72 space-y-2 overflow-auto p-3">
+                  <button
+                    v-for="item in watchedVarQuickPickItems"
+                    :key="`watch-${item.owner}-${item.name}`"
+                    type="button"
+                    class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
+                    @click="applyVarQuickPick(item)"
+                  >
+                    <p class="truncate text-sm font-semibold">{{ item.name }}</p>
+                    <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
+                      <Badge v-if="item.mine" variant="secondary">{{ t("mine") }}</Badge>
+                    </div>
+                  </button>
+                  <p v-if="watchedVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+                    {{ t("No watched variables.") }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="rounded-xl border border-border/60 bg-background/60">
+                <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                  <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Mine") }}</p>
+                  <Badge variant="outline">{{ mineVarQuickPickItems.length }}</Badge>
+                </div>
+                <div class="max-h-72 space-y-2 overflow-auto p-3">
+                  <button
+                    v-for="item in mineVarQuickPickItems"
+                    :key="`mine-${item.owner}-${item.name}`"
+                    type="button"
+                    class="w-full rounded-lg border border-border/60 bg-card/80 px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted/30"
+                    @click="applyVarQuickPick(item)"
+                  >
+                    <p class="truncate text-sm font-semibold">{{ item.name }}</p>
+                    <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>{{ t("Owner {owner}", { owner: item.owner }) }}</span>
+                      <Badge v-if="item.watched" variant="secondary">{{ t("watched") }}</Badge>
+                    </div>
+                  </button>
+                  <p v-if="mineVarQuickPickItems.length === 0" class="py-4 text-center text-sm text-muted-foreground">
+                    {{ t("No mine variables.") }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

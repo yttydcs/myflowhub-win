@@ -1322,7 +1322,10 @@ onMounted(() => {
       initialFocusSelector="[data-node-override-id]"
       @close="closeNodeOverrideDialog"
     >
-      <div class="w-full max-w-xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div
+        data-node-override-dialog
+        class="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
         <CardHeader
           :title="nodeOverrideDialog.mode === 'create' ? t('Create Node Override') : t('Edit Node Override')"
           :description="t('Override one node at a time so the page stays focused on the summary list.')"
@@ -1330,30 +1333,32 @@ onMounted(() => {
           title-class="text-lg"
         />
 
-        <div class="mt-5 grid gap-4">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Node ID") }}
-            </label>
-            <input
-              v-model="nodeOverrideDialog.nodeId"
-              data-node-override-id
-              :class="inputClass"
-              :placeholder="t('nodeId')"
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Role") }}
-            </label>
-            <select v-model="nodeOverrideDialog.role" :class="selectClass">
-              <option v-for="role in roleOptions" :key="`node-override-role-${role}`" :value="role">
-                {{ role }}
-              </option>
-            </select>
-            <p class="mt-2 text-xs text-muted-foreground">
-              {{ t("Choose one existing role bundle for this exceptional node.") }}
-            </p>
+        <div data-node-override-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="grid gap-4 px-1 py-1 pr-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Node ID") }}
+              </label>
+              <input
+                v-model="nodeOverrideDialog.nodeId"
+                data-node-override-id
+                :class="inputClass"
+                :placeholder="t('nodeId')"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Role") }}
+              </label>
+              <select v-model="nodeOverrideDialog.role" :class="selectClass">
+                <option v-for="role in roleOptions" :key="`node-override-role-${role}`" :value="role">
+                  {{ role }}
+                </option>
+              </select>
+              <p class="mt-2 text-xs text-muted-foreground">
+                {{ t("Choose one existing role bundle for this exceptional node.") }}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -1372,7 +1377,10 @@ onMounted(() => {
       initialFocusSelector="[data-default-role-select]"
       @close="closeDefaultAccessDialog"
     >
-      <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div
+        data-default-access-dialog
+        class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+      >
         <CardHeader
           :title="t('Edit Default Access')"
           :description="t('Create or update one focused permission list instead of editing the entire page.')"
@@ -1380,97 +1388,101 @@ onMounted(() => {
           title-class="text-lg"
         />
 
-        <div class="mt-5 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Default Role") }}
-            </label>
-            <select
-              v-model="defaultAccessDialog.defaultRole"
-              data-default-role-select
-              :class="selectClass"
-            >
-              <option v-for="role in roleOptions" :key="`default-role-${role}`" :value="role">
-                {{ role }}
-              </option>
-            </select>
-            <p class="mt-2 text-xs text-muted-foreground">
-              {{ t("Open the role management tab when you need to create or rename role bundles.") }}
-            </p>
-          </div>
-
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
-            <div class="flex flex-wrap items-center justify-between gap-2">
+        <div data-default-access-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-5 px-1 py-1 pr-2">
+            <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
               <div>
-                <p class="text-sm font-semibold text-foreground">{{ t("Permission List") }}</p>
-                <p class="mt-1 text-xs text-muted-foreground">
-                  {{ t("Permissions in this editor come from the built-in catalog only. Add rows as needed, then remove the ones you no longer want.") }}
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Default Role") }}
+                </label>
+                <select
+                  v-model="defaultAccessDialog.defaultRole"
+                  data-default-role-select
+                  :class="selectClass"
+                >
+                  <option v-for="role in roleOptions" :key="`default-role-${role}`" :value="role">
+                    {{ role }}
+                  </option>
+                </select>
+                <p class="mt-2 text-xs text-muted-foreground">
+                  {{ t("Open the role management tab when you need to create or rename role bundles.") }}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="!canAddPermission(defaultAccessDialog.perms)"
-                @click="addPermissionRow(defaultAccessDialog)"
-              >
-                {{ t("Add Permission") }}
-              </Button>
-            </div>
 
-            <div v-if="defaultAccessDialog.perms.length" class="mt-4 space-y-3">
-              <div
-                v-for="(perm, index) in defaultAccessDialog.perms"
-                :key="`default-perm-row-${index}-${perm}`"
-                class="grid gap-3 rounded-2xl border border-border/60 bg-card/80 p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
-              >
-                <div>
-                  <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                    {{ t("Permission") }}
-                  </label>
-                  <select
-                    :value="perm"
-                    :class="selectClass"
-                    @change="onDefaultDialogPermissionChange(index, $event)"
+              <div class="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p class="text-sm font-semibold text-foreground">{{ t("Permission List") }}</p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      {{ t("Permissions in this editor come from the built-in catalog only. Add rows as needed, then remove the ones you no longer want.") }}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="!canAddPermission(defaultAccessDialog.perms)"
+                    @click="addPermissionRow(defaultAccessDialog)"
                   >
-                    <option
-                      v-for="option in permissionOptions"
-                      :key="`default-option-${index}-${option.perm}`"
-                      :value="option.perm"
-                      :disabled="isPermissionOptionDisabled(defaultAccessDialog.perms, index, option.perm)"
-                    >
-                      {{ permissionOptionLabel(option) }}
-                    </option>
-                  </select>
-                  <p class="mt-2 text-xs text-muted-foreground">
-                    {{ permissionDescription(perm) }}
-                  </p>
-                </div>
-                <div class="self-end">
-                  <Button size="sm" variant="outline" @click="removePermissionAt(defaultAccessDialog, index)">
-                    {{ t("Remove") }}
+                    {{ t("Add Permission") }}
                   </Button>
                 </div>
+
+                <div v-if="defaultAccessDialog.perms.length" class="mt-4 space-y-3">
+                  <div
+                    v-for="(perm, index) in defaultAccessDialog.perms"
+                    :key="`default-perm-row-${index}-${perm}`"
+                    class="grid gap-3 rounded-2xl border border-border/60 bg-card/80 p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <div>
+                      <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        {{ t("Permission") }}
+                      </label>
+                      <select
+                        :value="perm"
+                        :class="selectClass"
+                        @change="onDefaultDialogPermissionChange(index, $event)"
+                      >
+                        <option
+                          v-for="option in permissionOptions"
+                          :key="`default-option-${index}-${option.perm}`"
+                          :value="option.perm"
+                          :disabled="isPermissionOptionDisabled(defaultAccessDialog.perms, index, option.perm)"
+                        >
+                          {{ permissionOptionLabel(option) }}
+                        </option>
+                      </select>
+                      <p class="mt-2 text-xs text-muted-foreground">
+                        {{ permissionDescription(perm) }}
+                      </p>
+                    </div>
+                    <div class="self-end">
+                      <Button size="sm" variant="outline" @click="removePermissionAt(defaultAccessDialog, index)">
+                        {{ t("Remove") }}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <p v-else class="mt-4 text-sm text-muted-foreground">{{ t("No permissions selected yet.") }}</p>
               </div>
             </div>
 
-            <p v-else class="mt-4 text-sm text-muted-foreground">{{ t("No permissions selected yet.") }}</p>
-          </div>
-        </div>
-
-        <div
-          v-if="defaultAccessDialog.unknownPerms.length"
-          class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
-        >
-          <p class="font-semibold">{{ t("Preserved extra permissions") }}</p>
-          <p class="mt-1">{{ t("These permissions come from existing policy data and stay preserved because they are outside the built-in catalog.") }}</p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <Badge
-              v-for="perm in defaultAccessDialog.unknownPerms"
-              :key="`default-dialog-extra-${perm}`"
-              variant="secondary"
+            <div
+              v-if="defaultAccessDialog.unknownPerms.length"
+              class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
             >
-              {{ perm }}
-            </Badge>
+              <p class="font-semibold">{{ t("Preserved extra permissions") }}</p>
+              <p class="mt-1">{{ t("These permissions come from existing policy data and stay preserved because they are outside the built-in catalog.") }}</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <Badge
+                  v-for="perm in defaultAccessDialog.unknownPerms"
+                  :key="`default-dialog-extra-${perm}`"
+                  variant="secondary"
+                >
+                  {{ perm }}
+                </Badge>
+              </div>
+            </div>
           </div>
         </div>
 
