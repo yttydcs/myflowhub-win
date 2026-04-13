@@ -22,6 +22,7 @@
 ## Current Docs
 
 - 已归档计划：
+  - [2026-04-14_win-localhub-parent-admission.md](2026-04-14_win-localhub-parent-admission.md)
   - [2026-04-13_win-stream-media-io.md](2026-04-13_win-stream-media-io.md)
   - [2026-03-26_win-authority-group-label.md](2026-03-26_win-authority-group-label.md)
 - 当前执行中的计划：
