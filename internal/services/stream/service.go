@@ -64,6 +64,10 @@ type StreamService struct {
 	consumers          map[string]proto.ConsumerDescriptor
 	producerDeliveries map[string]*localProducerDelivery
 	consumerDeliveries map[string]*localConsumerDelivery
+	sourceInputs       map[string]sourceInputConfig
+	fileSenders        map[string]*fileDeliverySender
+	media              map[string]*mediaRuntime
+	mediaServer        *mediaHTTPServer
 	busTokens          []busToken
 }
 
@@ -77,12 +81,16 @@ func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, bus coreb
 		consumers:          make(map[string]proto.ConsumerDescriptor),
 		producerDeliveries: make(map[string]*localProducerDelivery),
 		consumerDeliveries: make(map[string]*localConsumerDelivery),
+		sourceInputs:       make(map[string]sourceInputConfig),
+		fileSenders:        make(map[string]*fileDeliverySender),
+		media:              make(map[string]*mediaRuntime),
 	}
 	svc.bindBus()
 	return svc
 }
 
 func (s *StreamService) Close() {
+	s.closeMediaResources()
 	s.unbindBus()
 }
 

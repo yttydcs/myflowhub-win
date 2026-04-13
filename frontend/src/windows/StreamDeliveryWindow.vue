@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, watch } from "vue"
+import { computed, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { RefreshCw } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"
@@ -26,6 +26,10 @@ const deliveryId = computed(() => String(route.query.deliveryId ?? "").trim())
 const delivery = computed(() => stream.state.deliveries.find((item) => item.deliveryId === deliveryId.value) ?? null)
 const textFrames = computed(() => (delivery.value ? stream.textFramesFor(delivery.value.deliveryId) : []))
 const stats = computed(() => (delivery.value ? stream.statsFor(delivery.value.deliveryId) : null))
+const media = computed(() => (delivery.value ? stream.mediaForDelivery(delivery.value.deliveryId) : null))
+const playerElement = ref<HTMLVideoElement | HTMLAudioElement | null>(null)
+const playerError = ref("")
+const isPlayableMedia = computed(() => delivery.value?.kind === "music" || delivery.value?.kind === "video")
 
 const formatTimestamp = (value: string) => {
   const dt = new Date(String(value ?? ""))
@@ -60,13 +64,34 @@ const refreshWindow = async () => {
   loading.value = true
   try {
     await loadHomeDefaults()
-    await Promise.all([stream.loadPrefs(), stream.loadDeliveries()])
+    await Promise.all([stream.loadPrefs(), stream.loadDeliveries(), stream.loadMedia()])
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to initialize Delivery output window."))
   } finally {
     loading.value = false
   }
+}
+
+const tryStartPlayback = () => {
+  const player = playerElement.value
+  if (!player) return
+  const promise = player.play()
+  if (promise && typeof promise.catch === "function") {
+    promise.catch((err: unknown) => {
+      playerError.value = err instanceof Error ? err.message : String(err ?? "")
+    })
+  }
+}
+
+const handleMediaCanPlay = () => {
+  playerError.value = ""
+  tryStartPlayback()
+}
+
+const handleMediaError = () => {
+  const nativeError = playerElement.value?.error
+  playerError.value = nativeError?.message || t("Playback failed for this media stream.")
 }
 
 watch(
@@ -79,7 +104,15 @@ watch(
 watch(
   () => deliveryId.value,
   () => {
+    playerError.value = ""
     void refreshWindow()
+  }
+)
+
+watch(
+  () => media.value?.mediaUrl,
+  () => {
+    playerError.value = ""
   }
 )
 
@@ -143,12 +176,55 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-else class="mt-5 rounded-2xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-          <p>{{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}</p>
-          <p class="mt-2" v-if="stats">
-            {{ t("Frames {frames} · Bytes {bytes} · ACK {ack} · Flags {flags}", { frames: stats.framesIn, bytes: stats.bytesIn, ack: stats.lastAckPos, flags: stats.lastFlags }) }}
-          </p>
-          <p class="mt-2" v-else>{{ t("No runtime stats available yet.") }}</p>
+        <div v-else class="mt-5 space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
+          <div
+            v-if="isPlayableMedia && media && media.mediaUrl && media.state !== 'error' && media.state !== 'closed'"
+            class="space-y-3 rounded-2xl border border-border/60 bg-card/90 p-3 text-card-foreground"
+          >
+            <video
+              v-if="delivery.kind === 'video'"
+              ref="playerElement"
+              class="max-h-[520px] w-full rounded-xl bg-black"
+              controls
+              autoplay
+              preload="auto"
+              :src="media.mediaUrl"
+              @canplay="handleMediaCanPlay"
+              @loadeddata="handleMediaCanPlay"
+              @error="handleMediaError"
+            />
+            <audio
+              v-else
+              ref="playerElement"
+              class="w-full"
+              controls
+              autoplay
+              preload="auto"
+              :src="media.mediaUrl"
+              @canplay="handleMediaCanPlay"
+              @loadeddata="handleMediaCanPlay"
+              @error="handleMediaError"
+            />
+            <p class="text-xs text-muted-foreground">
+              {{
+                media.state === "buffering"
+                  ? t("Buffering media stream...")
+                  : t("Progressive playback active. Received {bytes} bytes.", { bytes: media.availableBytes })
+              }}
+            </p>
+          </div>
+
+          <div v-if="media?.error || playerError" class="rounded-xl border border-rose-200/40 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+            {{ media?.error || playerError }}
+          </div>
+
+          <div class="rounded-xl border border-border/60 bg-card/70 px-3 py-3">
+            <p>{{ t("Frames {frames} · Bytes {bytes}", { frames: delivery.framesIn, bytes: delivery.bytesIn }) }}</p>
+            <p class="mt-2" v-if="stats">
+              {{ t("Frames {frames} · Bytes {bytes} · ACK {ack} · Flags {flags}", { frames: stats.framesIn, bytes: stats.bytesIn, ack: stats.lastAckPos, flags: stats.lastFlags }) }}
+            </p>
+            <p class="mt-2" v-else>{{ t("No runtime stats available yet.") }}</p>
+          </div>
         </div>
       </section>
 

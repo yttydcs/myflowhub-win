@@ -22,6 +22,7 @@
 ## Current Docs
 
 - 已归档计划：
+  - [2026-04-13_win-stream-media-io.md](2026-04-13_win-stream-media-io.md)
   - [2026-03-26_win-authority-group-label.md](2026-03-26_win-authority-group-label.md)
 - 当前执行中的计划：
   - 活跃 workflow 仅存在于对应 worktree 根 `plan.md`，不保留在 repo 主线目录

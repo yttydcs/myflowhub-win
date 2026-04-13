@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+	streamsvc "github.com/yttydcs/myflowhub-win/internal/services/stream"
 )
 
 const streamPrefsKey = "stream.prefs"
@@ -17,6 +20,8 @@ type StreamSavedSource struct {
 	UnitMode    string   `json:"unitMode"`
 	Tags        []string `json:"tags"`
 	MetadataRaw string   `json:"metadataRaw"`
+	InputKind   string   `json:"inputKind,omitempty"`
+	FilePath    string   `json:"filePath,omitempty"`
 }
 
 type StreamSavedConsumer struct {
@@ -139,6 +144,28 @@ func normalizeStreamSavedSource(item StreamSavedSource) StreamSavedSource {
 	item.UnitMode = strings.TrimSpace(item.UnitMode)
 	item.Tags = normalizeStreamSavedTags(item.Tags)
 	item.MetadataRaw = strings.TrimSpace(item.MetadataRaw)
+	item.InputKind = strings.ToLower(strings.TrimSpace(item.InputKind))
+	item.FilePath = strings.TrimSpace(item.FilePath)
+	switch item.InputKind {
+	case sourceInputKindFile:
+	case sourceInputKindDesktop:
+	default:
+		item.InputKind = ""
+		item.FilePath = ""
+	}
+	if item.Kind == "text" {
+		item.InputKind = ""
+		item.FilePath = ""
+	}
+	if item.InputKind == sourceInputKindFile && item.FilePath == "" {
+		item.InputKind = ""
+	}
+	if item.InputKind == sourceInputKindDesktop {
+		item.FilePath = ""
+		if item.Kind != "video" {
+			item.InputKind = ""
+		}
+	}
 	return item
 }
 
@@ -167,4 +194,32 @@ func normalizeStreamSavedTags(tags []string) []string {
 		out = append(out, tag)
 	}
 	return out
+}
+
+const (
+	sourceInputKindFile    = "file"
+	sourceInputKindDesktop = "desktop"
+)
+
+func (a *App) PickStreamMediaFile() (streamsvc.StreamMediaFileChoice, error) {
+	if a.ctx == nil {
+		return streamsvc.StreamMediaFileChoice{}, errors.New("app context not initialized")
+	}
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select media file",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Media Files",
+				Pattern:     "*.mp3;*.wav;*.ogg;*.aac;*.m4a;*.flac;*.mp4;*.webm;*.mov;*.mkv;*.ogv",
+			},
+		},
+	})
+	if err != nil {
+		return streamsvc.StreamMediaFileChoice{}, err
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return streamsvc.StreamMediaFileChoice{}, nil
+	}
+	return streamsvc.DetectMediaFile(path), nil
 }

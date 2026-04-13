@@ -38,9 +38,11 @@ func TestSaveStreamPrefs_NormalizesAndPersists(t *testing.T) {
 				MetadataRaw: "  {\"room\":1}  ",
 			},
 			{
-				SourceID: "src-a",
-				Name:     "Source A Override",
-				Kind:     "text",
+				SourceID:  "src-a",
+				Name:      "Source A Override",
+				Kind:      "video",
+				InputKind: " file ",
+				FilePath:  " C:/media/demo.mp4 ",
 			},
 		},
 		Consumers: []StreamSavedConsumer{
@@ -71,8 +73,11 @@ func TestSaveStreamPrefs_NormalizesAndPersists(t *testing.T) {
 	if len(saved.Sources) != 1 {
 		t.Fatalf("expected 1 source got %+v", saved.Sources)
 	}
-	if saved.Sources[0].SourceID != "src-a" || saved.Sources[0].Name != "Source A Override" || saved.Sources[0].Kind != "text" {
+	if saved.Sources[0].SourceID != "src-a" || saved.Sources[0].Name != "Source A Override" || saved.Sources[0].Kind != "video" {
 		t.Fatalf("unexpected saved source %+v", saved.Sources[0])
+	}
+	if saved.Sources[0].InputKind != "file" || saved.Sources[0].FilePath != "C:/media/demo.mp4" {
+		t.Fatalf("expected normalized file input on saved source got %+v", saved.Sources[0])
 	}
 	if len(saved.Consumers) != 1 {
 		t.Fatalf("expected 1 consumer got %+v", saved.Consumers)
@@ -120,5 +125,45 @@ func TestSaveStreamPrefs_NormalizesInvalidValues(t *testing.T) {
 	}
 	if len(saved.Sources) != 0 || len(saved.Consumers) != 0 {
 		t.Fatalf("expected invalid entries to be dropped got %+v", saved)
+	}
+}
+
+func TestSaveStreamPrefs_KeepsDesktopInputOnlyForVideoSources(t *testing.T) {
+	app := newTestAppWithStore(t)
+
+	saved, err := app.SaveStreamPrefs(StreamPrefs{
+		Sources: []StreamSavedSource{
+			{
+				SourceID:    "video-source",
+				Name:        "Desktop Video",
+				Kind:        "video",
+				ContentType: "video/webm",
+				Mode:        "bounded",
+				UnitMode:    "chunk",
+				InputKind:   " desktop ",
+				FilePath:    " C:/should/not/persist.webm ",
+			},
+			{
+				SourceID:    "music-source",
+				Name:        "Bad Desktop Music",
+				Kind:        "music",
+				ContentType: "audio/webm",
+				Mode:        "bounded",
+				UnitMode:    "chunk",
+				InputKind:   "desktop",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveStreamPrefs() error = %v", err)
+	}
+	if len(saved.Sources) != 2 {
+		t.Fatalf("expected 2 sources got %+v", saved.Sources)
+	}
+	if saved.Sources[0].InputKind != "desktop" || saved.Sources[0].FilePath != "" {
+		t.Fatalf("expected video desktop source to keep desktop mode without file path, got %+v", saved.Sources[0])
+	}
+	if saved.Sources[1].InputKind != "" || saved.Sources[1].FilePath != "" {
+		t.Fatalf("expected non-video desktop source to be cleared, got %+v", saved.Sources[1])
 	}
 }

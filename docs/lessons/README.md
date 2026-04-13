@@ -33,6 +33,12 @@
 - [flow-body-spec-mode-normalization.md](flow-body-spec-mode-normalization.md)
   - 症状：`foreach.body` 内高级节点明明已支持表单，但窗口里仍只显示 `Advanced JSON`，或找不到 `Add Binding`
   - 关键词：`normalizeBodySessionSnapshot`、`createBodyNodeDraft`、`specEditorMode`、`foreach.body`
+- [stream-media-progressive-playback-http-outlet.md](stream-media-progressive-playback-http-outlet.md)
+  - 症状：delivery 明明持续收包，却不能边接收边播放，或前端试图直接承载媒体字节导致卡顿/内存压力
+  - 关键词：`stream.media`、`progressiveMediaSink`、`MediaSnapshot`、`chunk`、`127.0.0.1`
+- [stream-desktop-capture-session-reset.md](stream-desktop-capture-session-reset.md)
+  - 症状：桌面采集重新开始后接收端不重新播放，或中途新加入 delivery 没有完整画面
+  - 关键词：`session_start`、`resetMediaRuntimeSession`、`PublishCaptureChunkSimple`、`getDisplayMedia`、`?session=`
 - [stream-ctrl-await-mismatch.md](stream-ctrl-await-mismatch.md)
   - 症状：Stream 页面创建本地 source / consumer 超时，日志报 `stream announce: request timed out`
   - 关键词：`KindCtrl`、`SubProtoStream`、`announce_resp`、`SendCommandAndAwait`、`payload[0]`

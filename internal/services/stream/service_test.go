@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -759,6 +760,410 @@ func TestPublishTextSimpleRejectsSourceWithoutActiveDeliveries(t *testing.T) {
 	}
 }
 
+func TestConfigureSourceInputAndProducerActivationStartsFileSender(t *testing.T) {
+	temp, err := os.CreateTemp(t.TempDir(), "stream-video-*.mp4")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	data := []byte("video-demo")
+	if _, err := temp.Write(data); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if err := temp.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	session := &recordingStreamSession{}
+	svc := &StreamService{
+		session:    session,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	sourceResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "source-1",
+		Source: proto.SourceDescriptor{
+			SourceID:    "source-video",
+			Producer:    21,
+			Kind:        proto.StreamKindVideo,
+			ContentType: "video/mp4",
+			Mode:        proto.ModeBounded,
+			UnitMode:    proto.UnitModeChunk,
+		},
+	})
+	if sourceResp.Code != 1 {
+		t.Fatalf("announce source failed: %+v", sourceResp)
+	}
+	if _, err := svc.ConfigureSourceInputSimple(21, SourceInputConfigReq{
+		SourceID:  "source-video",
+		InputKind: sourceInputKindFile,
+		FilePath:  temp.Name(),
+	}); err != nil {
+		t.Fatalf("ConfigureSourceInputSimple() error = %v", err)
+	}
+
+	deliveryID := uuid.NewString()
+	prepareResp := svc.prepareProducerLocal(21, deliveryPrepareReq{
+		ReqID:      "prepare-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+		Producer:   21,
+		SourceID:   "source-video",
+		Consumer:   99,
+		ConsumerID: "consumer-1",
+	})
+	if prepareResp.Code != 1 {
+		t.Fatalf("prepare producer failed: %+v", prepareResp)
+	}
+	activateResp := svc.handleDeliveryActivateLocal(deliveryActivateReq{
+		ReqID:      "activate-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+	})
+	if activateResp.Code != 1 {
+		t.Fatalf("activate producer failed: %+v", activateResp)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for len(session.frames) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(session.frames) == 0 {
+		t.Fatal("expected file sender to emit at least one data frame")
+	}
+	packet, err := parseDataPacket(session.frames[0].Payload)
+	if err != nil {
+		t.Fatalf("parseDataPacket() error = %v", err)
+	}
+	if packet.DeliveryID != deliveryID || string(packet.Body) != string(data) {
+		t.Fatalf("unexpected packet %+v", packet)
+	}
+	if packet.Flags != streamDataFlagEOF {
+		t.Fatalf("expected EOF flag got %d", packet.Flags)
+	}
+}
+
+func TestConfigureSourceInputDesktopAcceptsVideoAndRejectsMusic(t *testing.T) {
+	svc := &StreamService{
+		session:    &recordingStreamSession{},
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	videoResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "video-source",
+		Source: proto.SourceDescriptor{
+			SourceID:    "source-video",
+			Producer:    21,
+			Kind:        proto.StreamKindVideo,
+			ContentType: "video/webm",
+			Mode:        proto.ModeBounded,
+			UnitMode:    proto.UnitModeChunk,
+		},
+	})
+	if videoResp.Code != 1 {
+		t.Fatalf("announce video source failed: %+v", videoResp)
+	}
+	if _, err := svc.ConfigureSourceInputSimple(21, SourceInputConfigReq{
+		SourceID:  "source-video",
+		InputKind: sourceInputKindDesktop,
+	}); err != nil {
+		t.Fatalf("ConfigureSourceInputSimple() desktop error = %v", err)
+	}
+	if cfg := svc.sourceInputs["source-video"]; cfg.InputKind != sourceInputKindDesktop || cfg.FilePath != "" {
+		t.Fatalf("unexpected desktop source input config %+v", cfg)
+	}
+
+	musicResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "music-source",
+		Source: proto.SourceDescriptor{
+			SourceID:    "source-music",
+			Producer:    21,
+			Kind:        proto.StreamKindMusic,
+			ContentType: "audio/webm",
+			Mode:        proto.ModeBounded,
+			UnitMode:    proto.UnitModeChunk,
+		},
+	})
+	if musicResp.Code != 1 {
+		t.Fatalf("announce music source failed: %+v", musicResp)
+	}
+	_, err := svc.ConfigureSourceInputSimple(21, SourceInputConfigReq{
+		SourceID:  "source-music",
+		InputKind: sourceInputKindDesktop,
+	})
+	if err == nil || err.Error() != "desktop capture requires a video source" {
+		t.Fatalf("expected desktop video validation error got %v", err)
+	}
+}
+
+func TestPublishCaptureChunkSimpleSendsDataToRequestedDesktopDeliveries(t *testing.T) {
+	session := &recordingStreamSession{}
+	svc := &StreamService{
+		session:    session,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+
+	sourceResp := svc.handleAnnounceLocal(21, proto.AnnounceReq{
+		ReqID: "source-capture",
+		Source: proto.SourceDescriptor{
+			SourceID:    "source-video",
+			Producer:    21,
+			Kind:        proto.StreamKindVideo,
+			ContentType: "video/webm",
+			Mode:        proto.ModeBounded,
+			UnitMode:    proto.UnitModeChunk,
+		},
+	})
+	if sourceResp.Code != 1 {
+		t.Fatalf("announce source failed: %+v", sourceResp)
+	}
+	if _, err := svc.ConfigureSourceInputSimple(21, SourceInputConfigReq{
+		SourceID:  "source-video",
+		InputKind: sourceInputKindDesktop,
+	}); err != nil {
+		t.Fatalf("ConfigureSourceInputSimple() error = %v", err)
+	}
+
+	deliveryID := uuid.NewString()
+	prepareResp := svc.prepareProducerLocal(21, deliveryPrepareReq{
+		ReqID:      "prepare-capture",
+		TxnID:      "txn-capture",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+		Producer:   21,
+		SourceID:   "source-video",
+		Consumer:   99,
+		ConsumerID: "consumer-1",
+	})
+	if prepareResp.Code != 1 {
+		t.Fatalf("prepare producer failed: %+v", prepareResp)
+	}
+	activateResp := svc.handleDeliveryActivateLocal(deliveryActivateReq{
+		ReqID:      "activate-capture",
+		TxnID:      "txn-capture",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleProducer,
+	})
+	if activateResp.Code != 1 {
+		t.Fatalf("activate producer failed: %+v", activateResp)
+	}
+
+	resp, err := svc.PublishCaptureChunkSimple(21, PublishCaptureChunkReq{
+		SourceID:     "source-video",
+		DeliveryIDs:  []string{deliveryID},
+		PtsMs:        333,
+		SessionStart: true,
+		Payload:      []byte("capture-one"),
+	})
+	if err != nil {
+		t.Fatalf("PublishCaptureChunkSimple() error = %v", err)
+	}
+	if resp.Code != 1 || resp.Sent != 1 || len(resp.DeliveryIDs) != 1 || resp.DeliveryIDs[0] != deliveryID {
+		t.Fatalf("unexpected publish capture response: %+v", resp)
+	}
+	if len(session.frames) != 1 {
+		t.Fatalf("expected 1 capture frame got %d", len(session.frames))
+	}
+	packet, err := parseDataPacket(session.frames[0].Payload)
+	if err != nil {
+		t.Fatalf("parseDataPacket() error = %v", err)
+	}
+	if packet.DeliveryID != deliveryID || packet.Position != 0 || packet.PtsMs != 333 || string(packet.Body) != "capture-one" {
+		t.Fatalf("unexpected capture packet %+v", packet)
+	}
+	if packet.Flags != streamDataFlagSessionStart {
+		t.Fatalf("expected session start flag got %d", packet.Flags)
+	}
+
+	_, err = svc.PublishCaptureChunkSimple(21, PublishCaptureChunkReq{
+		SourceID:    "source-video",
+		DeliveryIDs: []string{deliveryID},
+		Final:       true,
+	})
+	if err != nil {
+		t.Fatalf("final PublishCaptureChunkSimple() error = %v", err)
+	}
+	if len(session.frames) != 2 {
+		t.Fatalf("expected 2 capture frames got %d", len(session.frames))
+	}
+	finalPacket, err := parseDataPacket(session.frames[1].Payload)
+	if err != nil {
+		t.Fatalf("parseDataPacket() final error = %v", err)
+	}
+	if finalPacket.Flags != streamDataFlagEOF || len(finalPacket.Body) != 0 {
+		t.Fatalf("unexpected final capture packet %+v", finalPacket)
+	}
+}
+
+func TestConsumerMediaRuntimeCreatesSnapshotAndCompletesOnData(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	svc := &StreamService{
+		session:    &fakeStreamSession{},
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+	defer svc.closeMediaResources()
+
+	consumerResp := svc.handleAnnounceConsumerLocal(21, proto.AnnounceConsumerReq{
+		ReqID: "consumer-1",
+		ConsumerEndpoint: proto.ConsumerDescriptor{
+			ConsumerID:  "consumer-video",
+			Consumer:    21,
+			Kind:        proto.StreamKindVideo,
+			ContentType: "video/mp4",
+		},
+	})
+	if consumerResp.Code != 1 {
+		t.Fatalf("announce consumer failed: %+v", consumerResp)
+	}
+
+	deliveryID := uuid.NewString()
+	prepareResp := svc.prepareConsumerLocal(21, deliveryPrepareReq{
+		ReqID:      "prepare-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+		Producer:   99,
+		SourceID:   "source-video",
+		Consumer:   21,
+		ConsumerID: "consumer-video",
+		Kind:       proto.StreamKindVideo,
+		UnitMode:   proto.UnitModeChunk,
+	})
+	if prepareResp.Code != 1 {
+		t.Fatalf("prepare consumer failed: %+v", prepareResp)
+	}
+	activateResp := svc.handleDeliveryActivateLocal(deliveryActivateReq{
+		ReqID:      "activate-1",
+		TxnID:      "txn-1",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+	})
+	if activateResp.Code != 1 {
+		t.Fatalf("activate consumer failed: %+v", activateResp)
+	}
+
+	snapshot := svc.MediaSnapshot()
+	if len(snapshot) != 1 || snapshot[0].DeliveryID != deliveryID || snapshot[0].State != mediaStateBuffering || snapshot[0].MediaURL == "" {
+		t.Fatalf("unexpected initial media snapshot %+v", snapshot)
+	}
+
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildTestDataPayload(t, deliveryID, 0, 120, []byte("video-demo")),
+	}, nil)
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildDataPayloadWithFlagsMust(t, deliveryID, uint64(len("video-demo")), 121, streamDataFlagEOF, []byte("tail")),
+	}, nil)
+
+	snapshot = svc.MediaSnapshot()
+	if len(snapshot) != 1 || snapshot[0].State != mediaStateComplete || !snapshot[0].Complete || snapshot[0].AvailableBytes != uint64(len("video-demotail")) {
+		t.Fatalf("unexpected final media snapshot %+v", snapshot)
+	}
+}
+
+func TestConsumerMediaRuntimeResetsDesktopSessionOnSessionStartFlag(t *testing.T) {
+	bus := corebus.New(corebus.Options{})
+	defer bus.Close()
+
+	svc := &StreamService{
+		session:    &fakeStreamSession{},
+		bus:        bus,
+		deliveries: make(map[string]*deliveryRuntime),
+	}
+	svc.bindBus()
+	defer svc.unbindBus()
+	defer svc.closeMediaResources()
+
+	consumerResp := svc.handleAnnounceConsumerLocal(21, proto.AnnounceConsumerReq{
+		ReqID: "consumer-capture",
+		ConsumerEndpoint: proto.ConsumerDescriptor{
+			ConsumerID:  "consumer-video",
+			Consumer:    21,
+			Kind:        proto.StreamKindVideo,
+			ContentType: "video/webm",
+		},
+	})
+	if consumerResp.Code != 1 {
+		t.Fatalf("announce consumer failed: %+v", consumerResp)
+	}
+
+	deliveryID := uuid.NewString()
+	prepareResp := svc.prepareConsumerLocal(21, deliveryPrepareReq{
+		ReqID:      "prepare-capture",
+		TxnID:      "txn-capture",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+		Producer:   99,
+		SourceID:   "source-video",
+		Consumer:   21,
+		ConsumerID: "consumer-video",
+		Kind:       proto.StreamKindVideo,
+		UnitMode:   proto.UnitModeChunk,
+	})
+	if prepareResp.Code != 1 {
+		t.Fatalf("prepare consumer failed: %+v", prepareResp)
+	}
+	activateResp := svc.handleDeliveryActivateLocal(deliveryActivateReq{
+		ReqID:      "activate-capture",
+		TxnID:      "txn-capture",
+		DeliveryID: deliveryID,
+		Role:       deliveryRoleConsumer,
+	})
+	if activateResp.Code != 1 {
+		t.Fatalf("activate consumer failed: %+v", activateResp)
+	}
+
+	initial := svc.MediaSnapshot()
+	if len(initial) != 1 || initial[0].MediaURL == "" {
+		t.Fatalf("expected initial media runtime snapshot got %+v", initial)
+	}
+
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildDataPayloadWithFlagsMust(t, deliveryID, 10, 120, streamDataFlagSessionStart, []byte("capture-one")),
+	}, nil)
+
+	snapshot := svc.MediaSnapshot()
+	if len(snapshot) != 1 || snapshot[0].State != mediaStateReady || snapshot[0].AvailableBytes != uint64(len("capture-one")) {
+		t.Fatalf("unexpected capture session snapshot %+v", snapshot)
+	}
+	if snapshot[0].MediaURL == initial[0].MediaURL || snapshot[0].MediaURL == "" {
+		t.Fatalf("expected session reset to rotate media URL, initial=%q current=%q", initial[0].MediaURL, snapshot[0].MediaURL)
+	}
+
+	bus.PublishSync(context.Background(), sessionsvc.EventFrame, sessionsvc.FrameEvent{
+		Major:    header.MajorMsg,
+		SubProto: proto.SubProtoStream,
+		SourceID: 99,
+		TargetID: 21,
+		Payload:  buildDataPayloadWithFlagsMust(t, deliveryID, 21, 121, streamDataFlagSessionStart, []byte("new")),
+	}, nil)
+
+	snapshot = svc.MediaSnapshot()
+	if len(snapshot) != 1 || snapshot[0].AvailableBytes != uint64(len("new")) {
+		t.Fatalf("expected second session to reset available bytes, got %+v", snapshot)
+	}
+	if snapshot[0].MediaURL == initial[0].MediaURL {
+		t.Fatalf("expected second session to keep a rotated media URL, got %+v", snapshot[0])
+	}
+}
+
 func buildTestDataPayload(t *testing.T, deliveryID string, position, pts uint64, body []byte) []byte {
 	t.Helper()
 	id := uuid.MustParse(deliveryID)
@@ -782,5 +1187,14 @@ func buildAckPayload(t *testing.T, deliveryID string, position uint64) []byte {
 	payload[2] = 0
 	copy(payload[3:19], id[:])
 	binary.BigEndian.PutUint64(payload[19:27], position)
+	return payload
+}
+
+func buildDataPayloadWithFlagsMust(t *testing.T, deliveryID string, position, pts uint64, flags uint8, body []byte) []byte {
+	t.Helper()
+	payload, err := buildDataPayloadWithFlags(deliveryID, position, pts, flags, body)
+	if err != nil {
+		t.Fatalf("buildDataPayloadWithFlags() error = %v", err)
+	}
 	return payload
 }

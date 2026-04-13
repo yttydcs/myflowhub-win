@@ -212,6 +212,8 @@ func (s *StreamService) handleData(frame sessionsvc.FrameEvent) {
 			Flags:      packet.Flags,
 			UpdatedAt:  now.Format(time.RFC3339Nano),
 		})
+	} else {
+		s.writeMediaChunk(packet.DeliveryID, packet)
 	}
 	if emitStats {
 		s.emitStats(StreamStatsEvent{
@@ -348,6 +350,7 @@ func (s *StreamService) removeDelivery(deliveryID, state string) {
 	snapshot := rt.snapshot()
 	s.mu.Unlock()
 	s.emitDelivery(snapshot)
+	s.closeMediaRuntime(deliveryID, snapshot.LastError)
 }
 
 func (s *StreamService) removeDeliveriesBySource(sourceID string) {
@@ -376,6 +379,7 @@ func (s *StreamService) removeMatchingDeliveries(match func(item *deliveryRuntim
 	}
 	s.mu.Lock()
 	closed := make([]StreamDeliveryEvent, 0)
+	closedIDs := make([]string, 0)
 	now := time.Now()
 	for id, item := range s.deliveries {
 		if !match(item) {
@@ -385,10 +389,14 @@ func (s *StreamService) removeMatchingDeliveries(match func(item *deliveryRuntim
 		item.State = "closed"
 		item.UpdatedAt = now
 		closed = append(closed, item.snapshot())
+		closedIDs = append(closedIDs, id)
 	}
 	s.mu.Unlock()
 	for _, evt := range closed {
 		s.emitDelivery(evt)
+	}
+	for _, deliveryID := range closedIDs {
+		s.closeMediaRuntime(deliveryID, "delivery removed")
 	}
 }
 
@@ -400,6 +408,16 @@ func (s *StreamService) markAllClosed(reason string) {
 	s.mu.Lock()
 	s.ensureStateMapsLocked()
 	evts := make([]StreamDeliveryEvent, 0, len(s.deliveries))
+	senders := make([]*fileDeliverySender, 0, len(s.fileSenders))
+	for _, sender := range s.fileSenders {
+		if sender != nil {
+			senders = append(senders, sender)
+		}
+	}
+	mediaIDs := make([]string, 0, len(s.media))
+	for deliveryID := range s.media {
+		mediaIDs = append(mediaIDs, deliveryID)
+	}
 	now := time.Now()
 	for _, item := range s.deliveries {
 		if item == nil {
@@ -415,9 +433,16 @@ func (s *StreamService) markAllClosed(reason string) {
 	s.consumers = make(map[string]proto.ConsumerDescriptor)
 	s.producerDeliveries = make(map[string]*localProducerDelivery)
 	s.consumerDeliveries = make(map[string]*localConsumerDelivery)
+	s.fileSenders = make(map[string]*fileDeliverySender)
 	s.mu.Unlock()
+	for _, sender := range senders {
+		sender.cancel()
+	}
 	for _, evt := range evts {
 		s.emitDelivery(evt)
+	}
+	for _, deliveryID := range mediaIDs {
+		s.closeMediaRuntime(deliveryID, reason)
 	}
 }
 
@@ -456,6 +481,13 @@ func (s *StreamService) emitStats(evt StreamStatsEvent) {
 		return
 	}
 	_ = s.bus.Publish(context.Background(), EventStreamStats, evt, nil)
+}
+
+func (s *StreamService) emitMedia(evt StreamMediaEvent) {
+	if s == nil || s.bus == nil {
+		return
+	}
+	_ = s.bus.Publish(context.Background(), EventStreamMedia, evt, nil)
 }
 
 func (s *StreamService) logWarn(format string, args ...any) {

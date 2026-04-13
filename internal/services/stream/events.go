@@ -4,6 +4,7 @@ const (
 	EventStreamDelivery = "stream.delivery"
 	EventStreamText     = "stream.text"
 	EventStreamStats    = "stream.stats"
+	EventStreamMedia    = "stream.media"
 )
 
 type StreamDeliveryEvent struct {
@@ -47,4 +48,16 @@ type StreamStatsEvent struct {
 	LastAckPos   uint64 `json:"lastAckPos"`
 	LastFlags    uint8  `json:"lastFlags"`
 	UpdatedAt    string `json:"updatedAt"`
+}
+
+type StreamMediaEvent struct {
+	DeliveryID     string `json:"deliveryId"`
+	Kind           string `json:"kind"`
+	ContentType    string `json:"contentType,omitempty"`
+	State          string `json:"state"`
+	MediaURL       string `json:"mediaUrl,omitempty"`
+	AvailableBytes uint64 `json:"availableBytes"`
+	Complete       bool   `json:"complete"`
+	Error          string `json:"error,omitempty"`
+	UpdatedAt      string `json:"updatedAt"`
 }

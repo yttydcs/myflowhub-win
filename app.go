@@ -152,6 +152,7 @@ func (a *App) bridgeEvents() {
 	bind(streamsvc.EventStreamDelivery)
 	bind(streamsvc.EventStreamText)
 	bind(streamsvc.EventStreamStats)
+	bind(streamsvc.EventStreamMedia)
 	bind(varpoolsvc.EventVarPoolChanged)
 	bind(varpoolsvc.EventVarPoolDeleted)
 }

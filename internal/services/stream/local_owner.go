@@ -160,6 +160,15 @@ func (s *StreamService) ensureStateMapsLocked() {
 	if s.consumerDeliveries == nil {
 		s.consumerDeliveries = make(map[string]*localConsumerDelivery)
 	}
+	if s.sourceInputs == nil {
+		s.sourceInputs = make(map[string]sourceInputConfig)
+	}
+	if s.fileSenders == nil {
+		s.fileSenders = make(map[string]*fileDeliverySender)
+	}
+	if s.media == nil {
+		s.media = make(map[string]*mediaRuntime)
+	}
 }
 
 func (s *StreamService) handleIncomingCtrl(frame sessionsvc.FrameEvent) {
@@ -332,11 +341,15 @@ func (s *StreamService) handleWithdrawLocal(req proto.WithdrawReq) proto.Withdra
 	}
 	owner = desc
 	delete(s.sources, sourceID)
+	delete(s.sourceInputs, sourceID)
 	snapshots = append(snapshots, s.removeProducerDeliveriesBySourceLocked(sourceID, owner.Producer, "source withdrawn")...)
 	snapshots = append(snapshots, s.removeConsumerDeliveriesBySourceLocked(sourceID, owner.Producer, "source withdrawn")...)
 	s.mu.Unlock()
 
 	s.emitDeliverySnapshots(snapshots)
+	for _, snapshot := range snapshots {
+		s.closeMediaRuntime(snapshot.DeliveryID, "source withdrawn")
+	}
 	return proto.WithdrawResp{ReqID: req.ReqID, Code: 1, Msg: "ok", SourceID: sourceID}
 }
 
@@ -431,6 +444,9 @@ func (s *StreamService) handleWithdrawConsumerLocal(req proto.WithdrawConsumerRe
 	s.mu.Unlock()
 
 	s.emitDeliverySnapshots(snapshots)
+	for _, snapshot := range snapshots {
+		s.closeMediaRuntime(snapshot.DeliveryID, "consumer withdrawn")
+	}
 	return proto.WithdrawConsumerResp{ReqID: req.ReqID, Code: 1, Msg: "ok", ConsumerID: consumerID}
 }
 
@@ -669,10 +685,11 @@ func (s *StreamService) handleDeliveryActivateLocal(req deliveryActivateReq) del
 	}
 
 	var snapshot *StreamDeliveryEvent
+	role := strings.TrimSpace(req.Role)
 
 	s.mu.Lock()
 	s.ensureStateMapsLocked()
-	switch strings.TrimSpace(req.Role) {
+	switch role {
 	case deliveryRoleProducer:
 		delivery := s.producerDeliveries[deliveryID]
 		if delivery == nil || delivery.TxnID != txnID {
@@ -706,6 +723,12 @@ func (s *StreamService) handleDeliveryActivateLocal(req deliveryActivateReq) del
 	if snapshot != nil {
 		s.emitDelivery(*snapshot)
 	}
+	switch role {
+	case deliveryRoleProducer:
+		s.maybeStartProducerFileSender(deliveryID)
+	case deliveryRoleConsumer:
+		s.prepareConsumerMediaRuntime(deliveryID)
+	}
 	return deliveryActivateResp{ReqID: req.ReqID, Code: 1, Msg: "ok", Role: req.Role}
 }
 
@@ -715,8 +738,10 @@ func (s *StreamService) handleDeliveryAbortLocal(req deliveryAbortReq) deliveryA
 		return deliveryAbortResp{ReqID: req.ReqID, Code: 400, Msg: "delivery_id required", Role: req.Role}
 	}
 
-	snapshots := s.closeLocalDeliveryRoles(deliveryID, req.Role, strings.TrimSpace(req.Reason))
+	reason := strings.TrimSpace(req.Reason)
+	snapshots := s.closeLocalDeliveryRoles(deliveryID, req.Role, reason)
 	s.emitDeliverySnapshots(snapshots)
+	s.closeMediaRuntime(deliveryID, reason)
 	return deliveryAbortResp{ReqID: req.ReqID, Code: 1, Msg: "ok", Role: req.Role}
 }
 
@@ -726,8 +751,10 @@ func (s *StreamService) handleDeliveryCloseLocal(req deliveryCloseReq) deliveryC
 		return deliveryCloseResp{ReqID: req.ReqID, Code: 400, Msg: "delivery_id required", Role: req.Role}
 	}
 
-	snapshots := s.closeLocalDeliveryRoles(deliveryID, req.Role, strings.TrimSpace(req.Reason))
+	reason := strings.TrimSpace(req.Reason)
+	snapshots := s.closeLocalDeliveryRoles(deliveryID, req.Role, reason)
 	s.emitDeliverySnapshots(snapshots)
+	s.closeMediaRuntime(deliveryID, reason)
 	return deliveryCloseResp{ReqID: req.ReqID, Code: 1, Msg: "ok", Role: req.Role}
 }
 
@@ -810,6 +837,9 @@ func (s *StreamService) snapshotAfterRoleChangeLocked(deliveryID, reason string)
 	rt.UpdatedAt = time.Now()
 	if reason != "" {
 		rt.LastError = reason
+	}
+	if !producerExists {
+		s.cancelFileSenderLocked(deliveryID)
 	}
 	if producerExists || consumerExists {
 		rt.State = localDeliveryStateClosing

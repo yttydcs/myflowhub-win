@@ -1,0 +1,80 @@
+# stream-desktop-capture-session-reset
+
+## Summary
+
+- 桌面采集不是“再一种文件输入”，而是持续生成 chunk 的实时会话。
+- 若接收端继续沿用上一段媒体 sink，新的采集会话会被错误拼接到旧会话后面，导致播放器不重新加载或直接进入错误态。
+- 当前可复用规则是：
+  - 采集开始时固定当前 active delivery 集合
+  - 第一个有效 chunk 带 `session_start`
+  - 接收端据此重建 sink，并把播放 URL 旋转到新的 `?session=<n>`
+
+## Lookup Hints
+
+- `session_start`
+- `streamDataFlagSessionStart`
+- `resetMediaRuntimeSession`
+- `PublishCaptureChunkSimple`
+- `getDisplayMedia`
+- `MediaRecorder`
+- `late join`
+- `delivery_ids`
+- `?session=`
+
+## Symptoms
+
+- 桌面采集第二次开始后，接收端没有重新播放，只停在旧画面或报播放错误。
+- 新的采集内容被拼到旧会话后面，`availableBytes` 持续增长，但播放器没有回到新起点。
+- 采集中途新加入的 delivery 没有画面，或者只能收到不完整片段。
+
+## Impact
+
+- 无法保证“边接收边播放”的桌面采集体验。
+- Source 端和 Delivery 端会对“当前正在播哪一段采集会话”出现认知不一致。
+- 若继续按错误路径扩展摄像头或系统音频，会重复踩同一类会话边界问题。
+
+## Trigger Conditions
+
+- Source 端开始新一轮桌面采集时，没有告诉接收端这是一个新的媒体会话。
+- 接收端只按全局字节位置追加写入，没有建立“会话内相对位置”的概念。
+- 采集中途临时加入新的 delivery，却期望它自动得到当前会话所需的起始片段。
+
+## Root Cause
+
+- 桌面采集的 wire position 仍沿用现有 delivery 累进语义，但播放器需要的是“新的媒体资源起点”。
+- 如果不显式区分会话开始，接收端只能把新数据继续附加到旧 sink 上。
+- 同时，桌面采集起始片段具有会话初始化意义，所以 delivery 目标集合必须在 capture start 时固定，否则晚加入者缺少必要的前序片段。
+
+## Investigation Trail
+
+- 先确认 Source Window 发送的第一个 chunk 是否带了 `sessionStart = true`。
+- 再确认 Go 侧 `PublishCaptureChunkSimple(...)` 是否把它编码为 `streamDataFlagSessionStart`。
+- 最后确认 consumer 侧 `writeMediaChunk(...)` 在收到该 flag 后是否进入 `resetMediaRuntimeSession(...)`，并生成新的 `mediaUrl?session=<n>`。
+
+## Resolution
+
+- Source Window 在启动采集时锁定当前 active `deliveryIds`，整个会话只向这组 delivery 推送。
+- 录制得到的第一个有效 chunk 调用：
+  - `publishCaptureChunk({ sessionStart: true, ... })`
+- Go 侧将其编码进 DATA flags bit1。
+- consumer 侧收到后：
+  - 创建新的 `progressiveMediaSink`
+  - 记录新的 `basePosition`
+  - 增加 `sessionSeq`
+  - 把播放 URL 切到新的 `?session=<n>`
+- 采集停止时发送 `final=true`，使当前会话完整收口。
+
+## Prevention / Guardrails
+
+- 后续任何实时 capture 能力都要先定义“会话开始”和“会话结束”的明确信号。
+- 若 delivery 需要 mid-session join，必须单独设计补起始片段或重启 capture，不要默认复用当前最小方案。
+- 文档和测试都应明确两件事：
+  1. 首个 chunk 带 `session_start`
+  2. 目标 delivery 集合固定于 capture start
+
+## Related Docs
+
+- [../requirements/stream.md](../requirements/stream.md)
+- [../specs/stream.md](../specs/stream.md)
+- [../change/2026-04-13_win-stream-desktop-capture.md](../change/2026-04-13_win-stream-desktop-capture.md)
+- [stream-media-progressive-playback-http-outlet.md](stream-media-progressive-playback-http-outlet.md)
