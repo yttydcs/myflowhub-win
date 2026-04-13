@@ -1,3 +1,5 @@
+// Context: implements the codec helper logic used by the transport backend service.
+
 package transport
 
 import sdktransport "github.com/yttydcs/myflowhub-sdk/transport"

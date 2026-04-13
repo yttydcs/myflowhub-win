@@ -1,3 +1,5 @@
+// Context: contains shared overlay stack helpers used by the Win frontend.
+
 export type OverlayEntry = {
   id: number
   closeOnEsc: boolean

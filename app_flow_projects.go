@@ -1,3 +1,5 @@
+// Context: stores editable flow project drafts and validates the persisted project catalog for the Flow page.
+
 package main
 
 import (

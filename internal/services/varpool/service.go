@@ -1,3 +1,5 @@
+// Context: implements the varpool backend service exposed to the Win shell and Wails bindings.
+
 package varpool
 
 import (

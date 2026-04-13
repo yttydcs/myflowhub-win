@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the detached stream source window used by the Win frontend.
 import {
   computed,
   onBeforeUnmount,

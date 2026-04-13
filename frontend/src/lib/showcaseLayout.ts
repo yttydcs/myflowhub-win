@@ -1,3 +1,5 @@
+// Context: contains shared showcase layout helpers used by the Win frontend.
+
 export type ColumnsLayoutInput = {
   maxColumns: number
   minColumnWidth: number

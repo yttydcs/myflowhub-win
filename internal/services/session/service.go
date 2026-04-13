@@ -1,3 +1,5 @@
+// Context: implements the session backend service exposed to the Win shell and Wails bindings.
+
 package session
 
 import (
@@ -12,8 +14,8 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
-	sdkawait "github.com/yttydcs/myflowhub-sdk/await"
 	protocolfile "github.com/yttydcs/myflowhub-proto/protocol/file"
+	sdkawait "github.com/yttydcs/myflowhub-sdk/await"
 	"github.com/yttydcs/myflowhub-win/internal/services/logs"
 	winsession "github.com/yttydcs/myflowhub-win/internal/session"
 )

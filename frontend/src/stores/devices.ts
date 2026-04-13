@@ -1,3 +1,5 @@
+// Context: keeps the devices store in sync with Wails bindings and shared Win frontend state.
+
 import { reactive } from "vue"
 import { t } from "@/i18n"
 import { useSessionStore } from "@/stores/session"

@@ -1,3 +1,5 @@
+// Context: implements the stream backend service exposed to the Win shell and Wails bindings.
+
 package stream
 
 import (

@@ -1,3 +1,5 @@
+// Context: keeps the Flow editor state, draft graph, run history, and capability metadata in sync with backend services.
+
 import { reactive } from "vue"
 import { t } from "@/i18n"
 import {

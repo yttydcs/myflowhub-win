@@ -1,3 +1,5 @@
+# Context: locates or builds the MCP binary and forwards CLI arguments for local smoke or host startup.
+
 [CmdletBinding()]
 param(
     [switch]$PreferSource,

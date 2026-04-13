@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the shared page hero component used by Win frontend pages.
 import { computed, useSlots } from "vue"
 import { useRoute } from "vue-router"
 import { useI18n } from "@/i18n"

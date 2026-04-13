@@ -1,3 +1,5 @@
+// Context: defines the event payloads and event names emitted by the stream backend service.
+
 package stream
 
 const (

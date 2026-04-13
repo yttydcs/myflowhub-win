@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: renders the log item helper used by the Logs page.
 import { computed, ref } from "vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

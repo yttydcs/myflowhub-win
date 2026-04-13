@@ -1,3 +1,5 @@
+// Context: contains shared showcase chart helpers used by the Win frontend.
+
 export type ShowcaseLineChartConfig = {
   rangeMs: number
   bucketMs: number

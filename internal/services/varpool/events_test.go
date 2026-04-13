@@ -1,3 +1,5 @@
+// Context: covers the event payload contracts emitted by the varpool backend service.
+
 package varpool
 
 import (
@@ -104,4 +106,3 @@ func TestVarPoolService_MajorCmd_VarDeleted(t *testing.T) {
 		t.Fatal("timeout waiting for varpool.deleted")
 	}
 }
-

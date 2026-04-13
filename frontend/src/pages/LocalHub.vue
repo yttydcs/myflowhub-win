@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Local Hub page for configuring, installing, and starting the embedded hub runtime.
 import { computed, onMounted, reactive, ref } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

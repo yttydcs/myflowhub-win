@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Home page and coordinates connect, register, login, and remembered-auth defaults for the desktop client.
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"

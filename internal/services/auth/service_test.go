@@ -1,3 +1,5 @@
+// Context: covers the auth backend service behavior exposed to the Win shell.
+
 package auth
 
 import (

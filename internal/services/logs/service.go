@@ -1,3 +1,5 @@
+// Context: implements the logs backend service exposed to the Win shell and Wails bindings.
+
 package logs
 
 import (

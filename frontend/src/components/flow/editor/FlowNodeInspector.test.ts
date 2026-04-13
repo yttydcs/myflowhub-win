@@ -1,3 +1,5 @@
+// Context: covers the flow node inspector panel behavior used by the Flow editor.
+
 // @vitest-environment jsdom
 
 import { defineComponent } from "vue"

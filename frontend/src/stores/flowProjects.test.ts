@@ -1,3 +1,5 @@
+// Context: covers the flow projects store behavior in the Win frontend.
+
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest"

@@ -1,3 +1,5 @@
+# Context: installs the Win MCP client into Codex config with repo-local startup defaults.
+
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$ConfigPath = (Join-Path $HOME ".codex\config.toml"),

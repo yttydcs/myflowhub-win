@@ -1,3 +1,5 @@
+// Context: implements the topic stress helper logic used by the presets backend service.
+
 package presets
 
 import (

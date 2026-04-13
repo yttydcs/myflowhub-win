@@ -1,3 +1,5 @@
+// Context: covers the management backend service behavior exposed to the Win shell.
+
 package management
 
 import (

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the Logs page in the Win frontend.
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"

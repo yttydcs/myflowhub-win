@@ -1,3 +1,5 @@
+// Context: covers argument validation and tool dispatch for the MyFlowHub MCP surface.
+
 package mcp
 
 import (

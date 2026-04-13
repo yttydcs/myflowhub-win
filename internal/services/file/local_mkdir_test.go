@@ -1,3 +1,5 @@
+// Context: covers the local mkdir helper logic inside the file backend service.
+
 package file
 
 import (

@@ -1,3 +1,5 @@
+// Context: persists TopicBus subscriptions and page preferences for the Win frontend.
+
 package main
 
 import (

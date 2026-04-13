@@ -1,3 +1,5 @@
+// Context: persists Stream page preferences so local sources, consumers, and targets can be restored between sessions.
+
 package main
 
 import (

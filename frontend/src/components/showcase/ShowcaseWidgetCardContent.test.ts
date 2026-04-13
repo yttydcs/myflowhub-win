@@ -1,3 +1,5 @@
+// Context: covers the showcase widget card content showcase component behavior.
+
 // @vitest-environment jsdom
 
 import { mount } from "@vue/test-utils"

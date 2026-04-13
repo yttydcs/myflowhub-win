@@ -1,3 +1,5 @@
+// Context: implements the keys helper logic used by the auth backend service.
+
 package auth
 
 import (

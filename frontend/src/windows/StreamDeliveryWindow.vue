@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the detached stream delivery window used by the Win frontend.
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { RefreshCw } from "lucide-vue-next"

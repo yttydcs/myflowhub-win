@@ -1,3 +1,5 @@
+// Context: aggregates the domain-specific message bundles used by the Win frontend.
+
 import type { AppLocale, LocaleMessages } from "../types"
 import { automationZhCN } from "./automation"
 import { commonZhCN } from "./common"

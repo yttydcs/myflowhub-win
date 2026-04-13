@@ -1,3 +1,5 @@
+# Context: drives staged JSON-RPC smoke checks against the Win MCP client over stdio.
+
 [CmdletBinding()]
 param(
     [switch]$Help,

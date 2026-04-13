@@ -1,3 +1,5 @@
+// Context: implements the localhub backend service exposed to the Win shell and Wails bindings.
+
 package localhub
 
 import (
@@ -20,8 +22,8 @@ import (
 )
 
 const (
-	defaultHost = "127.0.0.1"
-	defaultPort = 9000
+	defaultHost   = "127.0.0.1"
+	defaultPort   = 9000
 	defaultNodeID = 1
 
 	defaultParentReconnectSec = 3

@@ -1,3 +1,5 @@
+// Context: defines the event payloads and event names emitted by the presets backend service.
+
 package presets
 
 import "time"

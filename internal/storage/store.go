@@ -1,3 +1,5 @@
+// Context: wraps profile-scoped local storage used by App bindings and backend services.
+
 package storage
 
 import (

@@ -1,3 +1,5 @@
+// Context: covers the flow backend service behavior exposed to the Win shell.
+
 package flow
 
 import (

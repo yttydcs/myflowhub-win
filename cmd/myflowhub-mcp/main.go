@@ -1,3 +1,5 @@
+// Context: provides the headless myflowhub-mcp CLI entrypoint and wires flags into the MCP runtime.
+
 package main
 
 import (

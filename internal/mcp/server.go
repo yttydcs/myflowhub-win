@@ -1,3 +1,5 @@
+// Context: implements the local stdio MCP server, including protocol negotiation and JSON-RPC request dispatch.
+
 package mcp
 
 import (

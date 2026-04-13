@@ -1,3 +1,5 @@
+// Context: defines localized settings copy used by the Win frontend.
+
 import type { LocaleMessages } from "../types"
 
 export const settingsZhCN: LocaleMessages = {

@@ -1,3 +1,5 @@
+// Context: covers the flow visual form store behavior in the Win frontend.
+
 import { beforeEach, describe, expect, it } from "vitest"
 import { setLocale } from "@/i18n"
 import type { MethodVisualSchema } from "./flow_method_schemas"

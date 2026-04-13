@@ -1,3 +1,5 @@
+// Context: keeps the management store in sync with Wails bindings and shared Win frontend state.
+
 import { t } from "@/i18n"
 import { reactive } from "vue"
 

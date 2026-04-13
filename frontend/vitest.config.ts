@@ -1,3 +1,5 @@
+// Context: defines the Vitest environment and test setup for the Win frontend.
+
 import { defineConfig } from "vitest/config"
 import vue from "@vitejs/plugin-vue"
 import { fileURLToPath, URL } from "url"

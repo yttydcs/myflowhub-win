@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the PermitIssuance page in the Win frontend.
 import { computed, reactive, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

@@ -1,3 +1,5 @@
+// Context: covers the showcase app binding helpers and persistence rules.
+
 package main
 
 import (

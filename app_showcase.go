@@ -1,3 +1,5 @@
+// Context: stores Showcase screen and widget layouts and normalizes the persisted designer state.
+
 package main
 
 import (

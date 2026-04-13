@@ -1,3 +1,5 @@
+// Context: mirrors file listings, transfer tasks, and incoming offers from the file backend service into frontend state.
+
 import { t } from "@/i18n"
 import { openAuxWindow } from "@/lib/auxWindow"
 import { reactive } from "vue"

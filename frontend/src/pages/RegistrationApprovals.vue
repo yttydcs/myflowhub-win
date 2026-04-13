@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Context: implements the RegistrationApprovals page in the Win frontend.
 import { computed, onMounted, reactive, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

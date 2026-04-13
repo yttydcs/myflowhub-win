@@ -1,3 +1,5 @@
+// Context: implements the local helper logic used by the file backend service.
+
 package file
 
 import (

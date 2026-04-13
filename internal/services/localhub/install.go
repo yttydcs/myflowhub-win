@@ -1,3 +1,5 @@
+// Context: implements the install helper logic used by the localhub backend service.
+
 package localhub
 
 import (

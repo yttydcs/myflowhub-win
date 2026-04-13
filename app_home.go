@@ -1,3 +1,5 @@
+// Context: persists the Home page's last-used device, connection, and auth snapshot in profile storage.
+
 package main
 
 import (
