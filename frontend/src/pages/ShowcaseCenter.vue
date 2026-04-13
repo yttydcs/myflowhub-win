@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { useI18n } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import { useProfileStore } from "@/stores/profile"
 import { useShowcaseStore, type ShowcaseScreenSummary } from "@/stores/showcase"
 import { useToastStore } from "@/stores/toast"
@@ -61,18 +62,19 @@ const loadCenter = async () => {
   }
 }
 
-const openWindow = (screenId: string, kind: "editor" | "viewer") => {
-  const base = window.location.href.split("#")[0]
+const openWindow = async (screenId: string, kind: "editor" | "viewer") => {
   const route =
     kind === "editor"
       ? `#/showcase-editor-window?screenId=${encodeURIComponent(screenId)}`
       : `#/showcase-window?screenId=${encodeURIComponent(screenId)}`
   const namePrefix = kind === "editor" ? "showcase_editor" : "showcase_viewer"
   const size = kind === "editor" ? "width=1580,height=980" : "width=980,height=720"
-  const win = window.open(`${base}${route}`, `${namePrefix}_${screenId}_${Date.now()}`, size)
-  if (win) {
-    win.focus()
-  } else {
+  const result = await openAuxWindow({
+    routePath: route,
+    name: `${namePrefix}_${screenId}_${Date.now()}`,
+    size
+  })
+  if (result === "blocked") {
     toast.warn(
       kind === "editor"
         ? t("Editor window was blocked by browser popup policy.")

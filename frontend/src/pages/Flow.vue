@@ -198,9 +198,9 @@ const deleteProject = async (projectId: string) => {
   }
 }
 
-const openEditor = (projectId: string) => {
+const openEditor = async (projectId: string) => {
   try {
-    const opened = flowProjects.openEditorWindow(projectId)
+    const opened = await flowProjects.openEditorWindow(projectId)
     if (!opened) {
       toast.warn(t("Editor window was blocked by browser popup policy."))
     }

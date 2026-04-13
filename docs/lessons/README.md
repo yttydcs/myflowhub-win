@@ -51,3 +51,6 @@
 - [wails-embed-dist-placeholder.md](wails-embed-dist-placeholder.md)
   - 症状：`pattern all:frontend/dist: cannot embed directory frontend/dist: contains no embeddable files`
   - 关键词：`go:embed all:frontend/dist`、`go mod tidy`、`Generating bindings`
+- [wails-packaged-aux-window-fallback.md](wails-packaged-aux-window-fallback.md)
+  - 症状：`wails dev` 可打开辅助窗口，但 packaged build 点击 `Open Window` / `Input Window` / `Output Window` 无反应
+  - 关键词：`window.open`、`Environment().buildType`、`auxWindow`、`packaged runtime`、`layout: "window"`

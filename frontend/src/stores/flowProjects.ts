@@ -1,5 +1,6 @@
 import { reactive } from "vue"
 import { t } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import {
   flowEventModeLabelKey,
   flowStatusLabelKey,
@@ -543,20 +544,17 @@ const saveProjectPayload = async (projectId: string, payload: FlowPayload) => {
   await saveProjects()
 }
 
-const openEditorWindow = (projectId: string) => {
+const openEditorWindow = async (projectId: string) => {
   const trimmed = String(projectId ?? "").trim()
   if (!trimmed) {
     throw new Error(t("Project ID is required."))
   }
-  const base = window.location.href.split("#")[0]
-  const url = `${base}#/flow-editor-window?projectId=${encodeURIComponent(trimmed)}`
-  const name = `flow_editor_${trimmed}_${Date.now()}`
-  const win = window.open(url, name, "width=1500,height=920")
-  if (win) {
-    win.focus()
-    return true
-  }
-  return false
+  const result = await openAuxWindow({
+    routePath: `#/flow-editor-window?projectId=${encodeURIComponent(trimmed)}`,
+    name: `flow_editor_${trimmed}_${Date.now()}`,
+    size: "width=1500,height=920"
+  })
+  return result !== "blocked"
 }
 
 const mapSummary = (input: FlowSummaryWire) => {

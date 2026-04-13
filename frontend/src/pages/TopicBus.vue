@@ -5,6 +5,7 @@ import PageHero from "@/components/PageHero.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import { useProfileStore } from "@/stores/profile"
 import { useSessionStore } from "@/stores/session"
 import { formatTopicBusTimestamp, useTopicBusStore, type TopicBusChannelItem } from "@/stores/topicbus"
@@ -265,8 +266,7 @@ const resubscribeAll = async () => {
   }
 }
 
-const openTopicWindow = (item?: TopicBusChannelItem) => {
-  const base = window.location.href.split("#")[0]
+const openTopicWindow = async (item?: TopicBusChannelItem) => {
   const query = new URLSearchParams()
   if (item?.topic) {
     query.set("topic", item.topic)
@@ -280,10 +280,12 @@ const openTopicWindow = (item?: TopicBusChannelItem) => {
   const name = item?.topic
     ? `topicbus_${encodeURIComponent(item.topic)}_${Date.now()}`
     : `topicbus_all_${Date.now()}`
-  const url = `${base}#/topicbus-window?${query.toString()}`
-  const win = window.open(url, name, "width=1080,height=760")
-  if (win) {
-    win.focus()
+  const result = await openAuxWindow({
+    routePath: `#/topicbus-window?${query.toString()}`,
+    name,
+    size: "width=1080,height=760"
+  })
+  if (result !== "blocked") {
     return
   }
   toast.warn(t("TopicBus window was blocked by browser popup policy."))

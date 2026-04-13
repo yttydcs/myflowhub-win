@@ -284,8 +284,8 @@ const confirmOffer = async () => {
   }
 }
 
-const openTasks = () => {
-  const opened = fileStore.openTasksWindow()
+const openTasks = async () => {
+  const opened = await fileStore.openTasksWindow()
   if (!opened) {
     tasksInlineOpen.value = true
   }

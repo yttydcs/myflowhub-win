@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Overlay } from "@/components/ui/overlay";
 import { t } from "@/i18n";
+import { openAuxWindow as openSharedAuxWindow } from "@/lib/auxWindow";
 import {
   streamKinds,
   type StreamConsumer,
@@ -257,19 +258,20 @@ const withToast = async (
   }
 };
 
-const openAuxWindow = (
+const openStreamAuxWindow = async (
   routePath: string,
   name: string,
   size: string,
   blockedMessage: string,
 ) => {
-  const base = window.location.href.split("#")[0];
-  const win = window.open(`${base}${routePath}`, name, size);
-  if (win) {
-    win.focus();
-    return;
+  const result = await openSharedAuxWindow({
+    routePath,
+    name,
+    size,
+  });
+  if (result === "blocked") {
+    toast.warn(t(blockedMessage));
   }
-  toast.warn(t(blockedMessage));
 };
 
 const refreshControlSourcesRaw = () =>
@@ -400,10 +402,10 @@ const clearSourceMediaFile = () => {
   sourceDraft.filePath = "";
 };
 
-const openSourceWindow = (sourceId: string) => {
+const openSourceWindow = async (sourceId: string) => {
   const normalized = String(sourceId ?? "").trim();
   if (!normalized) return;
-  openAuxWindow(
+  await openStreamAuxWindow(
     `#/stream-source-window?sourceId=${encodeURIComponent(normalized)}`,
     `stream_source_${normalized}_${Date.now()}`,
     "width=1100,height=780",
@@ -411,11 +413,11 @@ const openSourceWindow = (sourceId: string) => {
   );
 };
 
-const openDeliveryWindow = (deliveryId: string) => {
+const openDeliveryWindow = async (deliveryId: string) => {
   const normalized = String(deliveryId ?? "").trim();
   if (!normalized) return;
   stream.selectDelivery(normalized);
-  openAuxWindow(
+  await openStreamAuxWindow(
     `#/stream-delivery-window?deliveryId=${encodeURIComponent(normalized)}`,
     `stream_delivery_${normalized}_${Date.now()}`,
     "width=1180,height=820",

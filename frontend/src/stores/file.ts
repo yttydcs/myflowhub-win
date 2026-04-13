@@ -1,4 +1,5 @@
 import { t } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import { reactive } from "vue"
 import { EventsOn } from "../../wailsjs/runtime/runtime"
 
@@ -355,15 +356,13 @@ const closePreview = () => {
   state.previewTarget = null
 }
 
-const openTasksWindow = () => {
-  const base = window.location.href.split("#")[0]
-  const url = `${base}#/file-tasks`
-  const win = window.open(url, "file_tasks", "width=920,height=680")
-  if (win) {
-    win.focus()
-    return true
-  }
-  return false
+const openTasksWindow = async () => {
+  const result = await openAuxWindow({
+    routePath: "#/file-tasks",
+    name: "file_tasks",
+    size: "width=920,height=680"
+  })
+  return result !== "blocked"
 }
 
 const ensureListeners = () => {

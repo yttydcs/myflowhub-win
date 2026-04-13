@@ -36,6 +36,8 @@ export const storesZhCN: LocaleMessages = {
   "Variable value is required.": "变量值不能为空。",
   "Failed to update log pause state.": "更新日志暂停状态失败。",
   "Failed to load logs.": "加载日志失败。",
+  "Log window was blocked by browser popup policy.":
+    "日志窗口被浏览器弹窗策略拦截。",
   "Log Window": "日志窗口",
   "Live Log Stream": "实时日志流",
   "Scroll to Bottom": "滚动到底部",

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useI18n } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import { parseFloatInput, parseIntegerInput } from "@/lib/numberInput"
 import {
   ensureShowcaseChartOption,
@@ -715,18 +716,19 @@ const sendTopicButton = async (widget: ShowcaseWidget) => {
   }
 }
 
-const openShowcaseWindow = () => {
+const openShowcaseWindow = async () => {
   const screen = resolveEditorScreen()
   if (!screen) return
   if (dirty.value) {
     toast.info(t("Viewer opens the last saved version. Save the draft first if you want the latest edits there."))
   }
-  const base = window.location.href.split("#")[0]
-  const url = `${base}#/showcase-window?screenId=${encodeURIComponent(screen.id)}`
-  const name = `showcase_${screen.id}_${Date.now()}`
-  const win = window.open(url, name, "width=980,height=720")
-  if (win) {
-    win.focus()
+  const result = await openAuxWindow({
+    routePath: `#/showcase-window?screenId=${encodeURIComponent(screen.id)}`,
+    name: `showcase_${screen.id}_${Date.now()}`,
+    size: "width=980,height=720"
+  })
+  if (result === "blocked") {
+    toast.warn(t("Viewer window was blocked by browser popup policy."))
   }
 }
 

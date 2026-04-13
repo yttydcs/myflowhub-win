@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"
 import { useI18n } from "@/i18n"
+import { openAuxWindow } from "@/lib/auxWindow"
 import { useLogsStore } from "@/stores/logs"
 import { useToastStore } from "@/stores/toast"
 
@@ -13,12 +14,14 @@ const { t } = useI18n()
 
 const lineCount = computed(() => logsStore.state.lines.length)
 
-const openLogWindow = () => {
-  const base = window.location.href.split("#")[0]
-  const url = `${base}#/log-window`
-  const win = window.open(url, "log_window", "width=980,height=720")
-  if (win) {
-    win.focus()
+const openLogWindow = async () => {
+  const result = await openAuxWindow({
+    routePath: "#/log-window",
+    name: "log_window",
+    size: "width=980,height=720"
+  })
+  if (result === "blocked") {
+    toast.warn(t("Log window was blocked by browser popup policy."))
   }
 }
 

@@ -5,6 +5,10 @@ import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/i18n";
 
+const { openAuxWindowSpy } = vi.hoisted(() => ({
+  openAuxWindowSpy: vi.fn(async () => "opened"),
+}));
+
 const streamState = reactive({
   activeTab: "source",
   targetId: "",
@@ -301,13 +305,6 @@ const toastStore = {
   info: vi.fn(),
 };
 
-const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(
-  () =>
-    ({
-      focus: vi.fn(),
-    }) as unknown as Window,
-);
-
 vi.mock("@/stores/stream", () => ({
   streamKinds: ["music", "video", "text", "custom"],
   useStreamStore: () => streamStore,
@@ -319,6 +316,10 @@ vi.mock("@/stores/session", () => ({
 
 vi.mock("@/stores/toast", () => ({
   useToastStore: () => toastStore,
+}));
+
+vi.mock("@/lib/auxWindow", () => ({
+  openAuxWindow: openAuxWindowSpy,
 }));
 
 import Stream from "./Stream.vue";
@@ -417,11 +418,11 @@ describe("Stream page", () => {
 
     await wrapper.get("[data-stream-open-source-window]").trigger("click");
 
-    expect(windowOpenSpy).toHaveBeenCalledWith(
-      expect.stringContaining("#/stream-source-window?sourceId=source-1"),
-      expect.stringContaining("stream_source_source-1_"),
-      "width=1100,height=780",
-    );
+    expect(openAuxWindowSpy).toHaveBeenCalledWith({
+      routePath: "#/stream-source-window?sourceId=source-1",
+      name: expect.stringContaining("stream_source_source-1_"),
+      size: "width=1100,height=780",
+    });
   });
 
   it("shows desktop capture configuration for video sources in the source dialog", async () => {
@@ -544,10 +545,10 @@ describe("Stream page", () => {
     await wrapper.get("[data-stream-open-delivery-window]").trigger("click");
 
     expect(streamStore.selectDelivery).toHaveBeenCalledWith("delivery-1");
-    expect(windowOpenSpy).toHaveBeenCalledWith(
-      expect.stringContaining("#/stream-delivery-window?deliveryId=delivery-1"),
-      expect.stringContaining("stream_delivery_delivery-1_"),
-      "width=1180,height=820",
-    );
+    expect(openAuxWindowSpy).toHaveBeenCalledWith({
+      routePath: "#/stream-delivery-window?deliveryId=delivery-1",
+      name: expect.stringContaining("stream_delivery_delivery-1_"),
+      size: "width=1180,height=820",
+    });
   });
 });
