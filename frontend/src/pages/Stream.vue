@@ -1093,7 +1093,7 @@ watch(
     >
       <div
         data-stream-source-dialog
-        class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+        class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       >
         <CardHeader
           :title="t('New Source')"
@@ -1104,8 +1104,10 @@ watch(
           "
           title-class="text-lg"
         />
-        <div class="mt-5 grid gap-4 md:grid-cols-2">
-          <div class="md:col-span-2">
+        <div data-stream-source-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="md:col-span-2">
             <label
               :for="sourceNameInputId"
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
@@ -1117,8 +1119,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Display name')"
             />
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Kind") }}</label
@@ -1132,8 +1134,8 @@ watch(
                 {{ kind }}
               </option>
             </select>
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Content type") }}</label
@@ -1143,8 +1145,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Content type')"
             />
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Mode") }}</label
@@ -1153,8 +1155,8 @@ watch(
               <option value="live">live</option>
               <option value="bounded">bounded</option>
             </select>
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Unit mode") }}</label
@@ -1166,8 +1168,8 @@ watch(
               <option value="frame">frame</option>
               <option value="chunk">chunk</option>
             </select>
-          </div>
-          <div v-if="sourceDraft.kind === 'video'" class="md:col-span-2">
+              </div>
+              <div v-if="sourceDraft.kind === 'video'" class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Input mode") }}</label
@@ -1180,8 +1182,8 @@ watch(
               <option value="file">{{ t("Local File") }}</option>
               <option value="desktop">{{ t("Desktop Capture") }}</option>
             </select>
-          </div>
-          <div
+              </div>
+              <div
             v-if="
               sourceDraft.kind !== 'text' && sourceDraft.inputKind !== 'desktop'
             "
@@ -1216,8 +1218,8 @@ watch(
             <p class="mt-2 text-xs text-muted-foreground">
               {{ t("File-backed media input uses bounded/chunk delivery.") }}
             </p>
-          </div>
-          <div
+              </div>
+              <div
             v-else-if="
               sourceDraft.kind === 'video' &&
               sourceDraft.inputKind === 'desktop'
@@ -1239,8 +1241,8 @@ watch(
                 )
               }}
             </p>
-          </div>
-          <div class="md:col-span-2">
+              </div>
+              <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Tags") }}</label
@@ -1250,8 +1252,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Tags, comma separated')"
             />
-          </div>
-          <div class="md:col-span-2">
+              </div>
+              <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Metadata") }}</label
@@ -1261,6 +1263,8 @@ watch(
               :class="['mt-2', textAreaClass]"
               :placeholder="t('Optional metadata JSON')"
             />
+              </div>
+            </div>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
@@ -1283,7 +1287,7 @@ watch(
     >
       <div
         data-stream-consumer-dialog
-        class="w-full max-w-2xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+        class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       >
         <CardHeader
           :title="t('New Consumer')"
@@ -1294,8 +1298,10 @@ watch(
           "
           title-class="text-lg"
         />
-        <div class="mt-5 grid gap-4 md:grid-cols-2">
-          <div class="md:col-span-2">
+        <div data-stream-consumer-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="px-1 py-1 pr-2">
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="md:col-span-2">
             <label
               :for="consumerNameInputId"
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
@@ -1307,8 +1313,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Display name')"
             />
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Kind") }}</label
@@ -1318,8 +1324,8 @@ watch(
                 {{ kind }}
               </option>
             </select>
-          </div>
-          <div>
+              </div>
+              <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Content type") }}</label
@@ -1329,8 +1335,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Content type')"
             />
-          </div>
-          <div class="md:col-span-2">
+              </div>
+              <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Tags") }}</label
@@ -1340,8 +1346,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Tags, comma separated')"
             />
-          </div>
-          <div class="md:col-span-2">
+              </div>
+              <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Metadata") }}</label
@@ -1351,6 +1357,8 @@ watch(
               :class="['mt-2', textAreaClass]"
               :placeholder="t('Optional metadata JSON')"
             />
+              </div>
+            </div>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
@@ -1372,7 +1380,7 @@ watch(
     >
       <div
         data-stream-control-dialog
-        class="w-full max-w-5xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+        class="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       >
         <CardHeader
           :title="t('Control Pair Picker')"
@@ -1390,10 +1398,12 @@ watch(
           </template>
         </CardHeader>
 
-        <div class="mt-5 grid gap-6 xl:grid-cols-2">
-          <section
-            class="rounded-2xl border border-border/60 bg-background/70 p-4"
-          >
+        <div data-stream-control-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-6 px-1 py-1 pr-2">
+            <div class="grid gap-6 xl:grid-cols-2">
+              <section
+                class="rounded-2xl border border-border/60 bg-background/70 p-4"
+              >
             <div class="flex items-center justify-between gap-3">
               <p class="text-sm font-semibold">{{ t("Select Source") }}</p>
               <Button
@@ -1486,11 +1496,11 @@ watch(
                 {{ t("No sources loaded yet.") }}
               </div>
             </div>
-          </section>
+              </section>
 
-          <section
-            class="rounded-2xl border border-border/60 bg-background/70 p-4"
-          >
+              <section
+                class="rounded-2xl border border-border/60 bg-background/70 p-4"
+              >
             <div class="flex items-center justify-between gap-3">
               <p class="text-sm font-semibold">{{ t("Select Consumer") }}</p>
               <Button
@@ -1583,12 +1593,12 @@ watch(
                 {{ t("No consumers loaded yet.") }}
               </div>
             </div>
-          </section>
-        </div>
+              </section>
+            </div>
 
-        <div
-          class="mt-6 rounded-2xl border border-border/60 bg-background/70 p-4"
-        >
+            <div
+              class="rounded-2xl border border-border/60 bg-background/70 p-4"
+            >
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-sm font-semibold">{{ t("Connect Pair") }}</p>
             <Badge
@@ -1627,18 +1637,20 @@ watch(
           >
             {{ t("Source kind and consumer kind must match.") }}
           </p>
-          <p
-            v-else-if="
-              selectedControlSource && selectedControlConsumer && !canSubscribe
-            "
-            class="mt-3 text-xs text-muted-foreground"
-          >
-            {{
-              t(
-                "Subscribe only works when the selected consumer belongs to this node.",
-              )
-            }}
-          </p>
+              <p
+                v-else-if="
+                  selectedControlSource && selectedControlConsumer && !canSubscribe
+                "
+                class="mt-3 text-xs text-muted-foreground"
+              >
+                {{
+                  t(
+                    "Subscribe only works when the selected consumer belongs to this node.",
+                  )
+                }}
+              </p>
+            </div>
+          </div>
         </div>
 
         <div class="mt-6 flex justify-end gap-2">
@@ -1670,7 +1682,7 @@ watch(
     >
       <div
         data-stream-subscribe-dialog
-        class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+        class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       >
         <CardHeader
           :title="t('Subscribe Consumer')"
@@ -1682,113 +1694,114 @@ watch(
           title-class="text-lg"
         />
 
-        <div v-if="subscribeConsumer" class="mt-5 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-lg font-semibold">
-              {{ subscribeConsumer.name || subscribeConsumer.consumerId }}
-            </p>
-            <Badge :class="kindToneClass(subscribeConsumer.kind)">{{
-              subscribeConsumer.kind
-            }}</Badge>
-          </div>
-
-          <div class="rounded-2xl border border-border/60 bg-background/70 p-3">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="sm:col-span-2">
-                <label
-                  class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
-                  >{{ t("Producer Node ID") }}</label
-                >
-                <input
-                  v-model="subscribeQuery.producer"
-                  :class="['mt-2', inputClass]"
-                  :placeholder="t('Producer Node ID')"
-                />
-              </div>
-              <div>
-                <label
-                  class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
-                  >{{ t("Kind") }}</label
-                >
-                <select
-                  v-model="subscribeQuery.kind"
-                  :class="['mt-2', inputClass]"
-                >
-                  <option value="">{{ t("All kinds") }}</option>
-                  <option v-for="kind in streamKinds" :key="kind" :value="kind">
-                    {{ kind }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label
-                  class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
-                  >{{ t("Tag") }}</label
-                >
-                <input
-                  v-model="subscribeQuery.tag"
-                  :class="['mt-2', inputClass]"
-                  :placeholder="t('Tag filter')"
-                />
-              </div>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                @click="refreshSubscribeSources"
-              >
-                <ScanSearch class="mr-2 h-4 w-4" />
-                {{ t("Refresh") }}
-              </Button>
-            </div>
-          </div>
-
-          <div class="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-            <button
-              v-for="source in catalogSources"
-              :key="source.sourceId"
-              type="button"
-              data-stream-subscribe-source-row
-              class="w-full rounded-2xl border p-4 text-left transition"
-              :class="
-                subscribeQuery.selectedSourceId === source.sourceId
-                  ? 'border-primary/50 bg-primary/10 shadow-sm'
-                  : 'border-border/60 bg-background/70 hover:border-border'
-              "
-              @click="subscribeQuery.selectedSourceId = source.sourceId"
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="truncate text-sm font-semibold">
-                  {{ source.name || source.sourceId }}
-                </p>
-                <Badge :class="kindToneClass(source.kind)">{{
-                  source.kind
-                }}</Badge>
-                <Badge variant="secondary">{{
-                  t("Producer {id}", { id: source.producer })
-                }}</Badge>
-              </div>
-              <p class="mt-2 text-xs text-muted-foreground">
-                {{ source.sourceId }}
+        <div v-if="subscribeConsumer" data-stream-subscribe-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-4 px-1 py-1 pr-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-lg font-semibold">
+                {{ subscribeConsumer.name || subscribeConsumer.consumerId }}
               </p>
-            </button>
-            <div
-              v-if="!catalogSources.length"
-              class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground"
-            >
-              {{ t("No subscription sources loaded yet.") }}
+              <Badge :class="kindToneClass(subscribeConsumer.kind)">{{
+                subscribeConsumer.kind
+              }}</Badge>
+            </div>
+
+            <div class="rounded-2xl border border-border/60 bg-background/70 p-3">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                  <label
+                    class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+                    >{{ t("Producer Node ID") }}</label
+                  >
+                  <input
+                    v-model="subscribeQuery.producer"
+                    :class="['mt-2', inputClass]"
+                    :placeholder="t('Producer Node ID')"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+                    >{{ t("Kind") }}</label
+                  >
+                  <select
+                    v-model="subscribeQuery.kind"
+                    :class="['mt-2', inputClass]"
+                  >
+                    <option value="">{{ t("All kinds") }}</option>
+                    <option v-for="kind in streamKinds" :key="kind" :value="kind">
+                      {{ kind }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label
+                    class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
+                    >{{ t("Tag") }}</label
+                  >
+                  <input
+                    v-model="subscribeQuery.tag"
+                    :class="['mt-2', inputClass]"
+                    :placeholder="t('Tag filter')"
+                  />
+                </div>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  @click="refreshSubscribeSources"
+                >
+                  <ScanSearch class="mr-2 h-4 w-4" />
+                  {{ t("Refresh") }}
+                </Button>
+              </div>
+            </div>
+
+            <div class="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+              <button
+                v-for="source in catalogSources"
+                :key="source.sourceId"
+                type="button"
+                data-stream-subscribe-source-row
+                class="w-full rounded-2xl border p-4 text-left transition"
+                :class="
+                  subscribeQuery.selectedSourceId === source.sourceId
+                    ? 'border-primary/50 bg-primary/10 shadow-sm'
+                    : 'border-border/60 bg-background/70 hover:border-border'
+                "
+                @click="subscribeQuery.selectedSourceId = source.sourceId"
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-sm font-semibold">
+                    {{ source.name || source.sourceId }}
+                  </p>
+                  <Badge :class="kindToneClass(source.kind)">{{
+                    source.kind
+                  }}</Badge>
+                  <Badge variant="secondary">{{
+                    t("Producer {id}", { id: source.producer })
+                  }}</Badge>
+                </div>
+                <p class="mt-2 text-xs text-muted-foreground">
+                  {{ source.sourceId }}
+                </p>
+              </button>
+              <div
+                v-if="!catalogSources.length"
+                class="rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-8 text-sm text-muted-foreground"
+              >
+                {{ t("No subscription sources loaded yet.") }}
+              </div>
             </div>
           </div>
-
-          <div class="flex justify-end gap-2">
-            <Button variant="outline" @click="closeSubscribeDialog">{{
-              t("Cancel")
-            }}</Button>
-            <Button data-stream-submit-subscribe @click="subscribeFromDialog">{{
-              t("Subscribe")
-            }}</Button>
-          </div>
+        </div>
+        <div v-if="subscribeConsumer" class="mt-6 flex justify-end gap-2">
+          <Button variant="outline" @click="closeSubscribeDialog">{{
+            t("Cancel")
+          }}</Button>
+          <Button data-stream-submit-subscribe @click="subscribeFromDialog">{{
+            t("Subscribe")
+          }}</Button>
         </div>
       </div>
     </Overlay>

@@ -432,7 +432,7 @@ onMounted(async () => {
     </section>
 
     <Overlay :open="nodeInfoOpen" closeOnBackdrop @close="closeNodeInfo">
-      <div class="w-full max-w-2xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader class="items-start" :title="nodeInfoTitle" title-class="text-lg">
           <template #actions>
             <div class="flex flex-wrap items-center gap-2">
@@ -444,26 +444,28 @@ onMounted(async () => {
           </template>
         </CardHeader>
 
-        <div class="mt-4">
-          <div v-if="showNodeInfoNodeId" class="mb-3 font-mono text-xs text-muted-foreground">
-            {{ t("Node {nodeId}", { nodeId: nodeInfoNodeId }) }}
-          </div>
-          <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">{{ t("Loading…") }}</div>
-          <div v-else-if="nodeInfoError" class="text-sm text-rose-600">
-            {{ t("Error: {error}", { error: nodeInfoError }) }}
-          </div>
-          <div v-else class="space-y-3">
-            <div v-if="!sortedNodeInfoItems.length" class="text-sm text-muted-foreground">
-              {{ t("No details returned.") }}
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-3 px-1 py-1 pr-2">
+            <div v-if="showNodeInfoNodeId" class="font-mono text-xs text-muted-foreground">
+              {{ t("Node {nodeId}", { nodeId: nodeInfoNodeId }) }}
             </div>
-            <div v-else class="overflow-hidden rounded-xl border border-border/60">
-              <div
-                v-for="[key, value] in sortedNodeInfoItems"
-                :key="key"
-                class="grid grid-cols-1 gap-1 border-b border-border/50 bg-background/70 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[220px_minmax(0,1fr)]"
-              >
-                <div class="font-mono text-[12px] text-muted-foreground">{{ key }}</div>
-                <div class="break-words font-mono text-[12px] text-foreground">{{ value }}</div>
+            <div v-if="nodeInfoLoading" class="text-sm text-muted-foreground">{{ t("Loading…") }}</div>
+            <div v-else-if="nodeInfoError" class="text-sm text-rose-600">
+              {{ t("Error: {error}", { error: nodeInfoError }) }}
+            </div>
+            <div v-else class="space-y-3">
+              <div v-if="!sortedNodeInfoItems.length" class="text-sm text-muted-foreground">
+                {{ t("No details returned.") }}
+              </div>
+              <div v-else class="overflow-hidden rounded-xl border border-border/60">
+                <div
+                  v-for="[key, value] in sortedNodeInfoItems"
+                  :key="key"
+                  class="grid grid-cols-1 gap-1 border-b border-border/50 bg-background/70 px-4 py-3 text-sm last:border-b-0 md:grid-cols-[220px_minmax(0,1fr)]"
+                >
+                  <div class="font-mono text-[12px] text-muted-foreground">{{ key }}</div>
+                  <div class="break-words font-mono text-[12px] text-foreground">{{ value }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -474,7 +476,7 @@ onMounted(async () => {
     <NodeVarsDialog :open="varsDialogOpen" :ownerId="varsDialogOwnerId" @close="closeVarsDialog" />
 
     <Overlay :open="configOpen" closeOnBackdrop @close="closeConfig">
-      <div class="w-full max-w-3xl rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader class="items-start" :title="configTitle" title-class="text-lg">
           <template #actions>
             <div class="flex flex-wrap items-center gap-2">
@@ -491,57 +493,61 @@ onMounted(async () => {
           </template>
         </CardHeader>
 
-        <div class="mt-4 max-h-[65vh] space-y-2 overflow-y-auto">
-          <div v-if="showConfigNodeId" class="font-mono text-xs text-muted-foreground">
-            {{ t("Node {nodeId}", { nodeId: mgmtStore.state.selectedNodeId }) }}
-          </div>
-          <div
-            v-for="entry in mgmtStore.state.configEntries"
-            :key="entry.key"
-            class="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-xs"
-          >
-            <div class="min-w-0 flex-1">
-              <p class="font-semibold">{{ entry.key }}</p>
-              <p class="truncate text-muted-foreground">{{ entry.value }}</p>
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-2 px-1 py-1 pr-2">
+            <div v-if="showConfigNodeId" class="font-mono text-xs text-muted-foreground">
+              {{ t("Node {nodeId}", { nodeId: mgmtStore.state.selectedNodeId }) }}
             </div>
-            <Button size="sm" variant="outline" @click="openEdit(entry.key, entry.value)">
-              {{ t("Edit") }}
-            </Button>
-          </div>
-          <div v-if="!mgmtStore.state.configEntries.length" class="text-xs text-muted-foreground">
-            {{
-              mgmtStore.state.selectedNodeId
-                ? t("Loading config entries…")
-                : t("Select a node to load config entries.")
-            }}
+            <div
+              v-for="entry in mgmtStore.state.configEntries"
+              :key="entry.key"
+              class="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-xs"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold">{{ entry.key }}</p>
+                <p class="truncate text-muted-foreground">{{ entry.value }}</p>
+              </div>
+              <Button size="sm" variant="outline" @click="openEdit(entry.key, entry.value)">
+                {{ t("Edit") }}
+              </Button>
+            </div>
+            <div v-if="!mgmtStore.state.configEntries.length" class="text-xs text-muted-foreground">
+              {{
+                mgmtStore.state.selectedNodeId
+                  ? t("Loading config entries…")
+                  : t("Select a node to load config entries.")
+              }}
+            </div>
           </div>
         </div>
       </div>
     </Overlay>
 
     <Overlay :open="editOpen" @close="editOpen = false">
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <h2 class="text-lg font-semibold">{{ t("Edit Config") }}</h2>
-        <div class="mt-4 space-y-3">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Key") }}
-            </label>
-            <input
-              v-model="configDraft.key"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              disabled
-            />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Value") }}
-            </label>
-            <textarea
-              v-model="configDraft.value"
-              rows="4"
-              class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="space-y-3 px-1 py-1 pr-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Key") }}
+              </label>
+              <input
+                v-model="configDraft.key"
+                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                disabled
+              />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Value") }}
+              </label>
+              <textarea
+                v-model="configDraft.value"
+                rows="4"
+                class="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">

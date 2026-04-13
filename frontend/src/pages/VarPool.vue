@@ -688,7 +688,7 @@ onMounted(async () => {
       closeOnBackdrop
       @close="closeAddMineDialog"
     >
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="t('Create Variable')"
@@ -701,37 +701,39 @@ onMounted(async () => {
           </template>
         </CardHeader>
 
-        <div class="mt-4 grid gap-4">
-          <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
-            <p class="mt-1 font-medium">{{ selfNodeId || "-" }}</p>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Name") }}
-            </label>
-            <input v-model="addMineDialog.name" :class="inputClass" :placeholder="t('status.flag')" />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Value") }}
-            </label>
-            <input v-model="addMineDialog.value" :class="inputClass" :placeholder="t('ready')" />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Visibility") }}
-            </label>
-            <select v-model="addMineDialog.visibility" :class="inputClass">
-              <option value="public">{{ t("public") }}</option>
-              <option value="private">{{ t("private") }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Type") }}
-            </label>
-            <input v-model="addMineDialog.kind" :class="inputClass" :placeholder="t('string')" />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="grid gap-4 px-1 py-1 pr-2">
+            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
+              <p class="mt-1 font-medium">{{ selfNodeId || "-" }}</p>
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Name") }}
+              </label>
+              <input v-model="addMineDialog.name" :class="inputClass" :placeholder="t('status.flag')" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Value") }}
+              </label>
+              <input v-model="addMineDialog.value" :class="inputClass" :placeholder="t('ready')" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Visibility") }}
+              </label>
+              <select v-model="addMineDialog.visibility" :class="inputClass">
+                <option value="public">{{ t("public") }}</option>
+                <option value="private">{{ t("private") }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Type") }}
+              </label>
+              <input v-model="addMineDialog.kind" :class="inputClass" :placeholder="t('string')" />
+            </div>
           </div>
         </div>
 
@@ -750,7 +752,7 @@ onMounted(async () => {
       closeOnBackdrop
       @close="closeAddWatchDialog"
     >
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="t('Add Watch')"
@@ -763,18 +765,20 @@ onMounted(async () => {
           </template>
         </CardHeader>
 
-        <div class="mt-4 grid gap-4">
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Name") }}
-            </label>
-            <input v-model="addWatchDialog.name" :class="inputClass" :placeholder="t('metrics.load')" />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Owner NodeID") }}
-            </label>
-            <input v-model="addWatchDialog.owner" :class="inputClass" :placeholder="t('Owner NodeID')" />
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="grid gap-4 px-1 py-1 pr-2">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Name") }}
+              </label>
+              <input v-model="addWatchDialog.name" :class="inputClass" :placeholder="t('metrics.load')" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Owner NodeID") }}
+              </label>
+              <input v-model="addWatchDialog.owner" :class="inputClass" :placeholder="t('Owner NodeID')" />
+            </div>
           </div>
         </div>
 
@@ -791,7 +795,7 @@ onMounted(async () => {
       closeOnBackdrop
       @close="closeEditDialog"
     >
-      <div class="w-full max-w-lg rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+      <div class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
         <CardHeader
           class="items-start"
           :title="t('Update Variable')"
@@ -804,35 +808,37 @@ onMounted(async () => {
           </template>
         </CardHeader>
 
-        <div class="mt-4 grid gap-4">
-          <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Name") }}</p>
-            <p class="mt-1 font-medium">{{ editDialog.name || "-" }}</p>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-2">
+        <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+          <div class="grid gap-4 px-1 py-1 pr-2">
             <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
-              <p class="mt-1 font-medium">{{ editDialog.owner || "-" }}</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Name") }}</p>
+              <p class="mt-1 font-medium">{{ editDialog.name || "-" }}</p>
             </div>
-            <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
-              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Type") }}</p>
-              <p class="mt-1 font-medium">{{ displayMeta(editDialog.kind, "string") }}</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Owner") }}</p>
+                <p class="mt-1 font-medium">{{ editDialog.owner || "-" }}</p>
+              </div>
+              <div class="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">{{ t("Type") }}</p>
+                <p class="mt-1 font-medium">{{ displayMeta(editDialog.kind, "string") }}</p>
+              </div>
             </div>
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Value") }}
-            </label>
-            <input v-model="editDialog.value" :class="inputClass" :placeholder="t('value')" />
-          </div>
-          <div>
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Visibility") }}
-            </label>
-            <select v-model="editDialog.visibility" :class="inputClass">
-              <option value="public">{{ t("public") }}</option>
-              <option value="private">{{ t("private") }}</option>
-            </select>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Value") }}
+              </label>
+              <input v-model="editDialog.value" :class="inputClass" :placeholder="t('value')" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Visibility") }}
+              </label>
+              <select v-model="editDialog.visibility" :class="inputClass">
+                <option value="public">{{ t("public") }}</option>
+                <option value="private">{{ t("private") }}</option>
+              </select>
+            </div>
           </div>
         </div>
 

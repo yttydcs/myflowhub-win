@@ -30,6 +30,9 @@
 - [frontend-build-empty-node-modules.md](frontend-build-empty-node-modules.md)
   - 症状：`Installing frontend dependencies: Done.` 后仍报 `Cannot find module '...vite/bin/vite.js'`
   - 关键词：`vite/bin/vite.js`、`empty node_modules`、`package.json.md5`、`wails build`
+- [win-legacy-overlay-dialog-scroll-shell.md](win-legacy-overlay-dialog-scroll-shell.md)
+  - 症状：旧式 `Overlay` 卡片弹窗随内容继续长高、footer 跑出视口，或 focus ring 被滚动裁切
+  - 关键词：`max-h-[85vh]`、`overflow-hidden`、`overflow-y-auto`、`legacy overlay dialog`、`data-node-vars-scroll`
 - [flow-body-spec-mode-normalization.md](flow-body-spec-mode-normalization.md)
   - 症状：`foreach.body` 内高级节点明明已支持表单，但窗口里仍只显示 `Advanced JSON`，或找不到 `Add Binding`
   - 关键词：`normalizeBodySessionSnapshot`、`createBodyNodeDraft`、`specEditorMode`、`foreach.body`

@@ -521,7 +521,7 @@ watchEffect(() => {
       <Overlay :open="Boolean(fileStore.state.offer)" @close="fileStore.rejectOffer">
         <div
           v-if="fileStore.state.offer"
-          class="w-full max-w-lg rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl"
+          class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 p-6 text-card-foreground shadow-xl"
         >
           <div class="flex items-start justify-between gap-4">
             <div>
@@ -533,34 +533,38 @@ watchEffect(() => {
             <Badge variant="secondary">{{ t("Provider {provider}", { provider: fileStore.state.offer.provider }) }}</Badge>
           </div>
 
-          <div class="mt-4 space-y-2 text-sm text-muted-foreground">
-            <p>
-              <span class="font-semibold text-foreground">{{ t("File:") }}</span>
-              {{ fileStore.state.offer.name }}
-            </p>
-            <p>
-              <span class="font-semibold text-foreground">{{ t("Remote Dir:") }}</span>
-              {{ fileStore.state.offer.dir || "/" }}
-            </p>
-            <p>
-              <span class="font-semibold text-foreground">{{ t("Size:") }}</span>
-              {{ t("{count} bytes", { count: fileStore.state.offer.size }) }}
-            </p>
-            <p v-if="fileStore.state.offer.sha256">
-              <span class="font-semibold text-foreground">{{ t("SHA256:") }}</span>
-              {{ fileStore.state.offer.sha256 }}
-            </p>
-          </div>
+          <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+            <div class="space-y-4 px-1 py-1 pr-2">
+              <div class="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  <span class="font-semibold text-foreground">{{ t("File:") }}</span>
+                  {{ fileStore.state.offer.name }}
+                </p>
+                <p>
+                  <span class="font-semibold text-foreground">{{ t("Remote Dir:") }}</span>
+                  {{ fileStore.state.offer.dir || "/" }}
+                </p>
+                <p>
+                  <span class="font-semibold text-foreground">{{ t("Size:") }}</span>
+                  {{ t("{count} bytes", { count: fileStore.state.offer.size }) }}
+                </p>
+                <p v-if="fileStore.state.offer.sha256">
+                  <span class="font-semibold text-foreground">{{ t("SHA256:") }}</span>
+                  {{ fileStore.state.offer.sha256 }}
+                </p>
+              </div>
 
-          <div class="mt-4">
-            <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Save Directory (relative to base dir)") }}
-            </label>
-            <input
-              v-model="fileStore.state.offerSaveDir"
-              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              :placeholder="t('Optional, defaults to remote dir')"
-            />
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {{ t("Save Directory (relative to base dir)") }}
+                </label>
+                <input
+                  v-model="fileStore.state.offerSaveDir"
+                  class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  :placeholder="t('Optional, defaults to remote dir')"
+                />
+              </div>
+            </div>
           </div>
 
           <div class="mt-6 flex justify-end gap-2">

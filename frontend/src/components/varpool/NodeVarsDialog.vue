@@ -171,7 +171,10 @@ const canLoad = computed(() => Boolean(props.open && currentOwnerId.value > 0 &&
 
 <template>
   <Overlay :open="props.open" overlayClass="bg-black/40 p-4" closeOnBackdrop @close="onClose">
-    <div class="w-full max-w-3xl rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl">
+    <div
+      data-node-vars-dialog
+      class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
+    >
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">{{ t("VarPool") }}</p>
@@ -186,92 +189,96 @@ const canLoad = computed(() => Boolean(props.open && currentOwnerId.value > 0 &&
         </div>
       </div>
 
-      <div class="mt-5 grid gap-4 md:grid-cols-[1fr_auto]">
-        <div>
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Owner NodeID") }}
-          </label>
-          <input v-model="ownerText" :class="inputClass" :placeholder="t('Node ID')" @keydown.enter.prevent="load" />
-        </div>
-        <div class="flex items-end gap-2">
-          <Button :disabled="!canLoad" @click="load">{{ loading ? t("Loading...") : t("Load") }}</Button>
-        </div>
-      </div>
-
-      <div class="mt-4 grid gap-4 md:grid-cols-[1fr_auto]">
-        <div>
-          <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Search") }}
-          </label>
-          <input v-model="query" :class="inputClass" :placeholder="t('Filter by name...')" />
-        </div>
-        <div class="flex items-end justify-end gap-2 text-sm text-muted-foreground">
-          <span>{{ t("{count} results", { count: filtered.length }) }}</span>
-          <span>·</span>
-          <span>{{ t("Page {page} / {total}", { page: pageSafe, total: pageCount }) }}</span>
-        </div>
-      </div>
-
-      <div class="mt-4">
-        <div v-if="errorText" class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
-          {{ errorText }}
-        </div>
-
-        <div v-else class="overflow-hidden rounded-xl border border-border/60">
-          <div
-            v-for="name in paged"
-            :key="name"
-            class="flex items-center justify-between gap-3 border-b border-border/50 bg-background/70 px-4 py-3 text-sm last:border-b-0"
-          >
-            <div class="min-w-0">
-              <p class="truncate font-mono text-[12px]">{{ name }}</p>
-              <p class="text-xs text-muted-foreground">
-                {{ watchedIds.has(`${name}#${currentOwnerId}`) ? t("Already watched") : t("Not watched") }}
-              </p>
+      <div data-node-vars-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+        <div class="space-y-4 px-1 py-1 pr-2">
+          <div class="grid gap-4 md:grid-cols-[1fr_auto]">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Owner NodeID") }}
+              </label>
+              <input v-model="ownerText" :class="inputClass" :placeholder="t('Node ID')" @keydown.enter.prevent="load" />
             </div>
-            <div class="flex items-center gap-2">
-              <Badge
-                v-if="watchedIds.has(`${name}#${currentOwnerId}`)"
-                variant="secondary"
+            <div class="flex items-end gap-2">
+              <Button :disabled="!canLoad" @click="load">{{ loading ? t("Loading...") : t("Load") }}</Button>
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-[1fr_auto]">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {{ t("Search") }}
+              </label>
+              <input v-model="query" :class="inputClass" :placeholder="t('Filter by name...')" />
+            </div>
+            <div class="flex items-end justify-end gap-2 text-sm text-muted-foreground">
+              <span>{{ t("{count} results", { count: filtered.length }) }}</span>
+              <span>·</span>
+              <span>{{ t("Page {page} / {total}", { page: pageSafe, total: pageCount }) }}</span>
+            </div>
+          </div>
+
+          <div>
+            <div v-if="errorText" class="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
+              {{ errorText }}
+            </div>
+
+            <div v-else class="overflow-hidden rounded-xl border border-border/60">
+              <div
+                v-for="name in paged"
+                :key="name"
+                class="flex items-center justify-between gap-3 border-b border-border/50 bg-background/70 px-4 py-3 text-sm last:border-b-0"
               >
-                {{ t("Watched") }}
-              </Badge>
+                <div class="min-w-0">
+                  <p class="truncate font-mono text-[12px]">{{ name }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ watchedIds.has(`${name}#${currentOwnerId}`) ? t("Already watched") : t("Not watched") }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Badge
+                    v-if="watchedIds.has(`${name}#${currentOwnerId}`)"
+                    variant="secondary"
+                  >
+                    {{ t("Watched") }}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="loading || watchedIds.has(`${name}#${currentOwnerId}`) || !currentOwnerId"
+                    @click="addWatch(name)"
+                  >
+                    {{ t("Add Watch") }}
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="paged.length === 0" class="px-4 py-6 text-sm text-muted-foreground">
+                {{ names.length ? t("No matches.") : t("Load a node to view variables.") }}
+              </div>
+            </div>
+
+            <div class="mt-4 flex items-center justify-between">
               <Button
                 size="sm"
                 variant="outline"
-                :disabled="loading || watchedIds.has(`${name}#${currentOwnerId}`) || !currentOwnerId"
-                @click="addWatch(name)"
+                :disabled="loading || pageSafe <= 1"
+                @click="page = pageSafe - 1"
               >
-                {{ t("Add Watch") }}
+                {{ t("Prev") }}
+              </Button>
+              <div class="text-xs text-muted-foreground">
+                {{ t("Showing {shown} of {total}", { shown: paged.length, total: filtered.length }) }}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="loading || pageSafe >= pageCount"
+                @click="page = pageSafe + 1"
+              >
+                {{ t("Next") }}
               </Button>
             </div>
           </div>
-
-          <div v-if="paged.length === 0" class="px-4 py-6 text-sm text-muted-foreground">
-            {{ names.length ? t("No matches.") : t("Load a node to view variables.") }}
-          </div>
-        </div>
-
-        <div class="mt-4 flex items-center justify-between">
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="loading || pageSafe <= 1"
-            @click="page = pageSafe - 1"
-          >
-            {{ t("Prev") }}
-          </Button>
-          <div class="text-xs text-muted-foreground">
-            {{ t("Showing {shown} of {total}", { shown: paged.length, total: filtered.length }) }}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="loading || pageSafe >= pageCount"
-            @click="page = pageSafe + 1"
-          >
-            {{ t("Next") }}
-          </Button>
         </div>
       </div>
     </div>

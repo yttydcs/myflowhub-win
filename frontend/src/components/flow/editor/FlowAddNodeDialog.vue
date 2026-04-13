@@ -53,126 +53,129 @@ const kindDescription = computed(() =>
     @close="emit('close')"
   >
     <div
-      class="w-full max-w-md rounded-2xl border bg-card/95 p-6 shadow-xl"
+      data-flow-add-node-dialog
+      class="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-card/95 p-6 text-card-foreground shadow-xl"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="dialogTitleId"
       :aria-describedby="dialogDescriptionId"
     >
       <h2 :id="dialogTitleId" class="text-lg font-semibold">{{ t("Add Node") }}</h2>
-      <div class="mt-4 space-y-3">
-        <div>
-          <label :for="nodeIdInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Node ID") }}
-          </label>
-          <input
-            :id="nodeIdInputId"
-            :value="props.nodeId"
-            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            @input="emit('update:nodeId', ($event.target as HTMLInputElement).value)"
-          />
-        </div>
-
-        <div>
-          <p :id="kindGroupLabelId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t("Kind") }}
-          </p>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" :aria-labelledby="kindGroupLabelId">
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'call'"
-              :class="
-                props.nodeKind === 'call'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'call')"
-            >
-              {{ t("Call") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'compose'"
-              :class="
-                props.nodeKind === 'compose'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'compose')"
-            >
-              {{ t("Compose") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'transform'"
-              :class="
-                props.nodeKind === 'transform'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'transform')"
-            >
-              {{ t("Transform") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'set_var'"
-              :class="
-                props.nodeKind === 'set_var'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'set_var')"
-            >
-              {{ t("Set Var") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'branch'"
-              :class="
-                props.nodeKind === 'branch'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'branch')"
-            >
-              {{ t("Branch") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'foreach'"
-              :class="
-                props.nodeKind === 'foreach'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'foreach')"
-            >
-              {{ t("Foreach") }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-3 py-2 text-sm transition"
-              :aria-pressed="props.nodeKind === 'subflow'"
-              :class="
-                props.nodeKind === 'subflow'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border/70 bg-background text-foreground'
-              "
-              @click="emit('update:nodeKind', 'subflow')"
-            >
-              {{ t("Subflow") }}
-            </button>
+      <div data-flow-add-node-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
+        <div class="space-y-3 px-1 py-1 pr-2">
+          <div>
+            <label :for="nodeIdInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Node ID") }}
+            </label>
+            <input
+              :id="nodeIdInputId"
+              :value="props.nodeId"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              @input="emit('update:nodeId', ($event.target as HTMLInputElement).value)"
+            />
           </div>
-          <p :id="dialogDescriptionId" class="mt-1 text-[11px] text-muted-foreground">
-            {{ kindDescription }}
-          </p>
+
+          <div>
+            <p :id="kindGroupLabelId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Kind") }}
+            </p>
+            <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" :aria-labelledby="kindGroupLabelId">
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'call'"
+                :class="
+                  props.nodeKind === 'call'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'call')"
+              >
+                {{ t("Call") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'compose'"
+                :class="
+                  props.nodeKind === 'compose'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'compose')"
+              >
+                {{ t("Compose") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'transform'"
+                :class="
+                  props.nodeKind === 'transform'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'transform')"
+              >
+                {{ t("Transform") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'set_var'"
+                :class="
+                  props.nodeKind === 'set_var'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'set_var')"
+              >
+                {{ t("Set Var") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'branch'"
+                :class="
+                  props.nodeKind === 'branch'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'branch')"
+              >
+                {{ t("Branch") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'foreach'"
+                :class="
+                  props.nodeKind === 'foreach'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'foreach')"
+              >
+                {{ t("Foreach") }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md border px-3 py-2 text-sm transition"
+                :aria-pressed="props.nodeKind === 'subflow'"
+                :class="
+                  props.nodeKind === 'subflow'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border/70 bg-background text-foreground'
+                "
+                @click="emit('update:nodeKind', 'subflow')"
+              >
+                {{ t("Subflow") }}
+              </button>
+            </div>
+            <p :id="dialogDescriptionId" class="mt-1 text-[11px] text-muted-foreground">
+              {{ kindDescription }}
+            </p>
+          </div>
         </div>
       </div>
       <div class="mt-6 flex justify-end gap-2">

@@ -219,6 +219,12 @@ describe("AccessPolicy", () => {
 
     expect(wrapper.text()).toContain("权限列表")
     expect(wrapper.text()).toContain("保留的额外权限")
+    const defaultDialog = wrapper.find("[data-default-access-dialog]")
+    const defaultScroll = wrapper.find("[data-default-access-scroll]")
+    expect(defaultDialog.exists()).toBe(true)
+    expect(defaultDialog.classes()).toContain("max-h-[85vh]")
+    expect(defaultScroll.exists()).toBe(true)
+    expect(defaultScroll.classes()).toContain("overflow-y-auto")
   })
 
   it("renders node overrides as a compact list and opens the override dialog", async () => {
@@ -250,6 +256,12 @@ describe("AccessPolicy", () => {
 
     expect(wrapper.text()).toContain("编辑节点覆盖")
     expect(wrapper.text()).toContain("节点 ID")
+    const nodeOverrideDialog = wrapper.find("[data-node-override-dialog]")
+    const nodeOverrideScroll = wrapper.find("[data-node-override-scroll]")
+    expect(nodeOverrideDialog.exists()).toBe(true)
+    expect(nodeOverrideDialog.classes()).toContain("max-h-[85vh]")
+    expect(nodeOverrideScroll.exists()).toBe(true)
+    expect(nodeOverrideScroll.classes()).toContain("overflow-y-auto")
   })
 
   it("shows the dedicated role list and opens the role editor dialog", async () => {
