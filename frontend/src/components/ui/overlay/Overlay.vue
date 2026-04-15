@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the reusable overlay UI primitive used across the Win frontend.
+// 本文件实现 Win 前端复用的 `Overlay` UI 组件。
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { cn } from "@/lib/utils"
 import { createOverlayID, isTopOverlay, registerOverlay, unregisterOverlay, updateOverlay } from "@/lib/overlayStack"

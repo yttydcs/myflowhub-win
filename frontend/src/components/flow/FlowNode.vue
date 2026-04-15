@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders a single flow node card inside the graph canvas, including selection and status affordances.
+// 本文件实现 Flow 视图中的 `FlowNode` 组件。
 import { computed } from "vue"
 import { Handle, Position, type NodeProps } from "@vue-flow/core"
 import { useI18n } from "@/i18n"

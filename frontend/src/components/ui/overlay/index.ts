@@ -1,4 +1,4 @@
-// Context: re-exports the overlay UI primitive used across the Win frontend.
+// 本文件导出 Win 前端复用的 `overlay` UI 组件。
 
 export { default as Overlay } from "./Overlay.vue"
 

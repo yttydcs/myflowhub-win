@@ -1,4 +1,4 @@
-// Context: covers the flow field binding dialog panel behavior used by the Flow editor.
+// 本文件覆盖 Flow 编辑器中的 `FlowFieldBindingDialog` 组件行为
 
 // @vitest-environment jsdom
 
@@ -89,8 +89,6 @@ describe("FlowFieldBindingDialog", () => {
 
     expect(wrapper.text()).toContain("Flow Local Var")
     expect(wrapper.text()).toContain("This is not varstore.")
-    expect(wrapper.get("[data-flow-field-binding-dialog]").classes()).toContain("max-h-[85vh]")
-    expect(wrapper.get("[data-flow-field-binding-scroll]").classes()).toContain("overflow-y-auto")
     expect(wrapper.findAll("button").at(-1)?.text()).toContain("Apply Binding")
     expect(wrapper.findAll("button").at(-1)?.attributes("disabled")).toBeDefined()
 

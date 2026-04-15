@@ -1,4 +1,4 @@
-// Context: covers the showcase widget card content showcase component behavior.
+// 本文件覆盖 Showcase 相关的 `ShowcaseWidgetCardContent` 组件行为
 
 // @vitest-environment jsdom
 
@@ -40,7 +40,7 @@ const lineChartWidget = {
 } as const
 
 describe("ShowcaseWidgetCardContent", () => {
-  it("renders line chart controls and forwards local range overrides", async () => {
+  it("renders line chart controls, forwards local overrides, and emits chart config changes", async () => {
     getVarValueTextMock.mockReturnValue("42.5")
     resolveEffectiveModeMock.mockReturnValue("line_chart")
     sliderValueMock.mockReturnValue(0)
@@ -80,9 +80,19 @@ describe("ShowcaseWidgetCardContent", () => {
     const selects = wrapper.findAll("select")
     expect(selects).toHaveLength(2)
     await selects[0]!.setValue(String(15 * 60 * 1000))
+    expect(wrapper.emitted("chart-config-change")?.at(-1)?.[0]).toMatchObject({
+      rangeMs: 15 * 60 * 1000,
+      bucketMs: 60 * 1000
+    })
+
+    await selects[1]!.setValue(String(10 * 1000))
+    expect(wrapper.emitted("chart-config-change")?.at(-1)?.[0]).toMatchObject({
+      rangeMs: 15 * 60 * 1000,
+      bucketMs: 10 * 1000
+    })
 
     const lastCall = lineChartStateMock.mock.calls.at(-1)
-    expect(lastCall?.[1]).toMatchObject({ rangeMs: 15 * 60 * 1000 })
+    expect(lastCall?.[1]).toMatchObject({ rangeMs: 15 * 60 * 1000, bucketMs: 10 * 1000 })
   })
 
   it("shows the fallback message when chart samples are insufficient", () => {

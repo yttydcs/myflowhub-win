@@ -1,4 +1,4 @@
-// Context: covers the authority admin store behavior in the Win frontend.
+// 本文件覆盖 `authority_admin` store 的行为。
 
 // @vitest-environment jsdom
 

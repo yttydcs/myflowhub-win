@@ -1,4 +1,4 @@
-// Context: contains shared logs helpers used by the Win frontend.
+// 本文件提供 Win 前端复用的 `logs` 辅助函数。
 
 const isPrintableAscii = (code: number) => code >= 32 && code <= 126
 

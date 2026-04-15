@@ -1,4 +1,4 @@
-// Context: persists the Home page's last-used device, connection, and auth snapshot in profile storage.
+// 本文件负责持久化 Home 页面最近使用的连接、设备和认证快照。
 
 package main
 
@@ -26,6 +26,7 @@ type HomeState struct {
 }
 
 func (a *App) HomeState() (HomeState, error) {
+	// HomeState 读取当前 profile 下 Home 页保存的连接与认证快照。
 	if a.store == nil {
 		return HomeState{}, errors.New("storage not initialized")
 	}
@@ -49,6 +50,7 @@ func (a *App) HomeState() (HomeState, error) {
 }
 
 func (a *App) SaveHomeState(state HomeState) (HomeState, error) {
+	// SaveHomeState 在入库前裁剪与校验字段，确保首页恢复的是干净状态。
 	if a.store == nil {
 		return HomeState{}, errors.New("storage not initialized")
 	}
@@ -80,6 +82,7 @@ func (a *App) SaveHomeState(state HomeState) (HomeState, error) {
 }
 
 func (a *App) ClearHomeAuth() (HomeState, error) {
+	// ClearHomeAuth 只清掉首页缓存的认证结果，不重置设备与自动连接偏好。
 	state, err := a.HomeState()
 	if err != nil {
 		return HomeState{}, err
@@ -91,6 +94,7 @@ func (a *App) ClearHomeAuth() (HomeState, error) {
 }
 
 func validateHomeState(state HomeState) error {
+	// validateHomeState 约束首页持久化字段长度，避免把异常输入长期写入 profile。
 	if len(state.DeviceID) > 128 {
 		return errors.New("device_id is too long")
 	}

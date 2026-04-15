@@ -1,4 +1,4 @@
-// Context: covers the flow visual form store behavior in the Win frontend.
+// 本文件覆盖 `flow_visual_form` store 的行为。
 
 import { beforeEach, describe, expect, it } from "vitest"
 import { setLocale } from "@/i18n"

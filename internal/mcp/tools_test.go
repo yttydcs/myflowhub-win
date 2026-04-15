@@ -1,4 +1,4 @@
-// Context: covers argument validation and tool dispatch for the MyFlowHub MCP surface.
+// 本文件覆盖 MyFlowHub MCP 工具分发与参数校验行为。
 
 package mcp
 

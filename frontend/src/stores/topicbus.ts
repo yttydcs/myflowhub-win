@@ -1,4 +1,4 @@
-// Context: keeps the topicbus store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `topicbus` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { t } from "@/i18n"
 import { reactive } from "vue"
@@ -82,6 +82,7 @@ let initialized = false
 
 const nowIso = () => new Date().toISOString()
 
+// 事件详情既可能是纯文本也可能是 JSON，这里统一格式化，方便 UI 侧直接展示或复制。
 const formatDetail = (input: any): string => {
   if (input === null || input === undefined) return ""
   if (typeof input === "string") {
@@ -191,6 +192,7 @@ const trimEvents = () => {
   state.events = state.events.slice(-state.maxEvents)
 }
 
+// 高频 TopicBus 事件先写入临时队列，按短时间窗批量落库，避免每帧都触发一次响应式重渲染。
 const flushPending = () => {
   if (!pendingEvents.length) return
   state.events.push(...pendingEvents)
@@ -199,6 +201,7 @@ const flushPending = () => {
   lastFlushAt = Date.now()
 }
 
+// flush 节流只负责 UI 侧平滑展示，不影响事件本身的实时订阅。
 const scheduleFlush = () => {
   const now = Date.now()
   const elapsed = now - lastFlushAt
@@ -224,6 +227,7 @@ const handleEvent = (evt: any) => {
   pushEvent(normalized)
 }
 
+// 频道列表把“本地偏好”和“远端真实订阅”合在一起，页面才能看出哪些条目只是待恢复配置。
 const channelItems = (): TopicBusChannelItem[] => {
   const localSet = new Set(normalizeTopics(state.topics))
   const remoteSet = new Set(normalizeTopics(state.remoteTopics))
@@ -277,6 +281,7 @@ const setSelectedTopic = (topic: string) => {
   clearSelectionIfMissing()
 }
 
+// 本地 topics 是“希望订阅什么”的持久偏好，真正远端订阅动作由 subscribe/unsubscribe 单独完成。
 const updateTopics = async (topics: string[], mode: "add" | "remove") => {
   const normalized = normalizeTopics(topics)
   if (normalized.length === 0) return []
@@ -290,6 +295,7 @@ const updateTopics = async (topics: string[], mode: "add" | "remove") => {
   return normalized
 }
 
+// 远端快照刷新只用于校准当前目标节点的真实订阅状态，不改写本地保存的 topics 偏好。
 const refreshRemoteTopics = async () => {
   const sourceID = Number(state.selfNodeId || 0)
   const targetID = Number(resolveTargetId() || 0)
@@ -340,6 +346,7 @@ const unsubscribe = async (topics: string[]) => {
   clearSelectionIfMissing()
 }
 
+// 应用重开后的“恢复订阅”直接按本地保存列表重放，不要求用户再手动一条条勾选。
 const resubscribe = async () => {
   const normalized = normalizeTopics(state.topics)
   if (!normalized.length) return
@@ -378,6 +385,7 @@ const setMaxEvents = async (value: number) => {
   await savePrefs()
 }
 
+// runtime 事件监听器只注册一次，避免 store 被多个页面复用时重复追加同一份回调。
 const ensureListeners = () => {
   if (initialized) return
   initialized = true

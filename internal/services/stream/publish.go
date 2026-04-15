@@ -1,4 +1,4 @@
-// Context: implements the publish helper logic used by the stream backend service.
+// 本文件实现 `stream` 后端服务中与 `publish` 相关的辅助逻辑。
 
 package stream
 
@@ -54,6 +54,7 @@ type producerSendTarget struct {
 }
 
 func (s *StreamService) PublishText(ctx context.Context, sourceID uint32, req PublishTextReq) (PublishTextResp, error) {
+	// PublishText 面向 text source 的直接输入，把同一文本扇出到所有活跃 delivery。
 	_ = ctx
 	if sourceID == 0 {
 		return PublishTextResp{}, errors.New("sourceID is required")
@@ -122,6 +123,7 @@ func (s *StreamService) PublishTextSimple(sourceID uint32, req PublishTextReq) (
 }
 
 func (s *StreamService) PublishCaptureChunk(ctx context.Context, sourceID uint32, req PublishCaptureChunkReq) (PublishCaptureChunkResp, error) {
+	// PublishCaptureChunk 在发送桌面采集块前会等待 producer 窗口，避免无界堆积未确认数据。
 	if sourceID == 0 {
 		return PublishCaptureChunkResp{}, errors.New("sourceID is required")
 	}
@@ -206,6 +208,7 @@ func (s *StreamService) PublishCaptureChunkSimple(sourceID uint32, req PublishCa
 }
 
 func (s *StreamService) collectTextPublishTargets(sourceID uint32, sourceKey string) ([]producerSendTarget, error) {
+	// collectTextPublishTargets 只挑出当前 source 下仍处于 active 的文本 delivery。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureStateMapsLocked()
@@ -242,6 +245,7 @@ func (s *StreamService) collectTextPublishTargets(sourceID uint32, sourceKey str
 }
 
 func (s *StreamService) collectCapturePublishTargets(sourceID uint32, sourceKey string, deliveryIDs []string) ([]producerSendTarget, error) {
+	// collectCapturePublishTargets 限定为桌面视频 chunk delivery，防止把捕获数据发到错误消费端。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureStateMapsLocked()
@@ -296,6 +300,7 @@ func (s *StreamService) collectCapturePublishTargets(sourceID uint32, sourceKey 
 }
 
 func normalizeRequestedDeliveryIDs(items []string) []string {
+	// normalizeRequestedDeliveryIDs 清理调用方传入的 delivery 列表，保证发送目标唯一且非空。
 	if len(items) == 0 {
 		return nil
 	}
@@ -320,6 +325,7 @@ func buildDataPayload(deliveryID string, position, ptsMs uint64, body []byte) ([
 }
 
 func buildDataPayloadWithFlags(deliveryID string, position, ptsMs uint64, flags uint8, body []byte) ([]byte, error) {
+	// buildDataPayloadWithFlags 负责把通用 body 包装成 stream/data 帧，不关心上层来源是文本还是采集块。
 	id, err := uuid.Parse(strings.TrimSpace(deliveryID))
 	if err != nil {
 		return nil, err
@@ -336,6 +342,7 @@ func buildDataPayloadWithFlags(deliveryID string, position, ptsMs uint64, flags 
 }
 
 func (s *StreamService) markTextPublished(target producerSendTarget, bodyLen, ptsMs uint64) (StreamDeliveryEvent, bool) {
+	// markTextPublished 在 text 发送成功后同步推进 producer 位置和前端快照统计。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureStateMapsLocked()

@@ -1,4 +1,4 @@
-// Context: implements the config helper logic used by the file backend service.
+// 本文件实现 `file` 后端服务中与 `config` 相关的辅助逻辑。
 
 package file
 
@@ -37,6 +37,7 @@ type fileConfig struct {
 }
 
 func defaultFilePrefs() FilePrefs {
+	// defaultFilePrefs 定义文件服务在未配置时的安全默认值，供读写两侧共用。
 	return FilePrefs{
 		BaseDir:          "./file",
 		MaxSizeBytes:     0,
@@ -49,6 +50,7 @@ func defaultFilePrefs() FilePrefs {
 }
 
 func (s *FileService) fileConfig() fileConfig {
+	// fileConfig 把用户偏好补齐成运行时配置，并额外派生 ack 节流参数。
 	prefs := s.loadFilePrefs()
 	if prefs.MaxConcurrent <= 0 {
 		prefs.MaxConcurrent = defaultFilePrefs().MaxConcurrent
@@ -96,6 +98,7 @@ func executableDir() string {
 }
 
 func resolveRuntimeBaseDir(baseDir string) string {
+	// resolveRuntimeBaseDir 优先相对可执行目录展开，保证打包后 base_dir 仍然稳定。
 	baseDir = strings.TrimSpace(baseDir)
 	if baseDir == "" {
 		baseDir = "."
@@ -115,6 +118,7 @@ func (s *FileService) Prefs() (FilePrefs, error) {
 }
 
 func (s *FileService) SavePrefs(prefs FilePrefs) (FilePrefs, error) {
+	// SavePrefs 在落盘前先归一化，避免非法并发数或 chunk 大小长期污染 profile。
 	if s == nil || s.store == nil {
 		return FilePrefs{}, errors.New("storage not initialized")
 	}
@@ -166,6 +170,7 @@ func normalizePrefs(prefs FilePrefs) (FilePrefs, error) {
 }
 
 func (s *FileService) loadFilePrefs() FilePrefs {
+	// loadFilePrefs 负责把 profile 中的原始值回退到一组可运行的文件传输参数。
 	if s == nil || s.store == nil {
 		return defaultFilePrefs()
 	}
@@ -213,6 +218,7 @@ func (s *FileService) BrowserNodes() ([]uint32, error) {
 }
 
 func (s *FileService) SaveBrowserNodes(nodes []uint32) ([]uint32, error) {
+	// SaveBrowserNodes 只保留去重后的正整数节点 ID，给文件浏览器恢复上次目标列表。
 	if s == nil || s.store == nil {
 		return nil, errors.New("storage not initialized")
 	}

@@ -1,4 +1,4 @@
-// Context: assembles the i18n catalog and exports the translator used across the Win frontend.
+// 本文件组装 Win 前端的 i18n 文案目录，并导出翻译入口。
 
 import { computed, reactive } from "vue"
 import { messages } from "./messages"

@@ -1,4 +1,4 @@
-// Context: registers the Win frontend routes and startup redirects.
+// 本文件注册 Win 前端路由与启动重定向。
 
 import { createRouter, createWebHashHistory } from "vue-router"
 import Home from "@/pages/Home.vue"

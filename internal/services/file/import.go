@@ -1,4 +1,4 @@
-// Context: implements the import helper logic used by the file backend service.
+// 本文件实现 `file` 后端服务中与 `import` 相关的辅助逻辑。
 
 package file
 
@@ -32,6 +32,7 @@ type FileImportResult struct {
 }
 
 func (s *FileService) ImportLocalFiles(targetDir string, sourcePaths []string, overwrite bool) (FileImportResult, error) {
+	// ImportLocalFiles 是前端导入入口，最终会把导入摘要同时写到日志里便于追踪。
 	cfg := s.fileConfig()
 	result, err := importLocalFilesToDir(cfg.BaseDir, targetDir, sourcePaths, overwrite)
 	if err != nil {
@@ -51,6 +52,7 @@ func (s *FileService) ImportLocalFiles(targetDir string, sourcePaths []string, o
 }
 
 func importLocalFilesToDir(baseDir, targetDir string, sourcePaths []string, overwrite bool) (FileImportResult, error) {
+	// importLocalFilesToDir 先校验目标目录，再逐个文件收集成功与失败结果，不做半成功回滚。
 	cleanDir, err := fileSanitizeDir(strings.ReplaceAll(strings.TrimSpace(targetDir), "\\", "/"))
 	if err != nil {
 		return FileImportResult{}, errors.New("invalid target dir")
@@ -87,6 +89,7 @@ func importLocalFilesToDir(baseDir, targetDir string, sourcePaths []string, over
 }
 
 func normalizeImportPaths(sourcePaths []string) []string {
+	// normalizeImportPaths 在 Windows 上做大小写去重，避免同一路径被重复导入两次。
 	seen := make(map[string]struct{}, len(sourcePaths))
 	out := make([]string, 0, len(sourcePaths))
 	for _, raw := range sourcePaths {
@@ -112,6 +115,7 @@ func normalizeImportPaths(sourcePaths []string) []string {
 }
 
 func importOneLocalFile(baseDir, targetDir, sourcePath string, overwrite bool) (*FileImportItem, *FileImportFailure) {
+	// importOneLocalFile 同时负责源文件体检、目标路径求解和“源=目标”保护。
 	sourcePath = strings.TrimSpace(sourcePath)
 	if sourcePath == "" {
 		return nil, &FileImportFailure{Reason: "empty source path"}
@@ -159,6 +163,7 @@ func importOneLocalFile(baseDir, targetDir, sourcePath string, overwrite bool) (
 }
 
 func copyExternalFile(sourcePath, targetPath string, overwrite bool) (int64, error) {
+	// copyExternalFile 先写临时文件再 rename，避免导入过程中留下半截目标文件。
 	source, err := os.Open(sourcePath)
 	if err != nil {
 		return 0, fmt.Errorf("open source failed: %w", err)

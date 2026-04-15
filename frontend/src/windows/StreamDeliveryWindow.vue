@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the detached stream delivery window used by the Win frontend.
+// 本文件实现 Win 前端使用的独立 `StreamDeliveryWindow` 窗口。
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { RefreshCw } from "lucide-vue-next"

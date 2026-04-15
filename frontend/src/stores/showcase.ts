@@ -1,4 +1,4 @@
-// Context: keeps Showcase designer and viewer state in sync with persisted config and backend refresh events.
+// 本文件维护 `showcase` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { t } from "@/i18n"
@@ -581,6 +581,23 @@ const upsertChartSample = (ownerId: number, name: string, value: string, timesta
   chartHistory[key] = appendShowcaseLineChartSample(chartHistory[key] ?? [], { timestamp: timestampMs, value: parsed }, timestampMs)
 }
 
+// Slider 交互改为 fire-and-forget 后，依赖随后的 varpool.changed 回帧来回收本地 draft，避免等待 ack 卡住 UI。
+const clearSliderDraftsForValue = (ownerId: number, name: string, value: string) => {
+  const parsed = Number.parseFloat(String(value ?? "").trim())
+  if (!Number.isFinite(parsed)) return
+  for (const screen of state.config.screens) {
+    for (const widget of screen.widgets) {
+      if (widget.kind !== "var" || !widget.var) continue
+      if (widget.var.ownerId !== ownerId || widget.var.name.trim() !== name) continue
+      const draft = state.sliderDraft[widget.id]
+      if (!Number.isFinite(draft)) continue
+      if (Math.abs(draft - parsed) <= 1e-9) {
+        delete state.sliderDraft[widget.id]
+      }
+    }
+  }
+}
+
 const upsertSnapshot = (resp: ReturnType<typeof parseVarResp>) => {
   if (!resp) return
   const key = varKey(resp.ownerId, resp.name)
@@ -595,6 +612,7 @@ const upsertSnapshot = (resp: ReturnType<typeof parseVarResp>) => {
     type: resp.type !== "" ? resp.type : existing?.type ?? "",
     lastUpdated: timestamp
   }
+  clearSliderDraftsForValue(resp.ownerId, resp.name, state.values[key]?.value ?? "")
   upsertChartSample(resp.ownerId, resp.name, state.values[key]?.value ?? "", timestampMs)
 }
 
@@ -1233,8 +1251,7 @@ const sliderCommit = async (widget: ShowcaseWidget) => {
   }
 
   try {
-    await sendVarSet(widget, String(value), true)
-    delete state.sliderDraft[widget.id]
+    await sendVarSet(widget, String(value), false)
   } catch (err) {
     toast.errorOf(err, t("Failed to update variable."))
     return

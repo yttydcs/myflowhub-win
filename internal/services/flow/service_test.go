@@ -1,4 +1,4 @@
-// Context: covers the flow backend service behavior exposed to the Win shell.
+// 本文件覆盖 `flow` 后端服务的行为。
 
 package flow
 

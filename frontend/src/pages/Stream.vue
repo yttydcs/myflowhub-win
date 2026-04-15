@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Stream page for configuring sources, consumers, and active deliveries.
+// 本文件实现 Win 前端的 `Stream` 页面。
 import { computed, reactive, ref, watch } from "vue";
 import {
   Cable,
@@ -1119,8 +1119,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Display name')"
             />
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Kind") }}</label
@@ -1134,8 +1134,8 @@ watch(
                 {{ kind }}
               </option>
             </select>
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Content type") }}</label
@@ -1145,8 +1145,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Content type')"
             />
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Mode") }}</label
@@ -1155,8 +1155,8 @@ watch(
               <option value="live">live</option>
               <option value="bounded">bounded</option>
             </select>
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Unit mode") }}</label
@@ -1168,8 +1168,8 @@ watch(
               <option value="frame">frame</option>
               <option value="chunk">chunk</option>
             </select>
-              </div>
-              <div v-if="sourceDraft.kind === 'video'" class="md:col-span-2">
+          </div>
+          <div v-if="sourceDraft.kind === 'video'" class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Input mode") }}</label
@@ -1182,8 +1182,8 @@ watch(
               <option value="file">{{ t("Local File") }}</option>
               <option value="desktop">{{ t("Desktop Capture") }}</option>
             </select>
-              </div>
-              <div
+          </div>
+          <div
             v-if="
               sourceDraft.kind !== 'text' && sourceDraft.inputKind !== 'desktop'
             "
@@ -1218,8 +1218,8 @@ watch(
             <p class="mt-2 text-xs text-muted-foreground">
               {{ t("File-backed media input uses bounded/chunk delivery.") }}
             </p>
-              </div>
-              <div
+          </div>
+          <div
             v-else-if="
               sourceDraft.kind === 'video' &&
               sourceDraft.inputKind === 'desktop'
@@ -1241,8 +1241,8 @@ watch(
                 )
               }}
             </p>
-              </div>
-              <div class="md:col-span-2">
+          </div>
+          <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Tags") }}</label
@@ -1252,7 +1252,7 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Tags, comma separated')"
             />
-              </div>
+          </div>
               <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
@@ -1313,8 +1313,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Display name')"
             />
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Kind") }}</label
@@ -1324,8 +1324,8 @@ watch(
                 {{ kind }}
               </option>
             </select>
-              </div>
-              <div>
+          </div>
+          <div>
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Content type") }}</label
@@ -1335,8 +1335,8 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Content type')"
             />
-              </div>
-              <div class="md:col-span-2">
+          </div>
+          <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
               >{{ t("Tags") }}</label
@@ -1346,7 +1346,7 @@ watch(
               :class="['mt-2', inputClass]"
               :placeholder="t('Tags, comma separated')"
             />
-              </div>
+          </div>
               <div class="md:col-span-2">
             <label
               class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
@@ -1795,6 +1795,7 @@ watch(
             </div>
           </div>
         </div>
+
         <div v-if="subscribeConsumer" class="mt-6 flex justify-end gap-2">
           <Button variant="outline" @click="closeSubscribeDialog">{{
             t("Cancel")

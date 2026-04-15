@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the detached topic bus window used by the Win frontend.
+// 本文件实现 Win 前端使用的独立 `TopicBusWindow` 窗口。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { EventsOn } from "../../wailsjs/runtime/runtime"

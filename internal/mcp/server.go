@@ -1,4 +1,4 @@
-// Context: implements the local stdio MCP server, including protocol negotiation and JSON-RPC request dispatch.
+// 本文件实现本地 stdio MCP 服务端，包括协议协商和 JSON-RPC 请求分发。
 
 package mcp
 
@@ -132,6 +132,7 @@ type toolErrorPayload struct {
 }
 
 func NewServer(config ServerConfig) (*Server, error) {
+	// NewServer 校验 stdio 依赖并预建工具索引，避免请求处理阶段再做结构性失败。
 	if config.Reader == nil {
 		return nil, errors.New("reader is required")
 	}
@@ -166,6 +167,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	// Serve 按行消费 stdio 上的 JSON-RPC，请求结束或收到 exit/cancel 时退出。
 	for {
 		select {
 		case <-ctx.Done():
@@ -196,6 +198,7 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 func (s *Server) handleLine(ctx context.Context, line []byte) error {
+	// handleLine 解析单条请求，并把协议级错误统一翻译成 JSON-RPC 响应。
 	line = []byte(strings.TrimSpace(string(line)))
 	if len(line) == 0 {
 		return nil
@@ -241,6 +244,7 @@ func (s *Server) handleLine(ctx context.Context, line []byte) error {
 }
 
 func (s *Server) dispatch(ctx context.Context, req requestMessage) (any, bool, error) {
+	// dispatch 只负责 MCP 方法路由，不承担具体工具参数校验。
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req.Params)
@@ -260,6 +264,7 @@ func (s *Server) dispatch(ctx context.Context, req requestMessage) (any, bool, e
 }
 
 func (s *Server) handleInitialize(raw json.RawMessage) (initializeResult, bool, error) {
+	// handleInitialize 协商双方可接受的协议版本，并返回当前 server 的静态能力描述。
 	params := initializeParams{}
 	if len(raw) > 0 && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &params); err != nil {
@@ -298,6 +303,7 @@ func (s *Server) handleToolsList() toolsListResult {
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, raw json.RawMessage) (CallToolResult, bool, error) {
+	// handleToolsCall 校验工具名与参数对象后，把调用权交给对应 ToolHandler。
 	params := toolsCallParams{}
 	if len(raw) == 0 || string(raw) == "null" {
 		return CallToolResult{}, true, &rpcError{code: -32602, message: "invalid tools/call params"}
@@ -339,6 +345,7 @@ func (s *Server) replyError(id json.RawMessage, code int, message string) error 
 }
 
 func (s *Server) writeResponse(resp responseMessage) error {
+	// writeResponse 保持“一行一个 JSON-RPC 响应”，匹配当前 stdio 传输约定。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -377,6 +384,7 @@ func errorResult(code, message, hint string, value any) CallToolResult {
 }
 
 func renderText(value any) string {
+	// renderText 把结构化结果转成可读文本，供 MCP content/text 同时展示给人和机器。
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("%v", value)

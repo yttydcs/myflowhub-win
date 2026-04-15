@@ -1,4 +1,4 @@
-// Context: contains shared showcase chart helpers used by the Win frontend.
+// 本文件提供 Win 前端复用的 `showcaseChart` 辅助函数。
 
 export type ShowcaseLineChartConfig = {
   rangeMs: number
@@ -60,6 +60,7 @@ const clampInt = (value: unknown, fallback: number, min: number, max: number) =>
   return rounded
 }
 
+// 把用户配置收敛到前端可绘制的安全区间，避免 bucket 比 range 大或超出预设保留窗口。
 export const normalizeShowcaseLineChartConfig = (raw?: Partial<ShowcaseLineChartConfig> | null): ShowcaseLineChartConfig => {
   const rangeMs = clampInt(
     raw?.rangeMs,
@@ -84,6 +85,7 @@ export const normalizeShowcaseLineChartConfig = (raw?: Partial<ShowcaseLineChart
 const trimHistoryByRange = (history: ShowcaseLineChartSample[], cutoffMs: number) =>
   history.filter((sample) => Number.isFinite(sample.timestamp) && sample.timestamp >= cutoffMs)
 
+// 历史序列在写入时就做去重和裁剪，避免展示层每次渲染都重复处理超长样本。
 export const appendShowcaseLineChartSample = (
   history: ShowcaseLineChartSample[],
   sample: ShowcaseLineChartSample,
@@ -124,6 +126,7 @@ export const formatDurationLabel = (durationMs: number) => {
   return `${durationMs}ms`
 }
 
+// 这里把原始样本压成固定时间桶，并顺带算出 y 轴范围，供图表组件直接消费。
 export const buildShowcaseLineChart = (
   history: ShowcaseLineChartSample[],
   rawConfig?: Partial<ShowcaseLineChartConfig> | null,

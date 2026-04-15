@@ -1,4 +1,4 @@
-// Context: defines localized automation copy used by the Win frontend.
+// 本文件定义 Win 前端 `automation` 域使用的本地化文案。
 
 import type { LocaleMessages } from "../types"
 

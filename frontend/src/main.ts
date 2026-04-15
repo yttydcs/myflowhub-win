@@ -1,4 +1,4 @@
-// Context: boots the Vue frontend and installs the shared router, i18n, and shell-level providers.
+// 本文件启动 Vue 前端，并装配路由、i18n 和共享壳层。
 
 import { createApp } from "vue"
 import App from "./App.vue"

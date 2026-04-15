@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: hosts the root Vue app component and mounts the shared shell and global overlays.
+// 本文件承载 Vue 根组件，并挂载共享壳层和全局浮层。
 import AppShell from "@/layout/AppShell.vue"
 </script>
 

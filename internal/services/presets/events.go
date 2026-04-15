@@ -1,4 +1,4 @@
-// Context: defines the event payloads and event names emitted by the presets backend service.
+// 本文件定义 `presets` 后端服务发出的事件名与载荷结构。
 
 package presets
 

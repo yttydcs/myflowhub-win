@@ -1,4 +1,4 @@
-// Context: assembles the headless MCP runtime by wiring session, auth, management, flow, and varstore services without the GUI shell.
+// 本文件组装无界面的 MCP 运行时，把 session、auth、management、flow 和 varstore 服务接到一起。
 
 package mcpapp
 
@@ -120,6 +120,7 @@ type Runtime struct {
 }
 
 func New(config Config) (*Runtime, error) {
+	// New 构建独立于 GUI 的 MCP runtime，并把默认值、日志桥接和持久化一起接好。
 	ctx := config.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -178,6 +179,7 @@ func New(config Config) (*Runtime, error) {
 }
 
 func (r *Runtime) Close() {
+	// Close 释放 runtime 独占的 varpool/session/bus 资源，避免 CLI 退出后残留订阅。
 	if r == nil {
 		return
 	}
@@ -229,6 +231,7 @@ func (r *Runtime) SessionConnected() bool {
 }
 
 func (r *Runtime) Status() Status {
+	// Status 汇总“当前链路 + 持久化默认值 + 配置目录”三类信息，供 MCP status 直接输出。
 	defaults := r.Defaults()
 	authSnap := r.AuthSnapshot()
 	endpoint := defaults.Endpoint
@@ -252,6 +255,7 @@ func (r *Runtime) Status() Status {
 }
 
 func (r *Runtime) Connect(endpoint string) error {
+	// Connect 建链成功后会清掉 logged_in 标记，避免把上一条链路的身份错误复用到新连接。
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
 		endpoint = r.Defaults().Endpoint
@@ -335,6 +339,7 @@ func (r *Runtime) RevokeRegisterPermit(ctx context.Context, sourceID, targetID u
 }
 
 func (r *Runtime) CompleteAuth(resp protoauth.RespData, deviceID string) error {
+	// CompleteAuth 在 auth 成功后同步更新 snapshot 与 defaults，并把可复用身份写回 store。
 	if resp.Code != 1 {
 		return nil
 	}
@@ -487,6 +492,7 @@ func (r *Runtime) VarRevoke(ctx context.Context, sourceID, targetID uint32, req 
 }
 
 func (r *Runtime) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	// withTimeout 为所有 MCP 后端调用套统一超时，避免工具层自己分散管理时钟。
 	if ctx == nil {
 		ctx = r.ctx
 	}
@@ -498,6 +504,7 @@ func (r *Runtime) withTimeout(ctx context.Context) (context.Context, context.Can
 }
 
 func (r *Runtime) applyConfig(config Config) error {
+	// applyConfig 只把启动参数覆盖到 defaults，不直接触碰 auth snapshot。
 	return r.updateDefaults(func(d *Defaults) {
 		if endpoint := strings.TrimSpace(config.Endpoint); endpoint != "" {
 			d.Endpoint = endpoint
@@ -527,6 +534,7 @@ func (r *Runtime) updateDefaults(update func(*Defaults)) error {
 }
 
 func (r *Runtime) loadDefaultsFromStore() {
+	// loadDefaultsFromStore 在 runtime 初始化时恢复上次成功链路留下的默认连接与身份线索。
 	defaults := Defaults{
 		Endpoint:      r.rawString(mcpEndpointKey),
 		DeviceID:      r.rawString(mcpDeviceIDKey),
@@ -550,6 +558,7 @@ func (r *Runtime) loadDefaultsFromStore() {
 }
 
 func (r *Runtime) persistDefaults(defaults Defaults) error {
+	// persistDefaults 统一写回 MCP 专用 key，避免 GUI profile 与 headless client 互相污染。
 	pairs := []struct {
 		key   string
 		value any
@@ -659,6 +668,7 @@ func (r *Runtime) rawBool(key string) bool {
 }
 
 func (r *Runtime) attachLogWriter() {
+	// attachLogWriter 把内部日志转发到 stderr，保证 stdout 只保留 JSON-RPC 数据。
 	if r == nil || r.bus == nil || r.logWriter == nil {
 		return
 	}
@@ -703,6 +713,7 @@ func normalizeTimeout(timeout time.Duration) time.Duration {
 }
 
 func resolveConfigDir(configDir string) (string, error) {
+	// resolveConfigDir 允许显式目录覆盖，也能在未传参时推导出稳定的用户级配置根。
 	configDir = strings.TrimSpace(configDir)
 	if configDir != "" {
 		resolved, err := filepath.Abs(filepath.Clean(configDir))

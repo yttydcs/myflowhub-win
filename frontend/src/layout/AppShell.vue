@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: defines the shared navigation shell used by Win frontend pages.
+// 本文件承载 Win 客户端中与 `AppShell` 相关的逻辑。
 import { computed, ref, watch, watchEffect, type Component } from "vue"
 import { RouterLink, RouterView, useRoute } from "vue-router"
 import {
@@ -94,6 +94,7 @@ const collapsedNavItemStyle = {
 }
 
 let varpoolStorageEpoch = 0
+// Profile 切换时要重新读取 watch list 和订阅偏好；用 epoch 丢弃过时异步结果，避免旧 profile 覆盖新状态。
 const loadVarPoolStorage = async () => {
   const myEpoch = ++varpoolStorageEpoch
   try {
@@ -116,6 +117,7 @@ const loadVarPoolStorage = async () => {
 }
 
 let varpoolRestoreEpoch = 0
+// 只有身份已就绪时才尝试恢复目标订阅，并把批量失败压缩成一次提示，避免页面初始化时刷屏。
 const restoreVarPoolSubs = async () => {
   const myEpoch = ++varpoolRestoreEpoch
   try {
@@ -134,6 +136,7 @@ const restoreVarPoolSubs = async () => {
 }
 
 let streamStorageEpoch = 0
+// Stream 的本地目录也跟 profile 绑定，这里和 VarPool 一样要防止旧异步回写覆盖新 profile。
 const loadStreamStorage = async () => {
   const myEpoch = ++streamStorageEpoch
   try {
@@ -155,6 +158,7 @@ const loadStreamStorage = async () => {
 }
 
 let streamRestoreEpoch = 0
+// 登录恢复后把本地 source/consumer 重新向目标节点声明，保证窗口重开后仍能看到自己的目录。
 const restoreStreamCatalogs = async () => {
   const myEpoch = ++streamRestoreEpoch
   try {
@@ -206,6 +210,7 @@ watch(
 watch(
   () => [sessionStore.connected, sessionStore.auth.loggedIn, sessionStore.auth.nodeId, sessionStore.auth.hubId],
   ([connected, loggedIn, nodeId, hubId]) => {
+    // AppShell 负责把 Home 页产生的会话身份广播给依赖会话的 store，并在登录成功后触发一次恢复。
     varpool.setIdentity(Number(nodeId || 0), Number(hubId || 0))
     stream.setIdentity(Number(nodeId || 0), Number(hubId || 0))
     if (connected && loggedIn && Number(nodeId || 0) > 0 && Number(hubId || 0) > 0) {
@@ -398,6 +403,7 @@ const pageSubtitle = computed(
 )
 const showModuleCard = computed(() => route.name === "home")
 
+// 新建 profile 后立刻切过去，让后续保存目录、订阅偏好和身份缓存都落到新的隔离空间里。
 const createProfile = async () => {
   closeProfileMenu()
   const name = window.prompt(t("New profile name"))

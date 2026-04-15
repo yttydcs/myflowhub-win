@@ -1,4 +1,4 @@
-// Context: covers the local mkdir helper logic inside the file backend service.
+// 本文件覆盖 `file` 后端服务中与 `local_mkdir` 相关的行为。
 
 package file
 

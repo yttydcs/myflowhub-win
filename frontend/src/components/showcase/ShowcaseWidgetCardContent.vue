@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the showcase widget card content helper used by Showcase pages and windows.
+// 本文件实现 Showcase 相关的 `ShowcaseWidgetCardContent` 组件。
 import { computed, ref, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,6 +35,7 @@ const emit = defineEmits<{
   (e: "switch-change", value: boolean): void
   (e: "slider-input", value: number): void
   (e: "slider-commit"): void
+  (e: "chart-config-change", value: { rangeMs: number; bucketMs: number }): void
 }>()
 
 const showcase = useShowcaseStore()
@@ -181,6 +182,16 @@ const lineChartModel = computed(() =>
     bucketMs: Number.parseInt(chartBucketMs.value, 10)
   })
 )
+
+const emitChartConfigChange = () => {
+  const chart = normalizeShowcaseLineChartConfig({
+    rangeMs: Number.parseInt(chartRangeMs.value, 10),
+    bucketMs: Number.parseInt(chartBucketMs.value, 10)
+  })
+  chartRangeMs.value = String(chart.rangeMs)
+  chartBucketMs.value = String(chart.bucketMs)
+  emit("chart-config-change", chart)
+}
 
 const chartWidth = computed(() => (props.surface === "canvas" ? 420 : 360))
 const chartHeight = computed(() => (props.surface === "canvas" ? 150 : 132))
@@ -337,6 +348,7 @@ const lineChartEndLabel = computed(() => formatAxisLabel(lineChartModel.value.to
           <select
             v-model="chartRangeMs"
             class="rounded-md border border-border/70 bg-background/90 px-2 py-1 text-xs text-foreground shadow-sm"
+            @change="emitChartConfigChange"
           >
             <option v-for="option in chartRangeOptions" :key="`range-${option.value}`" :value="String(option.value)">
               {{ option.label }}
@@ -348,6 +360,7 @@ const lineChartEndLabel = computed(() => formatAxisLabel(lineChartModel.value.to
           <select
             v-model="chartBucketMs"
             class="rounded-md border border-border/70 bg-background/90 px-2 py-1 text-xs text-foreground shadow-sm"
+            @change="emitChartConfigChange"
           >
             <option v-for="option in chartBucketOptions" :key="`bucket-${option.value}`" :value="String(option.value)">
               {{ option.label }}

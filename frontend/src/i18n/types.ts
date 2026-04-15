@@ -1,4 +1,4 @@
-// Context: declares shared message-key typing for the Win frontend i18n layer.
+// 本文件声明 Win 前端 i18n 层使用的共享消息类型。
 
 export type AppLocale = "en" | "zh-CN"
 

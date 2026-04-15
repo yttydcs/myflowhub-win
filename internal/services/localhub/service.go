@@ -1,4 +1,4 @@
-// Context: implements the localhub backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `localhub` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package localhub
 
@@ -68,6 +68,7 @@ type LocalHubService struct {
 }
 
 func New(store *storage.Store, logsSvc *logs.LogService) *LocalHubService {
+	// New 在首次创建时就加载配置与安装状态，让 UI 不必额外触发一次初始化查询。
 	s := &LocalHubService{store: store, logs: logsSvc}
 	s.mu.Lock()
 	s.loadConfigLocked()
@@ -77,6 +78,7 @@ func New(store *storage.Store, logsSvc *logs.LogService) *LocalHubService {
 }
 
 func (s *LocalHubService) Snapshot() Snapshot {
+	// Snapshot 汇总安装、下载、运行和配置状态，是 Local Hub 页面唯一事实来源。
 	s.mu.Lock()
 	s.refreshInstallLocked()
 	snap := Snapshot{
@@ -99,6 +101,7 @@ func (s *LocalHubService) Snapshot() Snapshot {
 }
 
 func (s *LocalHubService) SaveConfig(cfg Config) (Config, error) {
+	// SaveConfig 先做本地合法性校验，再把可直接启动 hub_server 的配置写回 store。
 	cfg.Host = strings.TrimSpace(cfg.Host)
 	if cfg.Host == "" {
 		cfg.Host = defaultHost
@@ -141,6 +144,7 @@ func (s *LocalHubService) SaveConfig(cfg Config) (Config, error) {
 }
 
 func (s *LocalHubService) RefreshLatest() (Release, error) {
+	// RefreshLatest 主动刷新 GitHub release 元数据，并把结果缓存给安装页复用。
 	if !isSupported() {
 		return Release{}, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -164,6 +168,7 @@ func (s *LocalHubService) RefreshLatest() (Release, error) {
 }
 
 func (s *LocalHubService) InstallLatest() (InstallState, error) {
+	// InstallLatest 串行执行“查 release -> 下载校验 -> 解压安装 -> 写 installed 状态”。
 	if !isSupported() {
 		return InstallState{}, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -322,6 +327,7 @@ func (s *LocalHubService) InstallLatest() (InstallState, error) {
 	return out, nil
 }
 
+// Start 依据当前配置拼装 hub_server 启动命令，并把 stdout/stderr 全部落到独立日志文件。
 func (s *LocalHubService) Start(req LaunchRequest) (RunState, error) {
 	if !isSupported() {
 		return RunState{}, fmt.Errorf("unsupported platform: %s/%s", runtime.GOOS, runtime.GOARCH)
@@ -415,6 +421,7 @@ func (s *LocalHubService) Start(req LaunchRequest) (RunState, error) {
 }
 
 func (s *LocalHubService) Stop() error {
+	// Stop 尽量优雅结束本地 hub 进程，但在 Windows 上直接走 Kill 简化控制。
 	s.mu.Lock()
 	cmd := s.cmd
 	waitCh := s.waitCh
@@ -497,6 +504,7 @@ func (s *LocalHubService) logsDirLocked() string {
 }
 
 func (s *LocalHubService) loadConfigLocked() {
+	// loadConfigLocked 从 store 恢复配置后立即做兜底清洗，防止历史脏值影响启动。
 	cfg := Config{
 		Host:               defaultHost,
 		Port:               defaultPort,
@@ -602,6 +610,7 @@ func (s *LocalHubService) saveConfigLocked() error {
 }
 
 func (s *LocalHubService) refreshInstallLocked() {
+	// refreshInstallLocked 根据磁盘真实二进制与已存 tag 共同推导当前安装态。
 	bin := filepath.Join(s.binDirLocked(), platformBinaryName())
 	info, err := os.Stat(bin)
 	installed := err == nil && info != nil && !info.IsDir()
@@ -680,6 +689,7 @@ func isSupported() bool {
 }
 
 func splitExtraArgs(raw string) []string {
+	// splitExtraArgs 允许配置多行额外参数，同时忽略空行和注释行。
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.ReplaceAll(raw, "\r", "\n")
 	raw = strings.TrimSpace(raw)

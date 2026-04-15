@@ -1,4 +1,4 @@
-// Context: covers the event payload contracts emitted by the varpool backend service.
+// 本文件覆盖 `varpool` 后端服务事件载荷的行为。
 
 package varpool
 

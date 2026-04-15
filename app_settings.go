@@ -1,4 +1,4 @@
-// Context: persists global app settings, build/about metadata, and startup UI preferences for the Win shell.
+// 本文件负责持久化全局设置、构建信息和启动界面偏好。
 
 package main
 

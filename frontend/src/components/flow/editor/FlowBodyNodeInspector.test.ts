@@ -1,4 +1,4 @@
-// Context: covers the flow body node inspector panel behavior used by the Flow editor.
+// 本文件覆盖 Flow 编辑器中的 `FlowBodyNodeInspector` 组件行为
 
 // @vitest-environment jsdom
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the AccessPolicy page in the Win frontend.
+// 本文件实现 Win 前端的 `AccessPolicy` 页面。
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import PageHero from "@/components/PageHero.vue"
@@ -332,6 +332,7 @@ const resetRoleEditorDialog = () => {
   rolePermissionPickerDialog.open = false
 }
 
+// store 中的 policy 是后端协议形态，这里负责拆成页面可编辑的 known/unknown 权限与多个弹窗草稿。
 const syncFormFromStore = () => {
   const policy = accessPolicyStore.state.policy
   const defaultPerms = splitKnownAndUnknownPerms(policy?.defaultPerms ?? [])
@@ -391,6 +392,7 @@ const validatePerms = (scope: string, perms: string[], errors: string[]) => {
   }
 }
 
+// 保存前先把散落在多个表单和弹窗里的草稿重新组装成协议对象，并集中做一次完整校验。
 const buildPolicyFromForm = (): { policy?: Policy; errors: string[] } => {
   const errors: string[] = []
 
@@ -498,6 +500,7 @@ const ensureReady = () => {
   }
 }
 
+// 加载时总是先清掉旧校验错误，再把 store 快照同步回页面，避免展示上一轮 authority 的脏状态。
 const loadPolicy = async (silent = false) => {
   try {
     ensureReady()
@@ -518,6 +521,7 @@ const loadPolicy = async (silent = false) => {
   }
 }
 
+// 保存走“表单构建 -> store 覆写 -> 后端保存”三段式，这样 runtime 校验返回后页面还能回到规范化结果。
 const savePolicy = async () => {
   try {
     ensureReady()
@@ -586,6 +590,7 @@ const closeNodeOverrideDialog = () => {
   resetNodeOverrideDialog()
 }
 
+// node override 弹窗最终只写回本地草稿，真正持久化仍统一走 savePolicy，便于一次性审阅整份策略。
 const submitNodeOverrideDialog = () => {
   const nodeRaw = nodeOverrideDialog.nodeId.trim()
   const role = nodeOverrideDialog.role.trim()
@@ -755,6 +760,7 @@ const isPermissionOptionDisabled = (selectedPerms: string[], index: number, perm
   return selectedPerms[index] !== perm && selectedPerms.includes(perm)
 }
 
+// 默认访问策略会影响未命中的所有节点，因此在弹窗提交时先做字段级校验，再回写到主表单。
 const submitDefaultAccessDialog = () => {
   const defaultRole = defaultAccessDialog.defaultRole.trim()
   if (!defaultRole) {
@@ -772,6 +778,7 @@ const submitDefaultAccessDialog = () => {
   closeDefaultAccessDialog()
 }
 
+// 重命名角色时需要把默认角色和 node override 里的引用一起迁移，避免保存后出现悬空角色名。
 const applyRoleReferenceRename = (oldRoleName: string, nextRoleName: string) => {
   const oldRole = String(oldRoleName || "").trim()
   const nextRole = String(nextRoleName || "").trim()
@@ -788,6 +795,7 @@ const applyRoleReferenceRename = (oldRoleName: string, nextRoleName: string) => 
   }
 }
 
+// 角色编辑弹窗既负责新增也负责修改；提交时要同步校验角色名、权限集合以及引用变更。
 const submitRoleEditorDialog = () => {
   const role = roleEditorDialog.role.trim()
   if (!role) {
@@ -856,6 +864,7 @@ const applyRolePresetToDialog = () => {
   toast.success(t("Built-in preset applied."), roleEditorDialog.role.trim())
 }
 
+// 登录身份一旦变化，之前缓存的 authority 与 policy 都应失效，因此这里直接回到未加载态。
 watch(
   () => [sessionStore.auth.nodeId, sessionStore.auth.hubId],
   ([nodeId, hubId], oldValue) => {
@@ -872,6 +881,7 @@ watch(
   { immediate: true }
 )
 
+// ready 变为 true 时自动拉一次策略，保证页面首次打开就能看到当前 authority 的最新快照。
 watch(
   () => ready.value,
   (isReady) => {

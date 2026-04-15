@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the reusable tooltip UI primitive used across the Win frontend.
+// 本文件实现 Win 前端复用的 `Tooltip` UI 组件。
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "radix-vue"
 import { cn } from "@/lib/utils"
 

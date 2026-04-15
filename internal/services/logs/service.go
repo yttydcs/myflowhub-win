@@ -1,4 +1,4 @@
-// Context: implements the logs backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `logs` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package logs
 

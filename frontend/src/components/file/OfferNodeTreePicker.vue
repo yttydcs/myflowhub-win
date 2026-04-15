@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the offer node tree picker helper used by the File page.
+// 本文件实现 File 页面使用的 `OfferNodeTreePicker` 组件。
 import { computed, reactive, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

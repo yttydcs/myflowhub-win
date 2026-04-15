@@ -1,4 +1,4 @@
-# Context: installs the Win MCP client into Codex config with repo-local startup defaults.
+# 本脚本负责把 Win MCP 客户端安装到 Codex 配置中，并写入仓库本地默认启动参数。
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -25,6 +25,7 @@ if (-not (Test-Path -LiteralPath $startScriptPath -PathType Leaf)) {
 }
 
 function ConvertTo-TomlString {
+    # ConvertTo-TomlString 只负责把单个参数安全转成 TOML 字符串字面量。
     param([string]$Value)
 
     if ($null -eq $Value) {
@@ -36,6 +37,7 @@ function ConvertTo-TomlString {
 }
 
 function New-McpServerBlock {
+    # New-McpServerBlock 按当前脚本参数生成完整的 mcp_servers.<name> 配置块。
     $argsList = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
@@ -67,6 +69,7 @@ function New-McpServerBlock {
 }
 
 function Set-McpServerBlock {
+    # Set-McpServerBlock 优先替换同名配置块，不存在时再追加，避免手写合并出错。
     param(
         [string]$Path,
         [string]$Block

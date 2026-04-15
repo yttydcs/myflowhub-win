@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the log item helper used by the Logs page.
+// 本文件实现 Logs 页面使用的 `LogItem` 组件。
 import { computed, ref } from "vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

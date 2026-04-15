@@ -1,4 +1,4 @@
-// Context: provides the overlay test support code used by the Win desktop host.
+// 本文件覆盖 Win 前端复用的 `Overlay` UI 组件行为。
 
 // @vitest-environment jsdom
 

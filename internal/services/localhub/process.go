@@ -1,4 +1,4 @@
-// Context: implements the process helper logic used by the localhub backend service.
+// 本文件实现 `localhub` 后端服务中与 `process` 相关的辅助逻辑。
 
 package localhub
 

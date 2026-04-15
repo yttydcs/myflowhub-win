@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Home page and coordinates connect, register, login, and remembered-auth defaults for the desktop client.
+// 本文件实现 Win 前端的 `Home` 页面。
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Badge } from "@/components/ui/badge"
@@ -75,6 +75,7 @@ const formatId = (value: number) => (value > 0 ? String(value) : "-")
 
 const nowIso = () => new Date().toISOString()
 
+// 把 Home 页持有的认证草稿同步回全局 session store，避免其它模块继续读到旧身份。
 const syncStoreAuth = () => {
   sessionStore.auth.deviceId = home.deviceId
   sessionStore.auth.nodeId = home.nodeId
@@ -105,6 +106,7 @@ const loadHomeState = async () => {
   }
 }
 
+// 统一走后端保存当前首页快照，让自动连接/自动登录和最近一次身份信息一起持久化。
 const persistHomeState = async (patch?: Partial<HomeState>) => {
   if (loading.value) return
   const payload: HomeState = {
@@ -133,6 +135,7 @@ const applySettingsDefaults = () => {
   }
 }
 
+// 页面初始化要串起本地草稿、应用设置和当前连接状态，后续自动连接才有完整输入。
 const loadPageState = async () => {
   await loadHomeState()
   try {
@@ -184,6 +187,7 @@ const disconnect = async () => {
   }
 }
 
+// 这里把“登录”和“首次注册”合并成同一入口，依据是否已有 nodeId 决定走哪条鉴权分支。
 const loginOrRegister = async () => {
   if (authBusy.value) return
   const deviceId = home.deviceId.trim()
@@ -266,6 +270,7 @@ const clearAuth = async () => {
   }
 }
 
+// 连接建立后如果用户打开了自动登录，就在这一层触发一次登录/注册兜底，而不是要求用户手点按钮。
 watch(
   () => [sessionStore.connected, appSettings.state.settings.autoLogin],
   ([connected, autoLogin]) => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the RegistrationApprovals page in the Win frontend.
+// 本文件实现 Win 前端的 `RegistrationApprovals` 页面。
 import { computed, onMounted, reactive, watch } from "vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

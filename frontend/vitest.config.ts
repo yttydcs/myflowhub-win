@@ -1,4 +1,4 @@
-// Context: defines the Vitest environment and test setup for the Win frontend.
+// 本文件定义 Win 前端的 Vitest 运行环境与测试装配。
 
 import { defineConfig } from "vitest/config"
 import vue from "@vitejs/plugin-vue"

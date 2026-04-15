@@ -1,4 +1,4 @@
-// Context: implements the runtime helper logic used by the stream backend service.
+// 本文件实现 `stream` 后端服务中与 `runtime` 相关的辅助逻辑。
 
 package stream
 
@@ -57,6 +57,7 @@ type deliveryRuntime struct {
 }
 
 func (d *deliveryRuntime) snapshot() StreamDeliveryEvent {
+	// snapshot 把内部运行态裁成前端事件可直接消费的只读视图。
 	return StreamDeliveryEvent{
 		DeliveryID:   d.DeliveryID,
 		SourceID:     d.SourceID,
@@ -80,6 +81,7 @@ func (d *deliveryRuntime) snapshot() StreamDeliveryEvent {
 }
 
 func (s *StreamService) bindBus() {
+	// bindBus 订阅 session 的 frame/state/error 事件，把 stream 子协议的后续处理串起来。
 	if s == nil || s.bus == nil {
 		return
 	}
@@ -157,6 +159,7 @@ func (s *StreamService) handleFrame(frame sessionsvc.FrameEvent) {
 }
 
 func (s *StreamService) handleData(frame sessionsvc.FrameEvent) {
+	// handleData 解析数据帧、更新 delivery 统计，并在需要时为 consumer 自动回 ACK。
 	packet, err := parseDataPacket(frame.Payload)
 	if err != nil {
 		s.logWarn("stream data parse failed: %v", err)
@@ -238,6 +241,7 @@ func (s *StreamService) handleData(frame sessionsvc.FrameEvent) {
 }
 
 func (s *StreamService) handleAck(frame sessionsvc.FrameEvent) {
+	// handleAck 把 consumer 回执折叠进 producer 侧窗口状态，驱动后续发送节流。
 	packet, err := parseAckPacket(frame.Payload)
 	if err != nil {
 		s.logWarn("stream ack parse failed: %v", err)
@@ -282,6 +286,7 @@ func (s *StreamService) handleAck(frame sessionsvc.FrameEvent) {
 }
 
 func (s *StreamService) trackAcceptedDelivery(deliveryID string, source *proto.SourceDescriptor, endpoint *proto.ConsumerDescriptor, producer, consumer uint32, consumerID string, accepted bool) {
+	// trackAcceptedDelivery 只在协商成功后创建/刷新 delivery 运行态，避免前端看见假连接。
 	deliveryID = strings.TrimSpace(deliveryID)
 	if !accepted || deliveryID == "" {
 		return
@@ -403,6 +408,7 @@ func (s *StreamService) removeMatchingDeliveries(match func(item *deliveryRuntim
 }
 
 func (s *StreamService) markAllClosed(reason string) {
+	// markAllClosed 在断链或 session error 时整体回收 delivery/file/media 运行态。
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "disconnected"
@@ -449,6 +455,7 @@ func (s *StreamService) markAllClosed(reason string) {
 }
 
 func (s *StreamService) ensureDeliveryLocked(deliveryID string) *deliveryRuntime {
+	// ensureDeliveryLocked 保证任何异步帧到达时都有对应的本地 delivery 容器可更新。
 	s.ensureStateMapsLocked()
 	rt := s.deliveries[deliveryID]
 	if rt != nil {
@@ -508,6 +515,7 @@ type dataPacket struct {
 }
 
 func parseDataPacket(payload []byte) (dataPacket, error) {
+	// parseDataPacket 只解析 stream/data 固定头和正文，不在这里做业务层语义判断。
 	if len(payload) < streamFrameHeaderLen {
 		return dataPacket{}, errors.New("data payload too short")
 	}
@@ -567,6 +575,7 @@ func bytesToUUID(raw []byte) (string, error) {
 }
 
 func decodeTextPayload(body []byte) string {
+	// decodeTextPayload 优先按 UTF-8 解码，非文本内容则回退成十六进制避免乱码污染 UI。
 	if len(body) == 0 {
 		return ""
 	}
@@ -580,6 +589,7 @@ func decodeTextPayload(body []byte) string {
 }
 
 func (s *StreamService) sendAck(deliveryID string, sourceID, targetID uint32, position uint64) error {
+	// sendAck 把 consumer 已接收位置编码成 MajorMsg ack 帧，反馈给 producer 侧窗口控制。
 	if s == nil || s.session == nil {
 		return errors.New("session service not initialized")
 	}

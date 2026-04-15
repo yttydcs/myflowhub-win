@@ -1,4 +1,4 @@
-// Context: covers the stream store behavior in the Win frontend.
+// 本文件覆盖 `stream` store 的行为。
 
 // @vitest-environment jsdom
 

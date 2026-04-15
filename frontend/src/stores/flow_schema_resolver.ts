@@ -1,4 +1,4 @@
-// Context: keeps the flow schema resolver store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `flow_schema_resolver` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { appendJsonPointer } from "./flow_json_pointer"
 import {

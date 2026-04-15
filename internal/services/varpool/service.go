@@ -1,4 +1,4 @@
-// Context: implements the varpool backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `varpool` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package varpool
 

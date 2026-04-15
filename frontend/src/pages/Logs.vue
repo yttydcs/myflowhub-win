@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Logs page in the Win frontend.
+// 本文件实现 Win 前端的 `Logs` 页面。
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { Button } from "@/components/ui/button"
 import LogItem from "@/components/logs/LogItem.vue"

@@ -1,4 +1,4 @@
-// Context: persists TopicBus subscriptions and page preferences for the Win frontend.
+// 本文件负责持久化 TopicBus 订阅与页面偏好。
 
 package main
 

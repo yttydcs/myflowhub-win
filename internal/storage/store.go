@@ -1,4 +1,4 @@
-// Context: wraps profile-scoped local storage used by App bindings and backend services.
+// 本文件封装按 profile 隔离的本地存储，供 App 绑定和后端服务复用。
 
 package storage
 

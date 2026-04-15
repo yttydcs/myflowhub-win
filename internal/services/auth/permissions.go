@@ -1,4 +1,4 @@
-// Context: implements the permissions helper logic used by the auth backend service.
+// 本文件实现 `auth` 后端服务中与 `permissions` 相关的辅助逻辑。
 
 package auth
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the flow editor toolbar panel or dialog used by the Flow editor.
+// 本文件实现 Flow 编辑器中的 `FlowEditorToolbar` 组件。
 import { computed } from "vue"
 import { Ban, History, LayoutGrid, Link2Off, Play, Plus, Redo2, RefreshCw, Save, Trash2, Undo2 } from "lucide-vue-next"
 import { Badge } from "@/components/ui/badge"

@@ -1,4 +1,4 @@
-// Context: keeps the session store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `session` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { IsConnected, LastAddr } from "../../wailsjs/go/session/SessionService"
@@ -47,7 +47,6 @@ const store = reactive<SessionSnapshot>({
 })
 
 let initialized = false
-
 const nowIso = () => new Date().toISOString()
 
 const ensureListeners = () => {
@@ -73,8 +72,8 @@ const ensureListeners = () => {
   })
 }
 
-// Detached windows start in a fresh frontend context, so they must explicitly hydrate
-// the current runtime session snapshot before relying on `sessionStore.connected`.
+// Detached windows run in a fresh frontend context, so they must explicitly
+// hydrate the current runtime snapshot before trusting `sessionStore.connected`.
 export const hydrateSessionConnectionSnapshot = async () => {
   ensureListeners()
   try {

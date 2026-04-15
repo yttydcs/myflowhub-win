@@ -1,4 +1,4 @@
-// Context: boots the Wails desktop app, embeds the built frontend, and binds the App service surface.
+// 本文件启动 Wails 桌面应用，嵌入前端产物并绑定 App 服务表面。
 
 package main
 

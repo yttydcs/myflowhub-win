@@ -1,4 +1,4 @@
-// Context: covers the permit issuance page behavior in the Win frontend.
+// 本文件覆盖 Win 前端的 `PermitIssuance` 页面行为
 
 // @vitest-environment jsdom
 

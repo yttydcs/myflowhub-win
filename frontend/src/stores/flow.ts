@@ -1,4 +1,4 @@
-// Context: keeps the Flow editor state, draft graph, run history, and capability metadata in sync with backend services.
+// 本文件维护 `flow` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { t } from "@/i18n"
@@ -38,6 +38,7 @@ export type {
 
 type WailsBinding = (...args: any[]) => Promise<any>
 
+// callFlow 统一封装 Wails 绑定调用，并在绑定缺失时抛出可直接展示的错误。
 const callFlow = async <T>(method: string, ...args: any[]): Promise<T> => {
   const api = (window as any)?.go?.flow?.FlowService
   const fn: WailsBinding | undefined = api?.[method]
@@ -525,6 +526,7 @@ const setMessage = (message: string, level: Exclude<FlowMessageLevel, ""> = "inf
 
 const snapshotToJSON = (snapshot: FlowDraftSnapshot) => JSON.stringify(snapshot)
 
+// takeSnapshot 采集整个编辑草稿，供撤销/重做和恢复草稿共用同一份状态快照。
 const takeSnapshot = (): FlowDraftSnapshot => ({
   flowId: state.flowId,
   flowName: state.flowName,
@@ -592,6 +594,7 @@ const applySnapshot = (snapshot: FlowDraftSnapshot) => {
       : -1
 }
 
+// commitHistory 只在内容真的变化时推进历史栈，并限制最大快照数量。
 const commitHistory = () => {
   const snapshot = takeSnapshot()
   if (!draftHistory.length) {
@@ -618,6 +621,7 @@ const commitHistory = () => {
   return true
 }
 
+// applyGraphEditorState 用外部快照整体替换画布状态，同时清空状态/能力等派生态。
 const applyGraphEditorState = (snapshot: FlowGraphEditorState) => {
   state.nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes.map(cloneNodeDraft) : []
   state.edges = Array.isArray(snapshot?.edges) ? snapshot.edges.map(cloneEdge) : []
@@ -1752,6 +1756,7 @@ const hasExecCapabilityRoute = (method: string, providerNode: number) =>
     (route) => route.method === method && route.providerNode === providerNode
   )
 
+// resetExecCapabilityState 在执行节点、图结构或草稿切换后让旧 capability 缓存整体失效。
 const resetExecCapabilityState = () => {
   execCapabilityLoadEpoch += 1
   execCapabilityCacheVersion += 1
@@ -1761,6 +1766,7 @@ const resetExecCapabilityState = () => {
   pendingCapabilityHydrations.clear()
 }
 
+// newDraft 重置当前 flow 草稿，并把历史、状态、节点详情都恢复到初始值。
 const newDraft = () => {
   state.flowId = ""
   state.flowName = ""
@@ -1794,6 +1800,7 @@ const suggestNodeId = (prefix = "n") => {
   return `${normalizedPrefix}${Date.now().toString(36)}`
 }
 
+// addNode 负责创建新节点、切换选中态，并把本次画布变更写入历史栈。
 const addNode = (id: string, kind: FlowNodeKind = "call") => {
   const trimmed = id.trim()
   if (!trimmed) {
@@ -1809,6 +1816,7 @@ const addNode = (id: string, kind: FlowNodeKind = "call") => {
   commitHistory()
 }
 
+// renameNodeId 在改名时同步重写所有边引用，避免图结构出现悬空节点。
 const renameNodeId = (oldId: string, newId: string) => {
   const from = oldId.trim()
   const to = newId.trim()
@@ -2945,6 +2953,7 @@ const buildFormSpec = (
   }
 }
 
+// resolveCurrentExecutorNodeOrZero 优先使用显式 targetId，否则回退到当前 hub 作为执行节点。
 const resolveCurrentExecutorNodeOrZero = () => {
   const raw = state.targetId.trim()
   if (raw) {
@@ -2956,6 +2965,7 @@ const resolveCurrentExecutorNodeOrZero = () => {
   return state.hubId > 0 ? Math.trunc(state.hubId) : 0
 }
 
+// findCapabilityRouteForNode 按“method + 实际 provider 节点”命中当前缓存里的能力路由。
 const findCapabilityRouteForNode = (node: FlowNodeDraft): ExecCapabilityRoute | null => {
   if (node.kind !== "call") {
     return null
@@ -2989,6 +2999,7 @@ const routeToSchemaSource = (route: ExecCapabilityRoute | null): CapabilityRoute
 const resolveNodeVisualSchema = (node: FlowNodeDraft): MethodVisualSchema | null =>
   resolveMethodVisualSchema(node.method, routeToSchemaSource(findCapabilityRouteForNode(node)))
 
+// applySchemaDefaultsToNode 只补 schema 默认值里缺失的字段，不覆盖用户已经填写的参数。
 const applySchemaDefaultsToNode = (node: FlowNodeDraft) => {
   if (node.kind !== "call") {
     return
@@ -3019,6 +3030,7 @@ const applySchemaDefaultsToNode = (node: FlowNodeDraft) => {
   }
 }
 
+// reconcileNodeFormStateToSchema 在 method 切换后裁掉新 schema 不再支持的字段和绑定。
 const reconcileNodeFormStateToSchema = (node: FlowNodeDraft, schema: MethodVisualSchema) => {
   if (node.kind !== "call") {
     return
@@ -3538,6 +3550,7 @@ const buildTrigger = () => {
   return { type: "interval", every_ms: everyMs }
 }
 
+// listFlows 拉取当前执行节点上的 flow 摘要列表，供项目切换和刷新列表使用。
 const listFlows = async () => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3546,6 +3559,7 @@ const listFlows = async () => {
   handleListResp(resp)
 }
 
+// getFlow 按 flow_id 读取完整定义，并交给响应处理逻辑刷新当前草稿。
 const getFlow = async (flowId: string) => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3563,6 +3577,7 @@ const getFlow = async (flowId: string) => {
   handleGetResp(resp)
 }
 
+// saveFlow 把当前编辑态导出成严格 payload，再通过 set 接口一次性保存到后端。
 const saveFlow = async () => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3577,6 +3592,7 @@ const saveFlow = async () => {
   handleSetResp(resp)
 }
 
+// runFlow 触发当前 flow 执行，后续的 run_id、状态与历史刷新都交给 handleRunResp 串起。
 const runFlow = async () => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3594,6 +3610,7 @@ const runFlow = async () => {
   await handleRunResp(resp)
 }
 
+// listRunsFlow 读取当前 flow 的运行历史，并在本地维护“当前 run_id”的默认选择。
 const listRunsFlow = async (limit?: number) => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3618,6 +3635,7 @@ const listRunsFlow = async (limit?: number) => {
   }
 }
 
+// statusFlow 查询指定或最近一次运行的状态摘要，供画布 badge 和详情面板复用。
 const statusFlow = async (runId?: string) => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3636,6 +3654,7 @@ const statusFlow = async (runId?: string) => {
   handleStatusResp(resp)
 }
 
+// cancelRunFlow 对当前或指定 run 发取消请求，并在成功后主动刷新历史与状态。
 const cancelRunFlow = async (runId?: string) => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3658,6 +3677,7 @@ const cancelRunFlow = async (runId?: string) => {
   await handleCancelRunResp(resp)
 }
 
+// loadNodeDetail 在真正发请求前先规范 flow/node/path 输入，并把详情面板状态重置到可恢复形态。
 const loadNodeDetail = async (nodeId: string, runId?: string, path?: string) => {
   const { sourceID, hubID } = ensureIdentity()
   const executorNode = resolveTargetNode()
@@ -3866,6 +3886,7 @@ const fetchExecCapabilityRoutes = async (executorNode: number, methodFilter?: st
     .filter((route: ExecCapabilityRoute) => route.providerNode > 0 && route.method.length > 0)
 }
 
+// queryExecCapabilities 负责整批刷新 method 能力列表，并用 epoch/cacheVersion 防止旧响应回写。
 const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string | number) => {
   const executorNode = resolveCapabilityQueryNode(queryNodeId)
   const cacheVersion = execCapabilityCacheVersion
@@ -3896,6 +3917,7 @@ const queryExecCapabilities = async (methodFilter?: string, queryNodeId?: string
   }
 }
 
+// ensureCapabilityRouteLoaded 对单个 method/provider 做懒加载，并合并并发的重复查询。
 const ensureCapabilityRouteLoaded = async (method: string, providerNode: number) => {
   const normalizedMethod = String(method ?? "").trim()
   const normalizedProvider =
@@ -3959,6 +3981,7 @@ const ensureNodeCapabilityLoaded = async (nodeId: string) => {
   return ensureCapabilityRouteLoaded(method, providerNode)
 }
 
+// applyCallCapability 把选中的 capability 映射回 call 节点，并同步修正 form/json 两套 spec 表达。
 const applyCallCapability = (key: string) => {
   const selected = state.nodes[state.selectedNodeIndex]
   if (!selected || selected.kind !== "call") {
@@ -4012,6 +4035,7 @@ const handleSetResp = (data: any) => {
   void listFlows().catch(() => {})
 }
 
+// handleRunResp 在成功启动后立即串起状态与历史刷新，避免窗口继续停留在旧 run 上。
 const handleRunResp = async (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
@@ -4048,6 +4072,7 @@ const handleListRunsResp = (data: any) => {
   }
 }
 
+// handleStatusResp 归一化 flow.status 响应，并顺带维护当前 run_id 与节点详情面板的默认 run。
 const handleStatusResp = (data: any) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")
@@ -4091,6 +4116,7 @@ const handleCancelRunResp = async (data: any) => {
   await Promise.allSettled([listRunsFlow(20), statusFlow(runID || state.statusRunId)])
 }
 
+// handleDetailResp 统一落盘 detail 查询结果，让画布节点详情和 JSON Pointer 过滤保持同一来源。
 const handleDetailResp = (data: any, requestedNodeId: string, requestedRunId: string, requestedPath: string) => {
   const code = Number(data?.code ?? 0)
   const msg = String(data?.msg ?? "")

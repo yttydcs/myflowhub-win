@@ -1,4 +1,4 @@
-// Context: stores Showcase screen and widget layouts and normalizes the persisted designer state.
+// 本文件负责持久化 Showcase 设计器与窗口布局状态。
 
 package main
 

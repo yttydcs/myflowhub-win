@@ -1,4 +1,4 @@
-// Context: provides the shell test support code used by the Win desktop host.
+// 本文件覆盖 Win 前端 `shell` 域使用的本地化文案行为
 
 import { describe, expect, it } from "vitest"
 

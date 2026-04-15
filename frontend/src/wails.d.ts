@@ -1,4 +1,4 @@
-// Context: declares the window.go typings used by the Win frontend Wails bindings.
+// 本文件声明 Win 前端访问 `window.go` 时使用的类型。
 
 export {}
 

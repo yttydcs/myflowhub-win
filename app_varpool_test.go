@@ -1,4 +1,4 @@
-// Context: covers the varpool app binding helpers and persistence rules.
+// 本文件覆盖 VarPool 绑定助手与持久化规则的行为。
 
 package main
 

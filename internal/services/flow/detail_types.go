@@ -1,4 +1,4 @@
-// Context: declares typed DTOs used to expose flow detail responses to the Win frontend.
+// 本文件实现 `flow` 后端服务中与 `detail_types` 相关的辅助逻辑。
 
 package flow
 

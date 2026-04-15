@@ -1,4 +1,4 @@
-// Context: contains shared utils helpers used by the Win frontend.
+// 本文件提供 Win 前端复用的 `utils` 辅助函数。
 
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"

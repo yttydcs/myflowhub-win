@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Debug page in the Win frontend.
+// 本文件实现 Win 前端的 `Debug` 页面。
 import { computed, reactive, ref } from "vue"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"

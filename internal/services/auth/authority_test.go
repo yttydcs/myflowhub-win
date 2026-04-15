@@ -1,4 +1,4 @@
-// Context: covers the authority helper logic inside the auth backend service.
+// 本文件覆盖 `auth` 后端服务中与 `authority` 相关的行为。
 
 package auth
 

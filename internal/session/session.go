@@ -1,4 +1,4 @@
-// Context: tracks the current hub connection and auth snapshot shared by backend services.
+// 本文件维护后端服务共享的当前 hub 连接与认证快照。
 
 package session
 

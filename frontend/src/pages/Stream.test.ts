@@ -1,4 +1,4 @@
-// Context: covers the stream page behavior in the Win frontend.
+// 本文件覆盖 Win 前端的 `Stream` 页面行为
 
 // @vitest-environment jsdom
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Showcase center page that opens and monitors viewer windows.
+// 本文件实现 Win 前端的 `ShowcaseCenter` 页面。
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { Copy, ExternalLink, PencilLine, Plus, Trash2 } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"

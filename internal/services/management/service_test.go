@@ -1,4 +1,4 @@
-// Context: covers the management backend service behavior exposed to the Win shell.
+// 本文件覆盖 `management` 后端服务的行为。
 
 package management
 

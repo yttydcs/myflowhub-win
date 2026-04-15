@@ -1,4 +1,4 @@
-# Context: drives staged JSON-RPC smoke checks against the Win MCP client over stdio.
+# 本脚本负责通过 stdio 驱动分阶段 JSON-RPC 冒烟测试，用来验证 Win MCP 客户端。
 
 [CmdletBinding()]
 param(
@@ -39,6 +39,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Show-Usage {
+    # Show-Usage 汇总 staged smoke 的入口参数和各阶段语义，便于单次命令自解释。
     @"
 Usage:
   powershell -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode register
@@ -126,6 +127,7 @@ function Get-HostExecutable {
 }
 
 function Resolve-ConfigDirectory {
+    # Resolve-ConfigDirectory 根据 auth 模式决定是复用现有目录还是创建临时 smoke 目录。
     param(
         [string]$AuthMode,
         [string]$ConfigDir
@@ -156,6 +158,7 @@ function Resolve-ConfigDirectory {
 }
 
 function New-LauncherCommand {
+    # New-LauncherCommand 把 smoke 参数收敛成一条可复现的 MCP 启动命令。
     param(
         [string]$StartScriptPath,
         [string]$Endpoint,
@@ -192,6 +195,7 @@ function New-LauncherCommand {
 }
 
 function Start-McpProcess {
+    # Start-McpProcess 以后台 stdio 进程拉起 MCP，并同步收集 stderr 方便失败诊断。
     param(
         [string]$HostExecutable,
         [string]$LauncherCommand
@@ -262,6 +266,7 @@ function Stop-McpProcess {
 }
 
 function Wait-ForResponseLine {
+    # Wait-ForResponseLine 在限定时间内读取一行 stdout，并在超时时带上 stderr 尾部证据。
     param(
         [System.Diagnostics.Process]$Process,
         [int]$TimeoutMilliseconds,

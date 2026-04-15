@@ -1,4 +1,4 @@
-// Context: declares typed request and response models for flow run control actions.
+// 本文件实现 `flow` 后端服务中与 `run_control_types` 相关的辅助逻辑。
 
 package flow
 

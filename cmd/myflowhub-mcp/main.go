@@ -1,4 +1,4 @@
-// Context: provides the headless myflowhub-mcp CLI entrypoint and wires flags into the MCP runtime.
+// 本文件提供 `myflowhub-mcp` 的命令行入口，并把参数接入本地 MCP 运行时。
 
 package main
 
@@ -30,6 +30,7 @@ type cliConfig struct {
 }
 
 func main() {
+	// main 负责组装 CLI 参数、runtime 和 stdio server，并托管整个 MCP 进程生命周期。
 	cfg := parseFlags()
 	if cfg.versionOnly {
 		fmt.Fprintln(os.Stdout, buildVersion())
@@ -76,6 +77,7 @@ func main() {
 }
 
 func parseFlags() cliConfig {
+	// parseFlags 只解析启动默认值，不在这里做业务校验，保持 CLI 入口职责单一。
 	cfg := cliConfig{}
 	flag.StringVar(&cfg.endpoint, "endpoint", "", "default hub endpoint")
 	flag.StringVar(&cfg.configDir, "config-dir", "", "isolated MCP config directory")
@@ -90,6 +92,7 @@ func parseFlags() cliConfig {
 }
 
 func buildVersion() string {
+	// buildVersion 优先读取构建信息里的模块版本，拿不到时回退到开发态标记。
 	if bi, ok := debug.ReadBuildInfo(); ok && bi != nil {
 		if version := bi.Main.Version; version != "" && version != "(devel)" {
 			return version

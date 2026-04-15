@@ -1,4 +1,4 @@
-// Context: covers protocol negotiation and JSON-RPC request handling for the local MCP server.
+// 本文件覆盖本地 MCP 服务端的协议协商与 JSON-RPC 请求处理行为。
 
 package mcp
 

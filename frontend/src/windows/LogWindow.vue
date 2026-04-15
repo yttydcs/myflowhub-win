@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the detached log window used by the Win frontend.
+// 本文件实现 Win 前端使用的独立 `LogWindow` 窗口。
 import { nextTick, onMounted, ref, watch } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"

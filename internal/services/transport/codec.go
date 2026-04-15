@@ -1,4 +1,4 @@
-// Context: implements the codec helper logic used by the transport backend service.
+// 本文件实现 `transport` 后端服务中与 `codec` 相关的辅助逻辑。
 
 package transport
 

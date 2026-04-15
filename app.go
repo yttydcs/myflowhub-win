@@ -1,4 +1,4 @@
-// Context: assembles the Wails app shell and shared backend services that are bound into the Win frontend.
+// 本文件组装 Wails 应用壳层，以及绑定给 Win 前端的共享后端服务。
 
 package main
 
@@ -53,6 +53,7 @@ type busToken struct {
 }
 
 func NewApp() *App {
+	// NewApp 只创建一套共享 service 实例，避免不同 Wails 绑定各自维护分裂状态。
 	bus := corebus.New(corebus.Options{})
 	logs := logssvc.New(bus, 2000)
 	session := sessionsvc.New(context.Background(), bus, logs)
@@ -91,10 +92,12 @@ func NewApp() *App {
 }
 
 func (a *App) Bindings() []interface{} {
+	// Bindings 列出前端可直接访问的 App 与后端 service 绑定对象。
 	return []interface{}{a, a.logs, a.session, a.localhub, a.auth, a.varpool, a.topicbus, a.stream, a.file, a.flow, a.management, a.permission, a.debug, a.presets}
 }
 
 func (a *App) Startup(ctx context.Context) {
+	// Startup 在 runtime 就绪后注入 context，并开始桥接后端事件给前端。
 	a.ctx = ctx
 	if a.session != nil {
 		a.session.SetContext(ctx)
@@ -103,6 +106,7 @@ func (a *App) Startup(ctx context.Context) {
 }
 
 func (a *App) Shutdown(ctx context.Context) {
+	// Shutdown 按依赖顺序关闭订阅与 service，避免窗口退出后残留 goroutine 或事件源。
 	_ = ctx
 	a.unbridgeEvents()
 	if a.topicbus != nil {
@@ -126,6 +130,7 @@ func (a *App) Shutdown(ctx context.Context) {
 }
 
 func (a *App) bridgeEvents() {
+	// bridgeEvents 把 bus 上的后端事件原样转成前端可通过 EventsOn 监听的名称。
 	if a.bus == nil || a.ctx == nil {
 		return
 	}
@@ -160,6 +165,7 @@ func (a *App) bridgeEvents() {
 }
 
 func (a *App) unbridgeEvents() {
+	// unbridgeEvents 释放已注册的事件桥接，防止重复 Startup 后事件被多次转发。
 	if a.bus == nil {
 		return
 	}
@@ -188,6 +194,7 @@ func (a *App) Greet(name string) (string, error) {
 }
 
 func (a *App) ProfileState() (storagesvc.ProfileState, error) {
+	// ProfileState 返回当前 profile 元信息，供壳层展示和切换配置目录。
 	if a.store == nil {
 		return storagesvc.ProfileState{}, errors.New("storage not initialized")
 	}
@@ -195,6 +202,7 @@ func (a *App) ProfileState() (storagesvc.ProfileState, error) {
 }
 
 func (a *App) SetCurrentProfile(name string) (storagesvc.ProfileState, error) {
+	// SetCurrentProfile 切换 profile 后同步 node key 路径，保证后续 auth 使用对应密钥。
 	if a.store == nil {
 		return storagesvc.ProfileState{}, errors.New("storage not initialized")
 	}

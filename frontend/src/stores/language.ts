@@ -1,4 +1,4 @@
-// Context: keeps the language store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `language` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { defaultLocale, normalizeLocale, setLocale, t, type AppLocale } from "@/i18n"

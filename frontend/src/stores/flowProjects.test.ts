@@ -1,4 +1,4 @@
-// Context: covers the flow projects store behavior in the Win frontend.
+// 本文件覆盖 `flowProjects` store 的行为。
 
 // @vitest-environment jsdom
 

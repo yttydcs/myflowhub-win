@@ -1,4 +1,4 @@
-// Context: persists Stream page preferences so local sources, consumers, and targets can be restored between sessions.
+// 本文件负责持久化 Stream 页面偏好，以便恢复本地 source、consumer 和 target 选择。
 
 package main
 
@@ -43,6 +43,7 @@ type StreamPrefs struct {
 }
 
 func (a *App) StreamPrefs() (StreamPrefs, error) {
+	// StreamPrefs 读取当前 profile 保存的本地 source、consumer 与 target 偏好。
 	if a.store == nil {
 		return StreamPrefs{}, errors.New("storage not initialized")
 	}
@@ -52,6 +53,7 @@ func (a *App) StreamPrefs() (StreamPrefs, error) {
 }
 
 func (a *App) SaveStreamPrefs(prefs StreamPrefs) (StreamPrefs, error) {
+	// SaveStreamPrefs 统一走 normalize，避免前端把非法 tab 或重复条目直接写入存储。
 	if a.store == nil {
 		return StreamPrefs{}, errors.New("storage not initialized")
 	}
@@ -80,6 +82,7 @@ func parseStreamPrefs(raw string) StreamPrefs {
 }
 
 func normalizeStreamPrefs(prefs StreamPrefs) StreamPrefs {
+	// normalizeStreamPrefs 把 target、tab 与本地目录项整理成可稳定恢复的最小集合。
 	targetID := prefs.TargetID
 	if targetID < 0 {
 		targetID = 0
@@ -138,6 +141,7 @@ func normalizeStreamSavedConsumers(items []StreamSavedConsumer) []StreamSavedCon
 }
 
 func normalizeStreamSavedSource(item StreamSavedSource) StreamSavedSource {
+	// normalizeStreamSavedSource 只保留当前 kind 真正支持的本地输入配置，避免恢复脏草稿。
 	item.SourceID = strings.TrimSpace(item.SourceID)
 	item.Name = strings.TrimSpace(item.Name)
 	item.Kind = strings.ToLower(strings.TrimSpace(item.Kind))
@@ -204,6 +208,7 @@ const (
 )
 
 func (a *App) PickStreamMediaFile() (streamsvc.StreamMediaFileChoice, error) {
+	// PickStreamMediaFile 通过原生文件选择器挑选媒体文件，并补齐前端直接需要的元数据。
 	if a.ctx == nil {
 		return streamsvc.StreamMediaFileChoice{}, errors.New("app context not initialized")
 	}

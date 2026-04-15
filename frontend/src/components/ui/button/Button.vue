@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the reusable button UI primitive used across the Win frontend.
+// 本文件实现 Win 前端复用的 `Button` UI 组件。
 import { cva, type VariantProps } from "class-variance-authority"
 import { Primitive, type PrimitiveProps } from "radix-vue"
 import { cn } from "@/lib/utils"

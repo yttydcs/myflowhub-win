@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Local Hub page for configuring, installing, and starting the embedded hub runtime.
+// 本文件实现 Win 前端的 `LocalHub` 页面，并负责本地 Local Hub 的配置、安装与启动。
 import { computed, onMounted, reactive, ref } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

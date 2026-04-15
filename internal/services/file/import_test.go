@@ -1,4 +1,4 @@
-// Context: covers the import helper logic inside the file backend service.
+// 本文件覆盖 `file` 后端服务中与 `import` 相关的行为。
 
 package file
 

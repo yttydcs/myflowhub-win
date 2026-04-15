@@ -1,4 +1,4 @@
-// Context: implements the management backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `management` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package management
 
@@ -33,6 +33,7 @@ type ManagementService struct {
 }
 
 func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, store *storagesvc.Store) *ManagementService {
+	// New 复用已有 session/log/store，统一提供本地自省与远端 management 调用。
 	return &ManagementService{session: session, logs: logsSvc, store: store}
 }
 
@@ -59,6 +60,7 @@ func (s *ManagementService) NodeEchoSimple(sourceID, targetID uint32, message st
 }
 
 func (s *ManagementService) NodeInfo(ctx context.Context, sourceID, targetID uint32) (management.NodeInfoResp, error) {
+	// NodeInfo 对“查自己”走本地快捷路径，减少一次不必要的 management 往返。
 	if sourceID != 0 && sourceID == targetID {
 		return management.NodeInfoResp{Code: 1, Msg: "ok", Items: s.collectSelfNodeInfoItems(sourceID)}, nil
 	}
@@ -122,6 +124,7 @@ func (s *ManagementService) ListSubtreeSimple(sourceID, targetID uint32) (manage
 }
 
 func (s *ManagementService) ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (management.ConfigResp, error) {
+	// ConfigGet 同时覆盖本地 store 直读与远端 management/config_get 两种来源。
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return management.ConfigResp{}, errors.New("key is required")
@@ -230,6 +233,7 @@ func (s *ManagementService) send(_ context.Context, sourceID, targetID uint32, p
 }
 
 func (s *ManagementService) sendAndAwait(ctx context.Context, sourceID, targetID uint32, payload []byte, reqAction, respAction string, out any) error {
+	// sendAndAwait 统一承担 management 协议的发送、解码、code 检查和 UI 友好错误翻译。
 	if s.session == nil {
 		return errors.New("session service not initialized")
 	}
@@ -270,6 +274,7 @@ func (s *ManagementService) sendAndAwait(ctx context.Context, sourceID, targetID
 }
 
 func toUIError(err error) error {
+	// toUIError 把 await 层的通用链路错误压缩成前端更容易直接展示的短语。
 	if err == nil {
 		return nil
 	}
@@ -349,6 +354,7 @@ func formatConfigValue(value any) string {
 }
 
 func (s *ManagementService) collectSelfNodeInfoItems(nodeID uint32) map[string]string {
+	// collectSelfNodeInfoItems 在本地自查时补上 display_name 等运行时本地信息。
 	items := collectNodeInfoItems(nodeID)
 	if displayName := s.localNodeDisplayName(); displayName != "" {
 		items["display_name"] = displayName
@@ -357,6 +363,7 @@ func (s *ManagementService) collectSelfNodeInfoItems(nodeID uint32) map[string]s
 }
 
 func (s *ManagementService) localNodeDisplayName() string {
+	// localNodeDisplayName 按 MCP 配置优先级回退查找本机节点显示名。
 	if s.store == nil {
 		return ""
 	}

@@ -1,4 +1,4 @@
-// Context: keeps the stream store in sync with Wails bindings, runtime events, and per-delivery media state for the Stream page.
+// 本文件维护 `stream` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue";
 import { t } from "@/i18n";
@@ -451,6 +451,7 @@ const resetRestoreState = () => {
   lastRestoreKey = "";
 };
 
+// 本地保存的 source/consumer 会跨 profile 持久化；身份切换后这里统一回填当前 selfNodeId。
 const applyLocalIdentity = () => {
   if (!state.selfNodeId) return;
   state.localSources = state.localSources.map((item) => ({
@@ -463,6 +464,7 @@ const applyLocalIdentity = () => {
   }));
 };
 
+// Stream 偏好除了当前 tab，还包括“本地要恢复的 source/consumer 目录”，因此需要一并规范化。
 const applyPrefs = (prefs: any) => {
   state.activeTab = normalizeTab(prefs?.activeTab);
   const targetId = Number(prefs?.targetId ?? 0);
@@ -482,6 +484,7 @@ const applyPrefs = (prefs: any) => {
   resetRestoreState();
 };
 
+// 这里把前端草稿转成服务端期望的 announce 请求结构，统一处理 tags/metadata 的规范化。
 const buildSourcePayload = (source: {
   sourceId: string;
   name: string;
@@ -505,6 +508,7 @@ const buildSourcePayload = (source: {
   },
 });
 
+// consumer 的持久化格式和 announce 请求结构不同，单独在这里做一次协议层映射。
 const buildConsumerPayload = (consumer: {
   consumerId: string;
   name: string;
@@ -619,6 +623,7 @@ const syncSourceInput = async (source: StreamSource) => {
   });
 };
 
+// 媒体类 source 在 prefs 里只保存文件路径，真正连上节点后还要再补一次输入配置。
 const syncLocalSourceInputs = async () => {
   if (!state.selfNodeId) return;
   const mediaSources = state.localSources.filter(
@@ -651,6 +656,7 @@ const savePrefsBestEffort = async () => {
   }
 };
 
+// 读取 prefs 后立刻同步媒体输入，是为了让“恢复目录”后的 source 能直接继续推流。
 const loadPrefs = async () => {
   const prefs = await callApp<any>("StreamPrefs");
   applyPrefs(prefs);
@@ -823,6 +829,7 @@ const listConsumers = async (
   return items;
 };
 
+// source 发布时在 UI 层先拦住 desktop/file 等输入约束，减少服务端返回后才报错的来回。
 const announceSource = async (draft: StreamSourceDraft) => {
   const inputKind = String(draft.inputKind ?? "")
     .trim()
@@ -1105,6 +1112,7 @@ const publishText = async (sourceId: string, text: string) => {
   } satisfies StreamPublishTextResult;
 };
 
+// 桌面采集分片只允许视频 desktop source 使用，并要求当前至少存在一个有效 delivery。
 const publishCaptureChunk = async (input: {
   sourceId: string;
   deliveryIds: string[];
@@ -1165,6 +1173,7 @@ const publishCaptureChunk = async (input: {
   } satisfies StreamPublishCaptureResult;
 };
 
+// 应用重开或重新登录后，通过重新 announce 本地目录把上次创建的 source/consumer 恢复回来。
 const restoreLocalCatalogs = async (options?: { force?: boolean }) => {
   if (restorePromise) return restorePromise;
   restorePromise = (async () => {
@@ -1336,6 +1345,7 @@ const setActiveTab = (tab: StreamTab) => {
   void savePrefsBestEffort();
 };
 
+// 事件监听器只负责把 runtime 快照投影进 store，避免 UI 页面各自重复订阅 Wails 事件。
 const ensureListeners = () => {
   if (initialized) return;
   initialized = true;

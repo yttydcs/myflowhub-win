@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the detached flow editor window used by the Win frontend.
+// 本文件实现 Win 前端使用的独立 `FlowEditorWindow` 窗口。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import FlowCanvas from "@/components/flow/FlowCanvas.vue"
@@ -733,6 +733,7 @@ const findBodySessionParentNode = () => {
 const serializeBodySessionGraph = (snapshot: FlowGraphEditorState) =>
   JSON.stringify(exportLooseGraphDraftFromEditorState(snapshot), null, 2)
 
+// body editor 的真相源仍是父 foreach 节点上的 JSON；运行、保存、历史操作前都先把会话快照冲刷回去。
 const syncBodySessionToParent = ({ commitHistory = false, silent = false }: { commitHistory?: boolean; silent?: boolean } = {}) => {
   const session = bodyEditorSession.value
   if (!session) return true
@@ -757,6 +758,7 @@ const syncBodySessionToParent = ({ commitHistory = false, silent = false }: { co
   }
 }
 
+// 恢复本地草稿时要把 root graph 和 body 子图编辑上下文一起带回来，避免只恢复一半状态。
 const restoreBodyEditorSession = (record: FlowEditorBodySessionRecord | null | undefined) => {
   if (!record?.parentNodeId || !record.snapshot) {
     bodyEditorSession.value = null
@@ -774,6 +776,7 @@ const restoreBodyEditorSession = (record: FlowEditorBodySessionRecord | null | u
   bodySessionError.value = ""
 }
 
+// 进入 foreach body editor 时复制出一份独立快照，后续都在会话里编辑，只有提交时才回写父节点。
 const openForeachBodyEditor = () => {
   const node = selectedNode.value
   if (!node || node.kind !== "foreach") return
@@ -932,6 +935,7 @@ const setBodyNodeFieldBinding = (node: FlowNodeDraft, pointer: string, source: V
   }))
 }
 
+// body 内的 call 节点不能直接走 store 的能力应用逻辑，所以在本地草稿里完成 schema 对齐后再统一回写。
 const applyBodyCallCapability = (key: string) => {
   const node = bodySelectedNode.value
   if (!node || node.kind !== "call") {
@@ -984,6 +988,7 @@ const clearRecoveryDraft = () => {
   }
 }
 
+// recovery draft 只接受当前 project 的结构化记录；遇到脏数据直接清掉，避免错误快照反复污染恢复流程。
 const readRecoveryDraft = (): FlowEditorRecoveryRecord | null => {
   const storageKey = recoveryStorageKey.value
   if (!storageKey || typeof globalThis.localStorage === "undefined") return null
@@ -1024,6 +1029,7 @@ const readRecoveryDraft = (): FlowEditorRecoveryRecord | null => {
   }
 }
 
+// 本地恢复记录同时持久化 body 会话；否则 foreach 子图在刷新窗口后会丢失编辑上下文。
 const writeRecoveryDraft = () => {
   if (!dirty.value || loading.value || typeof globalThis.localStorage === "undefined") return
   const storageKey = recoveryStorageKey.value
@@ -1065,6 +1071,7 @@ const updateSavedBaseline = (updatedAt: string) => {
   lastSavedAt.value = String(updatedAt ?? "").trim() || new Date().toISOString()
 }
 
+// 只有 recovery 基线仍然对得上最近一次保存时才允许恢复，避免把旧草稿覆盖到已更新项目上。
 const maybeRestoreRecoveryDraft = (project: FlowProjectRecord) => {
   const recovery = readRecoveryDraft()
   if (!recovery) return
@@ -1107,6 +1114,7 @@ const maybeRestoreRecoveryDraft = (project: FlowProjectRecord) => {
   }
 }
 
+// field binding dialog 同时服务 root editor 和 body editor，先把现有 binding 归一成统一草稿模型再编辑。
 const resetFieldBindingDraft = (source?: VisualBindingSource | null) => {
   if (source?.kind === "node_result") {
     fieldBindingDraft.sourceKind = "node_result"
@@ -1243,6 +1251,7 @@ const onFieldBindingSourceKindChange = (sourceKind: string) => {
   fieldBindingDraft.name = ""
 }
 
+// 弹窗里的临时字段在提交前统一折叠回协议层 binding 对象，调用方只关心“应用”而不用处理分支。
 const buildVisualBindingSource = (): VisualBindingSource => {
   switch (fieldBindingDraft.sourceKind) {
     case "node_result":
@@ -1292,6 +1301,7 @@ const buildVisualBindingSource = (): VisualBindingSource => {
   }
 }
 
+// field binding 最终总是落在当前活动 call 节点上；差别只是 root editor 走 store，body editor 走本地会话。
 const applyFieldBinding = () => {
   const node = activeCallNode.value
   const field = activeBindingField.value
@@ -1352,6 +1362,7 @@ const stringifyFieldDraftValue = (field: VisualFieldModel) => {
   }
 }
 
+// visual form 每次换节点或换 schema 都重建字符串草稿，输入框编辑的是稳定的文本层，不直接揉原始值。
 const syncFieldDrafts = (form: NodeVisualFormModel | null) => {
   for (const key of Object.keys(fieldDrafts)) {
     delete fieldDrafts[key]
@@ -1817,6 +1828,7 @@ const loadHomeDefaults = async () => {
   flowStore.setIdentity(selfNodeId.value, hubId.value)
 }
 
+// capability 查询节点默认跟随当前 call 节点 target；没有显式 target 时退回当前 executor。
 const syncQueryNodeDraft = () => {
   const node = activeCallNode.value
   if (node && node.target > 0) {
@@ -1839,6 +1851,7 @@ const closeMethodDialog = () => {
   methodSearch.value = ""
 }
 
+// 选中 call 节点后懒加载它的 capability/schema，让 inspector 和 method dialog 都能基于最新元数据渲染。
 const ensureSelectedNodeCapabilityLoaded = async () => {
   if (loading.value) {
     return
@@ -1862,6 +1875,7 @@ const ensureSelectedNodeCapabilityLoaded = async () => {
   }
 }
 
+// method dialog 允许按 query node 重新探测 capability，并记录上次查询节点以避免无意义重复请求。
 const refreshMethodCapabilities = async () => {
   try {
     const queryNodeId = queryNodeIdDraft.value.trim()
@@ -1876,6 +1890,7 @@ const refreshMethodCapabilities = async () => {
   }
 }
 
+// 打开 method dialog 前先同步当前节点上下文，避免看到上一次节点遗留的 target 或选中能力。
 const openMethodDialog = async () => {
   if (!activeCallNode.value) return
   methodSearch.value = ""
@@ -1894,6 +1909,7 @@ const selectCapability = (key: string) => {
   pendingCapabilityKey.value = key
 }
 
+// capability 应用既要更新 method/target，也要保证 body editor 的本地草稿和父 foreach JSON 不发生漂移。
 const applyCapabilitySelection = () => {
   if (!pendingCapabilityKey.value) {
     toast.warn(t("Please select a method."))
@@ -2152,6 +2168,7 @@ const autoLayout = () => {
   }
 }
 
+// 运行前先冲刷 body 会话，保证真正发送给后端执行的 graph 和画布里当前看到的是同一份。
 const runCurrentFlow = async () => {
   if (!syncBodySessionToParent({ commitHistory: true, silent: true })) {
     toast.error(bodySessionError.value || t("Fix the foreach body editor errors before running the flow."))
@@ -2206,6 +2223,7 @@ const cancelCurrentRun = async () => {
   }
 }
 
+// 保存时除了导出 graph，还要先同步 body 子图并检查本地 subflow 递归，避免把不可执行状态写回项目。
 const saveProject = async () => {
   const id = projectId.value
   if (!id) {
@@ -2252,6 +2270,7 @@ const saveProject = async () => {
   }
 }
 
+// 窗口级加载顺序固定：先清掉旧 body 上下文，再载入项目、运行记录和本地 recovery 草稿。
 const loadProject = async () => {
   loading.value = true
   try {
@@ -2283,6 +2302,7 @@ const loadProject = async () => {
   }
 }
 
+// undo/redo 只认 root history；body editor 的变更必须先回写进 root graph，才能走统一历史栈。
 const undoEditor = () => {
   if (!syncBodySessionToParent({ commitHistory: true, silent: true })) {
     toast.error(bodySessionError.value || t("Fix the foreach body editor errors before undo."))
@@ -2307,6 +2327,7 @@ const isEditableTarget = (target: EventTarget | null) => {
   return tag === "input" || tag === "textarea" || tag === "select"
 }
 
+// 窗口快捷键只在画布语境里生效；弹窗打开或焦点在可编辑控件里时不接管浏览器输入。
 const onKeyDown = (event: KeyboardEvent) => {
   if (addNodeOpen.value || methodDialogOpen.value || fieldBindingDialogOpen.value) return
 
@@ -2357,12 +2378,14 @@ const onKeyDown = (event: KeyboardEvent) => {
   }
 }
 
+// 仅在存在未保存改动时启用浏览器默认离开确认，避免误关独立编辑窗口。
 const onBeforeUnload = (event: BeforeUnloadEvent) => {
   if (!dirty.value) return
   event.preventDefault()
   event.returnValue = ""
 }
 
+// 会话身份变化会同时影响 flow store 和 capability 查询的默认 executor，上层切换后要立刻重算。
 watch(
   () => [selfNodeId.value, hubId.value],
   ([nodeId, currentHubId]) => {
@@ -2374,6 +2397,7 @@ watch(
   { immediate: true }
 )
 
+// 当前活动 call 节点、target 或 executor 变化后懒加载能力元数据，保证表单 schema 跟着选中态更新。
 watch(
   () => [
     loading.value,
@@ -2392,6 +2416,7 @@ watch(
   { immediate: true }
 )
 
+// root editor 的选中切换会重置 detail/run/path 草稿，并清掉依附旧节点的 capability 与 binding UI。
 watch(
   () => selectedNode.value?.id ?? "",
   () => {
@@ -2406,6 +2431,7 @@ watch(
   { immediate: true }
 )
 
+// body editor 内部维护一套独立的节点草稿和弹窗状态；切换 body 节点时同步这些派生状态。
 watch(
   () => [bodyEditorActive.value, bodySelectedNode.value?.id ?? "", bodySelectedNode.value?.kind ?? ""],
   () => {
@@ -2425,6 +2451,7 @@ watch(
   { immediate: true }
 )
 
+// 如果 root graph 从 store 侧被外部刷新，只在 body 会话仍干净时重建快照，避免覆盖用户正在编辑的子图。
 watch(
   () => rootGraphSignature.value,
   () => {
@@ -2461,6 +2488,7 @@ watch(
   }
 )
 
+// method dialog 和 field binding dialog 都依附详情面板；详情关掉时顺手收掉这两个子弹窗。
 watch(
   () => detailPanelOpen.value,
   (open) => {
@@ -2471,6 +2499,7 @@ watch(
   }
 )
 
+// 非 call 节点不需要 capability 和 field binding UI，节点类型切走后立即清理这些派生状态。
 watch(
   () => (bodyEditorActive.value ? bodySelectedNode.value?.kind ?? "" : selectedNode.value?.kind ?? ""),
   (kind) => {
@@ -2481,6 +2510,7 @@ watch(
   }
 )
 
+// schema 变化后重建字段输入草稿；如果当前绑定的字段已经不在新 schema 里，就关闭绑定弹窗。
 watch(
   () => activeCallVisualForm.value,
   (form) => {
@@ -2494,6 +2524,7 @@ watch(
   { immediate: true }
 )
 
+// store 的 message 是一次性窗口提示，这里负责消费并清空，避免同一条消息被重复 toast。
 watch(
   () => flowStore.state.message,
   (msg) => {
@@ -2514,6 +2545,7 @@ watch(
   }
 )
 
+// dirty 变化走延迟写 recovery；一旦恢复到干净基线就删除本地草稿，防止留下陈旧快照。
 watch(
   () => [
     projectId.value,
@@ -2534,12 +2566,14 @@ watch(
   }
 )
 
+// 独立窗口启动时先补 home 默认身份，再加载项目，同时挂上快捷键和关闭保护。
 onMounted(() => {
   void loadHomeDefaults().then(() => loadProject())
   window.addEventListener("keydown", onKeyDown)
   window.addEventListener("beforeunload", onBeforeUnload)
 })
 
+// 窗口销毁时清掉延迟写定时器和全局事件，避免 recovery 写入与快捷键泄漏到别的页面。
 onUnmounted(() => {
   clearRecoveryWriteTimer()
   window.removeEventListener("keydown", onKeyDown)

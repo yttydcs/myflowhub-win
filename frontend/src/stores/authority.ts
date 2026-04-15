@@ -1,4 +1,4 @@
-// Context: keeps the authority store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `authority` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { t } from "@/i18n"
@@ -32,6 +32,7 @@ const state = reactive<AuthorityState>({
   resolving: false
 })
 
+// 所有权限相关请求都依赖当前登录节点和 hub，先在 store 层统一做前置校验。
 const ensureIdentity = () => {
   if (!state.sourceId) {
     throw new Error(t("Login required."))
@@ -42,6 +43,7 @@ const ensureIdentity = () => {
   return { sourceId: state.sourceId, hubId: state.hubId }
 }
 
+// authority 会跟着当前身份变化，这里按需向后端解析一次并缓存，供多个页面共用。
 const resolveAuthority = async () => {
   const { sourceId, hubId } = ensureIdentity()
   state.resolving = true
@@ -54,6 +56,7 @@ const resolveAuthority = async () => {
   }
 }
 
+// 页面只关心“拿到可用 authority”这一结果，因此把懒加载解析和失败兜底都收敛到这个入口。
 const requireAuthority = async () => {
   const { sourceId, hubId } = ensureIdentity()
   if (!state.authorityId) {
@@ -69,6 +72,7 @@ const requireAuthority = async () => {
   }
 }
 
+// 身份一旦切换，旧 authority 结果就不再可信，所以这里顺手清掉缓存。
 const setIdentity = (sourceId: number, hubId: number) => {
   const nextSourceId = Number(sourceId || 0)
   const nextHubId = Number(hubId || 0)

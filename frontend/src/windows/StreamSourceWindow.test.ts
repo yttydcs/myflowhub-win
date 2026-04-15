@@ -1,4 +1,4 @@
-// Context: covers the detached stream source window behavior in the Win frontend.
+// 本文件覆盖 Win 前端使用的独立 `StreamSourceWindow` 窗口行为
 
 // @vitest-environment jsdom
 

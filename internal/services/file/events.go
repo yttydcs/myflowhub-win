@@ -1,4 +1,4 @@
-// Context: defines the file-service event payloads shared between the Go backend and the frontend store.
+// 本文件定义 `file` 后端服务发出的事件名与载荷结构。
 
 package file
 

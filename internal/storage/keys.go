@@ -1,4 +1,4 @@
-// Context: defines stable storage keys and naming helpers for persisted Win client state.
+// 本文件定义持久化 Win 客户端状态时使用的稳定存储键。
 
 package storage
 

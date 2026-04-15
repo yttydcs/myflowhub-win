@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the flow add node dialog panel or dialog used by the Flow editor.
+// 本文件实现 Flow 编辑器中的 `FlowAddNodeDialog` 组件。
 import { computed } from "vue"
 import { Button } from "@/components/ui/button"
 import { Overlay } from "@/components/ui/overlay"

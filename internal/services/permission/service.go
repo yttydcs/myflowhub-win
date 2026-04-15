@@ -1,4 +1,4 @@
-// Context: implements the permission backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `permission` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package permission
 
@@ -215,10 +215,12 @@ type RevokeRegisterPermitResult struct {
 }
 
 func New(auth *authsvc.AuthService, mgmt *mgmtsvc.ManagementService, logs *logssvc.LogService) *PermissionService {
+	// New 把 authority 侧的 auth 与 management 访问聚合成前端可直接操作的权限编排层。
 	return &PermissionService{auth: auth, mgmt: mgmt, logs: logs}
 }
 
 func (s *PermissionService) ResolveAuthority(sourceID, hubID, overrideID uint32) (AuthorityTarget, error) {
+	// ResolveAuthority 优先尊重手工 override，其次尝试 authority.node_id，再回退到 hub 自身。
 	if overrideID != 0 {
 		return AuthorityTarget{
 			AuthorityID: overrideID,
@@ -271,6 +273,7 @@ func (s *PermissionService) ResolveAuthority(sourceID, hubID, overrideID uint32)
 }
 
 func (s *PermissionService) LoadPolicy(sourceID, authorityID uint32) (LoadPolicyResult, error) {
+	// LoadPolicy 把 authority 上的分散 config key 读回并拼成页面直接可编辑的策略模型。
 	if sourceID == 0 {
 		return LoadPolicyResult{}, errors.New("source_id is required")
 	}
@@ -328,6 +331,7 @@ func (s *PermissionService) LoadPolicy(sourceID, authorityID uint32) (LoadPolicy
 }
 
 func (s *PermissionService) SavePolicy(req SavePolicyRequest) (SavePolicyResult, error) {
+	// SavePolicy 按“持久化 -> runtime snapshot -> invalidate -> verify”的顺序推进权限发布。
 	if req.SourceID == 0 {
 		return SavePolicyResult{}, errors.New("source_id is required")
 	}
@@ -441,6 +445,7 @@ func (s *PermissionService) GetNodePerms(sourceID, authorityID, nodeID uint32) (
 }
 
 func (s *PermissionService) ListPendingRegisters(req ListPendingRegistersRequest) (ListPendingRegistersResult, error) {
+	// ListPendingRegisters 为审批页提供已整理的分页结果，隐藏底层协议细节。
 	if req.SourceID == 0 {
 		return ListPendingRegistersResult{}, errors.New("source_id is required")
 	}
@@ -511,6 +516,7 @@ func (s *PermissionService) ListRegisterPermits(req ListRegisterPermitsRequest) 
 }
 
 func (s *PermissionService) ApproveRegister(req ApproveRegisterRequest) (ApproveRegisterResult, error) {
+	// ApproveRegister 只暴露审批结果里最关键的节点、角色和状态字段给前端。
 	if req.SourceID == 0 {
 		return ApproveRegisterResult{}, errors.New("source_id is required")
 	}
@@ -664,6 +670,7 @@ func isNotFoundErr(err error) bool {
 }
 
 func parseRawPolicy(raw RawPolicy) (Policy, []string, error) {
+	// parseRawPolicy 把 authority 的字符串配置拼回结构化策略，再统一走 normalize 校验。
 	policy := Policy{
 		DefaultRole:  strings.TrimSpace(raw.AuthDefaultRole),
 		DefaultPerms: parseCSV(raw.AuthDefaultPerms),
@@ -678,6 +685,7 @@ func parseRawPolicy(raw RawPolicy) (Policy, []string, error) {
 }
 
 func normalizePolicy(in Policy) (Policy, []string, error) {
+	// normalizePolicy 保证默认角色、节点覆盖和角色权限三部分都唯一、排序且可持久化。
 	out := Policy{}
 	warnings := make([]string, 0, 2)
 
@@ -876,6 +884,7 @@ func toRawPolicy(policy Policy) RawPolicy {
 }
 
 func toSnapshot(policy Policy) coreperm.Snapshot {
+	// toSnapshot 把编辑态策略压成运行时权限快照，供 invalidate/refresh 之后直接生效。
 	nodeRoles := make(map[uint32]string, len(policy.NodeRoles))
 	for _, entry := range policy.NodeRoles {
 		nodeRoles[entry.NodeID] = entry.Role

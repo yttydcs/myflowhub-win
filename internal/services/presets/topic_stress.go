@@ -1,4 +1,4 @@
-// Context: implements the topic stress helper logic used by the presets backend service.
+// 本文件实现 `presets` 后端服务中与 `topic_stress` 相关的辅助逻辑。
 
 package presets
 

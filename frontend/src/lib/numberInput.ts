@@ -1,4 +1,4 @@
-// Context: contains shared number input helpers used by the Win frontend.
+// 本文件提供 Win 前端复用的 `numberInput` 辅助函数。
 
 export type FormInputValue = string | number | boolean | null | undefined
 

@@ -1,4 +1,4 @@
-// Context: aggregates the domain-specific message bundles used by the Win frontend.
+// 本文件定义 Win 前端 `index` 域使用的本地化文案。
 
 import type { AppLocale, LocaleMessages } from "../types"
 import { automationZhCN } from "./automation"

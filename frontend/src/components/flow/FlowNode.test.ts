@@ -1,4 +1,4 @@
-// Context: covers the rendered node states and interactions used by the flow graph canvas.
+// 本文件覆盖 Flow 视图中的 `FlowNode` 组件行为
 
 // @vitest-environment jsdom
 

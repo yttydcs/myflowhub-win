@@ -1,4 +1,4 @@
-// Context: keeps the varpool store in sync with Wails bindings and shared Win frontend state.
+// 本文件维护 `varpool` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { t } from "@/i18n"
 import { reactive } from "vue"
@@ -100,6 +100,7 @@ const normalizeKeys = (keys: VarPoolKey[]) => {
   return out
 }
 
+// watch list 允许先记“变量名”再补 owner；这里用 upsert 保证后续拿到更精确 key 时能原地升级。
 const upsertKey = (input: VarPoolKey) => {
   const key = normalizeKey(input)
   if (!key.name) return { key, changed: false }
@@ -181,6 +182,7 @@ const desiredSubscribe = (key: VarPoolKey) => {
   return stored ?? false
 }
 
+// 订阅偏好表只为远端变量服务，本地 self 变量不需要参与自动恢复。
 const ensureSubPrefDefaults = () => {
   for (const key of state.keys) {
     const normalized = normalizeKey(key)
@@ -243,6 +245,7 @@ const saveWatchList = async () => {
   await callApp("SaveVarPoolWatchList", filtered)
 }
 
+// watch list 是页面冷启动的种子数据；这里还会顺手清掉已不在列表中的缓存值和订阅偏好。
 const loadWatchList = async () => {
   const keys = await callApp<VarPoolKey[]>("VarPoolWatchList")
   const normalized = normalizeKeys(Array.isArray(keys) ? keys : [])
@@ -287,6 +290,7 @@ const ensureSourceID = () => {
   return state.selfNodeId
 }
 
+// 这里用 owner 维度反查名字列表，主要服务于 UI 的 owner 自动补全与变量选择提示。
 const listOwnerNames = async (ownerId: number) => {
   const sourceID = ensureSourceID()
   const targetID = resolveHubTargetId()
@@ -370,6 +374,7 @@ const revokeVar = async (input: VarPoolKey) => {
   handleVarRevokeResp("revoke_resp", resp)
 }
 
+// 先把“我希望订阅它”写入本地偏好，再去请求远端；这样连接中断后仍能自动恢复。
 const subscribeVar = async (input: VarPoolKey) => {
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
@@ -392,6 +397,7 @@ const subscribeVar = async (input: VarPoolKey) => {
   handleVarSubscribeResp(resp)
 }
 
+// 取消订阅时同样先更新本地偏好和缓存，避免远端请求失败前页面仍错误地显示为已订阅。
 const unsubscribeVar = async (input: VarPoolKey) => {
   const sourceID = ensureSourceID()
   const targetID = resolveTargetId()
@@ -437,6 +443,7 @@ const removeWatchKey = async (input: VarPoolKey) => {
   }
 }
 
+// 自动恢复会并发重放 desiredSubs=true 的远端变量订阅，但会跳过本地 self 变量和无效 key。
 const restoreDesiredSubscriptions = async (options?: { concurrency?: number }) => {
   if (restorePromise) return restorePromise
   const concurrency = Math.max(1, Number(options?.concurrency ?? 4) || 4)
@@ -504,23 +511,32 @@ type VarResp = {
   msg: string
   name: string
   value: string
+  valuePresent: boolean
   owner: number
   visibility: string
+  visibilityPresent: boolean
   type: string
+  typePresent: boolean
   names: string[]
 }
+
+const hasOwn = (payload: any, key: string) => Object.prototype.hasOwnProperty.call(payload ?? {}, key)
 
 const parseResp = (payload: any): VarResp => ({
   code: Number(payload?.code ?? 0),
   msg: String(payload?.msg ?? ""),
   name: String(payload?.name ?? ""),
   value: String(payload?.value ?? ""),
+  valuePresent: hasOwn(payload, "value"),
   owner: Number(payload?.owner ?? 0),
   visibility: String(payload?.visibility ?? ""),
+  visibilityPresent: hasOwn(payload, "visibility"),
   type: String(payload?.type ?? ""),
+  typePresent: hasOwn(payload, "type"),
   names: Array.isArray(payload?.names) ? payload.names.map((name: any) => String(name)) : []
 })
 
+// list 响应先刷新 owner 维度的变量集合，再异步补发 GetSimple 拉取每个变量的当前值。
 const handleVarListResp = (resp: VarResp) => {
   if (resp.code !== 1 || !resp.owner) {
     return
@@ -586,9 +602,19 @@ const handleVarSubscribeResp = (resp: VarResp) => {
 const handleVarChanged = (resp: VarResp) => {
   const name = resp.name.trim()
   if (!name || !resp.owner) return
+  const patch: Partial<VarPoolValue> = { owner: resp.owner }
+  if (resp.valuePresent) {
+    patch.value = resp.value
+  }
+  if (resp.visibilityPresent) {
+    patch.visibility = resp.visibility
+  }
+  if (resp.typePresent) {
+    patch.kind = resp.type
+  }
   updateValue(
     { name, owner: resp.owner },
-    { value: resp.value, owner: resp.owner, visibility: resp.visibility, kind: resp.type }
+    patch
   )
 }
 
@@ -598,6 +624,7 @@ const handleVarDeleted = (resp: VarResp) => {
   removeLocalKey({ name, owner: resp.owner })
 }
 
+// VarPool 运行时事件只负责增量修正缓存，页面本身不用关心底层 Wails 事件格式。
 const ensureListeners = () => {
   if (initialized) return
   initialized = true

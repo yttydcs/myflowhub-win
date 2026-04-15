@@ -1,4 +1,4 @@
-// Context: defines the Vite build, alias, and test-time frontend integration for the Win app.
+// 本文件定义 Win 前端的 Vite 构建、别名和测试时集成配置。
 
 import { defineConfig } from "vite"
 import vue from "@vitejs/plugin-vue"

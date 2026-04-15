@@ -1,4 +1,4 @@
-// Context: covers the flow schema resolver store behavior in the Win frontend.
+// 本文件覆盖 `flow_schema_resolver` store 的行为。
 
 import { describe, expect, it } from "vitest"
 import { resolveMethodVisualSchema } from "./flow_schema_resolver"

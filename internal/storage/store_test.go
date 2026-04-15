@@ -1,4 +1,4 @@
-// Context: covers profile-scoped persistence behavior for the Win client store.
+// 本文件覆盖按 profile 隔离的本地存储行为。
 
 package storage
 

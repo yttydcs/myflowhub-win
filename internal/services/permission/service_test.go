@@ -1,4 +1,4 @@
-// Context: covers the permission backend service behavior exposed to the Win shell.
+// 本文件覆盖 `permission` 后端服务的行为。
 
 package permission
 

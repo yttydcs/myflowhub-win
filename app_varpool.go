@@ -1,4 +1,4 @@
-// Context: persists the VarPool watch list and subscription preferences for the Win frontend.
+// 本文件负责持久化 VarPool 观察列表与订阅偏好。
 
 package main
 
@@ -25,6 +25,7 @@ type VarPoolSubPref struct {
 }
 
 func (a *App) VarPoolWatchList() ([]VarPoolKey, error) {
+	// VarPoolWatchList 读取当前 profile 的观察列表，并兼容旧格式升级。
 	if a.store == nil {
 		return nil, errors.New("storage not initialized")
 	}
@@ -35,6 +36,7 @@ func (a *App) VarPoolWatchList() ([]VarPoolKey, error) {
 }
 
 func (a *App) SaveVarPoolWatchList(keys []VarPoolKey) ([]VarPoolKey, error) {
+	// SaveVarPoolWatchList 以规范化后的 key 列表落盘，避免同名不同 owner 条目混乱。
 	if a.store == nil {
 		return nil, errors.New("storage not initialized")
 	}
@@ -51,6 +53,7 @@ func (a *App) SaveVarPoolWatchList(keys []VarPoolKey) ([]VarPoolKey, error) {
 }
 
 func (a *App) VarPoolSubPrefs() ([]VarPoolSubPref, error) {
+	// VarPoolSubPrefs 读取跨会话保存的“希望订阅”状态，而不是当前链路瞬时状态。
 	if a.store == nil {
 		return nil, errors.New("storage not initialized")
 	}
@@ -61,6 +64,7 @@ func (a *App) VarPoolSubPrefs() ([]VarPoolSubPref, error) {
 }
 
 func (a *App) SaveVarPoolSubPrefs(prefs []VarPoolSubPref) ([]VarPoolSubPref, error) {
+	// SaveVarPoolSubPrefs 让恢复订阅时只依赖清洗后的 owner+name 唯一偏好集合。
 	if a.store == nil {
 		return nil, errors.New("storage not initialized")
 	}
@@ -77,6 +81,7 @@ func (a *App) SaveVarPoolSubPrefs(prefs []VarPoolSubPref) ([]VarPoolSubPref, err
 }
 
 func parseVarPoolKeys(raw string) []VarPoolKey {
+	// parseVarPoolKeys 兼容旧版只保存名称数组的格式，避免历史 profile 直接失效。
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -144,6 +149,7 @@ func parseVarPoolSubPrefs(raw string) []VarPoolSubPref {
 }
 
 func normalizeVarPoolSubPrefs(prefs []VarPoolSubPref) []VarPoolSubPref {
+	// normalizeVarPoolSubPrefs 以 name+owner 去重，保证恢复订阅时目标唯一。
 	out := make([]VarPoolSubPref, 0, len(prefs))
 	type prefKey struct {
 		name  string

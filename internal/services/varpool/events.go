@@ -1,4 +1,4 @@
-// Context: defines the event payloads and event names emitted by the varpool backend service.
+// 本文件定义 `varpool` 后端服务发出的事件名与载荷结构。
 
 package varpool
 

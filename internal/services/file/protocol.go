@@ -1,4 +1,4 @@
-// Context: implements the protocol helper logic used by the file backend service.
+// 本文件实现 `file` 后端服务中与 `protocol` 相关的辅助逻辑。
 
 package file
 

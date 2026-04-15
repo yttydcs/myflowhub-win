@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the flow field binding dialog panel or dialog used by the Flow editor.
+// 本文件实现 Flow 编辑器中的 `FlowFieldBindingDialog` 组件。
 import { computed } from "vue"
 import CardHeader from "@/components/CardHeader.vue"
 import { Button } from "@/components/ui/button"
@@ -170,165 +170,165 @@ const sourceKindOptions = computed(() =>
 
       <div v-if="activeBindingField" data-flow-field-binding-scroll class="mt-5 min-h-0 flex-1 overflow-y-auto">
         <div class="space-y-4 px-1 py-1 pr-2">
-          <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Destination") }}
-            </p>
-            <p class="mt-2 text-sm font-semibold">{{ activeBindingField.schema.label }}</p>
-            <p class="mt-1 break-all text-[11px] text-muted-foreground">
-              {{ t("Writes to {pointer}", { pointer: activeBindingField.schema.pointer }) }}
-            </p>
-            <p v-if="activeBindingField.schema.description" class="mt-1 text-[11px] text-muted-foreground">
-              {{ activeBindingField.schema.description }}
-            </p>
-          </div>
+        <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Destination") }}
+          </p>
+          <p class="mt-2 text-sm font-semibold">{{ activeBindingField.schema.label }}</p>
+          <p class="mt-1 break-all text-[11px] text-muted-foreground">
+            {{ t("Writes to {pointer}", { pointer: activeBindingField.schema.pointer }) }}
+          </p>
+          <p v-if="activeBindingField.schema.description" class="mt-1 text-[11px] text-muted-foreground">
+            {{ activeBindingField.schema.description }}
+          </p>
+        </div>
 
+        <div>
+          <label :for="sourceKindInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Source Kind") }}
+          </label>
+          <select
+            :id="sourceKindInputId"
+            :value="fieldBindingDraft.sourceKind"
+            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            @change="emit('source-kind-change', String(($event.target as HTMLSelectElement | null)?.value ?? 'trigger'))"
+          >
+            <option v-for="kind in sourceKindOptions" :key="kind" :value="kind">
+              {{ t(flowBindingSourceKindLabelKey(kind)) }}
+            </option>
+          </select>
+        </div>
+
+        <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Source Preview") }}
+          </p>
+          <p class="mt-2 text-sm font-semibold">
+            {{ draftSourcePreview || t("No source selected.") }}
+          </p>
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            {{ sourceHelpText }}
+          </p>
+        </div>
+
+        <div v-if="fieldBindingDraft.sourceKind === 'node_result'" class="grid gap-3 md:grid-cols-2">
           <div>
-            <label :for="sourceKindInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Source Kind") }}
+            <label :for="ancestorNodeInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Ancestor Node") }}
             </label>
             <select
-              :id="sourceKindInputId"
-              :value="fieldBindingDraft.sourceKind"
+              :id="ancestorNodeInputId"
+              v-model="fieldBindingDraft.nodeId"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              @change="emit('source-kind-change', String(($event.target as HTMLSelectElement | null)?.value ?? 'trigger'))"
             >
-              <option v-for="kind in sourceKindOptions" :key="kind" :value="kind">
-                {{ t(flowBindingSourceKindLabelKey(kind)) }}
+              <option value="">
+                {{ bindableAncestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}
+              </option>
+              <option v-for="ancestorId in bindableAncestorNodeOptions" :key="ancestorId" :value="ancestorId">
+                {{ t("Node {nodeId}", { nodeId: ancestorId }) }}
               </option>
             </select>
           </div>
 
-          <div class="rounded-xl border border-border/70 bg-muted/20 p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Source Preview") }}
-            </p>
-            <p class="mt-2 text-sm font-semibold">
-              {{ draftSourcePreview || t("No source selected.") }}
-            </p>
-            <p class="mt-1 text-[11px] text-muted-foreground">
-              {{ sourceHelpText }}
-            </p>
-          </div>
-
-          <div v-if="fieldBindingDraft.sourceKind === 'node_result'" class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label :for="ancestorNodeInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Ancestor Node") }}
-              </label>
-              <select
-                :id="ancestorNodeInputId"
-                v-model="fieldBindingDraft.nodeId"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">
-                  {{ bindableAncestorNodeOptions.length ? t("Select ancestor node") : t("No ancestor available") }}
-                </option>
-                <option v-for="ancestorId in bindableAncestorNodeOptions" :key="ancestorId" :value="ancestorId">
-                  {{ t("Node {nodeId}", { nodeId: ancestorId }) }}
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label :for="nodeResultPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Result Path (Optional)") }}
-              </label>
-              <input
-                :id="nodeResultPathInputId"
-                v-model="fieldBindingDraft.path"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="/user/id"
-              />
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                {{ t("Path can stay empty to read the whole node result.") }}
-              </p>
-            </div>
-          </div>
-
-          <div v-else-if="fieldBindingDraft.sourceKind === 'trigger'">
-            <label :for="triggerPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Trigger Path (Optional)") }}
+          <div>
+            <label :for="nodeResultPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Result Path (Optional)") }}
             </label>
             <input
-              :id="triggerPathInputId"
+              :id="nodeResultPathInputId"
               v-model="fieldBindingDraft.path"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              placeholder="/payload/name"
+              placeholder="/user/id"
             />
             <p class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("Path can stay empty to read the whole trigger payload.") }}
+              {{ t("Path can stay empty to read the whole node result.") }}
+            </p>
+          </div>
+        </div>
+
+        <div v-else-if="fieldBindingDraft.sourceKind === 'trigger'">
+          <label :for="triggerPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Trigger Path (Optional)") }}
+          </label>
+          <input
+            :id="triggerPathInputId"
+            v-model="fieldBindingDraft.path"
+            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            placeholder="/payload/name"
+          />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            {{ t("Path can stay empty to read the whole trigger payload.") }}
+          </p>
+        </div>
+
+        <div v-else-if="fieldBindingDraft.sourceKind === 'flow_var'" class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label :for="flowVarNameInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Local Var Name") }}
+            </label>
+            <input
+              :id="flowVarNameInputId"
+              v-model="fieldBindingDraft.name"
+              class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              placeholder="session_token"
+            />
+            <p class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("Reads from a flow-local variable in the current run only.") }}
             </p>
           </div>
 
-          <div v-else-if="fieldBindingDraft.sourceKind === 'flow_var'" class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label :for="flowVarNameInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Local Var Name") }}
-              </label>
-              <input
-                :id="flowVarNameInputId"
-                v-model="fieldBindingDraft.name"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="session_token"
-              />
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                {{ t("Reads from a flow-local variable in the current run only.") }}
-              </p>
-            </div>
-
-            <div>
-              <label :for="flowVarPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                {{ t("Value Path (Optional)") }}
-              </label>
-              <input
-                :id="flowVarPathInputId"
-                v-model="fieldBindingDraft.path"
-                class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                placeholder="/payload/id"
-              />
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                {{ t("Path can stay empty to read the whole local var value.") }}
-              </p>
-            </div>
-          </div>
-
-          <div v-else-if="fieldBindingDraft.sourceKind === 'loop_item'">
-            <label :for="loopItemPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              {{ t("Loop Item Path (Optional)") }}
+          <div>
+            <label :for="flowVarPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              {{ t("Value Path (Optional)") }}
             </label>
             <input
-              :id="loopItemPathInputId"
+              :id="flowVarPathInputId"
               v-model="fieldBindingDraft.path"
               class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               placeholder="/payload/id"
             />
             <p class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("Path can stay empty to read the whole current loop item.") }}
+              {{ t("Path can stay empty to read the whole local var value.") }}
             </p>
           </div>
+        </div>
 
-          <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-            {{
-              fieldBindingDraft.sourceKind === "flow_meta"
-                ? t("This field will read from flow meta: flow_id.")
-                : fieldBindingDraft.sourceKind === "run_meta"
-                  ? t("This field will read from run meta: run_id.")
-                  : fieldBindingDraft.sourceKind === "loop_index"
-                    ? t("This field will read the current loop index.")
-                  : t("This field will read from a flow-local variable in the current run.")
-            }}
-          </div>
-
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              :id="requiredBindingInputId"
-              v-model="fieldBindingDraft.required"
-              type="checkbox"
-              class="h-4 w-4 rounded border"
-            />
-            <span :id="`${requiredBindingInputId}-label`">{{ t("Required binding") }}</span>
+        <div v-else-if="fieldBindingDraft.sourceKind === 'loop_item'">
+          <label :for="loopItemPathInputId" class="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            {{ t("Loop Item Path (Optional)") }}
           </label>
+          <input
+            :id="loopItemPathInputId"
+            v-model="fieldBindingDraft.path"
+            class="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            placeholder="/payload/id"
+          />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            {{ t("Path can stay empty to read the whole current loop item.") }}
+          </p>
+        </div>
+
+        <div v-else class="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+          {{
+            fieldBindingDraft.sourceKind === "flow_meta"
+              ? t("This field will read from flow meta: flow_id.")
+              : fieldBindingDraft.sourceKind === "run_meta"
+                ? t("This field will read from run meta: run_id.")
+                : fieldBindingDraft.sourceKind === "loop_index"
+                  ? t("This field will read the current loop index.")
+                : t("This field will read from a flow-local variable in the current run.")
+          }}
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            :id="requiredBindingInputId"
+            v-model="fieldBindingDraft.required"
+            type="checkbox"
+            class="h-4 w-4 rounded border"
+          />
+          <span :id="`${requiredBindingInputId}-label`">{{ t("Required binding") }}</span>
+        </label>
         </div>
       </div>
 

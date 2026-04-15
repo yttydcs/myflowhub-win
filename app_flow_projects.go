@@ -1,4 +1,4 @@
-// Context: stores editable flow project drafts and validates the persisted project catalog for the Flow page.
+// 本文件负责持久化 Flow 项目草稿，并校验 Flow 页面使用的项目目录。
 
 package main
 

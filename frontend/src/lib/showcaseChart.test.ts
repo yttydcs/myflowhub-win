@@ -1,4 +1,4 @@
-// Context: covers the showcase chart helper logic used by the Win frontend.
+// 本文件提供 Win 前端复用的 `showcaseChart` 辅助函数。
 
 import { describe, expect, it } from "vitest"
 import {

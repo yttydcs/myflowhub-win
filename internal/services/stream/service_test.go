@@ -1,4 +1,4 @@
-// Context: covers the stream backend service behavior exposed to the Win shell.
+// 本文件覆盖 `stream` 后端服务的行为。
 
 package stream
 

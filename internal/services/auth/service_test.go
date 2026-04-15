@@ -1,4 +1,4 @@
-// Context: covers the auth backend service behavior exposed to the Win shell.
+// 本文件覆盖 `auth` 后端服务的行为。
 
 package auth
 

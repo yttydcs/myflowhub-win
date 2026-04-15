@@ -1,4 +1,4 @@
-// Context: implements the media helper logic used by the stream backend service.
+// 本文件实现 `stream` 后端服务中与 `media` 相关的辅助逻辑。
 
 package stream
 

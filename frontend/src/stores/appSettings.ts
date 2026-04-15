@@ -1,4 +1,4 @@
-// Context: keeps app settings and about metadata in sync with the App Wails binding and startup UI preferences.
+// 本文件维护 `appSettings` store，并让它与 Wails 绑定及共享前端状态保持同步。
 
 import { reactive } from "vue"
 import { t } from "@/i18n"

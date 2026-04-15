@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the flow body node inspector panel or dialog used by the Flow editor.
+// 本文件实现 Flow 编辑器中的 `FlowBodyNodeInspector` 组件。
 import { computed } from "vue"
 import { X } from "lucide-vue-next"
 import CardHeader from "@/components/CardHeader.vue"

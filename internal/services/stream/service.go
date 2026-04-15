@@ -1,4 +1,4 @@
-// Context: implements the stream backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `stream` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package stream
 
@@ -40,6 +40,7 @@ type ctrlWaitResult struct {
 }
 
 func nextStreamMsgID() uint32 {
+	// nextStreamMsgID 为 stream 控制帧生成单调消息号，避免并发 await 时互相串响应。
 	streamMsgSeqInit.Do(func() {
 		var seed [4]byte
 		if _, err := rand.Read(seed[:]); err != nil {
@@ -74,6 +75,7 @@ type StreamService struct {
 }
 
 func New(session *sessionsvc.SessionService, logsSvc *logs.LogService, bus corebus.IBus) *StreamService {
+	// New 初始化 stream 的本地目录、delivery 运行态和事件绑定，是整个子协议的内存中枢。
 	svc := &StreamService{
 		session:            session,
 		logs:               logsSvc,
@@ -97,6 +99,7 @@ func (s *StreamService) Close() {
 }
 
 func (s *StreamService) DeliverySnapshot() []StreamDeliveryEvent {
+	// DeliverySnapshot 导出当前内存里的 delivery 视图，给前端首次加载和窗口恢复使用。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureStateMapsLocked()
@@ -111,6 +114,7 @@ func (s *StreamService) DeliverySnapshot() []StreamDeliveryEvent {
 }
 
 func (s *StreamService) Announce(ctx context.Context, sourceID, targetID uint32, req proto.AnnounceReq) (proto.AnnounceResp, error) {
+	// Announce 在真正发协议前补齐本地 source 身份、默认 ID 并校验描述子合法性。
 	if sourceID == 0 {
 		return proto.AnnounceResp{}, errors.New("sourceID is required")
 	}
@@ -277,6 +281,7 @@ func (s *StreamService) GetConsumerSimple(sourceID, targetID uint32, req proto.G
 }
 
 func (s *StreamService) Subscribe(ctx context.Context, sourceID, targetID uint32, req proto.SubscribeReq) (proto.SubscribeResp, error) {
+	// Subscribe 成功后立即登记本地 delivery 运行态，便于后续数据/ack 帧直接接续。
 	req.ReqID = ensureReqID(req.ReqID)
 	req.SourceID = strings.TrimSpace(req.SourceID)
 	req.ConsumerID = strings.TrimSpace(req.ConsumerID)
@@ -327,6 +332,7 @@ func (s *StreamService) UnsubscribeSimple(sourceID, targetID uint32, req proto.U
 }
 
 func (s *StreamService) Connect(ctx context.Context, sourceID, targetID uint32, req proto.ConnectReq) (proto.ConnectResp, error) {
+	// Connect 用于双向 delivery 建链，成功后同样把 delivery 快照纳入本地追踪。
 	req.ReqID = ensureReqID(req.ReqID)
 	req.SourceID = strings.TrimSpace(req.SourceID)
 	req.ConsumerID = strings.TrimSpace(req.ConsumerID)
@@ -424,6 +430,7 @@ func decodeStreamCtrlMessage(payload []byte) (sdktransport.Message, error) {
 }
 
 func sendAndAwaitCtrlMessage(s *StreamService, ctx context.Context, sourceID, targetID uint32, reqAction, respAction string, payload []byte) (sdktransport.Message, error) {
+	// sendAndAwaitCtrlMessage 在总线上临时挂三类监听，手动实现 stream control 的按 msg_id await。
 	if s.session == nil {
 		return sdktransport.Message{}, errors.New("session service not initialized")
 	}
@@ -517,6 +524,7 @@ func sendAndAwaitCtrlMessage(s *StreamService, ctx context.Context, sourceID, ta
 }
 
 func sendAndAwaitJSON[T any](s *StreamService, ctx context.Context, sourceID, targetID uint32, reqAction, respAction string, req any) (T, error) {
+	// sendAndAwaitJSON 复用 control await，再补 JSON 反序列化和 code!=1 的统一错误语义。
 	var zero T
 	payload, err := encodeStreamCtrlPayload(reqAction, req)
 	if err != nil {
@@ -637,6 +645,7 @@ func normalizeOptionalKind(kind string) string {
 }
 
 func normalizeTags(in []string) []string {
+	// normalizeTags 去掉空值和重复项，保证 source/consumer 描述子落到 wire 前稳定可比较。
 	if len(in) == 0 {
 		return nil
 	}

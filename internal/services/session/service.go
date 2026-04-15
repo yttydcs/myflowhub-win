@@ -1,4 +1,4 @@
-// Context: implements the session backend service exposed to the Win shell and Wails bindings.
+// 本文件实现 `session` 后端服务，并暴露给 Win 壳层与 Wails 绑定。
 
 package session
 
@@ -61,6 +61,7 @@ type SessionService struct {
 }
 
 func New(ctx context.Context, bus eventbus.IBus, logsSvc *logs.LogService) *SessionService {
+	// New 创建 Win 壳层复用的 session，并把 frame/error 回调统一接入当前服务实例。
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -77,6 +78,7 @@ func (s *SessionService) SetContext(ctx context.Context) {
 }
 
 func (s *SessionService) Connect(addr string) error {
+	// Connect 封装底层 winsession 建链，并把成功状态广播给前端与其它 service。
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
 		return errors.New("addr is required")
@@ -99,6 +101,7 @@ func (s *SessionService) Connect(addr string) error {
 }
 
 func (s *SessionService) Close() {
+	// Close 主动断链后同步更新状态事件与日志，避免 UI 还停留在旧连接快照。
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sess != nil {
@@ -141,6 +144,7 @@ func (s *SessionService) Send(hdr core.IHeader, payload []byte) error {
 }
 
 func (s *SessionService) SendCommand(subProto uint8, sourceID, targetID uint32, payload []byte) error {
+	// SendCommand 为子协议构造标准 MajorCmd 头，并在发送后留下裁剪过的 payload 日志。
 	if subProto == 0 {
 		return errors.New("subProto is required")
 	}
@@ -168,6 +172,7 @@ func (s *SessionService) SendCommand(subProto uint8, sourceID, targetID uint32, 
 }
 
 func (s *SessionService) SendCommandAndAwait(ctx context.Context, subProto uint8, sourceID, targetID uint32, payload []byte, expectAction string) (sdkawait.Response, error) {
+	// SendCommandAndAwait 在不长时间持锁的前提下等待响应，避免阻塞 Connect/Close 等控制流。
 	if subProto == 0 {
 		return sdkawait.Response{}, errors.New("subProto is required")
 	}
@@ -205,6 +210,7 @@ func (s *SessionService) SendCommandAndAwait(ctx context.Context, subProto uint8
 }
 
 func (s *SessionService) handleFrame(hdr core.IHeader, payload []byte) {
+	// handleFrame 先把原始帧扇出给 bus，再按协议类型决定是否记详细日志。
 	if hdr == nil {
 		return
 	}
@@ -238,6 +244,7 @@ func (s *SessionService) handleFrame(hdr core.IHeader, payload []byte) {
 }
 
 func (s *SessionService) handleError(err error) {
+	// handleError 把底层链路错误转成 UI 可消费的事件，并立即标记连接失效。
 	if err == nil {
 		return
 	}
@@ -260,6 +267,7 @@ func (s *SessionService) publishState(connected bool, addr string) {
 }
 
 func shouldSkipLog(subProto uint8, payload []byte) bool {
+	// shouldSkipLog 跳过 file data/ack 大包，避免日志面板被高频二进制流淹没。
 	if subProto != protocolfile.SubProtoFile || len(payload) == 0 {
 		return false
 	}
@@ -268,6 +276,7 @@ func shouldSkipLog(subProto uint8, payload []byte) bool {
 }
 
 func trimPayload(payload []byte, limit int) ([]byte, bool) {
+	// trimPayload 只保留日志需要的前缀片段，防止大 payload 直接撑爆日志输出。
 	if len(payload) == 0 || limit <= 0 {
 		return payload, false
 	}

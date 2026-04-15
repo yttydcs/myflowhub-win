@@ -1,4 +1,4 @@
-// Context: covers the access policy catalog store behavior in the Win frontend.
+// 本文件覆盖 `accessPolicyCatalog` store 的行为。
 
 import { describe, expect, it } from "vitest"
 import {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: implements the Showcase designer page for arranging screens and widgets.
+// 本文件实现 Win 前端的 `Showcase` 页面。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import { CircleHelp, Database, ExternalLink, GripVertical, ListChecks, RefreshCw, Rss, Save, Settings2, Undo2 } from "lucide-vue-next"
@@ -42,6 +42,7 @@ const route = useRoute()
 const { t } = useI18n()
 
 const busy = ref(false)
+const refreshingVars = ref(false)
 const lastSavedSnapshot = ref("")
 
 const fallbackIdentity = reactive({ nodeId: 0, hubId: 0 })
@@ -118,16 +119,17 @@ const loadEditorDraft = async (options?: { resetSnapshot?: boolean }) => {
 }
 
 const refreshVars = async () => {
-  if (busy.value) return
-  busy.value = true
+  if (busy.value || refreshingVars.value) return
+  refreshingVars.value = true
   try {
-    await syncDraftSubscriptions()
+    await loadHomeDefaults()
+    await showcase.enterScreen(resolveEditorScreen())
     toast.success(t("Refreshed."))
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to refresh."))
   } finally {
-    busy.value = false
+    refreshingVars.value = false
   }
 }
 
@@ -214,6 +216,11 @@ type VarQuickPickItem = {
   owner: number
   mine: boolean
   watched: boolean
+}
+
+type ShowcaseChartConfigChange = {
+  rangeMs: number
+  bucketMs: number
 }
 
 const varQuickPickDialog = reactive({
@@ -627,6 +634,15 @@ const removeWidget = async (widget: ShowcaseWidget) => {
   } finally {
     busy.value = false
   }
+}
+
+const updateWidgetChartConfig = (widget: ShowcaseWidget, rawChart: ShowcaseChartConfigChange) => {
+  if (widget.kind !== "var" || !widget.var) return
+  const chart = normalizeShowcaseLineChartConfig(rawChart)
+  if (widget.var.chart.rangeMs === chart.rangeMs && widget.var.chart.bucketMs === chart.bucketMs) {
+    return
+  }
+  widget.var.chart = chart
 }
 
 type WidgetContextMenuState = {
@@ -1261,8 +1277,8 @@ onBeforeUnmount(() => {
 
         <div v-if="!screenMissing" class="flex flex-wrap items-center justify-end gap-2">
           <Tooltip :content="t('Refresh Vars')" side="bottom">
-            <Button size="icon" :disabled="busy" @click="refreshVars">
-              <RefreshCw class="h-4 w-4" aria-hidden="true" />
+            <Button size="icon" :disabled="busy || refreshingVars" @click="refreshVars">
+              <RefreshCw class="h-4 w-4" :class="refreshingVars ? 'animate-spin' : ''" aria-hidden="true" />
               <span class="sr-only">{{ t("Refresh Vars") }}</span>
             </Button>
           </Tooltip>
@@ -1348,6 +1364,7 @@ onBeforeUnmount(() => {
                 @switch-change="showcase.switchToggle(widget, $event)"
                 @slider-input="showcase.sliderInput(widget, $event)"
                 @slider-commit="showcase.sliderCommit(widget)"
+                @chart-config-change="updateWidgetChartConfig(widget, $event)"
               >
                 <template #leading>
                   <button
@@ -1397,6 +1414,7 @@ onBeforeUnmount(() => {
                   @switch-change="showcase.switchToggle(widget, $event)"
                   @slider-input="showcase.sliderInput(widget, $event)"
                   @slider-commit="showcase.sliderCommit(widget)"
+                  @chart-config-change="updateWidgetChartConfig(widget, $event)"
                 >
                   <template #leading>
                     <button
@@ -1581,7 +1599,7 @@ onBeforeUnmount(() => {
               </label>
               <input v-model="widgetDialog.colSpan" :class="inputClass" />
             </div>
-          </div>
+              </div>
 
               <div v-if="widgetDialog.kind === 'topic_button'" class="grid gap-4">
             <div class="grid gap-4 sm:grid-cols-2">
@@ -1600,7 +1618,7 @@ onBeforeUnmount(() => {
               </label>
               <textarea v-model="widgetDialog.payloadText" :class="textAreaClass" rows="6" />
             </div>
-          </div>
+              </div>
 
               <div v-else class="grid gap-4">
             <div class="grid gap-4 sm:grid-cols-3">
@@ -1774,7 +1792,7 @@ onBeforeUnmount(() => {
 
         <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
           <div class="px-1 py-1 pr-2">
-            <div class="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <input
                 v-model="varQuickPickDialog.query"
                 :class="inputClass"

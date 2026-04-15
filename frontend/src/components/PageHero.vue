@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Context: renders the shared page hero component used by Win frontend pages.
+// 本文件实现 Win 前端复用的 `PageHero` 组件。
 import { computed, useSlots } from "vue"
 import { useRoute } from "vue-router"
 import { useI18n } from "@/i18n"
