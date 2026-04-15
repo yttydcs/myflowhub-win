@@ -8,3 +8,5 @@ frontend/.vite/
 frontend/wailsjs/
 build/
 .ace-tool/
+myflowhub-mcp.exe
+bin/myflowhub-mcp.exe
