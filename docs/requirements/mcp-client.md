@@ -9,7 +9,7 @@
 ## Goal
 
 - 为 `MyFlowHub-Win` 提供一个可被 MCP host 以 `stdio` 方式拉起的无界面客户端。
-- 该客户端以独立节点身份连接 Hub，并向 AI 暴露首版 `session`、`auth`、`management`、`exec`、`flow`、`varstore` 工具。
+- 该客户端以独立节点身份连接 Hub，并向 AI 暴露首版 `session`、`auth`、`management`、`exec`、`flow`、`topicbus`、`varstore` 工具。
 - `auth` 工具除 `register/login` 外，还要支持权限自检与角色分布查询。
 - 首版默认只开放读能力与受控写能力，不与现有 GUI 本地配置互相污染。
 - MCP 返回结果应足够稳定，让 AI 能直接判断当前阻塞类型和下一步动作。
@@ -22,10 +22,11 @@
 - 支持 MCP `tools/list` / `tools/call`。
 - 支持以下首版能力：
   - `session connect/disconnect/status`
-  - `auth register/login/get_perms/list_roles/list_pending_registers/approve_register/reject_register/issue_register_permit/revoke_register_permit`
-  - `management list_nodes/node_info/node_echo/list_subtree/config_get/config_list`
+  - `auth register/login/get_perms/list_roles/push_perms_snapshot/list_pending_registers/approve_register/reject_register/issue_register_permit/revoke_register_permit`
+  - `management list_nodes/node_info/node_echo/list_subtree/config_get/config_set/config_list`
   - `exec cap_query`
   - `flow list/get/status/set/run/delete`
+  - `topicbus publish`
   - `varstore list/get/set/revoke`
 - 作为独立节点身份接入 Hub。
 - 使用独立本地配置目录保存 MCP 自己的 settings 与 node keys。
@@ -39,13 +40,13 @@
 ### Optional
 
 - 允许通过启动参数设置默认 `endpoint`、`device_id`、`display_name`、`timeout`。
-- 为后续接入 `topicbus`、`subscribe/unsubscribe` 预留扩展空间。
+- 为后续接入 `topicbus subscribe/unsubscribe/list_subs` 预留扩展空间。
 
 ### Out of Scope
 
 - 不复用现有 GUI Win 的会话、节点身份或配置目录。
-- 首版不开放 `config_set`。
 - 首版不开放 `exec.call`。
+- 首版不开放 `topicbus subscribe/unsubscribe/list_subs`。
 - 首版不通过 UI 自动化去操作现有 Win 界面。
 - 首版不实现“连接第三方 MCP Server”的通用 client。
 
@@ -54,13 +55,16 @@
 - AI host 启动 `myflowhub-mcp`，连接 Hub 并执行 `register/login`。
 - AI 在完成 `register/login` 后，立即用 `auth_get_perms` / `auth_list_roles` 校验当前身份是否具备预期权限。
 - AI 通过 `auth_list_pending_registers` 查看待审批注册，并用 `approve/reject/permit` 工具完成 authority 管理动作。
+- AI 在明确开启写 gate 后，可向 authority 推送运行期权限快照，用于修复或同步角色/节点权限分布。
 - AI 在调用写工具前先通过 `session_status` 判断是否已连接、是否已登录、写 gate 是否开启。
 - AI 列出当前节点，定位 Hub 或目标节点。
 - AI 用 `management_node_echo` 快速验证某个节点 management 链路是否可达。
 - AI 用 `management_list_subtree` 查看目标节点视角下的子树，辅助选择后续 routing target。
 - AI 读取 `authority.node_id` 等 management config，辅助决定 auth 工具应命中哪个 authority。
+- AI 在明确开启写 gate 后，可写入 management config，用于受控更新 `authority.node_id` 等运行配置。
 - AI 用 `exec_cap_query` 按 `method`、`provider_node` 或 schema 开关查询某个 hub / routing 节点可用的 exec capability routes。
 - AI 向某个执行节点下发 flow 定义，或读取 / 列出 / 运行 / 删除某个 flow。
+- AI 在任务完成、失败或需要提醒用户时，通过 `topicbus_publish` 发布实时事件，让已订阅同名 topic 的 NotifyNode 在对应机器上弹出系统通知。
 - AI 读取某个变量、列出变量名、创建变量、修改变量、撤销变量。
 - 用户同时运行 GUI Win 客户端和 MCP 客户端，两者互不干扰。
 - 用户通过脚本把 MCP 安装到 Codex，而不是手动编辑 host 配置。
@@ -73,39 +77,44 @@
 3. 首版必须显式支持 `auth register/login`，因为未认证连接默认只能访问 auth 子协议。
 4. 首版必须显式支持 `auth get_perms/list_roles`，用于 AI 在登录后自检当前节点权限和 authority 角色分布。
 5. MCP 必须显式支持 authority 审批流工具：`list_pending_registers`、`approve_register`、`reject_register`、`issue_register_permit`、`revoke_register_permit`。
-6. MCP 必须显式支持 management 只读工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_list`。
-7. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
-8. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
-9. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
-10. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
-11. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
-12. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
-13. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
-14. smoke 脚本必须支持 staged 执行：
+6. MCP 必须显式支持 authority 权限快照写入工具：`push_perms_snapshot`，并受 `allow_write` gate 保护。
+7. MCP 必须显式支持 management 工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_set`、`config_list`。
+8. `management_config_set` 必须受 `allow_write` gate 保护，且 key 必须本地校验为非空。
+9. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
+10. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
+11. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
+12. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
+13. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
+14. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
+15. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
+16. smoke 脚本必须支持 staged 执行：
    - 默认基础链路
    - 显式启用的 extended read 链路
    - 显式启用的 authority 链路
    - 显式启用的 write 链路
-15. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
-16. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
-17. authority 与写操作阶段默认不得执行；只有显式参数满足时才允许进入。
-18. 写阶段必须使用临时 flow / var 资源名，并在结束后显式清理；清理失败时必须提示残留资源。
-19. 写阶段必须显式依赖 `allow_write` 启动 gate，不得在未开 gate 时静默降级。
-20. authority 阶段必须始终先执行 pending list；permit 签发必须要求 `device_id + role` 成对输入，approve/reject 必须要求显式 `request_id`。
-21. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
+17. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
+18. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
+19. authority 与写操作阶段默认不得执行；只有显式参数满足时才允许进入。
+20. 写阶段必须使用临时 flow / var 资源名，并在结束后显式清理；清理失败时必须提示残留资源。
+21. 写阶段必须显式依赖 `allow_write` 启动 gate，不得在未开 gate 时静默降级。
+22. authority 阶段必须始终先执行 pending list；permit 签发必须要求 `device_id + role` 成对输入，approve/reject 必须要求显式 `request_id`。
+23. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
    - `device_id`
    - `node_id`
    - `hub_id`
    - `role`
-22. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
-23. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
-24. `flow set/run/delete` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
-25. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
-26. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
-27. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
-28. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
-29. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
-30. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
+24. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
+25. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
+26. MCP 必须显式支持 `topicbus_publish`，用于向 TopicBus 发布实时事件。
+27. `topicbus_publish` 必须支持显式 `topic`、可选 `name`、可选通知字段 `title/body/level/source/url`、可选结构化 `payload/meta`，以及可选 `source_id/target_id`。
+28. `topicbus_publish` 必须使用精确 topic，不提供 wildcard、离线重放或投递确认。
+29. `auth push_perms_snapshot`、`management config_set`、`flow set/run/delete`、`topicbus publish` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
+30. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
+31. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
+32. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
+33. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
+34. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
+35. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
 
 ## Non-functional Requirements
 
@@ -135,19 +144,24 @@
 - authority 工具调用方不给 `authority_id`，同时也没有可用的 hub target。
 - `login` 模式给了空 `config_dir`、缺失 node keys 或缺失可用 `node_id`。
 - `auth_list_roles` 因 Hub 角色权限不足而失败。
+- `auth_push_perms_snapshot` 的 snapshot 为空，或当前角色无权向 authority 推送权限快照。
 - `exec_cap_query` 的 `requester_node` / `provider_node` 为 0，或 `limit` 为负数。
 - `management_node_echo` 的 `message` 为空字符串。
 - `management_config_get` 命中不存在 key 或因角色权限不足失败。
+- `management_config_set` 的 key 为空，或当前角色无权写入 management config。
 - 默认 `target_id` 缺失。
+- `topicbus_publish` 的 `topic` 为空，或自定义 `name` 为空。
+- `topicbus_publish` 的 `payload` / `meta` 不是 JSON object。
+- TopicBus 发布成功但 NotifyNode 不在线、未启动 Notify 或订阅 topic 不精确匹配。
 - 本地配置目录不存在或不可写。
-- `flow set/run/delete` 或 varstore 写工具在 `allow_write=false` 时被调用。
+- `auth push_perms_snapshot`、`management config_set`、`flow set/run/delete`、`topicbus publish` 或 varstore 写工具在 `allow_write=false` 时被调用。
 - host 配置中已存在同名 MCP server，需要覆盖而不是重复追加。
 
 ## Acceptance Criteria
 
 1. `go build ./cmd/myflowhub-mcp` 成功。
 2. MCP host 能发现并调用首版工具。
-3. 在真实 Hub 上可完成 `connect -> register/login -> auth_get_perms -> auth_list_roles -> auth authority ops -> management list_nodes/node_info/node_echo/list_subtree/config read -> exec_cap_query -> flow list/get/status/set/run/delete -> varstore list/get/set/revoke` 的基础链路。
+3. 在真实 Hub 上可完成 `connect -> register/login -> auth_get_perms -> auth_list_roles -> auth authority ops -> auth_push_perms_snapshot -> management list_nodes/node_info/node_echo/list_subtree/config read/write -> exec_cap_query -> flow list/get/status/set/run/delete -> topicbus publish -> varstore list/get/set/revoke` 的基础链路。
 4. MCP 客户端作为独立节点身份出现在 Hub 中。
 5. MCP 客户端的 settings 与 node keys 不写入 GUI Win 默认配置目录。
 6. `allow_write=false` 时，写工具被本地拒绝且错误结构可读。

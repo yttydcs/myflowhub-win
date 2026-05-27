@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	coreperm "github.com/yttydcs/myflowhub-core/kit/permission"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
 	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
@@ -33,6 +34,7 @@ type Backend interface {
 	Login(ctx context.Context, sourceID, targetID uint32, deviceID string, nodeID uint32) (protoauth.RespData, error)
 	GetPerms(ctx context.Context, sourceID, targetID, nodeID uint32) (protoauth.RespData, error)
 	ListRoles(ctx context.Context, sourceID, targetID uint32, req protoauth.ListRolesReq) (authsvc.ListRolesResp, error)
+	PushPermsSnapshot(ctx context.Context, sourceID, targetID uint32, snapshot coreperm.Snapshot) error
 	ListPendingRegisters(ctx context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error)
 	ApproveRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.ApproveRegisterReq) (authsvc.ApproveRegisterResp, error)
 	RejectRegister(ctx context.Context, sourceID, targetID uint32, req authsvc.RejectRegisterReq) (authsvc.RejectRegisterResp, error)
@@ -43,6 +45,7 @@ type Backend interface {
 	NodeInfo(ctx context.Context, sourceID, targetID uint32) (protomanagement.NodeInfoResp, error)
 	NodeEcho(ctx context.Context, sourceID, targetID uint32, message string) (protomanagement.NodeEchoResp, error)
 	ConfigGet(ctx context.Context, sourceID, targetID uint32, key string) (protomanagement.ConfigResp, error)
+	ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) (protomanagement.ConfigResp, error)
 	ConfigList(ctx context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error)
 	ListSubtree(ctx context.Context, sourceID, targetID uint32) (protomanagement.ListSubtreeResp, error)
 	ExecCapQuery(ctx context.Context, sourceID, targetID uint32, req protoexec.CapQueryReq) (protoexec.CapQueryResp, error)
@@ -54,6 +57,7 @@ type Backend interface {
 	FlowListRuns(ctx context.Context, sourceID, targetID uint32, req protoflow.ListRunsReq) (protoflow.ListRunsResp, error)
 	FlowList(ctx context.Context, sourceID, targetID uint32, req protoflow.ListReq) (protoflow.ListResp, error)
 	FlowGet(ctx context.Context, sourceID, targetID uint32, req protoflow.GetReq) (protoflow.GetResp, error)
+	TopicBusPublish(ctx context.Context, sourceID, targetID uint32, topic, name, payloadText string) error
 	VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error)
 	VarGet(ctx context.Context, sourceID, targetID uint32, req protovarstore.GetReq) (protovarstore.VarResp, error)
 	VarSet(ctx context.Context, sourceID, targetID uint32, req protovarstore.SetReq) (protovarstore.VarResp, error)
@@ -96,6 +100,13 @@ type authListRolesArgs struct {
 	NodeIDs     []uint32 `json:"node_ids,omitempty"`
 	SourceID    *uint32  `json:"source_id,omitempty"`
 	TargetID    *uint32  `json:"target_id,omitempty"`
+}
+
+type authPushPermsSnapshotArgs struct {
+	AuthorityID *uint32           `json:"authority_id,omitempty"`
+	Snapshot    coreperm.Snapshot `json:"snapshot"`
+	SourceID    *uint32           `json:"source_id,omitempty"`
+	TargetID    *uint32           `json:"target_id,omitempty"`
 }
 
 type authListPendingRegistersArgs struct {
@@ -146,6 +157,13 @@ type managementArgs struct {
 
 type managementConfigGetArgs struct {
 	Key      string  `json:"key"`
+	SourceID *uint32 `json:"source_id,omitempty"`
+	TargetID *uint32 `json:"target_id,omitempty"`
+}
+
+type managementConfigSetArgs struct {
+	Key      string  `json:"key"`
+	Value    string  `json:"value"`
 	SourceID *uint32 `json:"source_id,omitempty"`
 	TargetID *uint32 `json:"target_id,omitempty"`
 }
@@ -237,6 +255,20 @@ type flowDeleteArgs struct {
 	ExecutorNode *uint32 `json:"executor_node,omitempty"`
 }
 
+type topicBusPublishArgs struct {
+	Topic    string          `json:"topic"`
+	Name     *string         `json:"name,omitempty"`
+	Title    string          `json:"title,omitempty"`
+	Body     string          `json:"body,omitempty"`
+	Level    string          `json:"level,omitempty"`
+	Source   string          `json:"source,omitempty"`
+	URL      string          `json:"url,omitempty"`
+	Payload  json.RawMessage `json:"payload,omitempty"`
+	Meta     json.RawMessage `json:"meta,omitempty"`
+	SourceID *uint32         `json:"source_id,omitempty"`
+	TargetID *uint32         `json:"target_id,omitempty"`
+}
+
 type varListArgs struct {
 	SourceID *uint32 `json:"source_id,omitempty"`
 	TargetID *uint32 `json:"target_id,omitempty"`
@@ -306,7 +338,10 @@ type execQueryRoute struct {
 	RequesterNode uint32
 }
 
-const authorityNodeIDConfigKey = "authority.node_id"
+const (
+	authorityNodeIDConfigKey   = "authority.node_id"
+	defaultTopicBusPublishName = "mcp.topicbus.publish"
+)
 
 func NewTools(backend Backend) []Tool {
 	// NewTools 集中声明 MCP 对外能力面，让工具名、schema 和 handler 一次性对齐。
@@ -377,6 +412,17 @@ func NewTools(backend Backend) []Tool {
 				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
 			}),
 			Handler: set.authListRoles,
+		},
+		{
+			Name:        "myflowhub_auth_push_perms_snapshot",
+			Description: "Push a runtime auth permission snapshot to the authority. Requires --allow-write.",
+			InputSchema: objectSchema(map[string]any{
+				"authority_id": positiveIntegerSchema("Optional authority node ID override."),
+				"snapshot":     openObjectSchema("Permission snapshot with default_role, node_roles, and role_perms."),
+				"source_id":    positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id":    positiveIntegerSchema("Hub target used to resolve authority. Falls back to hub_id or default_target."),
+			}, "snapshot"),
+			Handler: set.authPushPermsSnapshot,
 		},
 		{
 			Name:        "myflowhub_auth_list_pending_registers",
@@ -466,6 +512,17 @@ func NewTools(backend Backend) []Tool {
 				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
 			}, "key"),
 			Handler: set.managementConfigGet,
+		},
+		{
+			Name:        "myflowhub_management_config_set",
+			Description: "Write a management config key on the current hub or node. Requires --allow-write.",
+			InputSchema: objectSchema(map[string]any{
+				"key":       stringSchema("Management config key."),
+				"value":     stringSchema("Management config value."),
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Target node ID. Falls back to hub_id or default_target."),
+			}, "key", "value"),
+			Handler: set.managementConfigSet,
 		},
 		{
 			Name:        "myflowhub_management_config_list",
@@ -611,6 +668,24 @@ func NewTools(backend Backend) []Tool {
 				"executor_node": positiveIntegerSchema("Actual flow executor node. Falls back to target_id when omitted."),
 			}, "flow_id"),
 			Handler: set.flowDelete,
+		},
+		{
+			Name:        "myflowhub_topicbus_publish",
+			Description: "Publish a live TopicBus event. This is disabled unless allow_write=true and does not confirm subscriber delivery.",
+			InputSchema: objectSchema(map[string]any{
+				"topic":     stringSchema("Exact TopicBus topic to publish."),
+				"name":      stringSchema("Optional event name. Defaults to mcp.topicbus.publish."),
+				"title":     stringSchema("Optional notification title copied into the payload."),
+				"body":      stringSchema("Optional notification body copied into the payload."),
+				"level":     stringSchema("Optional severity level copied into the payload."),
+				"source":    stringSchema("Optional logical source copied into the payload."),
+				"url":       stringSchema("Optional URL copied into the payload."),
+				"payload":   openObjectSchema("Optional structured payload object."),
+				"meta":      openObjectSchema("Optional structured metadata object copied into payload.meta."),
+				"source_id": positiveIntegerSchema("Source node ID. Falls back to the current auth snapshot."),
+				"target_id": positiveIntegerSchema("Transport target. Falls back to hub_id or default_target."),
+			}, "topic"),
+			Handler: set.topicBusPublish,
 		},
 		{
 			Name:        "myflowhub_varstore_list",
@@ -814,6 +889,43 @@ func (s toolSet) authListRoles(ctx context.Context, raw json.RawMessage) CallToo
 		"request":           req,
 		"response":          resp,
 	})
+}
+
+func (s toolSet) authPushPermsSnapshot(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[authPushPermsSnapshotArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with snapshot and optional authority_id, source_id, and target_id.", nil)
+	}
+	if !s.backend.AllowWrite() {
+		return writeDisabledResult("myflowhub_auth_push_perms_snapshot")
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_auth_push_perms_snapshot")
+	}
+	if snapshotEmpty(args.Snapshot) {
+		return invalidArgumentsResult("snapshot is required", "Pass at least one of snapshot.default_role, snapshot.default_perms, snapshot.node_roles, or snapshot.role_perms.", nil)
+	}
+	route, err := s.resolveAuthorityRoute(ctx, args.SourceID, args.TargetID, args.AuthorityID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id plus authority_id/target_id explicitly.")
+	}
+	if err := s.backend.PushPermsSnapshot(ctx, route.SourceID, route.AuthorityID, args.Snapshot); err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the auth route can accept runtime permission snapshots.", map[string]any{"source_id": route.SourceID, "target_id": route.AuthorityID, "hub_target_id": route.HubTargetID})
+	}
+	return successResult(map[string]any{
+		"source_id":         route.SourceID,
+		"target_id":         route.AuthorityID,
+		"hub_target_id":     route.HubTargetID,
+		"target_resolution": route.Resolution,
+		"snapshot":          args.Snapshot,
+	})
+}
+
+func snapshotEmpty(snapshot coreperm.Snapshot) bool {
+	return strings.TrimSpace(snapshot.DefaultRole) == "" &&
+		snapshot.DefaultPerms == nil &&
+		snapshot.NodeRoles == nil &&
+		snapshot.RolePerms == nil
 }
 
 func (s toolSet) authListPendingRegisters(ctx context.Context, raw json.RawMessage) CallToolResult {
@@ -1032,6 +1144,32 @@ func (s toolSet) managementConfigGet(ctx context.Context, raw json.RawMessage) C
 		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can read management config.", map[string]any{"source_id": sourceID, "target_id": targetID, "key": key})
 	}
 	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "key": key, "response": resp})
+}
+
+func (s toolSet) managementConfigSet(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[managementConfigSetArgs](raw)
+	if err != nil {
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with key, value, and optional source_id and target_id.", nil)
+	}
+	key := strings.TrimSpace(args.Key)
+	if key == "" {
+		return invalidArgumentsResult("key is required", "Pass a non-empty config key.", nil)
+	}
+	if !s.backend.AllowWrite() {
+		return writeDisabledResult("myflowhub_management_config_set")
+	}
+	if !s.backend.SessionConnected() {
+		return notConnectedResult("myflowhub_management_config_set")
+	}
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
+	if err != nil {
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
+	}
+	resp, err := s.backend.ConfigSet(ctx, sourceID, targetID, key, args.Value)
+	if err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can write management config.", map[string]any{"source_id": sourceID, "target_id": targetID, "key": key})
+	}
+	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "key": key, "value": args.Value, "response": resp})
 }
 
 func (s toolSet) managementConfigList(ctx context.Context, raw json.RawMessage) CallToolResult {
@@ -1348,285 +1486,35 @@ func (s toolSet) flowDelete(ctx context.Context, raw json.RawMessage) CallToolRe
 	})
 }
 
-func (s toolSet) varstoreList(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[varListArgs](raw)
+func (s toolSet) topicBusPublish(ctx context.Context, raw json.RawMessage) CallToolResult {
+	args, err := decodeArgs[topicBusPublishArgs](raw)
 	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with optional owner/source_id/target_id.", nil)
+		return invalidArgumentsResult(err.Error(), "Pass a JSON object with topic and optional notification payload fields.", nil)
 	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_varstore_list")
-	}
-	sourceID, ownerID, targetID, err := s.resolveVarRoute(args.SourceID, args.Owner, args.TargetID)
+	topic, name, payload, payloadText, err := normalizeTopicBusPublishArgs(args)
 	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id and owner/target_id explicitly.")
-	}
-	req := protovarstore.ListReq{Owner: ownerID}
-	resp, err := s.backend.VarList(ctx, sourceID, targetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can list variables.", map[string]any{"source_id": sourceID, "target_id": targetID, "owner": ownerID})
-	}
-	return successResult(map[string]any{"source_id": sourceID, "target_id": targetID, "owner": ownerID, "response": resp})
-}
-
-func (s toolSet) resolveAuthorityRoute(ctx context.Context, sourceID, targetID, authorityID *uint32) (authorityRoute, error) {
-	// resolveAuthorityRoute 先确定 source/hub，再按 authority.node_id 配置把真正的 authority 节点解出来。
-	source, hubTarget, err := s.resolveManagementRoute(sourceID, targetID)
-	if err != nil {
-		return authorityRoute{}, err
-	}
-	if explicit, ok, err := positiveNodeID(authorityID, "authority_id"); err != nil {
-		return authorityRoute{}, err
-	} else if ok {
-		return authorityRoute{
-			SourceID:    source,
-			HubTargetID: hubTarget,
-			AuthorityID: explicit,
-			Resolution:  "explicit",
-		}, nil
-	}
-	configKey := authorityNodeIDConfigKey
-	resp, err := s.backend.ConfigGet(ctx, source, hubTarget, configKey)
-	if err != nil {
-		return authorityRoute{
-			SourceID:    source,
-			HubTargetID: hubTarget,
-			AuthorityID: hubTarget,
-			Resolution:  "hub_target_fallback",
-		}, nil
-	}
-	if parsed, ok := parsePositiveUint32String(resp.Value); ok {
-		return authorityRoute{
-			SourceID:    source,
-			HubTargetID: hubTarget,
-			AuthorityID: parsed,
-			Resolution:  "config_authority_node_id",
-		}, nil
-	}
-	return authorityRoute{
-		SourceID:    source,
-		HubTargetID: hubTarget,
-		AuthorityID: hubTarget,
-		Resolution:  "hub_target_fallback",
-	}, nil
-}
-
-func normalizeFlowSetReq(args flowSetArgs, route flowRoute) (protoflow.SetReq, error) {
-	// normalizeFlowSetReq 把 MCP 的 tool 参数压缩成 protocol/set 请求，并补齐 req_id 与 executor 语义。
-	reqID := ensureReqID(args.ReqID)
-	flowID := strings.TrimSpace(args.FlowID)
-	if flowID == "" {
-		return protoflow.SetReq{}, errors.New("flow_id is required")
-	}
-	if len(args.Trigger) == 0 {
-		return protoflow.SetReq{}, errors.New("trigger is required")
-	}
-	if len(args.Graph) == 0 {
-		return protoflow.SetReq{}, errors.New("graph is required")
-	}
-	return protoflow.SetReq{
-		ReqID:        reqID,
-		FlowID:       flowID,
-		Name:         strings.TrimSpace(args.Name),
-		Trigger:      args.Trigger,
-		Graph:        args.Graph,
-		ExecutorNode: route.ExecutorNode,
-	}, nil
-}
-
-func (s toolSet) buildSessionStatus() sessionStatusPayload {
-	// buildSessionStatus 把 runtime defaults、auth snapshot 和 readiness/hints 合成为 AI 易消费的总览。
-	status := sessionStatusPayload{
-		Connected: s.backend.SessionConnected(),
-		Defaults:  s.backend.Defaults(),
-		Auth:      s.backend.AuthSnapshot(),
-		Config:    s.backend.Status().Config,
-		Permissions: statusPermissions{
-			AuthorizationModel: "hub_rbac_snapshot",
-			LocalWriteGate:     s.backend.AllowWrite(),
-		},
-	}
-	status.Endpoint = s.backend.Status().Endpoint
-	status.Readiness = statusReadiness{
-		Authenticated: status.Auth.LoggedIn,
-		HasIdentity:   status.Auth.NodeID != 0,
-		HasTarget:     status.Defaults.DefaultTarget != 0 || status.Auth.HubID != 0,
-		CanRegister:   status.Connected,
-		CanLogin:      status.Connected,
-		CanManage:     status.Connected && status.Auth.LoggedIn,
-		CanVarRead:    status.Connected && status.Auth.LoggedIn,
-		CanVarWrite:   status.Connected && status.Auth.LoggedIn && s.backend.AllowWrite(),
-	}
-	status.Hints = statusHints(status)
-	return status
-}
-
-func statusHints(status sessionStatusPayload) []string {
-	// statusHints 把原始状态翻译成下一步建议，减少外部 host 自己猜测工作流。
-	hints := make([]string, 0, 4)
-	if !status.Connected {
-		return append(hints, "Connect to a hub endpoint first.")
-	}
-	if !status.Auth.LoggedIn {
-		hints = append(hints, "Register or login before calling management, flow, or varstore tools.")
-	}
-	if status.Auth.NodeID == 0 {
-		hints = append(hints, "A node ID is not available yet; pass node_id explicitly for login if needed.")
-	}
-	if status.Defaults.DefaultTarget == 0 && status.Auth.HubID == 0 {
-		hints = append(hints, "No default target is available; pass target_id explicitly for management or flow tools.")
-	}
-	if !status.Permissions.LocalWriteGate {
-		hints = append(hints, "Write tools are disabled locally; restart the MCP client with --allow-write to enable them.")
-	}
-	return hints
-}
-	args, err := decodeArgs[flowSetArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id, trigger, graph, and optional req_id, name, source_id, target_id, and executor_node.", nil)
+		return invalidArgumentsResult(err.Error(), "Pass a non-empty topic, a non-empty name when set, and JSON objects for payload and meta.", nil)
 	}
 	if !s.backend.AllowWrite() {
-		return writeDisabledResult("myflowhub_flow_set")
+		return writeDisabledResult("myflowhub_topicbus_publish")
 	}
 	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_set")
+		return notConnectedResult("myflowhub_topicbus_publish")
 	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
+	sourceID, targetID, err := s.resolveManagementRoute(args.SourceID, args.TargetID)
 	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
+		return routeErrorResult(err, "Login first or pass source_id and target_id explicitly.")
 	}
-	req, err := normalizeFlowSetReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a non-empty flow_id plus trigger and graph objects that match the flow protocol.", nil)
+	if err := s.backend.TopicBusPublish(ctx, sourceID, targetID, topic, name, payloadText); err != nil {
+		return upstreamErrorResult(err, "Check hub connectivity, write permission, and whether the TopicBus route is available.", map[string]any{"source_id": sourceID, "target_id": targetID, "topic": topic, "name": name})
 	}
-	resp, err := s.backend.FlowSet(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity, write gating, and whether the current role can persist flows.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
-}
-
-func (s toolSet) flowRun(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[flowRunArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id and optional req_id, source_id, target_id, and executor_node.", nil)
-	}
-	if !s.backend.AllowWrite() {
-		return writeDisabledResult("myflowhub_flow_run")
-	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_run")
-	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
-	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
-	}
-	req, err := normalizeFlowRunReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a non-empty flow_id.", nil)
-	}
-	resp, err := s.backend.FlowRun(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the selected executor node can run the requested flow.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
-}
-
-func (s toolSet) flowCancelRun(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[flowCancelRunArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id, run_id, and optional req_id, source_id, target_id, and executor_node.", nil)
-	}
-	if !s.backend.AllowWrite() {
-		return writeDisabledResult("myflowhub_flow_cancel_run")
-	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_cancel_run")
-	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
-	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
-	}
-	req, err := normalizeFlowCancelRunReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass non-empty flow_id and run_id.", nil)
-	}
-	resp, err := s.backend.FlowCancelRun(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the selected executor node can cancel the requested run.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
-}
-
-func (s toolSet) flowStatus(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[flowStatusArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id and optional run_id, req_id, source_id, target_id, and executor_node.", nil)
-	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_status")
-	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
-	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
-	}
-	req, err := normalizeFlowStatusReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a non-empty flow_id and only include run_id when it is non-empty.", nil)
-	}
-	resp, err := s.backend.FlowStatus(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the selected executor node can read flow status.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
-}
-
-func (s toolSet) flowListRuns(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[flowListRunsArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id and optional limit, req_id, source_id, target_id, and executor_node.", nil)
-	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_list_runs")
-	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
-	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
-	}
-	req, err := normalizeFlowListRunsReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a non-empty flow_id and a non-negative limit when set.", nil)
-	}
-	resp, err := s.backend.FlowListRuns(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the selected executor node can list retained runs.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
-}
-
-func (s toolSet) flowDelete(ctx context.Context, raw json.RawMessage) CallToolResult {
-	args, err := decodeArgs[flowDeleteArgs](raw)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a JSON object with flow_id and optional req_id, source_id, target_id, and executor_node.", nil)
-	}
-	if !s.backend.AllowWrite() {
-		return writeDisabledResult("myflowhub_flow_delete")
-	}
-	if !s.backend.SessionConnected() {
-		return notConnectedResult("myflowhub_flow_delete")
-	}
-	route, err := s.resolveFlowRoute(args.SourceID, args.TargetID, args.ExecutorNode)
-	if err != nil {
-		return routeErrorResult(err, "Login first or pass source_id, target_id, and executor_node explicitly.")
-	}
-	req, err := normalizeFlowDeleteReq(args, route)
-	if err != nil {
-		return invalidArgumentsResult(err.Error(), "Pass a non-empty flow_id.", nil)
-	}
-	resp, err := s.backend.FlowDelete(ctx, route.SourceID, route.TargetID, req)
-	if err != nil {
-		return upstreamErrorResult(err, "Check hub connectivity and whether the current role can delete flows.", map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req})
-	}
-	return successResult(map[string]any{"source_id": route.SourceID, "target_id": route.TargetID, "executor_node": route.ExecutorNode, "request": req, "response": resp})
+	return successResult(map[string]any{
+		"source_id": sourceID,
+		"target_id": targetID,
+		"topic":     topic,
+		"name":      name,
+		"payload":   payload,
+	})
 }
 
 func (s toolSet) varstoreList(ctx context.Context, raw json.RawMessage) CallToolResult {
@@ -2182,6 +2070,68 @@ func normalizeFlowDeleteReq(args flowDeleteArgs, route flowRoute) (flowsvc.Delet
 	}, nil
 }
 
+func normalizeTopicBusPublishArgs(args topicBusPublishArgs) (string, string, map[string]any, string, error) {
+	topic := strings.TrimSpace(args.Topic)
+	if topic == "" {
+		return "", "", nil, "", errors.New("topic is required")
+	}
+	name := defaultTopicBusPublishName
+	if args.Name != nil {
+		name = strings.TrimSpace(*args.Name)
+		if name == "" {
+			return "", "", nil, "", errors.New("name must not be empty when provided")
+		}
+	}
+
+	payload, err := decodeOptionalJSONObject(args.Payload, "payload")
+	if err != nil {
+		return "", "", nil, "", err
+	}
+	meta, err := decodeOptionalJSONObject(args.Meta, "meta")
+	if err != nil {
+		return "", "", nil, "", err
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	for key, value := range map[string]string{
+		"title":  args.Title,
+		"body":   args.Body,
+		"level":  args.Level,
+		"source": args.Source,
+		"url":    args.URL,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			payload[key] = value
+		}
+	}
+	if meta != nil {
+		payload["meta"] = meta
+	}
+	if len(payload) == 0 {
+		return topic, name, nil, "", nil
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", nil, "", fmt.Errorf("encode payload: %w", err)
+	}
+	return topic, name, payload, string(encoded), nil
+}
+
+func decodeOptionalJSONObject(raw json.RawMessage, field string) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object: %w", field, err)
+	}
+	if out == nil {
+		return nil, fmt.Errorf("%s must be a JSON object", field)
+	}
+	return out, nil
+}
+
 func ensureReqID(value string) string {
 	if trimmed := strings.TrimSpace(value); trimmed != "" {
 		return trimmed
@@ -2287,7 +2237,7 @@ func statusHints(status sessionStatusPayload) []string {
 		}
 	}
 	if !status.Permissions.LocalWriteGate {
-		hints = append(hints, "Restart the MCP process with --allow-write to enable myflowhub_flow_set, myflowhub_flow_run, myflowhub_flow_cancel_run, myflowhub_flow_delete, myflowhub_varstore_set, and myflowhub_varstore_revoke.")
+		hints = append(hints, "Restart the MCP process with --allow-write to enable myflowhub_auth_push_perms_snapshot, myflowhub_management_config_set, myflowhub_flow_set, myflowhub_flow_run, myflowhub_flow_cancel_run, myflowhub_flow_delete, myflowhub_topicbus_publish, myflowhub_varstore_set, and myflowhub_varstore_revoke.")
 	}
 	if len(hints) == 0 {
 		hints = append(hints, "Session is ready for management, exec, flow, and varstore read operations.")

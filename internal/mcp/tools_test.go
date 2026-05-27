@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	coreperm "github.com/yttydcs/myflowhub-core/kit/permission"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
 	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
@@ -50,6 +51,12 @@ type fakeBackend struct {
 		req      protoauth.ListRolesReq
 		called   bool
 	}
+	pushPermsSnapshotArgs struct {
+		sourceID uint32
+		targetID uint32
+		snapshot coreperm.Snapshot
+		called   bool
+	}
 	listPendingArgs struct {
 		sourceID uint32
 		targetID uint32
@@ -84,6 +91,13 @@ type fakeBackend struct {
 		sourceID uint32
 		targetID uint32
 		key      string
+		called   bool
+	}
+	configSetArgs struct {
+		sourceID uint32
+		targetID uint32
+		key      string
+		value    string
 		called   bool
 	}
 	configListArgs struct {
@@ -156,6 +170,14 @@ type fakeBackend struct {
 		req      protoflow.GetReq
 		called   bool
 	}
+	topicBusPublishArgs struct {
+		sourceID    uint32
+		targetID    uint32
+		topic       string
+		name        string
+		payloadText string
+		called      bool
+	}
 	varSetArgs struct {
 		sourceID uint32
 		targetID uint32
@@ -163,9 +185,10 @@ type fakeBackend struct {
 		called   bool
 	}
 
-	configValues  map[string]string
-	configGetErr  error
-	configListErr error
+	configValues       map[string]string
+	configGetErr       error
+	configListErr      error
+	topicBusPublishErr error
 }
 
 func (f *fakeBackend) Status() mcpapp.Status  { return f.status }
@@ -218,6 +241,15 @@ func (f *fakeBackend) ListRoles(_ context.Context, sourceID, targetID uint32, re
 		Total: len(req.NodeIDs),
 		Roles: []protoauth.RolePermEntry{{NodeID: 7, Role: "admin", Perms: []string{"var.read"}}},
 	}, nil
+}
+func (f *fakeBackend) PushPermsSnapshot(_ context.Context, sourceID, targetID uint32, snapshot coreperm.Snapshot) error {
+	f.pushPermsSnapshotArgs = struct {
+		sourceID uint32
+		targetID uint32
+		snapshot coreperm.Snapshot
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, snapshot: snapshot, called: true}
+	return nil
 }
 func (f *fakeBackend) ListPendingRegisters(_ context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error) {
 	f.listPendingArgs = struct {
@@ -312,6 +344,20 @@ func (f *fakeBackend) ConfigGet(_ context.Context, sourceID, targetID uint32, ke
 		return protomanagement.ConfigResp{Code: 1, Key: key, Value: value}, nil
 	}
 	return protomanagement.ConfigResp{}, errors.New("not found (code=404)")
+}
+func (f *fakeBackend) ConfigSet(_ context.Context, sourceID, targetID uint32, key, value string) (protomanagement.ConfigResp, error) {
+	f.configSetArgs = struct {
+		sourceID uint32
+		targetID uint32
+		key      string
+		value    string
+		called   bool
+	}{sourceID: sourceID, targetID: targetID, key: key, value: value, called: true}
+	if f.configValues == nil {
+		f.configValues = make(map[string]string)
+	}
+	f.configValues[key] = value
+	return protomanagement.ConfigResp{Code: 1, Key: key, Value: value}, nil
 }
 func (f *fakeBackend) ConfigList(_ context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error) {
 	f.configListArgs = struct {
@@ -425,6 +471,17 @@ func (f *fakeBackend) FlowGet(_ context.Context, sourceID, targetID uint32, req 
 	}{sourceID: sourceID, targetID: targetID, req: req, called: true}
 	return protoflow.GetResp{Code: 1, ReqID: req.ReqID, ExecutorNode: req.ExecutorNode, FlowID: req.FlowID, Name: "demo"}, nil
 }
+func (f *fakeBackend) TopicBusPublish(_ context.Context, sourceID, targetID uint32, topic, name, payloadText string) error {
+	f.topicBusPublishArgs = struct {
+		sourceID    uint32
+		targetID    uint32
+		topic       string
+		name        string
+		payloadText string
+		called      bool
+	}{sourceID: sourceID, targetID: targetID, topic: topic, name: name, payloadText: payloadText, called: true}
+	return f.topicBusPublishErr
+}
 func (f *fakeBackend) VarList(context.Context, uint32, uint32, protovarstore.ListReq) (protovarstore.VarResp, error) {
 	return protovarstore.VarResp{Code: 1}, nil
 }
@@ -480,6 +537,17 @@ func TestExecAndManagementReadToolsRegistered(t *testing.T) {
 		if !names[name] {
 			t.Fatalf("expected tool %q to be registered", name)
 		}
+	}
+}
+
+func TestTopicBusPublishToolRegistered(t *testing.T) {
+	tools := NewTools(&fakeBackend{})
+	names := map[string]bool{}
+	for _, tool := range tools {
+		names[tool.Name] = true
+	}
+	if !names["myflowhub_topicbus_publish"] {
+		t.Fatal("expected myflowhub_topicbus_publish to be registered")
 	}
 }
 
@@ -801,6 +869,133 @@ func TestManagementListSubtreeFallsBackToStartupDefaults(t *testing.T) {
 	}
 }
 
+func TestTopicBusPublishBlockedWhenWriteDisabled(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       false,
+		auth:             mcpapp.AuthSnapshot{NodeID: 5, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_topicbus_publish").Handler(context.Background(), json.RawMessage(`{"topic":"codex/task/done","title":"done"}`))
+	if !result.IsError {
+		t.Fatalf("expected error result, got %#v", result)
+	}
+	if backend.topicBusPublishArgs.called {
+		t.Fatal("expected TopicBusPublish() not called when allow_write=false")
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "write_disabled" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+}
+
+func TestTopicBusPublishRejectsEmptyTopic(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 5, HubID: 9, LoggedIn: true},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_topicbus_publish").Handler(context.Background(), json.RawMessage(`{"topic":"   "}`))
+	if !result.IsError {
+		t.Fatalf("expected error result, got %#v", result)
+	}
+	if backend.topicBusPublishArgs.called {
+		t.Fatal("expected TopicBusPublish() not called for invalid topic")
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "invalid_arguments" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+}
+
+func TestTopicBusPublishUsesDefaultsAndMergesPayload(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+	}
+
+	raw := json.RawMessage(`{
+		"topic":" codex/task/done ",
+		"name":" codex.done ",
+		"title":"完成",
+		"body":"CI passed",
+		"level":"info",
+		"source":"codex",
+		"url":"https://example.test/run/1",
+		"payload":{"body":"old","extra":3},
+		"meta":{"commit":"abc123"}
+	}`)
+	result := findTool(t, NewTools(backend), "myflowhub_topicbus_publish").Handler(context.Background(), raw)
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.topicBusPublishArgs.called {
+		t.Fatal("expected TopicBusPublish() called")
+	}
+	if backend.topicBusPublishArgs.sourceID != 7 || backend.topicBusPublishArgs.targetID != 9 {
+		t.Fatalf("unexpected publish route: %+v", backend.topicBusPublishArgs)
+	}
+	if backend.topicBusPublishArgs.topic != "codex/task/done" || backend.topicBusPublishArgs.name != "codex.done" {
+		t.Fatalf("unexpected publish identity: %+v", backend.topicBusPublishArgs)
+	}
+	var sent map[string]any
+	if err := json.Unmarshal([]byte(backend.topicBusPublishArgs.payloadText), &sent); err != nil {
+		t.Fatalf("payload was not JSON object: %v text=%q", err, backend.topicBusPublishArgs.payloadText)
+	}
+	if sent["body"] != "CI passed" || sent["title"] != "完成" || sent["extra"].(float64) != 3 {
+		t.Fatalf("unexpected payload merge: %#v", sent)
+	}
+	meta, ok := sent["meta"].(map[string]any)
+	if !ok || meta["commit"] != "abc123" {
+		t.Fatalf("unexpected meta payload: %#v", sent["meta"])
+	}
+	response, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured response map, got %#v", result.StructuredContent)
+	}
+	if response["topic"] != "codex/task/done" || response["name"] != "codex.done" {
+		t.Fatalf("unexpected structured response: %#v", response)
+	}
+}
+
+func TestTopicBusPublishDefaultNameAndUpstreamError(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected:   true,
+		allowWrite:         true,
+		auth:               mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		topicBusPublishErr: errors.New("send failed"),
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_topicbus_publish").Handler(context.Background(), json.RawMessage(`{"topic":"codex/task/failed"}`))
+	if !result.IsError {
+		t.Fatalf("expected error result, got %#v", result)
+	}
+	if !backend.topicBusPublishArgs.called {
+		t.Fatal("expected TopicBusPublish() called")
+	}
+	if backend.topicBusPublishArgs.name != defaultTopicBusPublishName {
+		t.Fatalf("unexpected default name: %+v", backend.topicBusPublishArgs)
+	}
+	if backend.topicBusPublishArgs.payloadText != "" {
+		t.Fatalf("expected empty payload text, got %q", backend.topicBusPublishArgs.payloadText)
+	}
+	payload, ok := result.StructuredContent.(toolErrorPayload)
+	if !ok {
+		t.Fatalf("expected toolErrorPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Code != "upstream_error" {
+		t.Fatalf("unexpected error code: %#v", payload)
+	}
+}
+
 func TestVarstoreSetBlockedWhenWriteDisabled(t *testing.T) {
 	backend := &fakeBackend{
 		sessionConnected: true,
@@ -913,6 +1108,32 @@ func TestAuthListRolesPassesFilters(t *testing.T) {
 	}
 }
 
+func TestAuthPushPermsSnapshotResolvesAuthorityAndCallsBackend(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		allowWrite:       true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		configValues:     map[string]string{authorityNodeIDConfigKey: "55"},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_auth_push_perms_snapshot").Handler(context.Background(), json.RawMessage(`{"snapshot":{"default_role":"node","node_roles":{"2":"superadmin"},"role_perms":{"superadmin":["*"]}}}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.pushPermsSnapshotArgs.called {
+		t.Fatal("expected PushPermsSnapshot() called")
+	}
+	if backend.pushPermsSnapshotArgs.sourceID != 7 || backend.pushPermsSnapshotArgs.targetID != 55 {
+		t.Fatalf("unexpected push perms route: %+v", backend.pushPermsSnapshotArgs)
+	}
+	if backend.pushPermsSnapshotArgs.snapshot.NodeRoles[2] != "superadmin" {
+		t.Fatalf("unexpected node roles: %+v", backend.pushPermsSnapshotArgs.snapshot.NodeRoles)
+	}
+	if got := backend.pushPermsSnapshotArgs.snapshot.RolePerms["superadmin"]; len(got) != 1 || got[0] != "*" {
+		t.Fatalf("unexpected role perms: %+v", backend.pushPermsSnapshotArgs.snapshot.RolePerms)
+	}
+}
+
 func TestAuthListPendingRegistersResolvesAuthorityNode(t *testing.T) {
 	backend := &fakeBackend{
 		sessionConnected: true,
@@ -1019,6 +1240,36 @@ func TestSessionStatusIncludesPermissionsAndReadiness(t *testing.T) {
 	}
 }
 
+func TestSessionStatusWriteGateHintIncludesOperationalTools(t *testing.T) {
+	backend := &fakeBackend{
+		status: mcpapp.Status{
+			Connected: true,
+			Auth:      mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+			Defaults:  mcpapp.Defaults{DefaultTarget: 9},
+			Config:    mcpapp.ConfigState{AllowWrite: false},
+		},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_session_status").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(sessionStatusPayload)
+	if !ok {
+		t.Fatalf("expected sessionStatusPayload, got %#v", result.StructuredContent)
+	}
+	joined := strings.Join(payload.Hints, "\n")
+	for _, toolName := range []string{
+		"myflowhub_auth_push_perms_snapshot",
+		"myflowhub_management_config_set",
+		"myflowhub_topicbus_publish",
+	} {
+		if !strings.Contains(joined, toolName) {
+			t.Fatalf("expected write-gate hint to include %s, got %#v", toolName, payload.Hints)
+		}
+	}
+}
+
 func TestManagementListNodesWithoutIdentityReturnsMissingIdentity(t *testing.T) {
 	backend := &fakeBackend{
 		sessionConnected: true,
@@ -1078,6 +1329,42 @@ func TestManagementConfigGetUsesRouteAndKey(t *testing.T) {
 	}
 	if backend.configGetArgs.sourceID != 7 || backend.configGetArgs.targetID != 9 || backend.configGetArgs.key != "authority.node_id" {
 		t.Fatalf("unexpected config get args: %+v", backend.configGetArgs)
+	}
+}
+
+func TestManagementConfigSetRequiresWriteGate(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		allowWrite:       false,
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_config_set").Handler(context.Background(), json.RawMessage(`{"key":"auth.node_roles","value":"2:superadmin"}`))
+	if !result.IsError {
+		t.Fatalf("expected error, got %#v", result)
+	}
+	if backend.configSetArgs.called {
+		t.Fatal("did not expect ConfigSet() when write gate is disabled")
+	}
+}
+
+func TestManagementConfigSetUsesRouteKeyAndValue(t *testing.T) {
+	backend := &fakeBackend{
+		sessionConnected: true,
+		auth:             mcpapp.AuthSnapshot{NodeID: 7, HubID: 9, LoggedIn: true},
+		allowWrite:       true,
+		configValues:     map[string]string{},
+	}
+
+	result := findTool(t, NewTools(backend), "myflowhub_management_config_set").Handler(context.Background(), json.RawMessage(`{"key":"auth.node_roles","value":"2:superadmin"}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	if !backend.configSetArgs.called {
+		t.Fatal("expected ConfigSet() called")
+	}
+	if backend.configSetArgs.sourceID != 7 || backend.configSetArgs.targetID != 9 || backend.configSetArgs.key != "auth.node_roles" || backend.configSetArgs.value != "2:superadmin" {
+		t.Fatalf("unexpected config set args: %+v", backend.configSetArgs)
 	}
 }
 

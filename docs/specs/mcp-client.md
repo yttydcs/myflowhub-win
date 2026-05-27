@@ -5,6 +5,7 @@
 - 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端首版的模块边界、运行时约束和工具契约。
 - 本规范不修改 `auth`、`management`、`exec`、`varstore` 协议本身。
 - 本规范新增 `exec_cap_query` 只读工具，但不新增 `exec.call` 等写/执行能力。
+- 本规范包含受 `allow_write` 保护的 authority permission snapshot 与 management config 写工具。
 - 本规范不涉及 GUI 页面、Wails bindings 或第三方 MCP client 能力。
 - 本规范默认 Hub 角色权限模型是真实授权边界；本地仅保留显式写 gate 与安装/运行时保护。
 
@@ -56,6 +57,7 @@
 - `myflowhub_auth_login`
 - `myflowhub_auth_get_perms`
 - `myflowhub_auth_list_roles`
+- `myflowhub_auth_push_perms_snapshot`
 - `myflowhub_auth_list_pending_registers`
 - `myflowhub_auth_approve_register`
 - `myflowhub_auth_reject_register`
@@ -66,6 +68,7 @@
 - `myflowhub_management_node_echo`
 - `myflowhub_management_list_subtree`
 - `myflowhub_management_config_get`
+- `myflowhub_management_config_set`
 - `myflowhub_management_config_list`
 - `myflowhub_exec_cap_query`
 - `myflowhub_flow_list`
@@ -74,6 +77,7 @@
 - `myflowhub_flow_run`
 - `myflowhub_flow_status`
 - `myflowhub_flow_delete`
+- `myflowhub_topicbus_publish`
 - `myflowhub_varstore_list`
 - `myflowhub_varstore_get`
 - `myflowhub_varstore_set`
@@ -147,6 +151,22 @@
     - `authority_id` 未传时，先按 management 路由拿到 hub target，再尝试读取 `authority.node_id`
   - 输出:
     - 原始 auth list_roles 结果
+- `myflowhub_auth_push_perms_snapshot`
+  - 输入:
+    - `authority_id?`
+    - `snapshot`
+    - `source_id?`
+    - `target_id?`
+  - 行为:
+    - 写工具，受 `allow_write` gate 保护。
+    - `snapshot` 至少必须包含 `default_role`、`default_perms`、`node_roles` 或 `role_perms` 中的一项。
+    - `authority_id` 未传时，先按 management 路由拿到 hub target，再尝试读取 `authority.node_id`。
+  - 输出:
+    - 解析后的 `source_id`
+    - 解析后的 `target_id`
+    - `hub_target_id`
+    - `target_resolution`
+    - 原始 `snapshot`
 - `myflowhub_auth_list_pending_registers`
   - 输入:
     - `authority_id?`
@@ -292,7 +312,36 @@
   - 行为:
     - `flow_id` 必须为非空字符串
 
-### 9. 管理与变量工具契约
+### 9. TopicBus 工具契约
+
+- `myflowhub_topicbus_publish`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `topic`
+    - `name?`
+    - `title?`
+    - `body?`
+    - `level?`
+    - `source?`
+    - `url?`
+    - `payload?`
+    - `meta?`
+  - 行为:
+    - `topic` 必须为非空字符串，按精确 topic 发布。
+    - `name` 未传时使用 MCP 本地默认事件名；显式传入空字符串时本地失败。
+    - `payload` 与 `meta` 只接受 JSON object。
+    - `title/body/level/source/url/meta` 会合并进发送 payload；同名字段以显式通知字段为准。
+    - `target_id` 是传输目标，用于把 TopicBus publish 发往 hub 或目标 routing 节点。
+    - TopicBus publish 是实时 fire-and-forget 事件；MCP 成功只表示发送成功，不表示任何订阅者已展示通知。
+  - 输出:
+    - 解析后的 `source_id`
+    - 解析后的 `target_id`
+    - 规范化后的 `topic`
+    - 规范化后的 `name`
+    - 发送 payload 的 JSON 预览
+
+### 10. 管理与变量工具契约
 
 - `myflowhub_management_list_nodes`
   - 输入:
@@ -318,6 +367,15 @@
     - `source_id?`
     - `target_id?`
     - `key`
+- `myflowhub_management_config_set`
+  - 输入:
+    - `source_id?`
+    - `target_id?`
+    - `key`
+    - `value`
+  - 行为:
+    - 写工具，受 `allow_write` gate 保护。
+    - `key` 必须为非空字符串。
 - `myflowhub_management_config_list`
   - 输入:
     - `source_id?`
@@ -349,15 +407,18 @@
     - `name`
     - `owner?`
 
-### 10. 写操作 gate
+### 11. 写操作 gate
 
+- `myflowhub_auth_push_perms_snapshot` 属于写工具。
+- `myflowhub_management_config_set` 属于写工具。
 - `myflowhub_flow_set`、`myflowhub_flow_run`、`myflowhub_flow_delete` 属于写工具。
+- `myflowhub_topicbus_publish` 属于写工具。
 - `myflowhub_varstore_set` 与 `myflowhub_varstore_revoke` 属于写工具。
 - `myflowhub_exec_cap_query`、`myflowhub_management_node_echo`、`myflowhub_management_list_subtree` 属于只读工具，不受本地 `allow_write` gate 约束。
 - 当 runtime `allow_write=false` 时，写工具必须在本地返回明确错误。
 - 该 gate 发生在协议发送前。
 
-### 11. 启动与安装链路
+### 12. 启动与安装链路
 
 - `scripts/start-myflowhub-mcp.ps1` 必须优先尝试已构建的 `myflowhub-mcp.exe`，找不到时再 fallback 到 `go run ./cmd/myflowhub-mcp`。
 - 启动脚本至少应检查以下候选路径：
@@ -421,6 +482,7 @@
   - `internal/services/auth`
   - `internal/services/management`
   - `internal/services/flow`
+  - `internal/services/topicbus`
   - `internal/services/varpool`
 - `exec_cap_query` 在 MCP 命名上归属 `exec`，但 runtime 当前通过 `internal/services/flow` 复用已有 `ExecCapQuery` 封装，不改变底层协议边界。
 - MCP 入口不得依赖 Wails `runtime.EventsEmit` 或 GUI 页面状态。
@@ -479,6 +541,12 @@ type StatusReadiness struct {
   - 当业务工具无法得到可用默认 `source_id` / `hub_id` 时本地失败
 - flow 路由缺失:
   - 当 flow 工具既拿不到显式 `executor_node`，也拿不到可回退的 `target_id` 时本地失败
+- topicbus publish 参数非法:
+  - `topic` 为空、`name` 显式传入但为空、`payload/meta` 不是 JSON object 时本地失败
+- auth permission snapshot 参数非法:
+  - `snapshot` 为空时本地失败
+- management config 写入参数非法:
+  - `key` 为空时本地失败
 - 参数非法:
   - 在 tool 层优先校验，避免把明显非法请求发往 Hub
   - `flow_id`、`run_id` 等字符串参数必须在本地校验非空
@@ -505,9 +573,10 @@ MCP tool 结构化错误至少包含：
 - `stdout` 只承载协议，`stderr` 只承载日志。
 - MCP 本地配置目录默认独立于 GUI。
 - 写操作默认关闭。
-- 首版不开放 `config_set`，避免 AI 与用户手动配置互相覆盖。
+- `management_config_set` 仅在显式开启 `allow_write` 后可用，避免 AI 与用户手动配置互相覆盖。
 - exec 工具必须明确区分 `target_id` 与 `requester_node`，避免把 transport 路由和请求身份语义混为一谈。
 - flow 工具必须明确区分 `target_id` 与 `executor_node`，避免把 transport 路由和执行节点语义混为一谈。
+- topicbus publish 的 `target_id` 仅表示 transport target，不代表通知已经投递到某个订阅节点。
 - Hub 角色权限仍是真实授权边界，本地不额外实现 owner/target 白名单。
 - `auth_get_perms` / `auth_list_roles` 不增加本地权限层，只复用现有 session、路由回退和结构化错误模型。
 - authority 类 auth 工具的目标解析顺序为：

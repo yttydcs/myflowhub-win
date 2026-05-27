@@ -1,351 +1,498 @@
-# Plan - MyFlowHub-Win Detached Window Session Snapshot Sync
+# Plan - MyFlowHub-Win MCP TopicBus Publish and Operational Write Tools
 
 ## Workflow Information
 - Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `fix/win-showcase-window-session-sync`
-- Base: `main`
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
-- Current Stage: `4`
+- Branch: `feat/mcp-topicbus-publish`
+- Base: `main` at `794c10a`
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Current Stage: `4 - Change Archive / Closeout`
 
 ## Stage Records
 
 ### Initialization
-- `guide.md`:
-  - workspace root `D:\project\MyFlowHub3\guide.md` 已阅读
-  - 遵守 `AGENTS.md` 与 `$m-autoflow` 约束：实现只在 `worktrees/` 中进行，计划确认前不进入编码
-- repo / base / worktree confirmation:
-  - 控制面主仓：`D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-  - 主仓当前分支：`main`
-  - 本轮实现 worktree：`D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
-  - 本轮只修改 `repo/MyFlowHub-Win` 前端
-- current baseline:
-  - 新 worktree 继承了一份与本任务无关的旧 `plan.md`
-  - 已在本 worktree 内用本次会话补水修复计划替换，避免后续执行误跟旧任务
+- `guide.md`: none in `repo/MyFlowHub-Win`.
+- Base/worktree confirmation:
+  - Main repo path is control-plane only: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`.
+  - Active implementation worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`.
+  - Dedicated branch: `feat/mcp-topicbus-publish`.
+  - Participating repo: only `MyFlowHub-Win`.
+  - Participating modules: headless MCP runtime/tools, MCP docs, focused MCP tests.
+- Current baseline:
+  - Main repo `main` was clean before worktree creation.
+  - New worktree inherited an unrelated older root `plan.md`; it was replaced with this workflow plan so execution cannot follow the wrong task.
+  - Shell may emit unrelated conda hook noise after successful commands; rely on command exit code and primary output.
 
 ### Stage 1 - Requirements Analysis
 #### Goal
-- 修复 `Showcase` 编辑窗口和预览窗口在 hub 已连接时仍显示 `Disconnected` 的错误状态。
-- 消除 detached window 新前端上下文里“身份已恢复，但 session 连接快照未恢复”的 disconnect 假象。
+Expose a minimal TopicBus publish capability through the existing headless `myflowhub-mcp` client so Codex or another MCP host can publish a notification event that `MyFlowHub-MetricsNode` NotifyNode already subscribes to and displays as a system notification. During live setup, also keep the two small write-gated operational MCP tools needed to configure authority routing and sync runtime permission snapshots.
 
 #### Scope
-- Must:
-  - 修复 `Showcase` 编辑页窗口和预览窗口的连接状态初始化
-  - 保证这些窗口的顶部连接状态 badge 与实际 session 状态一致
-  - 保证这些窗口里依赖 `sessionStore.connected` 的交互禁用逻辑与真实连接状态一致
-  - 复用共享会话补水逻辑，避免在多个 detached window 中复制同一段 `IsConnected` / `LastAddr` 代码
-  - 同步修复已确认存在同根因的 `TopicBusWindow`
-- Optional:
-  - 让 `Home` 页复用同一套共享 helper，消除重复实现
-  - 补 detached window 代表性测试，锁定 badge / 交互 gating 的初始化行为
-- Not in scope:
-  - 不修改 hub 连接协议、后端 session 服务、Wails runtime event 协议
-  - 不重做 `Home` 页连接 / 登录流程
-  - 不改 packaged runtime 的辅助窗口打开策略
-  - 不扩展到所有 detached window，除非验证发现它们也直接依赖 `sessionStore.connected`
+Must:
+- Add `myflowhub_topicbus_publish` to the MCP tool list.
+- Reuse existing `internal/services/topicbus.TopicBusService.Publish`.
+- Keep MCP as an independent headless client with isolated config and node identity.
+- Preserve existing MCP `stdio` contract: stdout remains JSON-RPC only, logs remain stderr/service logs.
+- Require connected and authenticated/default identity state before publish, using the same source/target fallback model as management/varstore tools.
+- Validate `topic` and `name` locally before sending.
+- Accept notification-friendly payload inputs such as `title`, `body`, `level`, `source`, `url`, and optional structured `payload` / `meta`.
+- Gate publish behind `allow_write`, because it emits an externally visible event.
+- Add `myflowhub_management_config_set` behind `allow_write` so MCP can update management config such as authority routing in controlled setup flows.
+- Add `myflowhub_auth_push_perms_snapshot` behind `allow_write` so MCP can push a validated runtime permission snapshot to the authority.
+- Update stable MCP requirement/spec docs because the formal tool set changes.
+- Add focused tests for tool registration, validation, routing defaults, write gate, payload shaping, management config set, and permission snapshot push.
+
+Optional:
+- Add `topicbus_subscribe`, `topicbus_unsubscribe`, or `topicbus_list_subs` MCP tools later.
+- Add smoke-script coverage later when a real Hub and NotifyNode test rig are required.
+
+Not in scope:
+- Do not modify `MyFlowHub-Proto`.
+- Do not modify `MyFlowHub-MetricsNode` NotifyNode behavior.
+- Do not add wildcard topics, offline replay, ack, durable queue, or app-market abstractions.
+- Do not modify Win GUI TopicBus pages or Wails bindings.
+- Do not add a native OS notification presenter to `MyFlowHub-Win`; display remains owned by MetricsNode.
 
 #### Use Cases
-- 用户已经在主界面连上 hub，然后从 `Showcase` 打开编辑窗口
-- 用户已经在主界面连上 hub，然后从 `Showcase` 打开预览窗口
-- 用户已经在主界面连上 hub，然后从 `TopicBus` 打开独立窗口
-- 在这些窗口中，顶部 badge、按钮禁用态和 ready-check 应与真实 session 状态一致，而不是默认回落到 `Disconnected`
+- Codex finishes a coding task and calls MCP with topic `codex/task/done`; a MetricsNode subscribed to that exact topic pops a system notification.
+- Codex reports a failed verification with topic `codex/task/failed` and a body containing the failed command summary.
+- A user manually calls the MCP tool to verify the end-to-end NotifyNode route before wiring automatic agent behavior.
+- A future automation layer can reuse the same publish tool as the stable MCP emission point.
 
 #### Functional Requirements
-1. detached window 启动时必须显式恢复当前 session 的连接快照，而不只恢复 `nodeId` / `hubId`
-2. `Showcase` 编辑窗口必须在初始化完成后正确显示当前 `Connected` / `Disconnected` 状态
-3. `Showcase` 预览窗口必须在初始化完成后正确显示当前 `Connected` / `Disconnected` 状态
-4. `ShowcaseWidgetCardContent` 里的交互禁用逻辑必须基于真实连接状态，而不是 store 默认值
-5. 已确认同根因的 `TopicBusWindow` 必须一起接入共享补水逻辑，避免留下同类 bug
-6. 若 runtime snapshot 获取失败，窗口必须优雅降级，不得阻断原有 `LoadHomeState` 身份恢复流程
+1. `tools/list` must include `myflowhub_topicbus_publish`.
+2. The tool must accept:
+   - `topic` required non-empty string
+   - `name` optional string, defaulting to a stable value such as `mcp.topicbus.publish` or a notification-specific name
+   - `title` optional string
+   - `body` optional string
+   - `level` optional string
+   - `source` optional string
+   - `url` optional string
+   - `payload` optional JSON object for caller-controlled payload fields
+   - `meta` optional JSON object for extra metadata
+   - `source_id` optional node ID
+   - `target_id` optional node ID
+3. If `payload` is supplied, the handler must preserve it as structured JSON rather than stringifying it unnecessarily.
+4. If `title/body/level/source/url/meta` are supplied, the handler must merge them into the outgoing payload object in a predictable way.
+5. If neither structured notification fields nor payload are supplied, the outgoing TopicBus payload may be omitted or default to a small object containing source metadata.
+6. The handler must trim and validate `topic` and `name` before sending.
+7. The handler must resolve source/target using the same identity/default fallback behavior as existing management tools.
+8. The handler must fail locally with structured errors for invalid arguments, missing identity, not connected, and write disabled.
+9. The runtime must own a `TopicBusService` instance and close it during runtime shutdown.
+10. The runtime must expose a `TopicBusPublish` method to the MCP tools backend interface.
+11. The runtime must expose `ConfigSet` and `PushPermsSnapshot` methods to the MCP tools backend interface.
+12. `management_config_set` must reject empty keys, require `allow_write`, and use the same management source/target fallback as config reads.
+13. `auth_push_perms_snapshot` must reject an empty snapshot, require `allow_write`, and resolve the authority using explicit `authority_id`, `authority.node_id`, or hub fallback.
 
 #### Non-functional Requirements
-- 最小安全改动:
-  - 优先修共享前端 helper 与受影响窗口，不引入无关页面重构
-- 一致性:
-  - detached window 不再各自实现一份连接快照恢复逻辑
-- 可维护性:
-  - 会话补水逻辑放在明确的共享位置，便于后续窗口复用
-- 稳定性:
-  - 失败时保留现有事件监听与 fallback identity 流程
-- 可测试性:
-  - 至少用一条共享 helper 测试和一条窗口级测试覆盖本轮行为
+- Minimal change surface: keep implementation inside existing MCP runtime/tool patterns.
+- Backward compatibility: existing MCP tools and GUI behavior must not change.
+- Safety: TopicBus publish is gated by `allow_write`.
+- Observability: existing TopicBus service logging remains the send-side trace.
+- Maintainability: do not duplicate transport encoding; route through `TopicBusService.Publish`.
+- Payload handling: use `encoding/json` and typed maps/raw JSON, not ad hoc string concatenation.
 
 #### Inputs / Outputs
 - Inputs:
-  - `SessionService.IsConnected`
-  - `SessionService.LastAddr`
-  - `App.HomeState`
-  - detached window 启动路径中的 `loadHomeDefaults` 或同类初始化流程
-- Outputs:
-  - detached window 中的 `sessionStore.connected`
-  - detached window 中的 `sessionStore.addr`
-  - 正确的 UI badge 和交互 gating
+  - MCP tool call JSON arguments.
+  - Runtime auth/default state.
+  - Existing Hub session.
+- Output to MCP caller:
+  - Structured success object containing resolved `source_id`, `target_id`, `topic`, `name`, and normalized payload preview when applicable.
+  - Existing structured error shape on failures.
+- Output to Hub:
+  - TopicBus `publish` frame containing `topicbus.PublishReq{Topic, Name, TS, Payload}`.
+- Output to NotifyNode:
+  - Live exact-topic event only if NotifyNode is online and subscribed to the same topic.
 
 #### Edge Cases
-- 主窗口尚未进入 `Home` 页，但 detached window 直接首次启动
-- `LoadHomeState` 成功，但 runtime session snapshot 查询失败
-- session 已连接但没有 `lastAddr`
-- detached window 在 profile 切换后重新加载
-- runtime event 还没推到当前窗口时，初始化补水仍应先给出正确静态快照
+- Empty or whitespace-only `topic`.
+- Empty or whitespace-only custom `name`.
+- Caller passes `payload` that is not a JSON object.
+- Caller passes notification fields that conflict with `payload` keys.
+- Session is disconnected.
+- Runtime has no usable source identity.
+- Runtime has no usable target ID.
+- `allow_write=false`.
+- Empty `management_config_set.key`.
+- Empty `auth_push_perms_snapshot.snapshot`.
+- Current authority role lacks permission to write config or push permission snapshots.
+- Hub send fails or route is unavailable.
+- NotifyNode is offline or subscribed to a different topic; MCP publish still succeeds because TopicBus publish has no delivery ack.
 
 #### Acceptance Criteria
-1. 在 hub 已连接的前提下，`Showcase` 编辑窗口打开后显示 `Connected`
-2. 在 hub 已连接的前提下，`Showcase` 预览窗口打开后显示 `Connected`
-3. 这两个窗口中依赖 `sessionStore.connected` 的控件不再被错误禁用
-4. `TopicBusWindow` 在同样场景下不再显示错误的 `Disconnected`
-5. 共享 helper 与代表性窗口测试通过
-6. 不引入新的 build / type / test 回归
+1. `go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1` passes with `GOWORK=off`.
+2. `go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp` passes with `GOWORK=off`.
+3. `myflowhub_topicbus_publish` appears in `tools/list`.
+4. With `allow_write=false`, the tool returns `write_disabled` before sending.
+5. With missing/invalid `topic`, the tool returns `invalid_arguments`.
+6. With connected/authenticated fake backend and `allow_write=true`, the tool calls backend publish with expected source, target, topic, name, and JSON payload.
+7. `management_config_set` and `auth_push_perms_snapshot` are write-gated and have focused tests.
+8. Stable MCP requirements and specs list TopicBus publish plus the two operational write tools and their write-gate behavior.
 
 #### Risks
-- 若把 helper 放在过于底层的位置并自动执行，可能影响已有依赖 `sessionStore` 初始空态的测试
-- 若窗口初始化顺序处理不当，可能出现 `LoadHomeState` 与连接快照写入先后覆盖问题
-- 若扩大到所有窗口，改动面会不必要地变大；本轮只修已确认依赖 `sessionStore.connected` 的窗口
+- Existing MCP tool file is large; duplicate function blocks or stale generated sections may create accidental edits. Use focused patches and targeted tests.
+- TopicBus publish is fire-and-forget, so a successful MCP call does not prove a NotifyNode displayed the notification.
+- Adding a required method to the MCP backend interface requires updating all test fakes.
 
 #### Issue List
-- 无
+- None currently.
 
 ### Stage 2 - Architecture Design
 #### Overall Solution
-- 推荐方案：在前端共享层新增 detached window 会话补水 helper，由它统一调用 `SessionService.IsConnected` / `LastAddr` 更新 `sessionStore`，然后在 `Showcase.vue`、`ShowcaseWindow.vue`、`TopicBusWindow.vue` 的启动流程中接入
-- 同时让 `Home.vue` 复用该 helper，消除同一逻辑的双份实现
+Add TopicBus as a first-class service inside the existing MCP runtime, then expose a single write-gated MCP tool that publishes a TopicBus event. This keeps MetricsNode as the subscriber/display endpoint and makes `myflowhub-mcp` the publisher endpoint for Codex.
+
+Selected approach:
+- Runtime assembly: instantiate `topicbussvc.New(session, logs, bus)` alongside `varpool`.
+- Runtime API: add `TopicBusPublish(ctx, sourceID, targetID uint32, topic, name, payloadText string) error`, `ConfigSet(...)`, and `PushPermsSnapshot(...)`.
+- MCP backend: extend `Backend` with `TopicBusPublish`, `ConfigSet`, and `PushPermsSnapshot`.
+- Tool surface: add `myflowhub_topicbus_publish`, `myflowhub_management_config_set`, and `myflowhub_auth_push_perms_snapshot`.
+- Payload builder: tool layer builds a JSON object from `payload` plus notification convenience fields, marshals it once, and passes the JSON string to `TopicBusService.Publish`.
 
 #### Alternatives Considered
-- 方案 A: 只在 `Showcase.vue` 和 `ShowcaseWindow.vue` 本地补 `IsConnected` / `LastAddr`
-  - 优点：改动最小
-  - 缺点：保留 `TopicBusWindow` 同类 bug，并复制一套初始化逻辑
-  - 结论：不选
-- 方案 B: 在 `session` store 暴露共享连接快照补水 helper，并接入已确认受影响的 detached windows
-  - 优点：最小共享抽象，解决 `Showcase` 和 `TopicBus` 同根因问题，也可让 `Home` 页去重
-  - 缺点：需要补测试，避免影响依赖默认 store 初值的用例
-  - 结论：选用
-- 方案 C: 自动让 `useSessionStore()` 在首次调用时直接访问后端补水
-  - 优点：调用方最少
-  - 缺点：store getter 引入隐式异步副作用，测试和调用时序更难控
-  - 结论：不选
+- Publish directly from MetricsNode:
+  - Rejected for this workflow because MetricsNode is already the subscriber/display node; Codex needs a publisher exposed through MCP.
+- Add subscribe/unsubscribe/list tools now:
+  - Deferred. The immediate notification use case only needs publish; adding subscription control increases permission and lifecycle surface.
+- Add a dedicated notification protocol:
+  - Rejected. Existing TopicBus publish envelope already satisfies live notification fanout.
+- Add app-market manifest/handler abstractions now:
+  - Rejected for scope. This workflow should only create the lowest stable publish capability.
 
 #### Module Responsibilities
-- `frontend/src/stores/session.ts`
-  - 继续持有 `session.state` 事件监听
-  - 新增显式的 runtime snapshot 补水方法，负责刷新 `connected` / `addr`
-- `frontend/src/pages/Home.vue`
-  - 复用共享 helper，而不是保留本地 `refreshConnectionSnapshot`
-- `frontend/src/pages/Showcase.vue`
-  - 在编辑窗口初始化时补水 session 快照，再继续现有 `LoadHomeState` / `showcase.load` 流程
-- `frontend/src/windows/ShowcaseWindow.vue`
-  - 在预览窗口初始化时补水 session 快照，再继续现有 `LoadHomeState` / `showcase.load` 流程
-- `frontend/src/windows/TopicBusWindow.vue`
-  - 同样接入共享 helper，修复同根因 disconnect 假象
-- tests
-  - 验证共享 helper 的行为
-  - 验证代表性 detached window 能在启动时显示正确连接状态
+- `internal/mcpapp/runtime.go`
+  - Own TopicBus service lifecycle.
+  - Provide timeout-wrapped `TopicBusPublish`, `ConfigSet`, and `PushPermsSnapshot`.
+- `internal/mcp/tools.go`
+  - Declare tool schema.
+  - Decode/validate args.
+  - Enforce connected/auth/write-gate checks.
+  - Resolve source/target route.
+  - Build normalized JSON payload.
+  - Return structured success or structured MCP errors.
+- `internal/mcp/tools_test.go`
+  - Extend fake backend.
+  - Lock registration, write-gate, validation, route, payload behavior, config set, and permission snapshot behavior.
+- `docs/requirements/mcp-client.md`
+  - Add TopicBus publish and operational write tools to stable MCP capability requirements.
+- `docs/specs/mcp-client.md`
+  - Add tool contracts, write-gate classification, and runtime assembly boundary.
 
 #### Data / Call Flow
-1. detached window mounted
-2. 页面先调用 `LoadHomeState()` 恢复 `nodeId` / `hubId` fallback
-3. 页面调用共享 session snapshot helper
-4. helper 调用 `IsConnected()`；若为 true，再补 `LastAddr()`
-5. helper 更新 `sessionStore.connected` / `sessionStore.addr`
-6. 页面继续原有 store identity 和业务加载流程
-7. 后续 runtime `session.state` 事件仍照常接管实时更新
+```text
+MCP host / Codex
+  -> tools/call myflowhub_topicbus_publish
+  -> internal/mcp tool handler validates args and write gate
+  -> resolve source_id / target_id from explicit args or auth/defaults
+  -> build JSON payload
+  -> mcpapp.Runtime.TopicBusPublish
+  -> internal/services/topicbus.TopicBusService.Publish
+  -> session.SendCommand(SubProtoTopicBus, source, target, publish envelope)
+  -> Hub TopicBus live forwarding
+  -> MetricsNode NotifyNode exact-topic subscriber
+  -> OS notification presenter
+```
 
-#### Interface Draft
-- `frontend/src/stores/session.ts`
-  - 新增显式 helper，例如 `hydrateSessionConnectionSnapshot(): Promise<void>`
-- 该 helper:
-  - 不抛出致命错误给调用方
-  - 不清空现有 `auth` 快照
-  - 只负责更新 `connected` / `addr` / `lastStateAt`
+#### Interface Drafts
+MCP tool args:
+```go
+type topicBusPublishArgs struct {
+    Topic    string          `json:"topic"`
+    Name     string          `json:"name,omitempty"`
+    Title    string          `json:"title,omitempty"`
+    Body     string          `json:"body,omitempty"`
+    Level    string          `json:"level,omitempty"`
+    Source   string          `json:"source,omitempty"`
+    URL      string          `json:"url,omitempty"`
+    Payload  json.RawMessage `json:"payload,omitempty"`
+    Meta     json.RawMessage `json:"meta,omitempty"`
+    SourceID *uint32         `json:"source_id,omitempty"`
+    TargetID *uint32         `json:"target_id,omitempty"`
+}
+```
+
+Runtime method:
+```go
+func (r *Runtime) TopicBusPublish(ctx context.Context, sourceID, targetID uint32, topic, name, payloadText string) error
+func (r *Runtime) ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) (protomanagement.ConfigResp, error)
+func (r *Runtime) PushPermsSnapshot(ctx context.Context, sourceID, targetID uint32, snapshot coreperm.Snapshot) error
+```
+
+Suggested MCP call:
+```json
+{
+  "topic": "codex/task/done",
+  "name": "codex.done",
+  "title": "代码写完了",
+  "body": "已推送，CI 通过",
+  "level": "info",
+  "source": "codex"
+}
+```
 
 #### Error Handling and Safety
-- `IsConnected` / `LastAddr` 失败时:
-  - 记录 `console.warn`
-  - 保留现有 session store 状态
-  - 不中断 `LoadHomeState`、`showcase.load`、`topicbus.loadPrefs` 等后续流程
-- 若 `IsConnected()` 返回 false:
-  - 只更新 `connected=false`
-  - 不强行清空本地持久化身份字段
-- runtime 事件优先级:
-  - helper 只做启动补水；连接建立 / 断开后的实时变更仍由 `session.state` 事件驱动
+- `invalid_arguments`: empty topic/name, invalid payload/meta JSON, unsupported JSON shape if a strict object is required.
+- `not_connected`: session not connected.
+- `missing_identity`: source or target cannot be resolved.
+- `write_disabled`: `allow_write=false`.
+- `invalid_arguments`: empty config key or empty permission snapshot.
+- `upstream_error`: `TopicBusService.Publish` or session send fails.
+- Publish remains no-ack; the success response should not claim notification delivery.
 
 #### Performance and Testing Strategy
-- 性能:
-  - 每个 detached window 启动最多多做一次 `IsConnected` 和一次 `LastAddr` 查询
-  - 不新增轮询，不引入额外订阅
-- Tests:
-  - 新增 `frontend/src/stores/session.test.ts` 覆盖 helper 对 `connected` / `addr` 的刷新
-  - 新增 `frontend/src/windows/ShowcaseWindow.test.ts` 或等价代表性窗口测试，覆盖已连接场景下的 badge / 交互 gating
-  - 如 `TopicBusWindow` 改动面需要额外回归，再补 `frontend/src/windows/TopicBusWindow.test.ts`
-- Validation:
-  - `npm exec vitest run src/stores/session.test.ts`
-  - `npm exec vitest run src/windows/ShowcaseWindow.test.ts`
-  - 如新增 TopicBusWindow 测试，则一并执行
+- Payload is small and marshaled once per call.
+- No new goroutines or background subscriptions are needed for MCP publish.
+- Targeted tests:
+  - tool list contains `myflowhub_topicbus_publish`
+  - write gate rejects before backend call
+  - invalid topic rejects
+  - default route resolution works
+  - payload merge preserves structured fields
+  - upstream error maps to structured error
+  - management config set write gate and route/key/value behavior
+  - auth permission snapshot route resolution and non-empty snapshot behavior
+- Validation commands:
+  - `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
+  - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
 
 #### Extensibility Design Points
-- 后续若有更多 detached window 需要真实 session 快照，可复用同一 helper
-- 不把 helper 做成隐式自动执行，避免 future tests / startup 顺序失控
+- Tool name and payload model leave room for future `myflowhub_topicbus_subscribe/list_subs`.
+- Notification-friendly fields are plain payload keys, so MetricsNode NotifyNode can consume them without protocol changes.
+- Future app-market handlers can standardize topic names and payload conventions above TopicBus without altering this tool.
+- Operational write tools remain generic and write-gated, so they can support MCP setup without adding environment-specific hard-coded config.
 
 #### Issue List
-- 无
+- None currently.
 
 ### Stage 3.1 - Planning
 #### Project Goal and Current State
-- 当前 `Showcase` 编辑窗口、预览窗口和 `TopicBusWindow` 都会直接读取 `sessionStore.connected` 渲染 badge 或 ready-check
-- 这些窗口的启动路径只调用 `LoadHomeState()` 恢复 `nodeId` / `hubId`，没有像 `Home.vue` 那样显式调用 `IsConnected()` / `LastAddr()`
-- `session` store 默认 `connected=false`，所以 detached window 在新前端上下文里会先落到错误的 `Disconnected`
-- 这是 detached window 冷启动补水缺失，不是 hub 实际断开
+- Current NotifyNode can display system notifications from subscribed TopicBus topics.
+- Current `MyFlowHub-Win` MCP client exposes session/auth/management/exec/flow/varstore but not TopicBus publish, management config write, or permission snapshot push.
+- Current Win TopicBus service already implements `Publish`; the missing layer is MCP runtime/tool exposure.
 
 #### Docs Governance Routing Decision
-- 使用 `$m-docs` 校验计划文档路由、requirements/specs 影响和 lessons 查询入口
-- Canonical destination:
-  - 稳定需求 / 规格：不改
-  - 执行控制面：worktree 根 `plan.md`
-  - 完成结果：`docs/change/2026-04-14_win-showcase-window-session-sync.md`
-  - lessons：stage 4 再判断是否需要新增 detached window 会话补水 lesson
-- Requirements impact: `none`
-- Specs impact: `none`
+Using `$m-docs`:
+- Docs tree exists and is healthy; no bootstrap needed.
+- Requirements impact: update existing `docs/requirements/mcp-client.md` because the stable MCP tool set changes from "reserved for topicbus later" to "publish supported now" and now includes two controlled operational write helpers.
+- Specs impact: update existing `docs/specs/mcp-client.md` because the MCP interface contract, runtime methods, and write-gate classification change.
 - Related requirements:
-  - `docs/requirements/showcase-display-widgets.md`
+  - `docs/requirements/mcp-client.md`
 - Related specs:
-  - `docs/specs/showcase-display-widgets.md`
+  - `docs/specs/mcp-client.md`
 - Related lessons:
-  - `docs/lessons/wails-packaged-aux-window-fallback.md`
-  - `docs/lessons/detached-window-session-snapshot-hydration.md`
-  - `docs/lessons/frontend-vitest-junction-preserve-symlinks.md`
+  - none currently. This is a straightforward capability addition; create a lesson only if implementation exposes a recurring trap.
+- Change archive destination after implementation:
+  - `docs/change/2026-05-27_mcp-topicbus-publish.md`
 
 #### Executable Task List
-- [x] `SWS-1` 提取共享 session runtime snapshot helper，并让 `Home.vue` 复用
-- [x] `SWS-2` 接入 `Showcase` 编辑页、`ShowcaseWindow`、`TopicBusWindow`
-- [x] `SWS-3` 补测试并完成定向验证
+- [x] `BASE-1` Repair pre-existing MCP tools.go duplicate residue that blocks compilation.
+- [x] `DOC-1` Update stable MCP requirement/spec docs for TopicBus publish and operational write tools.
+- [x] `RT-1` Wire TopicBus service and operational wrappers into MCP runtime.
+- [x] `TOOL-1` Add `myflowhub_topicbus_publish` tool contract, validation, routing, write gate, and payload builder.
+- [x] `TOOL-2` Add `myflowhub_management_config_set` and `myflowhub_auth_push_perms_snapshot`.
+- [x] `TEST-1` Add focused MCP tool tests and update fake backend.
+- [x] `VERIFY-1` Run targeted tests/build and perform self review.
+- [ ] `ARCHIVE-1` Create change archive and record docs impact.
 
 #### Task Details
-##### `SWS-1` - Shared Session Snapshot Hydration
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
-- Goal:
-  - 把 `IsConnected` / `LastAddr` 连接快照恢复逻辑集中到共享 helper
+##### DOC-1 - Stable MCP Docs
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Make the stable MCP requirement/spec list `myflowhub_topicbus_publish`, `myflowhub_management_config_set`, and `myflowhub_auth_push_perms_snapshot`, and define their safety behavior.
 - Files / Modules:
-  - `frontend/src/stores/session.ts`
-  - `frontend/src/pages/Home.vue`
-- Write Set:
-  - 上述 2 个文件
-- Acceptance:
-  - 共享 helper 能更新 `sessionStore.connected` / `sessionStore.addr`
-  - `Home.vue` 继续保留现有行为，但不再自己维护重复逻辑
-- Tests:
-  - `frontend/src/stores/session.test.ts`
-- Rollback:
-  - 回退 helper 与 `Home.vue` 对其的引用
+  - `docs/requirements/mcp-client.md`
+  - `docs/specs/mcp-client.md`
+- Write Set: docs only.
+- Acceptance: Requirements/specs mention TopicBus publish, operational write helpers, args, write gate, and no-delivery-ack boundary.
+- Test Points: docs review.
+- Rollback: Revert the two docs files.
 
-##### `SWS-2` - Detached Window Consumers
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
-- Goal:
-  - 修复已确认受影响的 detached window disconnect 假象
+##### BASE-1 - Pre-existing MCP Tool File Compile Repair
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Remove the already-present duplicate/orphaned `internal/mcp/tools.go` residue that causes `go test ./internal/mcp` to fail before TopicBus changes.
 - Files / Modules:
-  - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/windows/ShowcaseWindow.vue`
-  - `frontend/src/windows/TopicBusWindow.vue`
-- Write Set:
-  - 上述 3 个文件
-- Acceptance:
-  - 这些窗口初始化后使用真实 session 快照
-  - UI badge 和依赖 `sessionStore.connected` 的 gating 与真实状态一致
-- Tests:
-  - `frontend/src/windows/ShowcaseWindow.test.ts`
-  - 如有必要，`frontend/src/windows/TopicBusWindow.test.ts`
-- Rollback:
-  - 回退窗口初始化中的 helper 调用
+  - `internal/mcp/tools.go`
+- Write Set: remove duplicate stale handler/helper block only.
+- Acceptance: `go test ./internal/mcp -count=1` can progress past the syntax error at the pre-existing orphaned code.
+- Test Points: `GOWORK=off go test ./internal/mcp -count=1`.
+- Rollback: Restore removed duplicate block if a later diff shows it was not redundant.
 
-##### `SWS-3` - Verification
-- Owner: 主Agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\fix-win-showcase-window-session-sync\plan.md`
-- Goal:
-  - 用测试和定向检查锁定本轮修复
+##### RT-1 - MCP Runtime TopicBus and Operational Services
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Instantiate and expose TopicBus publish plus timeout-wrapped management/auth write wrappers in the headless MCP runtime.
 - Files / Modules:
-  - `frontend/src/stores/session.test.ts`
-  - `frontend/src/windows/ShowcaseWindow.test.ts`
-  - 如需要，再加 `frontend/src/windows/TopicBusWindow.test.ts`
-- Write Set:
-  - 上述测试文件
+  - `internal/mcpapp/runtime.go`
+- Write Set: runtime assembly and method wrappers only.
+- Acceptance: runtime has a TopicBus service, closes it, and exposes timeout-wrapped publish/config/snapshot methods.
+- Test Points: `go test ./internal/mcpapp -count=1`.
+- Rollback: Revert runtime.go changes.
+
+##### TOOL-1 - MCP TopicBus Publish Tool
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Add the MCP tool with validation, payload shaping, route resolution, and write-gate protection.
+- Files / Modules:
+  - `internal/mcp/tools.go`
+- Write Set: MCP backend interface, args type, tool registration, handler/helper functions.
+- Acceptance: tool appears in tools list and calls backend publish only after local validation/write-gate checks pass.
+- Test Points: `go test ./internal/mcp -count=1`.
+- Rollback: Revert tools.go changes.
+
+##### TOOL-2 - MCP Operational Write Tools
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Add the controlled setup tools needed by MCP-driven authority/config workflows.
+- Files / Modules:
+  - `internal/mcp/tools.go`
+- Write Set: MCP backend interface, args types, tool registrations, handlers, snapshot validation, and status hint update.
+- Acceptance: `management_config_set` and `auth_push_perms_snapshot` require `allow_write`, validate local inputs, and route through existing management/authority fallback helpers.
+- Test Points: `go test ./internal/mcp -count=1`.
+- Rollback: Revert operational write tool changes.
+
+##### TEST-1 - Focused MCP Tests
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Lock the new tool behavior without requiring a live Hub.
+- Files / Modules:
+  - `internal/mcp/tools_test.go`
+- Write Set: test fake backend and new tests.
+- Acceptance: tests cover registration, invalid topic, write gate, successful publish payload/routing, upstream error, config set write gate/route, and auth snapshot route/snapshot behavior.
+- Test Points: `go test ./internal/mcp -count=1`.
+- Rollback: Revert tools_test.go changes.
+
+##### VERIFY-1 - Validation and Review
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Verify implementation and perform Stage 3.3 review.
+- Files / Modules:
+  - no planned source edits unless review finds issues.
+- Write Set: none unless returning to Stage 3.2 for fixes.
 - Acceptance:
-  - 共享 helper 测试通过
-  - detached window 代表性测试通过
-  - 定向 `vitest` 通过
-- Tests:
-  - `node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run src/lib/auxWindow.test.ts src/stores/session.test.ts src/windows/ShowcaseWindow.test.ts`
-- Rollback:
-  - 删除新增测试并回退相关实现
+  - `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
+  - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
+  - Stage 3.3 checklist all pass.
+- Test Points: targeted Go tests/build.
+- Rollback: Revert failed task changes by task ID if needed.
+
+##### ARCHIVE-1 - Change Archive
+- Owner: main agent
+- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
+- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
+- Goal: Archive workflow results and docs impact.
+- Files / Modules:
+  - `docs/change/2026-05-27_mcp-topicbus-publish.md`
+  - `docs/change/README.md` if index maintenance is required by local style
+  - `docs/lessons/*` only if a reusable implementation lesson emerges
+- Write Set: docs/change and optional docs/lessons.
+- Acceptance: Archive records task mapping, tests, decisions, rollback, docs impact, and sub-agent trace.
+- Test Points: docs review.
+- Rollback: Remove archive entry and index change.
 
 #### Dependencies
-- `SessionService` 已提供 `IsConnected` / `LastAddr`
-- `LoadHomeState` 继续作为 identity fallback 来源
-- 现有 detached window 测试基建可用
+- Existing `TopicBusService.Publish` must remain compatible.
+- Existing MCP route/default helpers must be reused; if no suitable helper exists, add a small local helper inside `tools.go`.
+- Operational write tools must remain generic and write-gated; do not hard-code cloud node IDs, roles, topics, or user-specific config.
+- No live Hub is required for unit tests; live end-to-end notification verification can be manual after merge.
 
 #### Risks and Notes
-- 只补“启动快照”，不改变 runtime event 订阅路径
-- `TopicBusWindow` 已确认与 `Showcase` 共用同一根因；一起修可以避免再次返工
-- `StreamSourceWindow` / `StreamDeliveryWindow` / `FlowEditorWindow` 虽也调用 `LoadHomeState`，但目前未发现它们直接以 `sessionStore.connected` 决定 badge 或 gating；本轮先不扩大范围
+- `TopicBusService.Publish` validates `topic` and `name`; tool layer still validates first so MCP errors are structured.
+- Publish success means "frame sent", not "notification displayed".
+- MetricsNode subscription is exact topic. User-facing examples should use exactly matching topic strings, e.g. `codex/task/done`.
 
 #### Parallelism Assessment
-- 不派发子 Agent
-- 原因：改动集中在同一条会话补水链路和几个相关窗口，串行实现更容易保证时序一致和统一验证
+- Potentially separable write sets exist (`docs`, `runtime`, `tools/tests`), but the changes are small and the tool/test changes share the same interface/fake backend.
+- Sub-agents are not used for this round because the implementation is tightly coupled through the `Backend` interface and payload contract, and host policy has not introduced a separate sub-agent execution channel in this turn.
 
 #### Issue List
-- 无
+- None currently.
 
 阻塞：否
 进入 3.2
 
 ### Stage 3.2 - Implementation Record
 #### File-level Change Summary
-- `SWS-1`
-  - `frontend/src/stores/session.ts`
-    - 新增 `hydrateSessionConnectionSnapshot()`，集中补水 `IsConnected()` / `LastAddr()` 到 `sessionStore`
-  - `frontend/src/pages/Home.vue`
-    - 删除本地重复的连接快照刷新逻辑，改为复用共享 helper
-- `SWS-2`
-  - `frontend/src/pages/Showcase.vue`
-  - `frontend/src/windows/ShowcaseWindow.vue`
-  - `frontend/src/windows/TopicBusWindow.vue`
-    - 在 `loadHomeDefaults()` 中先恢复 `HomeState`，再显式补水 session snapshot，最后再设置 identity
-- `SWS-3`
-  - `frontend/src/stores/session.test.ts`
-    - 覆盖共享 helper 的 connected / disconnected 两条主路径
-  - `frontend/src/windows/ShowcaseWindow.test.ts`
-    - 覆盖 detached window 已连接启动时的 badge / widget gating 初始化
+- `BASE-1`
+  - `internal/mcp/tools.go`
+    - Removed a pre-existing duplicated/orphaned handler block that left non-declaration statements outside any function and blocked `go test ./internal/mcp`.
+- `DOC-1`
+  - `docs/requirements/mcp-client.md`
+    - Added `topicbus publish` to the stable MCP capability list and acceptance path.
+    - Recorded exact-topic, no replay, no delivery confirmation, and write-gate behavior.
+  - `docs/specs/mcp-client.md`
+    - Added `myflowhub_topicbus_publish` contract, runtime service boundary, write-gate classification, and error semantics.
+- `RT-1`
+  - `internal/mcpapp/runtime.go`
+    - Wired `TopicBusService` into MCP runtime assembly and shutdown.
+    - Added `TopicBusPublish(...)` timeout-wrapped runtime method.
+    - Added timeout-wrapped `ConfigSet(...)` and `PushPermsSnapshot(...)` runtime methods.
+- `TOOL-1`
+  - `internal/mcp/tools.go`
+    - Extended `Backend` with `TopicBusPublish`.
+    - Added `topicBusPublishArgs`, tool registration, local validation, write gate, route resolution, payload merge, and structured success/error handling.
+    - Added `defaultTopicBusPublishName`.
+- `TOOL-2`
+  - `internal/mcp/tools.go`
+    - Extended `Backend` with `ConfigSet` and `PushPermsSnapshot`.
+    - Added `myflowhub_management_config_set` with key validation, write gate, route resolution, and structured response.
+    - Added `myflowhub_auth_push_perms_snapshot` with non-empty snapshot validation, write gate, authority route resolution, and structured response.
+    - Updated `session_status` write-gate hint to list all write tools.
+- `TEST-1`
+  - `internal/mcp/tools_test.go`
+    - Extended fake backend.
+    - Added tests for registration, write-gate rejection, empty topic rejection, payload merge/routing, default name, and upstream error mapping.
+    - Added tests for management config set write-gate and route/key/value behavior.
+    - Added test for auth permission snapshot authority resolution and backend call.
 
-#### Validation Notes
-- worktree 的 `frontend/node_modules` 通过 Windows junction 指向主仓依赖目录时，直接运行 Vitest 会报 `TypeError: Cannot read properties of undefined (reading 'config')`
-- 本轮验证命令改为显式使用：
-  - `node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run ...`
-- 该现象已纳入 lesson，避免后续把它误判为产品代码回归
+#### Design Notes
+- `myflowhub_topicbus_publish` is intentionally a write-gated MCP tool because it emits externally visible events.
+- `myflowhub_management_config_set` and `myflowhub_auth_push_perms_snapshot` are intentionally write-gated because they alter runtime authority/config state.
+- The tool uses existing management source/target fallback semantics.
+- `payload` and `meta` are accepted only as JSON objects; convenience fields `title/body/level/source/url` override same-name payload keys.
+- Successful publish means the frame was sent, not that any NotifyNode displayed a notification.
+
+#### Validation Results
+- `$env:GOWORK='off'; go test ./internal/mcp -count=1`
+  - Result: passed.
+- `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
+  - Result: passed.
+- `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
+  - Result: passed.
 
 ### Stage 3.3 - Code Review
 - 需求覆盖：通过
-  - 已覆盖 Showcase 编辑页、Showcase 预览窗口、TopicBusWindow 的 session 快照补水
+  - Publish tool, operational write tools, write gate, docs, tests, and runtime wiring are covered.
 - 架构合理性：通过
-  - 共享 helper 收口到 `session` store，避免在多个 detached window 重复拼接 Wails 调用
+  - MCP remains the publisher endpoint; MetricsNode remains the subscriber/display endpoint; existing TopicBus service owns protocol encoding.
 - 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - 每次窗口冷启动只增加一次 `IsConnected()` 和最多一次 `LastAddr()`，无新增轮询
+  - One payload marshal per tool call; no new polling, goroutines, or subscription loops.
 - 可读性与一致性：通过
-  - `Home.vue` 与 detached windows 复用同一 helper，命名和职责边界清晰
+  - Handler follows existing MCP tool patterns and structured error helpers.
 - 可扩展性与配置化：通过
-  - 后续其他 detached window 若依赖 `sessionStore.connected`，可直接复用同一补水入口
+  - Tool naming and payload model leave room for later subscribe/list tools and app-market conventions above TopicBus.
+  - Operational write helpers stay generic and do not encode user-specific cloud config.
 - 稳定性与安全：通过
-  - Wails 查询失败时只 `console.warn`，不阻断原有 `LoadHomeState()` fallback
+  - Local validation happens before sending; write gate prevents event emission unless explicitly enabled.
 - 测试覆盖情况：通过
-  - 共享 helper 测试与代表性窗口测试均已通过
+  - Focused unit tests cover registration, invalid input, write gate, happy path, upstream error, config set, and permission snapshot push.
 - 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - 本轮未派发子Agent
+  - No sub-agents used; write sets stayed within confirmed plan.
 
 ### Stage 4 - Archive Prep
-- 使用 `$m-docs` 完成 requirement/spec/lesson 影响复核
-- `Requirements impact: none`
-- `Specs impact: none`
-- `Lessons impact: updated`
-- 归档目标：
-  - `docs/change/2026-04-14_win-showcase-window-session-sync.md`
-  - `docs/lessons/detached-window-session-snapshot-hydration.md`
-  - `docs/lessons/frontend-vitest-junction-preserve-symlinks.md`
+- 使用 `$m-docs` 完成 requirement/spec/lesson 影响复核。
+- Requirements impact: updated
+  - `docs/requirements/mcp-client.md`
+- Specs impact: updated
+  - `docs/specs/mcp-client.md`
+- Lessons impact: none
+  - No recurring runtime/debugging lesson is required; the pre-existing duplicated MCP tool residue is recorded in this workflow archive.
+- Change archive target:
+  - `docs/change/2026-05-27_mcp-topicbus-publish.md`

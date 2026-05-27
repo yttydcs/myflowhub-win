@@ -1,4 +1,4 @@
-// 本文件组装无界面的 MCP 运行时，把 session、auth、management、flow 和 varstore 服务接到一起。
+// 本文件组装无界面的 MCP 运行时，把 session、auth、management、flow、topicbus 和 varstore 服务接到一起。
 
 package mcpapp
 
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	corebus "github.com/yttydcs/myflowhub-core/eventbus"
+	coreperm "github.com/yttydcs/myflowhub-core/kit/permission"
 	protoauth "github.com/yttydcs/myflowhub-proto/protocol/auth"
 	protoexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
 	protoflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
@@ -28,6 +29,7 @@ import (
 	logssvc "github.com/yttydcs/myflowhub-win/internal/services/logs"
 	mgmtsvc "github.com/yttydcs/myflowhub-win/internal/services/management"
 	sessionsvc "github.com/yttydcs/myflowhub-win/internal/services/session"
+	topicbussvc "github.com/yttydcs/myflowhub-win/internal/services/topicbus"
 	varpoolsvc "github.com/yttydcs/myflowhub-win/internal/services/varpool"
 	storagesvc "github.com/yttydcs/myflowhub-win/internal/storage"
 )
@@ -105,6 +107,7 @@ type Runtime struct {
 	auth       *authsvc.AuthService
 	flow       *flowsvc.FlowService
 	management *mgmtsvc.ManagementService
+	topicbus   *topicbussvc.TopicBusService
 	varpool    *varpoolsvc.VarPoolService
 	store      *storagesvc.Store
 
@@ -149,6 +152,7 @@ func New(config Config) (*Runtime, error) {
 	auth := authsvc.New(session, logs, store)
 	flow := flowsvc.New(session, logs)
 	management := mgmtsvc.New(session, logs, store)
+	topicbus := topicbussvc.New(session, logs, bus)
 	varpool := varpoolsvc.New(session, logs, bus)
 
 	currentProfile := store.CurrentProfile()
@@ -163,6 +167,7 @@ func New(config Config) (*Runtime, error) {
 		auth:       auth,
 		flow:       flow,
 		management: management,
+		topicbus:   topicbus,
 		varpool:    varpool,
 		store:      store,
 		timeout:    normalizeTimeout(config.Timeout),
@@ -179,9 +184,12 @@ func New(config Config) (*Runtime, error) {
 }
 
 func (r *Runtime) Close() {
-	// Close 释放 runtime 独占的 varpool/session/bus 资源，避免 CLI 退出后残留订阅。
+	// Close 释放 runtime 独占的 topicbus/varpool/session/bus 资源，避免 CLI 退出后残留订阅。
 	if r == nil {
 		return
+	}
+	if r.topicbus != nil {
+		r.topicbus.Close()
 	}
 	if r.varpool != nil {
 		r.varpool.Close()
@@ -308,6 +316,12 @@ func (r *Runtime) ListRoles(ctx context.Context, sourceID, targetID uint32, req 
 	return r.auth.ListRoles(timeoutCtx, sourceID, targetID, req)
 }
 
+func (r *Runtime) PushPermsSnapshot(ctx context.Context, sourceID, targetID uint32, snapshot coreperm.Snapshot) error {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.auth.PushPermsSnapshot(timeoutCtx, sourceID, targetID, snapshot)
+}
+
 func (r *Runtime) ListPendingRegisters(ctx context.Context, sourceID, targetID uint32, req authsvc.ListPendingRegistersReq) (authsvc.ListPendingRegistersResp, error) {
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
@@ -401,6 +415,12 @@ func (r *Runtime) ConfigGet(ctx context.Context, sourceID, targetID uint32, key 
 	return r.management.ConfigGet(timeoutCtx, sourceID, targetID, key)
 }
 
+func (r *Runtime) ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) (protomanagement.ConfigResp, error) {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.management.ConfigSet(timeoutCtx, sourceID, targetID, key, value)
+}
+
 func (r *Runtime) ConfigList(ctx context.Context, sourceID, targetID uint32) (protomanagement.ConfigListResp, error) {
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
@@ -465,6 +485,12 @@ func (r *Runtime) FlowGet(ctx context.Context, sourceID, targetID uint32, req pr
 	timeoutCtx, cancel := r.withTimeout(ctx)
 	defer cancel()
 	return r.flow.Get(timeoutCtx, sourceID, targetID, req)
+}
+
+func (r *Runtime) TopicBusPublish(ctx context.Context, sourceID, targetID uint32, topic, name, payloadText string) error {
+	timeoutCtx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return r.topicbus.Publish(timeoutCtx, sourceID, targetID, topic, name, payloadText)
 }
 
 func (r *Runtime) VarList(ctx context.Context, sourceID, targetID uint32, req protovarstore.ListReq) (protovarstore.VarResp, error) {
