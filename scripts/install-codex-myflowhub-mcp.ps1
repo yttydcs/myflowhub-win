@@ -41,6 +41,55 @@ function ConvertTo-TomlString {
     return '"' + $escaped + '"'
 }
 
+function ConvertTo-CommandLineArgument {
+    # Quote values for display in a copyable PowerShell command.
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        return '""'
+    }
+    if ($Value -eq "") {
+        return '""'
+    }
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function New-EnsureRunningCommand {
+    # Build the suggested launcher command for HTTP transport users.
+    $command = New-Object System.Collections.Generic.List[string]
+    $command.Add("powershell.exe")
+    $command.Add("-ExecutionPolicy")
+    $command.Add("Bypass")
+    $command.Add("-File")
+    $command.Add($startScriptPath)
+    $command.Add("-EnsureRunning")
+    $command.Add("--listen")
+    $command.Add($Listen)
+    $command.Add("--mcp-path")
+    $command.Add((Normalize-McpPath -Path $McpPath))
+    $command.Add("--config-dir")
+    $command.Add($ConfigDir)
+    $command.Add("--device-id")
+    $command.Add($DeviceID)
+    $command.Add("--display-name")
+    $command.Add($DisplayName)
+
+    $trimmedEndpoint = $Endpoint.Trim()
+    if ($trimmedEndpoint -ne "") {
+        $command.Add("--endpoint")
+        $command.Add($trimmedEndpoint)
+    }
+    if ($AllowWrite) {
+        $command.Add("--allow-write")
+    }
+
+    return (($command.ToArray() | ForEach-Object { ConvertTo-CommandLineArgument -Value $_ }) -join " ")
+}
+
 function New-McpServerBlock {
     # Build a full mcp_servers.<name> block from the current parameters.
     if ($Transport -eq "http") {
@@ -150,6 +199,7 @@ if ($Transport -eq "http") {
     if ($Url.Trim() -eq "") {
         Write-Output "DerivedUrl: http://$Listen$(Normalize-McpPath -Path $McpPath)"
     }
+    Write-Output "EnsureRunning: $(New-EnsureRunningCommand)"
 }
 Write-Output ""
 Write-Output $block

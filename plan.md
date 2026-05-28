@@ -1,498 +1,337 @@
-# Plan - MyFlowHub-Win MCP TopicBus Publish and Operational Write Tools
+# Plan - MCP Ensure Running Startup
 
 ## Workflow Information
-- Repo: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`
-- Branch: `feat/mcp-topicbus-publish`
-- Base: `main` at `794c10a`
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Current Stage: `4 - Change Archive / Closeout`
+
+- Repo: `D:/project/MyFlowHub3/repo/MyFlowHub-Win`
+- Branch: `feat/mcp-ensure-running`
+- Base: local `main` at `1ecf3a2 feat: add shared HTTP MCP server`
+- Worktree: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running`
+- Current Stage: 3.2 implementation
 
 ## Stage Records
 
 ### Initialization
-- `guide.md`: none in `repo/MyFlowHub-Win`.
-- Base/worktree confirmation:
-  - Main repo path is control-plane only: `D:\project\MyFlowHub3\repo\MyFlowHub-Win`.
-  - Active implementation worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`.
-  - Dedicated branch: `feat/mcp-topicbus-publish`.
-  - Participating repo: only `MyFlowHub-Win`.
-  - Participating modules: headless MCP runtime/tools, MCP docs, focused MCP tests.
-- Current baseline:
-  - Main repo `main` was clean before worktree creation.
-  - New worktree inherited an unrelated older root `plan.md`; it was replaced with this workflow plan so execution cannot follow the wrong task.
-  - Shell may emit unrelated conda hook noise after successful commands; rely on command exit code and primary output.
+
+- guide.md: read from `D:/project/MyFlowHub3/guide.md`; worktrees must be under `D:/project/MyFlowHub3/worktrees`; final work should notify `dev.codex.msg` when MCP is available.
+- base/worktree confirmation: dedicated worktree created at `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running` on branch `feat/mcp-ensure-running`.
+- participating modules: `scripts/start-myflowhub-mcp.ps1`, MCP client docs, README, change archive.
 
 ### Stage 1 - Requirements Analysis
+
 #### Goal
-Expose a minimal TopicBus publish capability through the existing headless `myflowhub-mcp` client so Codex or another MCP host can publish a notification event that `MyFlowHub-MetricsNode` NotifyNode already subscribes to and displays as a system notification. During live setup, also keep the two small write-gated operational MCP tools needed to configure authority routing and sync runtime permission snapshots.
+
+Add a lightweight `ensure-running` startup mode for the local HTTP MyFlowHub MCP server so repeated invocations reuse an existing local server and only start a background process when no MCP endpoint is available.
 
 #### Scope
+
 Must:
-- Add `myflowhub_topicbus_publish` to the MCP tool list.
-- Reuse existing `internal/services/topicbus.TopicBusService.Publish`.
-- Keep MCP as an independent headless client with isolated config and node identity.
-- Preserve existing MCP `stdio` contract: stdout remains JSON-RPC only, logs remain stderr/service logs.
-- Require connected and authenticated/default identity state before publish, using the same source/target fallback model as management/varstore tools.
-- Validate `topic` and `name` locally before sending.
-- Accept notification-friendly payload inputs such as `title`, `body`, `level`, `source`, `url`, and optional structured `payload` / `meta`.
-- Gate publish behind `allow_write`, because it emits an externally visible event.
-- Add `myflowhub_management_config_set` behind `allow_write` so MCP can update management config such as authority routing in controlled setup flows.
-- Add `myflowhub_auth_push_perms_snapshot` behind `allow_write` so MCP can push a validated runtime permission snapshot to the authority.
-- Update stable MCP requirement/spec docs because the formal tool set changes.
-- Add focused tests for tool registration, validation, routing defaults, write gate, payload shaping, management config set, and permission snapshot push.
+
+- Preserve existing `stdio` and direct `http` startup behavior.
+- Add a script-level `EnsureRunning` mode for the shared HTTP endpoint.
+- Probe the configured HTTP MCP URL before starting a new process.
+- Reuse an already responsive MCP endpoint.
+- Fail explicitly when the target URL responds but is not a valid MCP endpoint.
+- Start a hidden background HTTP MCP server when the endpoint is not reachable.
+- Poll until the endpoint is ready or timeout.
+- Document the mode and validation path.
 
 Optional:
-- Add `topicbus_subscribe`, `topicbus_unsubscribe`, or `topicbus_list_subs` MCP tools later.
-- Add smoke-script coverage later when a real Hub and NotifyNode test rig are required.
 
-Not in scope:
-- Do not modify `MyFlowHub-Proto`.
-- Do not modify `MyFlowHub-MetricsNode` NotifyNode behavior.
-- Do not add wildcard topics, offline replay, ack, durable queue, or app-market abstractions.
-- Do not modify Win GUI TopicBus pages or Wails bindings.
-- Do not add a native OS notification presenter to `MyFlowHub-Win`; display remains owned by MetricsNode.
+- Support CLI-style aliases such as `--ensure-running`.
+- Keep configurable listen address and MCP path through existing forwarded CLI args.
+
+Out of scope:
+
+- No system service, scheduled task, or OS daemon registration.
+- No stdio-to-HTTP proxy.
+- No cross-process lock file or PID manager.
+- No remote or non-loopback default exposure.
 
 #### Use Cases
-- Codex finishes a coding task and calls MCP with topic `codex/task/done`; a MetricsNode subscribed to that exact topic pops a system notification.
-- Codex reports a failed verification with topic `codex/task/failed` and a body containing the failed command summary.
-- A user manually calls the MCP tool to verify the end-to-end NotifyNode route before wiring automatic agent behavior.
-- A future automation layer can reuse the same publish tool as the stable MCP emission point.
+
+- User runs the startup command before opening multiple Codex sessions; the first run starts the shared HTTP server, later runs reuse it.
+- User includes the startup command in a local shell/bootstrap script without worrying about duplicate server processes.
+- User gets an explicit failure when port/path is occupied by a different HTTP service.
 
 #### Functional Requirements
-1. `tools/list` must include `myflowhub_topicbus_publish`.
-2. The tool must accept:
-   - `topic` required non-empty string
-   - `name` optional string, defaulting to a stable value such as `mcp.topicbus.publish` or a notification-specific name
-   - `title` optional string
-   - `body` optional string
-   - `level` optional string
-   - `source` optional string
-   - `url` optional string
-   - `payload` optional JSON object for caller-controlled payload fields
-   - `meta` optional JSON object for extra metadata
-   - `source_id` optional node ID
-   - `target_id` optional node ID
-3. If `payload` is supplied, the handler must preserve it as structured JSON rather than stringifying it unnecessarily.
-4. If `title/body/level/source/url/meta` are supplied, the handler must merge them into the outgoing payload object in a predictable way.
-5. If neither structured notification fields nor payload are supplied, the outgoing TopicBus payload may be omitted or default to a small object containing source metadata.
-6. The handler must trim and validate `topic` and `name` before sending.
-7. The handler must resolve source/target using the same identity/default fallback behavior as existing management tools.
-8. The handler must fail locally with structured errors for invalid arguments, missing identity, not connected, and write disabled.
-9. The runtime must own a `TopicBusService` instance and close it during runtime shutdown.
-10. The runtime must expose a `TopicBusPublish` method to the MCP tools backend interface.
-11. The runtime must expose `ConfigSet` and `PushPermsSnapshot` methods to the MCP tools backend interface.
-12. `management_config_set` must reject empty keys, require `allow_write`, and use the same management source/target fallback as config reads.
-13. `auth_push_perms_snapshot` must reject an empty snapshot, require `allow_write`, and resolve the authority using explicit `authority_id`, `authority.node_id`, or hub fallback.
+
+- `start-myflowhub-mcp.ps1 -EnsureRunning` defaults to HTTP server mode with `--transport http --listen 127.0.0.1:17688 --mcp-path /mcp`.
+- Existing forwarded arguments may override `--listen` and `--mcp-path`.
+- Existing forwarded arguments may include `--endpoint`, `--config-dir`, `--device-id`, `--display-name`, `--allow-write`, and other MCP CLI flags.
+- If `--transport` is provided in ensure mode, it must be `http`; `stdio` is rejected.
+- A responsive endpoint must be verified by JSON-RPC `initialize`, not only by port-open checks.
+- Background startup must not leave a visible interactive PowerShell window.
 
 #### Non-functional Requirements
-- Minimal change surface: keep implementation inside existing MCP runtime/tool patterns.
-- Backward compatibility: existing MCP tools and GUI behavior must not change.
-- Safety: TopicBus publish is gated by `allow_write`.
-- Observability: existing TopicBus service logging remains the send-side trace.
-- Maintainability: do not duplicate transport encoding; route through `TopicBusService.Publish`.
-- Payload handling: use `encoding/json` and typed maps/raw JSON, not ad hoc string concatenation.
+
+- Keep changes script-local and small.
+- Avoid brittle process-name guessing for correctness; endpoint readiness is the source of truth.
+- Keep output human-readable for manual use.
+- Preserve Windows PowerShell 5.1 compatibility.
 
 #### Inputs / Outputs
-- Inputs:
-  - MCP tool call JSON arguments.
-  - Runtime auth/default state.
-  - Existing Hub session.
-- Output to MCP caller:
-  - Structured success object containing resolved `source_id`, `target_id`, `topic`, `name`, and normalized payload preview when applicable.
-  - Existing structured error shape on failures.
-- Output to Hub:
-  - TopicBus `publish` frame containing `topicbus.PublishReq{Topic, Name, TS, Payload}`.
-- Output to NotifyNode:
-  - Live exact-topic event only if NotifyNode is online and subscribed to the same topic.
+
+- Input: PowerShell startup script parameters plus forwarded MCP CLI args.
+- Output: reuse/start/failure message and exit code.
 
 #### Edge Cases
-- Empty or whitespace-only `topic`.
-- Empty or whitespace-only custom `name`.
-- Caller passes `payload` that is not a JSON object.
-- Caller passes notification fields that conflict with `payload` keys.
-- Session is disconnected.
-- Runtime has no usable source identity.
-- Runtime has no usable target ID.
-- `allow_write=false`.
-- Empty `management_config_set.key`.
-- Empty `auth_push_perms_snapshot.snapshot`.
-- Current authority role lacks permission to write config or push permission snapshots.
-- Hub send fails or route is unavailable.
-- NotifyNode is offline or subscribed to a different topic; MCP publish still succeeds because TopicBus publish has no delivery ack.
+
+- Missing value after `--listen`, `--mcp-path`, or `--transport`.
+- Endpoint connection refused.
+- Endpoint returns non-JSON, non-200, or JSON without an MCP initialize result.
+- Server process starts but never becomes ready.
+- User requests ensure mode with `--transport stdio`.
 
 #### Acceptance Criteria
-1. `go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1` passes with `GOWORK=off`.
-2. `go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp` passes with `GOWORK=off`.
-3. `myflowhub_topicbus_publish` appears in `tools/list`.
-4. With `allow_write=false`, the tool returns `write_disabled` before sending.
-5. With missing/invalid `topic`, the tool returns `invalid_arguments`.
-6. With connected/authenticated fake backend and `allow_write=true`, the tool calls backend publish with expected source, target, topic, name, and JSON payload.
-7. `management_config_set` and `auth_push_perms_snapshot` are write-gated and have focused tests.
-8. Stable MCP requirements and specs list TopicBus publish plus the two operational write tools and their write-gate behavior.
+
+- Existing `--version` passthrough still works.
+- `-EnsureRunning` starts a local HTTP MCP server on a free port.
+- Re-running `-EnsureRunning` against the same URL reuses the existing server.
+- `-EnsureRunning` fails explicitly against an occupied non-MCP URL.
+- README and stable docs describe the command and its limits.
 
 #### Risks
-- Existing MCP tool file is large; duplicate function blocks or stale generated sections may create accidental edits. Use focused patches and targeted tests.
-- TopicBus publish is fire-and-forget, so a successful MCP call does not prove a NotifyNode displayed the notification.
-- Adding a required method to the MCP backend interface requires updating all test fakes.
+
+- PowerShell argument quoting for background process startup.
+- Ensure mode can only manage HTTP endpoint readiness; it is not a system-wide singleton.
 
 #### Issue List
-- None currently.
+
+- none
 
 ### Stage 2 - Architecture Design
-#### Overall Solution
-Add TopicBus as a first-class service inside the existing MCP runtime, then expose a single write-gated MCP tool that publishes a TopicBus event. This keeps MetricsNode as the subscriber/display endpoint and makes `myflowhub-mcp` the publisher endpoint for Codex.
 
-Selected approach:
-- Runtime assembly: instantiate `topicbussvc.New(session, logs, bus)` alongside `varpool`.
-- Runtime API: add `TopicBusPublish(ctx, sourceID, targetID uint32, topic, name, payloadText string) error`, `ConfigSet(...)`, and `PushPermsSnapshot(...)`.
-- MCP backend: extend `Backend` with `TopicBusPublish`, `ConfigSet`, and `PushPermsSnapshot`.
-- Tool surface: add `myflowhub_topicbus_publish`, `myflowhub_management_config_set`, and `myflowhub_auth_push_perms_snapshot`.
-- Payload builder: tool layer builds a JSON object from `payload` plus notification convenience fields, marshals it once, and passes the JSON string to `TopicBusService.Publish`.
+#### Overall Solution
+
+Add `EnsureRunning` as a launcher-only mode in `scripts/start-myflowhub-mcp.ps1`. The launcher builds an HTTP MCP argument set, probes the endpoint using a minimal JSON-RPC `initialize` request, and either exits successfully on reuse or starts a hidden background PowerShell process that runs the same script in normal HTTP mode.
 
 #### Alternatives Considered
-- Publish directly from MetricsNode:
-  - Rejected for this workflow because MetricsNode is already the subscriber/display node; Codex needs a publisher exposed through MCP.
-- Add subscribe/unsubscribe/list tools now:
-  - Deferred. The immediate notification use case only needs publish; adding subscription control increases permission and lifecycle surface.
-- Add a dedicated notification protocol:
-  - Rejected. Existing TopicBus publish envelope already satisfies live notification fanout.
-- Add app-market manifest/handler abstractions now:
-  - Rejected for scope. This workflow should only create the lowest stable publish capability.
+
+- PID/lock file singleton: stronger process ownership, but more state and stale-lock handling than needed for this request.
+- Windows service/daemon: useful later, but too heavy and requires install/uninstall lifecycle.
+- stdio-to-HTTP proxy: would let Codex auto-launch through `command`, but it changes MCP transport behavior and is larger than this step.
 
 #### Module Responsibilities
-- `internal/mcpapp/runtime.go`
-  - Own TopicBus service lifecycle.
-  - Provide timeout-wrapped `TopicBusPublish`, `ConfigSet`, and `PushPermsSnapshot`.
-- `internal/mcp/tools.go`
-  - Declare tool schema.
-  - Decode/validate args.
-  - Enforce connected/auth/write-gate checks.
-  - Resolve source/target route.
-  - Build normalized JSON payload.
-  - Return structured success or structured MCP errors.
-- `internal/mcp/tools_test.go`
-  - Extend fake backend.
-  - Lock registration, write-gate, validation, route, payload behavior, config set, and permission snapshot behavior.
-- `docs/requirements/mcp-client.md`
-  - Add TopicBus publish and operational write tools to stable MCP capability requirements.
-- `docs/specs/mcp-client.md`
-  - Add tool contracts, write-gate classification, and runtime assembly boundary.
+
+- `scripts/start-myflowhub-mcp.ps1`: owns ensure-mode parsing, probing, background start, and readiness polling.
+- `README.md`: gives user-facing command examples.
+- `docs/requirements/mcp-client.md`: records the launcher requirement.
+- `docs/specs/mcp-client.md`: records the script contract and non-daemon limit.
+- `docs/change/*`: archives the completed workflow.
 
 #### Data / Call Flow
+
 ```text
-MCP host / Codex
-  -> tools/call myflowhub_topicbus_publish
-  -> internal/mcp tool handler validates args and write gate
-  -> resolve source_id / target_id from explicit args or auth/defaults
-  -> build JSON payload
-  -> mcpapp.Runtime.TopicBusPublish
-  -> internal/services/topicbus.TopicBusService.Publish
-  -> session.SendCommand(SubProtoTopicBus, source, target, publish envelope)
-  -> Hub TopicBus live forwarding
-  -> MetricsNode NotifyNode exact-topic subscriber
-  -> OS notification presenter
+start-myflowhub-mcp.ps1 -EnsureRunning
+  -> normalize transport/listen/path
+  -> POST initialize to http://listen/path
+  -> if MCP result: reuse and exit 0
+  -> if connection refused: Start-Process hidden normal HTTP server
+  -> poll initialize until ready or timeout
 ```
 
 #### Interface Drafts
-MCP tool args:
-```go
-type topicBusPublishArgs struct {
-    Topic    string          `json:"topic"`
-    Name     string          `json:"name,omitempty"`
-    Title    string          `json:"title,omitempty"`
-    Body     string          `json:"body,omitempty"`
-    Level    string          `json:"level,omitempty"`
-    Source   string          `json:"source,omitempty"`
-    URL      string          `json:"url,omitempty"`
-    Payload  json.RawMessage `json:"payload,omitempty"`
-    Meta     json.RawMessage `json:"meta,omitempty"`
-    SourceID *uint32         `json:"source_id,omitempty"`
-    TargetID *uint32         `json:"target_id,omitempty"`
-}
-```
 
-Runtime method:
-```go
-func (r *Runtime) TopicBusPublish(ctx context.Context, sourceID, targetID uint32, topic, name, payloadText string) error
-func (r *Runtime) ConfigSet(ctx context.Context, sourceID, targetID uint32, key, value string) (protomanagement.ConfigResp, error)
-func (r *Runtime) PushPermsSnapshot(ctx context.Context, sourceID, targetID uint32, snapshot coreperm.Snapshot) error
-```
-
-Suggested MCP call:
-```json
-{
-  "topic": "codex/task/done",
-  "name": "codex.done",
-  "title": "代码写完了",
-  "body": "已推送，CI 通过",
-  "level": "info",
-  "source": "codex"
-}
+```powershell
+.\scripts\start-myflowhub-mcp.ps1 -EnsureRunning
+.\scripts\start-myflowhub-mcp.ps1 --ensure-running --listen 127.0.0.1:17688 --mcp-path /mcp
+.\scripts\start-myflowhub-mcp.ps1 -EnsureRunning --endpoint 10.3.3.5:9000 --allow-write
 ```
 
 #### Error Handling and Safety
-- `invalid_arguments`: empty topic/name, invalid payload/meta JSON, unsupported JSON shape if a strict object is required.
-- `not_connected`: session not connected.
-- `missing_identity`: source or target cannot be resolved.
-- `write_disabled`: `allow_write=false`.
-- `invalid_arguments`: empty config key or empty permission snapshot.
-- `upstream_error`: `TopicBusService.Publish` or session send fails.
-- Publish remains no-ack; the success response should not claim notification delivery.
+
+- Reject ensure mode when normalized transport is not `http`.
+- Treat a live but invalid HTTP response as occupied/non-MCP and fail instead of launching another process.
+- Keep default listen loopback through the MCP CLI default and generated args.
+- Use hidden background process startup.
 
 #### Performance and Testing Strategy
-- Payload is small and marshaled once per call.
-- No new goroutines or background subscriptions are needed for MCP publish.
-- Targeted tests:
-  - tool list contains `myflowhub_topicbus_publish`
-  - write gate rejects before backend call
-  - invalid topic rejects
-  - default route resolution works
-  - payload merge preserves structured fields
-  - upstream error maps to structured error
-  - management config set write gate and route/key/value behavior
-  - auth permission snapshot route resolution and non-empty snapshot behavior
-- Validation commands:
-  - `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
-  - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
+
+- Probing uses one small JSON-RPC POST.
+- Polling has a bounded timeout.
+- Tests are script smoke tests plus existing Go MCP tests/build.
 
 #### Extensibility Design Points
-- Tool name and payload model leave room for future `myflowhub_topicbus_subscribe/list_subs`.
-- Notification-friendly fields are plain payload keys, so MetricsNode NotifyNode can consume them without protocol changes.
-- Future app-market handlers can standardize topic names and payload conventions above TopicBus without altering this tool.
-- Operational write tools remain generic and write-gated, so they can support MCP setup without adding environment-specific hard-coded config.
+
+- The probe and startup helpers remain script-local and can later back a scheduled-task or service installer.
+- Endpoint readiness is decoupled from process identity, so future standalone MCP repo extraction keeps the same launcher contract.
 
 #### Issue List
-- None currently.
+
+- none
 
 ### Stage 3.1 - Planning
+
 #### Project Goal and Current State
-- Current NotifyNode can display system notifications from subscribed TopicBus topics.
-- Current `MyFlowHub-Win` MCP client exposes session/auth/management/exec/flow/varstore but not TopicBus publish, management config write, or permission snapshot push.
-- Current Win TopicBus service already implements `Publish`; the missing layer is MCP runtime/tool exposure.
+
+Current `main` already supports a shared HTTP MCP server but requires a user to keep one server process running manually. This workflow adds an idempotent launcher mode that starts or reuses that server.
 
 #### Docs Governance Routing Decision
-Using `$m-docs`:
-- Docs tree exists and is healthy; no bootstrap needed.
-- Requirements impact: update existing `docs/requirements/mcp-client.md` because the stable MCP tool set changes from "reserved for topicbus later" to "publish supported now" and now includes two controlled operational write helpers.
-- Specs impact: update existing `docs/specs/mcp-client.md` because the MCP interface contract, runtime methods, and write-gate classification change.
+
+Using `$m-docs` for routing and impact checks.
+
+- Stable behavior change belongs in `docs/requirements/mcp-client.md` and `docs/specs/mcp-client.md`.
+- Workflow result belongs in `docs/change/2026-05-28_win-mcp-ensure-running.md`.
+- No new reusable lesson is expected unless validation exposes a recurring PowerShell/runtime pitfall.
+
+#### Related Requirements / Specs / Lessons
+
+- Requirements impact: clarify
+- Specs impact: clarify
 - Related requirements:
   - `docs/requirements/mcp-client.md`
 - Related specs:
   - `docs/specs/mcp-client.md`
 - Related lessons:
-  - none currently. This is a straightforward capability addition; create a lesson only if implementation exposes a recurring trap.
-- Change archive destination after implementation:
-  - `docs/change/2026-05-27_mcp-topicbus-publish.md`
+  - `docs/lessons/powershell-utf8-nobom-parse.md`
 
 #### Executable Task List
-- [x] `BASE-1` Repair pre-existing MCP tools.go duplicate residue that blocks compilation.
-- [x] `DOC-1` Update stable MCP requirement/spec docs for TopicBus publish and operational write tools.
-- [x] `RT-1` Wire TopicBus service and operational wrappers into MCP runtime.
-- [x] `TOOL-1` Add `myflowhub_topicbus_publish` tool contract, validation, routing, write gate, and payload builder.
-- [x] `TOOL-2` Add `myflowhub_management_config_set` and `myflowhub_auth_push_perms_snapshot`.
-- [x] `TEST-1` Add focused MCP tool tests and update fake backend.
-- [x] `VERIFY-1` Run targeted tests/build and perform self review.
-- [ ] `ARCHIVE-1` Create change archive and record docs impact.
+
+- `MCP-ENSURE-1`: add ensure-running launcher mode.
+- `MCP-ENSURE-2`: update docs and archive.
+- `MCP-ENSURE-3`: validate and review.
 
 #### Task Details
-##### DOC-1 - Stable MCP Docs
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Make the stable MCP requirement/spec list `myflowhub_topicbus_publish`, `myflowhub_management_config_set`, and `myflowhub_auth_push_perms_snapshot`, and define their safety behavior.
-- Files / Modules:
-  - `docs/requirements/mcp-client.md`
-  - `docs/specs/mcp-client.md`
-- Write Set: docs only.
-- Acceptance: Requirements/specs mention TopicBus publish, operational write helpers, args, write gate, and no-delivery-ack boundary.
-- Test Points: docs review.
-- Rollback: Revert the two docs files.
 
-##### BASE-1 - Pre-existing MCP Tool File Compile Repair
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Remove the already-present duplicate/orphaned `internal/mcp/tools.go` residue that causes `go test ./internal/mcp` to fail before TopicBus changes.
-- Files / Modules:
-  - `internal/mcp/tools.go`
-- Write Set: remove duplicate stale handler/helper block only.
-- Acceptance: `go test ./internal/mcp -count=1` can progress past the syntax error at the pre-existing orphaned code.
-- Test Points: `GOWORK=off go test ./internal/mcp -count=1`.
-- Rollback: Restore removed duplicate block if a later diff shows it was not redundant.
+##### MCP-ENSURE-1 - Add Ensure-Running Launcher Mode
 
-##### RT-1 - MCP Runtime TopicBus and Operational Services
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Instantiate and expose TopicBus publish plus timeout-wrapped management/auth write wrappers in the headless MCP runtime.
-- Files / Modules:
-  - `internal/mcpapp/runtime.go`
-- Write Set: runtime assembly and method wrappers only.
-- Acceptance: runtime has a TopicBus service, closes it, and exposes timeout-wrapped publish/config/snapshot methods.
-- Test Points: `go test ./internal/mcpapp -count=1`.
-- Rollback: Revert runtime.go changes.
+- Owner: Codex
+- Worktree: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running`
+- Plan Path: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running/plan.md`
+- Goal: make the start script idempotently reuse or start the local HTTP MCP server.
+- Files / Modules: `scripts/start-myflowhub-mcp.ps1`
+- Write Set: script only
+- Acceptance: free port starts server; second run reuses; invalid live endpoint fails.
+- Test Points: `--version`, ensure start/reuse on a temp port, invalid endpoint smoke.
+- Rollback: revert `scripts/start-myflowhub-mcp.ps1`.
 
-##### TOOL-1 - MCP TopicBus Publish Tool
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Add the MCP tool with validation, payload shaping, route resolution, and write-gate protection.
-- Files / Modules:
-  - `internal/mcp/tools.go`
-- Write Set: MCP backend interface, args type, tool registration, handler/helper functions.
-- Acceptance: tool appears in tools list and calls backend publish only after local validation/write-gate checks pass.
-- Test Points: `go test ./internal/mcp -count=1`.
-- Rollback: Revert tools.go changes.
+##### MCP-ENSURE-2 - Update Documentation
 
-##### TOOL-2 - MCP Operational Write Tools
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Add the controlled setup tools needed by MCP-driven authority/config workflows.
-- Files / Modules:
-  - `internal/mcp/tools.go`
-- Write Set: MCP backend interface, args types, tool registrations, handlers, snapshot validation, and status hint update.
-- Acceptance: `management_config_set` and `auth_push_perms_snapshot` require `allow_write`, validate local inputs, and route through existing management/authority fallback helpers.
-- Test Points: `go test ./internal/mcp -count=1`.
-- Rollback: Revert operational write tool changes.
+- Owner: Codex
+- Worktree: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running`
+- Plan Path: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running/plan.md`
+- Goal: document the launcher contract and limits.
+- Files / Modules: `README.md`, `docs/requirements/mcp-client.md`, `docs/specs/mcp-client.md`, `docs/change/README.md`, `docs/change/2026-05-28_win-mcp-ensure-running.md`
+- Write Set: docs only
+- Acceptance: docs distinguish ensure mode from daemon/service and from HTTP Codex config.
+- Test Points: markdown review and `git diff --check`.
+- Rollback: revert docs changes.
 
-##### TEST-1 - Focused MCP Tests
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Lock the new tool behavior without requiring a live Hub.
-- Files / Modules:
-  - `internal/mcp/tools_test.go`
-- Write Set: test fake backend and new tests.
-- Acceptance: tests cover registration, invalid topic, write gate, successful publish payload/routing, upstream error, config set write gate/route, and auth snapshot route/snapshot behavior.
-- Test Points: `go test ./internal/mcp -count=1`.
-- Rollback: Revert tools_test.go changes.
+##### MCP-ENSURE-3 - Validate and Review
 
-##### VERIFY-1 - Validation and Review
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Verify implementation and perform Stage 3.3 review.
-- Files / Modules:
-  - no planned source edits unless review finds issues.
-- Write Set: none unless returning to Stage 3.2 for fixes.
-- Acceptance:
-  - `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
-  - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
-  - Stage 3.3 checklist all pass.
-- Test Points: targeted Go tests/build.
-- Rollback: Revert failed task changes by task ID if needed.
-
-##### ARCHIVE-1 - Change Archive
-- Owner: main agent
-- Worktree: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish`
-- Plan Path: `D:\project\MyFlowHub3\worktrees\feat-mcp-topicbus-publish\plan.md`
-- Goal: Archive workflow results and docs impact.
-- Files / Modules:
-  - `docs/change/2026-05-27_mcp-topicbus-publish.md`
-  - `docs/change/README.md` if index maintenance is required by local style
-  - `docs/lessons/*` only if a reusable implementation lesson emerges
-- Write Set: docs/change and optional docs/lessons.
-- Acceptance: Archive records task mapping, tests, decisions, rollback, docs impact, and sub-agent trace.
-- Test Points: docs review.
-- Rollback: Remove archive entry and index change.
+- Owner: Codex
+- Worktree: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running`
+- Plan Path: `D:/project/MyFlowHub3/worktrees/feat-mcp-ensure-running/plan.md`
+- Goal: confirm behavior and code quality before closeout.
+- Files / Modules: no direct write set unless review finds gaps.
+- Write Set: none by default
+- Acceptance: validation commands pass; review checklist is recorded.
+- Test Points: PowerShell smoke, Go targeted tests/build, `git diff --check`.
+- Rollback: use per-task rollback above.
 
 #### Dependencies
-- Existing `TopicBusService.Publish` must remain compatible.
-- Existing MCP route/default helpers must be reused; if no suitable helper exists, add a small local helper inside `tools.go`.
-- Operational write tools must remain generic and write-gated; do not hard-code cloud node IDs, roles, topics, or user-specific config.
-- No live Hub is required for unit tests; live end-to-end notification verification can be manual after merge.
+
+- Existing HTTP MCP server support from `1ecf3a2`.
+- Local Go toolchain for fallback `go run` validation.
 
 #### Risks and Notes
-- `TopicBusService.Publish` validates `topic` and `name`; tool layer still validates first so MCP errors are structured.
-- Publish success means "frame sent", not "notification displayed".
-- MetricsNode subscription is exact topic. User-facing examples should use exactly matching topic strings, e.g. `codex/task/done`.
+
+- Worktree is based on local `main`, which is ahead of `origin/main` by the two prior MCP commits.
+- This workflow does not remove the need for an HTTP Codex config; it only makes starting the server idempotent.
 
 #### Parallelism Assessment
-- Potentially separable write sets exist (`docs`, `runtime`, `tools/tests`), but the changes are small and the tool/test changes share the same interface/fake backend.
-- Sub-agents are not used for this round because the implementation is tightly coupled through the `Backend` interface and payload contract, and host policy has not introduced a separate sub-agent execution channel in this turn.
+
+- No sub-agent delegation. Change surface is small and tightly coupled around one script plus docs.
 
 #### Issue List
-- None currently.
+
+- none
 
 阻塞：否
 进入 3.2
 
 ### Stage 3.2 - Implementation Record
+
 #### File-level Change Summary
-- `BASE-1`
-  - `internal/mcp/tools.go`
-    - Removed a pre-existing duplicated/orphaned handler block that left non-declaration statements outside any function and blocked `go test ./internal/mcp`.
-- `DOC-1`
+
+- `MCP-ENSURE-1`
+  - `scripts/start-myflowhub-mcp.ps1`
+    - Added `-EnsureRunning` / `--ensure-running`.
+    - Added endpoint normalization, forwarded argument parsing, MCP `initialize` probing, hidden background startup, and bounded readiness polling.
+    - Rejected ensure mode when forwarded `--transport` is not `http`.
+    - Fixed development fallback stdout passthrough by avoiding function-return capture of `go run` output.
+- `MCP-ENSURE-2`
+  - `scripts/install-codex-myflowhub-mcp.ps1`
+    - Added HTTP-mode `EnsureRunning` command output with config, identity, endpoint, and write-gate arguments.
+  - `README.md`
+    - Added `-EnsureRunning` startup example and non-service note.
   - `docs/requirements/mcp-client.md`
-    - Added `topicbus publish` to the stable MCP capability list and acceptance path.
-    - Recorded exact-topic, no replay, no delivery confirmation, and write-gate behavior.
+    - Clarified launcher reuse/start requirement and acceptance.
   - `docs/specs/mcp-client.md`
-    - Added `myflowhub_topicbus_publish` contract, runtime service boundary, write-gate classification, and error semantics.
-- `RT-1`
-  - `internal/mcpapp/runtime.go`
-    - Wired `TopicBusService` into MCP runtime assembly and shutdown.
-    - Added `TopicBusPublish(...)` timeout-wrapped runtime method.
-    - Added timeout-wrapped `ConfigSet(...)` and `PushPermsSnapshot(...)` runtime methods.
-- `TOOL-1`
-  - `internal/mcp/tools.go`
-    - Extended `Backend` with `TopicBusPublish`.
-    - Added `topicBusPublishArgs`, tool registration, local validation, write gate, route resolution, payload merge, and structured success/error handling.
-    - Added `defaultTopicBusPublishName`.
-- `TOOL-2`
-  - `internal/mcp/tools.go`
-    - Extended `Backend` with `ConfigSet` and `PushPermsSnapshot`.
-    - Added `myflowhub_management_config_set` with key validation, write gate, route resolution, and structured response.
-    - Added `myflowhub_auth_push_perms_snapshot` with non-empty snapshot validation, write gate, authority route resolution, and structured response.
-    - Updated `session_status` write-gate hint to list all write tools.
-- `TEST-1`
-  - `internal/mcp/tools_test.go`
-    - Extended fake backend.
-    - Added tests for registration, write-gate rejection, empty topic rejection, payload merge/routing, default name, and upstream error mapping.
-    - Added tests for management config set write-gate and route/key/value behavior.
-    - Added test for auth permission snapshot authority resolution and backend call.
+    - Clarified `-EnsureRunning` contract and failure modes.
+  - `docs/change/2026-05-28_win-mcp-ensure-running.md`
+    - Archived workflow result.
+  - `docs/lessons/powershell-args-automatic-variable.md`
+    - Captured PowerShell `$Args` automatic-variable pitfall.
+  - `docs/change/README.md`, `docs/lessons/README.md`
+    - Updated indexes.
 
 #### Design Notes
-- `myflowhub_topicbus_publish` is intentionally a write-gated MCP tool because it emits externally visible events.
-- `myflowhub_management_config_set` and `myflowhub_auth_push_perms_snapshot` are intentionally write-gated because they alter runtime authority/config state.
-- The tool uses existing management source/target fallback semantics.
-- `payload` and `meta` are accepted only as JSON objects; convenience fields `title/body/level/source/url` override same-name payload keys.
-- Successful publish means the frame was sent, not that any NotifyNode displayed a notification.
+
+- Endpoint readiness is the source of truth; the launcher does not try to infer ownership from process names.
+- `-EnsureRunning` remains explicitly HTTP-only.
+- The launcher starts a hidden background process but does not install a service or daemon.
+- Fallback `go run` must stream stdout directly because stdio MCP depends on stdout.
 
 #### Validation Results
-- `$env:GOWORK='off'; go test ./internal/mcp -count=1`
+
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 -PreferSource --version`
+  - Result: passed; output `dev`.
+- `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp -count=1`
   - Result: passed.
-- `$env:GOWORK='off'; go test ./internal/mcp ./internal/mcpapp ./internal/services/topicbus -count=1`
+- `$env:GOWORK='off'; go build -o $env:TEMP\myflowhub-mcp-ensure-running-test.exe ./cmd/myflowhub-mcp`
   - Result: passed.
-- `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe .\cmd\myflowhub-mcp`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Listen 127.0.0.1:17688 -McpPath /mcp -WhatIf`
   - Result: passed.
+- Temporary port `-EnsureRunning` smoke on `127.0.0.1:17891`
+  - Result: first run started server; second run reused endpoint.
+- `-EnsureRunning --transport stdio`
+  - Result: failed as expected.
+- Non-MCP HTTP endpoint on `127.0.0.1:17892`
+  - Result: failed as expected.
 
 ### Stage 3.3 - Code Review
-- 需求覆盖：通过
-  - Publish tool, operational write tools, write gate, docs, tests, and runtime wiring are covered.
-- 架构合理性：通过
-  - MCP remains the publisher endpoint; MetricsNode remains the subscriber/display endpoint; existing TopicBus service owns protocol encoding.
-- 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
-  - One payload marshal per tool call; no new polling, goroutines, or subscription loops.
-- 可读性与一致性：通过
-  - Handler follows existing MCP tool patterns and structured error helpers.
-- 可扩展性与配置化：通过
-  - Tool naming and payload model leave room for later subscribe/list tools and app-market conventions above TopicBus.
-  - Operational write helpers stay generic and do not encode user-specific cloud config.
-- 稳定性与安全：通过
-  - Local validation happens before sending; write gate prevents event emission unless explicitly enabled.
-- 测试覆盖情况：通过
-  - Focused unit tests cover registration, invalid input, write gate, happy path, upstream error, config set, and permission snapshot push.
-- 子Agent治理与审计（任务映射、上下文完整性、文件所有权、结果复核、冲突处理、记录完整性）：通过
-  - No sub-agents used; write sets stayed within confirmed plan.
 
-### Stage 4 - Archive Prep
-- 使用 `$m-docs` 完成 requirement/spec/lesson 影响复核。
+- 需求覆盖：通过
+  - Added idempotent shared HTTP server launcher mode and documented it in requirements/specs.
+- 架构合理性：通过
+  - Kept lifecycle logic in the startup script; did not alter MCP protocol dispatch or runtime ownership.
+- 性能风险（N+1 / 重复计算 / 多余 I/O / 锁竞争）：通过
+  - One small initialize probe before reuse/start; readiness polling is bounded.
+- 可读性与一致性：通过
+  - Script helpers use explicit names and keep launcher responsibilities separate from binary discovery.
+- 可扩展性与配置化：通过
+  - Existing `--listen`, `--mcp-path`, config, identity, endpoint, and write-gate flags are preserved.
+- 稳定性与安全：通过
+  - Ensures HTTP-only mode, detects non-MCP port occupancy, and keeps loopback defaults.
+- 测试覆盖情况：通过
+  - Covered Go tests/build, script old entrypoint, start/reuse path, invalid transport, invalid live endpoint, and install preview.
+- 子Agent治理与审计：通过
+  - No sub-agents used; all changes map to confirmed task IDs.
+
+### Stage 4 - Change Archive
+
+使用 `$m-docs` 完成 requirement/spec/lesson 影响复核。
+
 - Requirements impact: updated
   - `docs/requirements/mcp-client.md`
 - Specs impact: updated
   - `docs/specs/mcp-client.md`
-- Lessons impact: none
-  - No recurring runtime/debugging lesson is required; the pre-existing duplicated MCP tool residue is recorded in this workflow archive.
-- Change archive target:
-  - `docs/change/2026-05-27_mcp-topicbus-publish.md`
+- Lessons impact: updated
+  - `docs/lessons/powershell-args-automatic-variable.md`
+  - `docs/lessons/README.md`
+- Change archive:
+  - `docs/change/2026-05-28_win-mcp-ensure-running.md`
+- Index updates:
+  - `docs/change/README.md`
+  - `docs/lessons/README.md`

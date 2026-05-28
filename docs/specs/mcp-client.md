@@ -438,11 +438,19 @@
   - `build/bin/myflowhub-mcp.exe`
   - repo root 下的 `myflowhub-mcp.exe`
   - repo root 下的 `bin/myflowhub-mcp.exe`
+- `scripts/start-myflowhub-mcp.ps1 -EnsureRunning` 提供本机 HTTP MCP Server 的轻量级启动/复用入口：
+  - 默认补齐 `--transport http --listen 127.0.0.1:17688 --mcp-path /mcp`。
+  - 用户显式传入 `--listen` 或 `--mcp-path` 时，以用户值为准。
+  - 用户显式传入 `--transport` 时必须为 `http`；`stdio` 必须本地失败。
+  - 启动前必须通过 HTTP POST `initialize` 探测 endpoint 是否为有效 MCP endpoint，不能只检查端口打开。
+  - endpoint 已就绪时输出复用信息并退出 0。
+  - endpoint 不可达时启动隐藏后台进程，再轮询 endpoint 至 ready 或超时。
+  - endpoint 可达但不是有效 MCP endpoint 时必须显式失败，避免误判端口占用。
 - `scripts/install-codex-myflowhub-mcp.ps1` 必须能够以幂等方式更新 Codex `config.toml` 中对应的 `mcp_servers.<name>` 配置块。
 - 安装脚本必须支持 `stdio` 和 `http` 两种 Codex 配置：
   - `stdio` 输出 `command = "powershell.exe"` 与启动脚本参数。
   - `http` 输出 `type = "http"` 与 `url = "http://127.0.0.1:<port>/mcp"`。
-- `http` 安装模式只写 Codex 连接配置，不负责长期托管 daemon；用户仍需单独启动或注册系统服务。
+- `http` 安装模式只写 Codex 连接配置，不负责长期托管 daemon；用户仍需单独启动、执行 `start-myflowhub-mcp.ps1 -EnsureRunning`，或后续注册系统服务。
 - 安装脚本必须支持 `-WhatIf` 预演。
 - `scripts/test-myflowhub-mcp-smoke.ps1` 必须复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程，并通过 stdio 逐条发送 JSON-RPC。
 - smoke 脚本必须采用 staged 模型：

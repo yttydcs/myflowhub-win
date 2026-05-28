@@ -52,6 +52,8 @@ Notes:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
 - Start shared local HTTP MCP server:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --transport http --listen 127.0.0.1:17688 --mcp-path /mcp --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
+- Ensure shared local HTTP MCP server is running:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 -EnsureRunning --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
 - Smoke against a real Hub with `register`:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode register`
 - Smoke against a real Hub with `login`:
@@ -103,6 +105,7 @@ Notes:
 - The MCP process supports `stdio` for single-client hosts and local HTTP for shared multi-client hosts.
 - In `stdio` mode, `stdout` is reserved for JSON-RPC and logs go to `stderr`.
 - In HTTP mode, all Codex sessions that point at the same local URL share one process, one runtime, and one Hub connection.
+- `scripts/start-myflowhub-mcp.ps1 -EnsureRunning` probes the HTTP MCP endpoint, reuses it when ready, and starts a hidden background server only when the endpoint is unavailable. It is a lightweight launcher mode, not a Windows service.
 - `scripts/start-myflowhub-mcp.ps1` first checks `MYFLOWHUB_MCP_EXE`, `build/bin/myflowhub-mcp.exe`, `.\myflowhub-mcp.exe`, and `.\bin\myflowhub-mcp.exe`; if none exist, it falls back to `go run ./cmd/myflowhub-mcp`.
 - `scripts/install-codex-myflowhub-mcp.ps1` updates `~/.codex/config.toml` in place, supports `-WhatIf`, and can generate either `stdio` or `http` MCP config.
 - `scripts/test-myflowhub-mcp-smoke.ps1` drives the MCP process over line-delimited JSON-RPC with staged smoke:
