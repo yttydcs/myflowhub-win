@@ -2,20 +2,32 @@
 
 ## Scope
 
-- 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端首版的模块边界、运行时约束和工具契约。
+- 本规范限定 `MyFlowHub-Win` 中无界面 MCP 客户端和本机共享 MCP Server 的模块边界、运行时约束和工具契约。
 - 本规范不修改 `auth`、`management`、`exec`、`varstore` 协议本身。
 - 本规范新增 `exec_cap_query` 只读工具，但不新增 `exec.call` 等写/执行能力。
 - 本规范包含受 `allow_write` 保护的 authority permission snapshot 与 management config 写工具。
 - 本规范不涉及 GUI 页面、Wails bindings 或第三方 MCP client 能力。
+- 本规范新增本机 HTTP MCP Server 入口，用于多个 MCP client 共享一个 `myflowhub-mcp` 进程内 runtime。
 - 本规范默认 Hub 角色权限模型是真实授权边界；本地仅保留显式写 gate 与安装/运行时保护。
 
 ## Interfaces / Contracts
 
-### 1. 入口与进程模型
+### 1. 入口、传输与进程模型
 
 - 新入口为 `cmd/myflowhub-mcp`。
-- 该命令作为独立进程运行，通过 `stdin/stdout` 提供 MCP JSON-RPC。
-- `stdout` 只允许输出 MCP 消息；普通日志必须写 `stderr`。
+- 该命令作为独立进程运行，并支持两种 transport：
+  - `stdio`：通过 `stdin/stdout` 提供 MCP JSON-RPC，适合单会话 MCP host 直接拉起子进程。
+  - `http`：通过本机 HTTP MCP endpoint 提供 JSON-RPC，适合多个 Codex 会话连接同一个常驻进程。
+- `stdio` 模式下，`stdout` 只允许输出 MCP 消息；普通日志必须写 `stderr`。
+- `http` 模式下，进程启动时只创建一个 `mcpapp.Runtime`，所有 HTTP request 共享该 runtime。
+- `http` 模式默认监听 `127.0.0.1:17688`，默认 MCP path 为 `/mcp`。
+- `http` 模式默认不得监听 `0.0.0.0`、公网 IP 或非 loopback 地址。
+- `http` 模式收到 `Origin` header 时，必须校验该来源为 loopback host；不符合时返回 HTTP 403。
+- `http` 模式至少支持 HTTP `POST`：
+  - JSON-RPC request 返回 `Content-Type: application/json` 与单个 JSON-RPC response。
+  - JSON-RPC notification 或 response 被接受时返回 HTTP `202 Accepted` 且不返回 body。
+  - 非 JSON-RPC 或无法解析的 body 返回 HTTP 400 或 JSON-RPC parse error。
+- `http` 模式可暂不支持 SSE；HTTP `GET` 在未实现 SSE 时返回 HTTP 405。
 
 ### 2. 本地配置隔离
 
@@ -427,6 +439,10 @@
   - repo root 下的 `myflowhub-mcp.exe`
   - repo root 下的 `bin/myflowhub-mcp.exe`
 - `scripts/install-codex-myflowhub-mcp.ps1` 必须能够以幂等方式更新 Codex `config.toml` 中对应的 `mcp_servers.<name>` 配置块。
+- 安装脚本必须支持 `stdio` 和 `http` 两种 Codex 配置：
+  - `stdio` 输出 `command = "powershell.exe"` 与启动脚本参数。
+  - `http` 输出 `type = "http"` 与 `url = "http://127.0.0.1:<port>/mcp"`。
+- `http` 安装模式只写 Codex 连接配置，不负责长期托管 daemon；用户仍需单独启动或注册系统服务。
 - 安装脚本必须支持 `-WhatIf` 预演。
 - `scripts/test-myflowhub-mcp-smoke.ps1` 必须复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程，并通过 stdio 逐条发送 JSON-RPC。
 - smoke 脚本必须采用 staged 模型：
@@ -515,6 +531,13 @@ type StatusPermissions struct {
     LocalWriteGate     bool
 }
 
+type ServerRuntimeInfo struct {
+    Transport  string
+    ListenAddr string
+    Path       string
+    URL        string
+}
+
 type StatusReadiness struct {
     Authenticated bool
     HasIdentity   bool
@@ -587,6 +610,7 @@ MCP tool 结构化错误至少包含：
 ## Performance Constraints
 
 - 单进程内复用长连接，不为每次 tool 调用重新连接。
+- HTTP MCP Server 模式下，多个 client 和多个 request 共享同一个 runtime；不得按 request 重建 store、session 或 auth service。
 - 避免重复读取本地配置；runtime 启动后复用同一份 services/store。
 - 不增加与 GUI 无关的额外前端依赖或构建步骤。
 

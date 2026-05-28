@@ -36,6 +36,9 @@
 - [frontend-build-empty-node-modules.md](frontend-build-empty-node-modules.md)
   - 症状：`Installing frontend dependencies: Done.` 后仍报 `Cannot find module '...vite/bin/vite.js'`
   - 关键词：`vite/bin/vite.js`、`empty node_modules`、`package.json.md5`、`wails build`
+- [powershell-utf8-nobom-parse.md](powershell-utf8-nobom-parse.md)
+  - 症状：`powershell.exe -File` 执行 `.ps1` 报 `Unexpected token '}'`，但 PowerShell 7 可能正常
+  - 关键词：`PowerShell 5.1`、`UTF-8 no BOM`、`Chinese comment`、`start-myflowhub-mcp.ps1`
 - [win-legacy-overlay-dialog-scroll-shell.md](win-legacy-overlay-dialog-scroll-shell.md)
   - 症状：旧式 `Overlay` 卡片弹窗随内容继续长高、footer 跑出视口，或 focus ring 被滚动裁切
   - 关键词：`max-h-[85vh]`、`overflow-hidden`、`overflow-y-auto`、`legacy overlay dialog`、`data-node-vars-scroll`

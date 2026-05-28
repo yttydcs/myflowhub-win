@@ -9,6 +9,7 @@
 ## Goal
 
 - 为 `MyFlowHub-Win` 提供一个可被 MCP host 以 `stdio` 方式拉起的无界面客户端。
+- 为多 Codex 并行场景提供本机共享状态的 HTTP MCP Server，让多个 MCP client 复用同一个 Hub 连接、配置目录、节点身份和登录态。
 - 该客户端以独立节点身份连接 Hub，并向 AI 暴露首版 `session`、`auth`、`management`、`exec`、`flow`、`topicbus`、`varstore` 工具。
 - `auth` 工具除 `register/login` 外，还要支持权限自检与角色分布查询。
 - 首版默认只开放读能力与受控写能力，不与现有 GUI 本地配置互相污染。
@@ -20,6 +21,9 @@
 
 - 提供无界面可执行入口，不依赖 Wails GUI。
 - 支持 MCP `tools/list` / `tools/call`。
+- 支持 `stdio` 兼容模式，满足单会话 MCP host 启动子进程的使用方式。
+- 支持本机 HTTP MCP Server 模式，满足多个 Codex 会话共享状态的使用方式。
+- HTTP MCP Server 默认必须只监听 localhost，不得默认暴露到局域网或公网。
 - 支持以下首版能力：
   - `session connect/disconnect/status`
   - `auth register/login/get_perms/list_roles/push_perms_snapshot/list_pending_registers/approve_register/reject_register/issue_register_permit/revoke_register_permit`
@@ -30,6 +34,7 @@
   - `varstore list/get/set/revoke`
 - 作为独立节点身份接入 Hub。
 - 使用独立本地配置目录保存 MCP 自己的 settings 与 node keys。
+- HTTP MCP Server 模式下，同一进程内必须只创建一个共享 runtime，用于持有 Hub connection、settings、node keys、auth snapshot 和默认路由状态。
 - 写工具默认受显式开关保护。
 - 日志只能写 `stderr`，不得污染 MCP `stdout`。
 - 仓内提供一个可直接连真实 Hub 的 staged smoke 脚本：
@@ -68,24 +73,28 @@
 - AI 读取某个变量、列出变量名、创建变量、修改变量、撤销变量。
 - 用户同时运行 GUI Win 客户端和 MCP 客户端，两者互不干扰。
 - 用户通过脚本把 MCP 安装到 Codex，而不是手动编辑 host 配置。
+- 用户同时开启多个 Codex 会话时，所有会话可配置到同一个本机 HTTP MCP URL，共享一个常驻 `myflowhub-mcp` 进程。
 - 用户通过 smoke 脚本直连真实 Hub，先验证独立 `config_dir`、auth、权限查询与 management 基础链路，再按需开启 extended read、authority、write 阶段。
 
 ## Functional Requirements
 
 1. MCP 客户端必须支持标准 `stdio` 传输。
-2. 客户端必须维持长连接 session，而不是每次 tool 调用重新拨号。
-3. 首版必须显式支持 `auth register/login`，因为未认证连接默认只能访问 auth 子协议。
-4. 首版必须显式支持 `auth get_perms/list_roles`，用于 AI 在登录后自检当前节点权限和 authority 角色分布。
-5. MCP 必须显式支持 authority 审批流工具：`list_pending_registers`、`approve_register`、`reject_register`、`issue_register_permit`、`revoke_register_permit`。
-6. MCP 必须显式支持 authority 权限快照写入工具：`push_perms_snapshot`，并受 `allow_write` gate 保护。
-7. MCP 必须显式支持 management 工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_set`、`config_list`。
-8. `management_config_set` 必须受 `allow_write` gate 保护，且 key 必须本地校验为非空。
-9. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
-10. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
-11. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
-12. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
-13. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
-14. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
+2. MCP 客户端必须支持本机 HTTP MCP Server 模式，用于多 Codex 会话共享状态。
+3. 客户端必须维持长连接 session，而不是每次 tool 调用重新拨号。
+4. HTTP MCP Server 模式下，多个 MCP client 调用工具时必须复用同一个进程内 runtime，不得为每个 HTTP request 或 client 重新创建 Hub session。
+5. HTTP MCP Server 模式必须提供本地安全默认值：默认监听 `127.0.0.1`，并在收到 `Origin` 时校验为 localhost 来源。
+6. 首版必须显式支持 `auth register/login`，因为未认证连接默认只能访问 auth 子协议。
+7. 首版必须显式支持 `auth get_perms/list_roles`，用于 AI 在登录后自检当前节点权限和 authority 角色分布。
+8. MCP 必须显式支持 authority 审批流工具：`list_pending_registers`、`approve_register`、`reject_register`、`issue_register_permit`、`revoke_register_permit`。
+9. MCP 必须显式支持 authority 权限快照写入工具：`push_perms_snapshot`，并受 `allow_write` gate 保护。
+10. MCP 必须显式支持 management 工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_set`、`config_list`。
+11. `management_config_set` 必须受 `allow_write` gate 保护，且 key 必须本地校验为非空。
+12. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
+13. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
+14. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
+15. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
+16. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
+17. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
 15. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
 16. smoke 脚本必须支持 staged 执行：
    - 默认基础链路

@@ -1,9 +1,14 @@
-# 本脚本负责把 Win MCP 客户端安装到 Codex 配置中，并写入仓库本地默认启动参数。
+# Install the MyFlowHub MCP server into a Codex config file.
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$ConfigPath = (Join-Path $HOME ".codex\config.toml"),
     [string]$ServerName = "myflowhub",
+    [ValidateSet("stdio", "http")]
+    [string]$Transport = "stdio",
+    [string]$Url = "",
+    [string]$Listen = "127.0.0.1:17688",
+    [string]$McpPath = "/mcp",
     [string]$ConfigDir = (Join-Path ([Environment]::GetFolderPath("ApplicationData")) "myflowhub\mcp-codex"),
     [string]$DeviceID = "ai-node",
     [string]$DisplayName = "AI MCP",
@@ -25,7 +30,7 @@ if (-not (Test-Path -LiteralPath $startScriptPath -PathType Leaf)) {
 }
 
 function ConvertTo-TomlString {
-    # ConvertTo-TomlString 只负责把单个参数安全转成 TOML 字符串字面量。
+    # Convert one value to a TOML string literal.
     param([string]$Value)
 
     if ($null -eq $Value) {
@@ -37,7 +42,20 @@ function ConvertTo-TomlString {
 }
 
 function New-McpServerBlock {
-    # New-McpServerBlock 按当前脚本参数生成完整的 mcp_servers.<name> 配置块。
+    # Build a full mcp_servers.<name> block from the current parameters.
+    if ($Transport -eq "http") {
+        $trimmedUrl = $Url.Trim()
+        if ($trimmedUrl -eq "") {
+            $path = Normalize-McpPath -Path $McpPath
+            $trimmedUrl = "http://$Listen$path"
+        }
+        return @(
+            "[mcp_servers.$ServerName]"
+            'type = "http"'
+            "url = $(ConvertTo-TomlString $trimmedUrl)"
+        ) -join "`r`n"
+    }
+
     $argsList = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
@@ -68,8 +86,21 @@ function New-McpServerBlock {
     ) -join "`r`n"
 }
 
+function Normalize-McpPath {
+    param([string]$Path)
+
+    $trimmed = $Path.Trim()
+    if ($trimmed -eq "") {
+        return "/mcp"
+    }
+    if (-not $trimmed.StartsWith("/")) {
+        return "/" + $trimmed
+    }
+    return $trimmed
+}
+
 function Set-McpServerBlock {
-    # Set-McpServerBlock 优先替换同名配置块，不存在时再追加，避免手写合并出错。
+    # Replace an existing block first, then append when the block does not exist.
     param(
         [string]$Path,
         [string]$Block
@@ -110,8 +141,15 @@ if ($PSCmdlet.ShouldProcess($ConfigPath, "Install MCP server '$ServerName'")) {
 }
 
 Write-Output "ServerName: $ServerName"
+Write-Output "Transport: $Transport"
 Write-Output "ConfigPath: $ConfigPath"
 Write-Output "StartScript: $startScriptPath"
 Write-Output "ConfigDir: $ConfigDir"
+if ($Transport -eq "http") {
+    Write-Output "Url: $($Url.Trim())"
+    if ($Url.Trim() -eq "") {
+        Write-Output "DerivedUrl: http://$Listen$(Normalize-McpPath -Path $McpPath)"
+    }
+}
 Write-Output ""
 Write-Output $block

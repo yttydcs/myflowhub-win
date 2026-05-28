@@ -1240,6 +1240,29 @@ func TestSessionStatusIncludesPermissionsAndReadiness(t *testing.T) {
 	}
 }
 
+func TestSessionStatusIncludesServerRuntimeInfo(t *testing.T) {
+	backend := &fakeBackend{}
+
+	result := findTool(t, NewToolsWithServerInfo(backend, ServerRuntimeInfo{
+		Transport:  "http",
+		ListenAddr: "127.0.0.1:17777",
+		Path:       "mcp",
+	}), "myflowhub_session_status").Handler(context.Background(), json.RawMessage(`{}`))
+	if result.IsError {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	payload, ok := result.StructuredContent.(sessionStatusPayload)
+	if !ok {
+		t.Fatalf("expected sessionStatusPayload, got %#v", result.StructuredContent)
+	}
+	if payload.Server.Transport != "http" || payload.Server.ListenAddr != "127.0.0.1:17777" || payload.Server.Path != "/mcp" {
+		t.Fatalf("unexpected server runtime info: %#v", payload.Server)
+	}
+	if payload.Server.URL != "http://127.0.0.1:17777/mcp" {
+		t.Fatalf("unexpected server URL: %q", payload.Server.URL)
+	}
+}
+
 func TestSessionStatusWriteGateHintIncludesOperationalTools(t *testing.T) {
 	backend := &fakeBackend{
 		status: mcpapp.Status{

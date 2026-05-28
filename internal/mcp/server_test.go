@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -122,5 +123,48 @@ func TestServerUnknownToolReturnsStructuredToolError(t *testing.T) {
 	}
 	if payload["code"] != "unknown_tool" {
 		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
+func TestServerHandleRequestCanReuseDispatchWithoutStdio(t *testing.T) {
+	server, err := NewServer(ServerConfig{
+		Name:    "myflowhub-mcp",
+		Version: "test",
+		Reader:  strings.NewReader(""),
+		Writer:  io.Discard,
+		Tools: []Tool{
+			{
+				Name:        "demo_tool",
+				Description: "demo",
+				InputSchema: objectSchema(nil),
+				Handler: func(context.Context, json.RawMessage) CallToolResult {
+					return successResult(map[string]any{"called": true})
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+
+	result, err := server.HandleRequest(context.Background(), []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"demo_tool","arguments":{}}}`))
+	if err != nil {
+		t.Fatalf("HandleRequest() error = %v", err)
+	}
+	if result.Exit {
+		t.Fatal("HandleRequest() unexpectedly requested exit")
+	}
+	if result.Response == nil {
+		t.Fatal("HandleRequest() missing response")
+	}
+	if string(result.Response.ID) != "7" {
+		t.Fatalf("response id = %s", result.Response.ID)
+	}
+	callResult, ok := result.Response.Result.(CallToolResult)
+	if !ok {
+		t.Fatalf("response result type = %T", result.Response.Result)
+	}
+	if callResult.IsError {
+		t.Fatalf("expected success result, got %#v", callResult)
 	}
 }

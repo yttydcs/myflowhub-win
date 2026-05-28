@@ -70,6 +70,11 @@ type responseError struct {
 	Message string `json:"message"`
 }
 
+type HandleResult struct {
+	Response *responseMessage
+	Exit     bool
+}
+
 type rpcError struct {
 	code    int
 	message string
@@ -199,48 +204,72 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) handleLine(ctx context.Context, line []byte) error {
 	// handleLine 解析单条请求，并把协议级错误统一翻译成 JSON-RPC 响应。
-	line = []byte(strings.TrimSpace(string(line)))
-	if len(line) == 0 {
+	result, err := s.HandleRequest(ctx, line)
+	if err != nil {
+		return err
+	}
+	if result.Response == nil {
+		if result.Exit {
+			return io.EOF
+		}
 		return nil
+	}
+	if err := s.writeResponse(*result.Response); err != nil {
+		return err
+	}
+	if result.Exit {
+		return io.EOF
+	}
+	return nil
+}
+
+func (s *Server) HandleRequest(ctx context.Context, data []byte) (HandleResult, error) {
+	// HandleRequest 处理单条 JSON-RPC 消息，供 stdio 和 HTTP transport 共享协议语义。
+	data = []byte(strings.TrimSpace(string(data)))
+	if len(data) == 0 {
+		return HandleResult{}, nil
 	}
 
 	var req requestMessage
-	if err := json.Unmarshal(line, &req); err != nil {
-		return s.writeResponse(responseMessage{
+	if err := json.Unmarshal(data, &req); err != nil {
+		return HandleResult{Response: &responseMessage{
 			JSONRPC: "2.0",
 			ID:      json.RawMessage("null"),
 			Error:   &responseError{Code: -32700, Message: "parse error"},
-		})
+		}}, nil
 	}
 	if strings.TrimSpace(req.JSONRPC) == "" {
 		req.JSONRPC = "2.0"
 	}
 	if req.JSONRPC != "2.0" {
-		return s.replyError(req.ID, -32600, "invalid request")
+		return HandleResult{Response: errorResponse(req.ID, -32600, "invalid request")}, nil
 	}
 	if strings.TrimSpace(req.Method) == "" {
-		return s.replyError(req.ID, -32600, "invalid request")
+		return HandleResult{Response: errorResponse(req.ID, -32600, "invalid request")}, nil
 	}
 
 	result, respond, err := s.dispatch(ctx, req)
 	if err != nil {
 		if !respond {
-			return err
+			if errors.Is(err, io.EOF) {
+				return HandleResult{Exit: true}, nil
+			}
+			return HandleResult{}, err
 		}
 		var rpcErr *rpcError
 		if errors.As(err, &rpcErr) {
-			return s.replyError(req.ID, rpcErr.code, rpcErr.message)
+			return HandleResult{Response: errorResponse(req.ID, rpcErr.code, rpcErr.message)}, nil
 		}
-		return s.replyError(req.ID, -32603, err.Error())
+		return HandleResult{Response: errorResponse(req.ID, -32603, err.Error())}, nil
 	}
 	if !respond {
-		return nil
+		return HandleResult{}, nil
 	}
-	return s.writeResponse(responseMessage{
+	return HandleResult{Response: &responseMessage{
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result:  result,
-	})
+	}}, nil
 }
 
 func (s *Server) dispatch(ctx context.Context, req requestMessage) (any, bool, error) {
@@ -331,17 +360,21 @@ func (s *Server) handleToolsCall(ctx context.Context, raw json.RawMessage) (Call
 }
 
 func (s *Server) replyError(id json.RawMessage, code int, message string) error {
+	return s.writeResponse(*errorResponse(id, code, message))
+}
+
+func errorResponse(id json.RawMessage, code int, message string) *responseMessage {
 	if len(id) == 0 {
 		id = json.RawMessage("null")
 	}
-	return s.writeResponse(responseMessage{
+	return &responseMessage{
 		JSONRPC: "2.0",
 		ID:      id,
 		Error: &responseError{
 			Code:    code,
 			Message: strings.TrimSpace(message),
 		},
-	})
+	}
 }
 
 func (s *Server) writeResponse(resp responseMessage) error {

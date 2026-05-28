@@ -65,7 +65,15 @@ type Backend interface {
 }
 
 type toolSet struct {
-	backend Backend
+	backend    Backend
+	serverInfo ServerRuntimeInfo
+}
+
+type ServerRuntimeInfo struct {
+	Transport  string `json:"transport"`
+	ListenAddr string `json:"listen_addr,omitempty"`
+	Path       string `json:"path,omitempty"`
+	URL        string `json:"url,omitempty"`
 }
 
 type sessionConnectArgs struct {
@@ -295,6 +303,7 @@ type varSetArgs struct {
 type sessionStatusPayload struct {
 	Connected   bool                `json:"connected"`
 	Endpoint    string              `json:"endpoint,omitempty"`
+	Server      ServerRuntimeInfo   `json:"mcp_server"`
 	Auth        mcpapp.AuthSnapshot `json:"auth"`
 	Defaults    mcpapp.Defaults     `json:"defaults"`
 	Config      mcpapp.ConfigState  `json:"config"`
@@ -344,8 +353,12 @@ const (
 )
 
 func NewTools(backend Backend) []Tool {
+	return NewToolsWithServerInfo(backend, ServerRuntimeInfo{Transport: "stdio"})
+}
+
+func NewToolsWithServerInfo(backend Backend, serverInfo ServerRuntimeInfo) []Tool {
 	// NewTools 集中声明 MCP 对外能力面，让工具名、schema 和 handler 一次性对齐。
-	set := toolSet{backend: backend}
+	set := toolSet{backend: backend, serverInfo: normalizeServerRuntimeInfo(serverInfo)}
 	return []Tool{
 		{
 			Name:        "myflowhub_session_status",
@@ -2201,6 +2214,7 @@ func (s toolSet) buildSessionStatus() sessionStatusPayload {
 	payload := sessionStatusPayload{
 		Connected: status.Connected,
 		Endpoint:  status.Endpoint,
+		Server:    s.serverInfo,
 		Auth:      status.Auth,
 		Defaults:  status.Defaults,
 		Config:    status.Config,
@@ -2221,6 +2235,28 @@ func (s toolSet) buildSessionStatus() sessionStatusPayload {
 	}
 	payload.Hints = statusHints(payload)
 	return payload
+}
+
+func normalizeServerRuntimeInfo(info ServerRuntimeInfo) ServerRuntimeInfo {
+	transport := strings.ToLower(strings.TrimSpace(info.Transport))
+	if transport != "http" {
+		return ServerRuntimeInfo{Transport: "stdio"}
+	}
+	listenAddr := strings.TrimSpace(info.ListenAddr)
+	if listenAddr == "" {
+		listenAddr = defaultHTTPListen
+	}
+	path := normalizeHTTPPath(info.Path)
+	url := strings.TrimSpace(info.URL)
+	if url == "" {
+		url = fmt.Sprintf("http://%s%s", listenAddr, path)
+	}
+	return ServerRuntimeInfo{
+		Transport:  "http",
+		ListenAddr: listenAddr,
+		Path:       path,
+		URL:        url,
+	}
 }
 
 func statusHints(status sessionStatusPayload) []string {

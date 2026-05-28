@@ -50,6 +50,8 @@ Notes:
   - `$env:GOWORK='off'; go build -o .\build\bin\myflowhub-mcp.exe ./cmd/myflowhub-mcp`
 - Start via script:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
+- Start shared local HTTP MCP server:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-myflowhub-mcp.ps1 --transport http --listen 127.0.0.1:17688 --mcp-path /mcp --endpoint 127.0.0.1:9000 --device-id ai-node --display-name "AI MCP"`
 - Smoke against a real Hub with `register`:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\test-myflowhub-mcp-smoke.ps1 -Endpoint 127.0.0.1:9000 -AuthMode register`
 - Smoke against a real Hub with `login`:
@@ -66,6 +68,8 @@ Notes:
   - `.\build\bin\myflowhub-mcp.exe --endpoint 127.0.0.1:9000 --config-dir "$env:APPDATA\\myflowhub\\mcp-codex" --device-id ai-node --display-name "AI MCP" --allow-write`
 - Install into Codex (recommended):
   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000`
+- Install shared HTTP endpoint into Codex:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Listen 127.0.0.1:17688 -McpPath /mcp`
 - Preview the Codex config change:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000 -WhatIf`
 - Manual MCP host config:
@@ -96,9 +100,11 @@ Notes:
 ```
 
 Notes:
-- The MCP process uses `stdio`; `stdout` is reserved for JSON-RPC and logs go to `stderr`.
+- The MCP process supports `stdio` for single-client hosts and local HTTP for shared multi-client hosts.
+- In `stdio` mode, `stdout` is reserved for JSON-RPC and logs go to `stderr`.
+- In HTTP mode, all Codex sessions that point at the same local URL share one process, one runtime, and one Hub connection.
 - `scripts/start-myflowhub-mcp.ps1` first checks `MYFLOWHUB_MCP_EXE`, `build/bin/myflowhub-mcp.exe`, `.\myflowhub-mcp.exe`, and `.\bin\myflowhub-mcp.exe`; if none exist, it falls back to `go run ./cmd/myflowhub-mcp`.
-- `scripts/install-codex-myflowhub-mcp.ps1` updates `~/.codex/config.toml` in place and supports `-WhatIf`.
+- `scripts/install-codex-myflowhub-mcp.ps1` updates `~/.codex/config.toml` in place, supports `-WhatIf`, and can generate either `stdio` or `http` MCP config.
 - `scripts/test-myflowhub-mcp-smoke.ps1` drives the MCP process over line-delimited JSON-RPC with staged smoke:
   - default base chain: `connect -> auth -> auth_get_perms -> auth_list_roles -> management_list_nodes`
   - `-EnableExtendedRead`: management/config/exec/flow-read checks
@@ -120,6 +126,6 @@ Notes:
 - Write smoke cleans up the temporary flow and variable before exit; cleanup failures are reported explicitly so residual resources can be removed manually.
 - Authority auth tools accept explicit `authority_id`; if omitted, the MCP layer first tries `authority.node_id` and then falls back to the hub target.
 - Write tools such as `myflowhub_flow_set`, `myflowhub_flow_run`, `myflowhub_flow_delete`, `myflowhub_varstore_set`, and `myflowhub_varstore_revoke` stay disabled unless `--allow-write` is set.
-- `myflowhub_session_status` returns auth/defaults/config plus `permissions`, `readiness`, and `hints`.
+- `myflowhub_session_status` returns MCP server transport info, auth/defaults/config, `permissions`, `readiness`, and `hints`.
 - Tool failures return structured `code` / `message` / `hint` / `details`, which is the preferred machine-readable contract for AI hosts.
 

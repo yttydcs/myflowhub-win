@@ -24,6 +24,7 @@
 ## Current Docs
 
 - 最新归档：
+  - [2026-05-28_win-mcp-shared-http-server.md](2026-05-28_win-mcp-shared-http-server.md)
   - [2026-05-27_mcp-topicbus-publish.md](2026-05-27_mcp-topicbus-publish.md)
   - [2026-04-14_win-showcase-window-session-sync.md](2026-04-14_win-showcase-window-session-sync.md)
   - [2026-04-14_win-localhub-parent-admission.md](2026-04-14_win-localhub-parent-admission.md)
