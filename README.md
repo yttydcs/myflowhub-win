@@ -72,8 +72,12 @@ Notes:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000`
 - Install shared HTTP endpoint into Codex:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Listen 127.0.0.1:17688 -McpPath /mcp`
+- Install remote HTTP endpoint into Codex:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Url https://your-domain.example/mcp -AuthToken "<token>"`
 - Preview the Codex config change:
   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Endpoint 127.0.0.1:9000 -WhatIf`
+- Preview a remote HTTP Codex config:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Url https://your-domain.example/mcp -AuthToken "<token>" -WhatIf`
 - Manual MCP host config:
 
 ```json
@@ -105,6 +109,8 @@ Notes:
 - The MCP process supports `stdio` for single-client hosts and local HTTP for shared multi-client hosts.
 - In `stdio` mode, `stdout` is reserved for JSON-RPC and logs go to `stderr`.
 - In HTTP mode, all Codex sessions that point at the same local URL share one process, one runtime, and one Hub connection.
+- Remote HTTP mode must be explicit: use `--allow-remote` and configure a fixed bearer token with `--auth-token` or `MYFLOWHUB_MCP_AUTH_TOKEN`.
+- Codex remote HTTP config must send `Authorization = "Bearer <token>"` under `[mcp_servers.<name>.http_headers]`.
 - `scripts/start-myflowhub-mcp.ps1 -EnsureRunning` probes the HTTP MCP endpoint, reuses it when ready, and starts a hidden background server only when the endpoint is unavailable. It is a lightweight launcher mode, not a Windows service.
 - `scripts/start-myflowhub-mcp.ps1` first checks `MYFLOWHUB_MCP_EXE`, `build/bin/myflowhub-mcp.exe`, `.\myflowhub-mcp.exe`, and `.\bin\myflowhub-mcp.exe`; if none exist, it falls back to `go run ./cmd/myflowhub-mcp`.
 - `scripts/install-codex-myflowhub-mcp.ps1` updates `~/.codex/config.toml` in place, supports `-WhatIf`, and can generate either `stdio` or `http` MCP config.
@@ -131,4 +137,38 @@ Notes:
 - Write tools such as `myflowhub_flow_set`, `myflowhub_flow_run`, `myflowhub_flow_delete`, `myflowhub_varstore_set`, and `myflowhub_varstore_revoke` stay disabled unless `--allow-write` is set.
 - `myflowhub_session_status` returns MCP server transport info, auth/defaults/config, `permissions`, `readiness`, and `hints`.
 - Tool failures return structured `code` / `message` / `hint` / `details`, which is the preferred machine-readable contract for AI hosts.
+
+## Remote MCP Docker
+
+Create a fixed token and keep it out of shell history where possible:
+
+```powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
+```
+
+Create a `.env` next to `docker-compose.mcp.yml`:
+
+```env
+MYFLOWHUB_MCP_AUTH_TOKEN=replace-with-generated-token
+MYFLOWHUB_MCP_ENDPOINT=10.3.3.5:9000
+MYFLOWHUB_MCP_DEVICE_ID=ai-node
+MYFLOWHUB_MCP_DISPLAY_NAME=AI MCP
+MYFLOWHUB_MCP_ALLOW_WRITE=false
+```
+
+Build and start:
+
+```powershell
+docker compose -f docker-compose.mcp.yml up -d --build
+```
+
+Configure Codex to use the remote endpoint:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-myflowhub-mcp.ps1 -Transport http -Url https://your-domain.example/mcp -AuthToken "<token>"
+```
+
+Use HTTPS, VPN, firewall rules, or a reverse proxy for public deployment. The bearer token only protects MCP transport access; Hub login, Hub role permissions, and the local `--allow-write` gate still control what tools can actually mutate.
 

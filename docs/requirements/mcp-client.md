@@ -10,6 +10,7 @@
 
 - 为 `MyFlowHub-Win` 提供一个可被 MCP host 以 `stdio` 方式拉起的无界面客户端。
 - 为多 Codex 并行场景提供本机共享状态的 HTTP MCP Server，让多个 MCP client 复用同一个 Hub 连接、配置目录、节点身份和登录态。
+- 为云服务器 / NAS 等场景提供可 Docker 部署的远程 HTTP MCP Server，让多个 Codex 会话可以共享同一个远程 MCP runtime。
 - 该客户端以独立节点身份连接 Hub，并向 AI 暴露首版 `session`、`auth`、`management`、`exec`、`flow`、`topicbus`、`varstore` 工具。
 - `auth` 工具除 `register/login` 外，还要支持权限自检与角色分布查询。
 - 首版默认只开放读能力与受控写能力，不与现有 GUI 本地配置互相污染。
@@ -24,6 +25,8 @@
 - 支持 `stdio` 兼容模式，满足单会话 MCP host 启动子进程的使用方式。
 - 支持本机 HTTP MCP Server 模式，满足多个 Codex 会话共享状态的使用方式。
 - HTTP MCP Server 默认必须只监听 localhost，不得默认暴露到局域网或公网。
+- 支持显式远程 HTTP MCP Server 模式，只有用户开启远程监听并配置固定 bearer token 时才允许监听非 localhost 地址。
+- 提供 Docker / Compose 部署入口，用于把远程 HTTP MCP Server 运行在服务器上。
 - 支持以下首版能力：
   - `session connect/disconnect/status`
   - `auth register/login/get_perms/list_roles/push_perms_snapshot/list_pending_registers/approve_register/reject_register/issue_register_permit/revoke_register_permit`
@@ -58,6 +61,8 @@
 - 首版不开放 `topicbus subscribe/unsubscribe/list_subs`。
 - 首版不通过 UI 自动化去操作现有 Win 界面。
 - 首版不实现“连接第三方 MCP Server”的通用 client。
+- 不实现 token 签发、刷新、轮换、多 token 管理、OAuth、用户数据库或 session cookie。
+- 不在 Go 进程内实现 TLS 终止；公网部署应由反向代理、平台 ingress、VPN 或防火墙提供 HTTPS / 网络访问控制。
 
 ## Scenarios
 
@@ -79,6 +84,7 @@
 - 用户通过脚本把 MCP 安装到 Codex，而不是手动编辑 host 配置。
 - 用户同时开启多个 Codex 会话时，所有会话可配置到同一个本机 HTTP MCP URL，共享一个常驻 `myflowhub-mcp` 进程。
 - 用户在 shell/bootstrap 脚本里反复调用 `start-myflowhub-mcp.ps1 -EnsureRunning` 时，脚本会复用已运行的共享 HTTP MCP Server。
+- 用户把 `myflowhub-mcp` 通过 Docker 部署到云服务器后，多个 Codex 会话可通过同一个 HTTPS MCP URL 和 `Authorization: Bearer <token>` 共享远程 MCP runtime。
 - 用户通过 smoke 脚本直连真实 Hub，先验证独立 `config_dir`、auth、权限查询与 management 基础链路，再按需开启 extended read、authority、write 阶段。
 
 ## Functional Requirements
@@ -88,48 +94,52 @@
 3. 客户端必须维持长连接 session，而不是每次 tool 调用重新拨号。
 4. HTTP MCP Server 模式下，多个 MCP client 调用工具时必须复用同一个进程内 runtime，不得为每个 HTTP request 或 client 重新创建 Hub session。
 5. HTTP MCP Server 模式必须提供本地安全默认值：默认监听 `127.0.0.1`，并在收到 `Origin` 时校验为 localhost 来源。
-6. 首版必须显式支持 `auth register/login`，因为未认证连接默认只能访问 auth 子协议。
-7. 首版必须显式支持 `auth get_perms/list_roles`，用于 AI 在登录后自检当前节点权限和 authority 角色分布。
-8. MCP 必须显式支持 authority 审批流工具：`list_pending_registers`、`approve_register`、`reject_register`、`issue_register_permit`、`revoke_register_permit`。
-9. MCP 必须显式支持 authority 权限快照写入工具：`push_perms_snapshot`，并受 `allow_write` gate 保护。
-10. MCP 必须显式支持 management 工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_set`、`config_list`。
-11. `management_config_set` 必须受 `allow_write` gate 保护，且 key 必须本地校验为非空。
-12. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
-13. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
-14. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
-15. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
-16. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
-17. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
-18. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
-19. smoke 脚本必须支持 staged 执行：
+6. 远程 HTTP MCP Server 模式必须显式开启，监听非 loopback 地址时必须要求固定 bearer token。
+7. 固定 bearer token 必须可通过 CLI 参数或 `MYFLOWHUB_MCP_AUTH_TOKEN` 注入；服务端不得在日志中输出 token。
+8. 配置了 token 的 HTTP MCP 请求必须携带 `Authorization: Bearer <token>`；缺失、格式错误或 token 不匹配时必须返回 HTTP 401。
+9. Docker / Compose 远程部署入口必须默认监听容器内 `0.0.0.0:17688`，要求 `MYFLOWHUB_MCP_AUTH_TOKEN`，并把 MCP 配置目录挂载为持久 volume。
+10. 首版必须显式支持 `auth register/login`，因为未认证连接默认只能访问 auth 子协议。
+11. 首版必须显式支持 `auth get_perms/list_roles`，用于 AI 在登录后自检当前身份权限和 authority 角色分布。
+12. MCP 必须显式支持 authority 审批流工具：`list_pending_registers`、`approve_register`、`reject_register`、`issue_register_permit`、`revoke_register_permit`。
+13. MCP 必须显式支持 authority 权限快照写入工具：`push_perms_snapshot`，并受 `allow_write` gate 保护。
+14. MCP 必须显式支持 management 工具：`list_nodes`、`node_info`、`node_echo`、`list_subtree`、`config_get`、`config_set`、`config_list`。
+15. `management_config_set` 必须受 `allow_write` gate 保护，且 key 必须本地校验为非空。
+16. MCP 必须显式支持 `exec_cap_query`，且工具命名必须归属 `exec`，不得混入 `flow`。
+17. `exec_cap_query` 必须支持透传 `method`、`prefix`、`provider_node`、`limit`、`include_schema`。
+18. `exec_cap_query` 必须支持显式 `requester_node`；未传时默认回退到解析后的 `source_id`。
+19. `exec_cap_query` 的 `req_id` 未传时必须由 MCP 本地生成。
+20. `management_node_echo` 必须要求 `message` 为非空字符串，并在本地校验失败。
+21. authority 类 auth 工具必须支持显式 `authority_id`，未传时优先尝试读取 `authority.node_id`，失败时再回退到 hub target。
+22. 仓内必须提供真实 Hub smoke 脚本，至少支持 `register` 与 `login` 两种认证模式。
+23. smoke 脚本必须支持 staged 执行：
    - 默认基础链路
    - 显式启用的 extended read 链路
    - 显式启用的 authority 链路
    - 显式启用的 write 链路
-20. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
-21. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
-22. authority 与写操作阶段默认不得执行；只有显式参数满足时才允许进入。
-23. 写阶段必须使用临时 flow / var 资源名，并在结束后显式清理；清理失败时必须提示残留资源。
-24. 写阶段必须显式依赖 `allow_write` 启动 gate，不得在未开 gate 时静默降级。
-25. authority 阶段必须始终先执行 pending list；permit 签发必须要求 `device_id + role` 成对输入，approve/reject 必须要求显式 `request_id`。
-26. `scripts/start-myflowhub-mcp.ps1 -EnsureRunning` 必须先探测本机 HTTP MCP endpoint；若 endpoint 已就绪则直接复用，若 endpoint 不可达则启动隐藏后台进程，若 endpoint 可达但不是有效 MCP 服务则显式失败。
-27. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
+24. smoke 脚本在 `register` 返回 `pending` / `rejected` 时必须明确失败，不得把审批中状态误判为通过。
+25. smoke 脚本在 `login` 模式下必须要求或复用独立 `config_dir` 中已有 node keys，不得隐式回落到 GUI 配置目录。
+26. authority 与写操作阶段默认不得执行；只有显式参数满足时才允许进入。
+27. 写阶段必须使用临时 flow / var 资源名，并在结束后显式清理；清理失败时必须提示残留资源。
+28. 写阶段必须显式依赖 `allow_write` 启动 gate，不得在未开 gate 时静默降级。
+29. authority 阶段必须始终先执行 pending list；permit 签发必须要求 `device_id + role` 成对输入，approve/reject 必须要求显式 `request_id`。
+30. `scripts/start-myflowhub-mcp.ps1 -EnsureRunning` 必须先探测本机 HTTP MCP endpoint；若 endpoint 已就绪则直接复用，若 endpoint 不可达则启动隐藏后台进程，若 endpoint 可达但不是有效 MCP 服务则显式失败。
+31. auth 成功后，客户端必须维护最近一次成功的默认身份状态，至少包含：
    - `device_id`
    - `node_id`
    - `hub_id`
    - `role`
-28. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
-29. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
-30. MCP 必须显式支持 `topicbus_publish`，用于向 TopicBus 发布实时事件。
-31. `topicbus_publish` 必须支持显式 `topic`、可选 `name`、可选通知字段 `title/body/level/source/url`、可选结构化 `payload/meta`，以及可选 `source_id/target_id`。
-32. `topicbus_publish` 必须使用精确 topic，不提供 wildcard、离线重放或投递确认。
-33. `auth push_perms_snapshot`、`management config_set`、`flow set/run/delete`、`topicbus publish` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
-34. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
-35. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
-36. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
-37. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
-38. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
-39. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
+32. 业务工具必须允许显式传入 `source_id` / `target_id`；未传时可按默认身份状态回退。
+33. `flow` 工具必须明确区分 `target_id` 与 `executor_node`：`target_id` 作为传输目标，`executor_node` 作为实际执行节点；未传 `executor_node` 时默认回退到 `target_id`。
+34. MCP 必须显式支持 `topicbus_publish`，用于向 TopicBus 发布实时事件。
+35. `topicbus_publish` 必须支持显式 `topic`、可选 `name`、可选通知字段 `title/body/level/source/url`、可选结构化 `payload/meta`，以及可选 `source_id/target_id`。
+36. `topicbus_publish` 必须使用精确 topic，不提供 wildcard、离线重放或投递确认。
+37. `auth push_perms_snapshot`、`management config_set`、`flow set/run/delete`、`topicbus publish` 与 `varstore set/revoke` 在写开关关闭时必须被本地拒绝。
+38. 本轮新增 `exec_cap_query`、`management_node_echo`、`management_list_subtree` 均为只读工具，不受本地 `allow_write` gate 约束。
+39. 本地配置、settings 和 node keys 不得默认写入 GUI 客户端正在使用的配置目录。
+40. `session_status` 必须返回足够给 AI 自检的状态摘要，至少包含 auth、defaults、config、permissions、readiness、hints。
+41. tool 错误必须返回结构化结果，至少包含 `code`、`message`、`hint`，必要时附带 `details`。
+42. 结构化错误至少要能明确区分 `invalid_arguments`、`not_connected`、`missing_identity`、`write_disabled`、`upstream_error`。
+43. 仓内必须提供可复用的 Codex 安装脚本，避免用户每次手工编辑 `config.toml`。
 
 ## Non-functional Requirements
 

@@ -27,6 +27,8 @@ type cliConfig struct {
 	defaultTarget uint
 	timeout       time.Duration
 	allowWrite    bool
+	allowRemote   bool
+	authToken     string
 	versionOnly   bool
 	transport     string
 	listenAddr    string
@@ -39,6 +41,10 @@ func main() {
 	if cfg.versionOnly {
 		fmt.Fprintln(os.Stdout, buildVersion())
 		return
+	}
+	if normalizeTransport(cfg.transport) == "http" && cfg.allowRemote && strings.TrimSpace(cfg.authToken) == "" {
+		_, _ = fmt.Fprintln(os.Stderr, "myflowhub-mcp http remote mode requires --auth-token or MYFLOWHUB_MCP_AUTH_TOKEN")
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -81,9 +87,11 @@ func main() {
 	switch normalizeTransport(cfg.transport) {
 	case "http":
 		httpServer, err := mcp.NewHTTPServer(mcp.HTTPServerConfig{
-			Server:     server,
-			ListenAddr: cfg.listenAddr,
-			Path:       cfg.mcpPath,
+			Server:      server,
+			ListenAddr:  cfg.listenAddr,
+			Path:        cfg.mcpPath,
+			AllowRemote: cfg.allowRemote,
+			AuthToken:   cfg.authToken,
 		})
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "myflowhub-mcp http server init failed: %v\n", err)
@@ -112,11 +120,16 @@ func parseFlags() cliConfig {
 	flag.UintVar(&cfg.defaultTarget, "default-target", 0, "default target node ID")
 	flag.DurationVar(&cfg.timeout, "timeout", 8*time.Second, "request timeout")
 	flag.BoolVar(&cfg.allowWrite, "allow-write", false, "allow write tools such as varstore_set and varstore_revoke")
+	flag.BoolVar(&cfg.allowRemote, "allow-remote", false, "allow http transport to listen on non-loopback addresses; requires --auth-token or MYFLOWHUB_MCP_AUTH_TOKEN")
+	flag.StringVar(&cfg.authToken, "auth-token", "", "bearer token required by http transport requests")
 	flag.BoolVar(&cfg.versionOnly, "version", false, "print version and exit")
 	flag.StringVar(&cfg.transport, "transport", "stdio", "transport mode: stdio or http")
 	flag.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:17688", "listen address for http transport")
 	flag.StringVar(&cfg.mcpPath, "mcp-path", "/mcp", "request path for http transport")
 	flag.Parse()
+	if strings.TrimSpace(cfg.authToken) == "" {
+		cfg.authToken = os.Getenv("MYFLOWHUB_MCP_AUTH_TOKEN")
+	}
 	return cfg
 }
 

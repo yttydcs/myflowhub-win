@@ -110,6 +110,111 @@ func TestNewHTTPServerRejectsNonLoopbackByDefault(t *testing.T) {
 	}
 }
 
+func TestNewHTTPServerAllowsRemoteWithAuthToken(t *testing.T) {
+	stdio := newTestServer(t, nil)
+	server, err := NewHTTPServer(HTTPServerConfig{
+		Server:      stdio,
+		ListenAddr:  "0.0.0.0:17688",
+		AllowRemote: true,
+		AuthToken:   "test-token",
+	})
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+	if got := server.ListenAddr(); got != "0.0.0.0:17688" {
+		t.Fatalf("ListenAddr() = %q", got)
+	}
+}
+
+func TestNewHTTPServerRejectsRemoteWithoutAuthToken(t *testing.T) {
+	stdio := newTestServer(t, nil)
+	for _, token := range []string{"", "   "} {
+		_, err := NewHTTPServer(HTTPServerConfig{
+			Server:      stdio,
+			ListenAddr:  "0.0.0.0:17688",
+			AllowRemote: true,
+			AuthToken:   token,
+		})
+		if err == nil {
+			t.Fatalf("expected remote mode with token %q to be rejected", token)
+		}
+	}
+}
+
+func TestHTTPServerRejectsMissingAuthToken(t *testing.T) {
+	server := newTestHTTPMCPServerWithAuth(t, "test-token")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	rec := httptest.NewRecorder()
+
+	server.handleMCP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPServerRejectsWrongAuthToken(t *testing.T) {
+	server := newTestHTTPMCPServerWithAuth(t, "test-token")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	rec := httptest.NewRecorder()
+
+	server.handleMCP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPServerRejectsWrongAuthScheme(t *testing.T) {
+	server := newTestHTTPMCPServerWithAuth(t, "test-token")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	req.Header.Set("Authorization", "Basic test-token")
+	rec := httptest.NewRecorder()
+
+	server.handleMCP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPServerAllowsCorrectAuthToken(t *testing.T) {
+	server := newTestHTTPMCPServerWithAuth(t, "test-token")
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.handleMCP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPServerAllowsRemoteOriginWithRemoteAuth(t *testing.T) {
+	stdio := newTestServer(t, nil)
+	server, err := NewHTTPServer(HTTPServerConfig{
+		Server:      stdio,
+		ListenAddr:  "0.0.0.0:17688",
+		AllowRemote: true,
+		AuthToken:   "test-token",
+	})
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Origin", "https://example.com")
+	rec := httptest.NewRecorder()
+
+	server.handleMCP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHTTPServerReusesSameToolHandlerAcrossRequests(t *testing.T) {
 	var calls int32
 	stdio := newTestServer(t, func(context.Context, json.RawMessage) CallToolResult {
@@ -139,6 +244,19 @@ func newTestHTTPMCPServer(t *testing.T) *HTTPServer {
 	t.Helper()
 	stdio := newTestServer(t, nil)
 	server, err := NewHTTPServer(HTTPServerConfig{Server: stdio})
+	if err != nil {
+		t.Fatalf("NewHTTPServer() error = %v", err)
+	}
+	return server
+}
+
+func newTestHTTPMCPServerWithAuth(t *testing.T, token string) *HTTPServer {
+	t.Helper()
+	stdio := newTestServer(t, nil)
+	server, err := NewHTTPServer(HTTPServerConfig{
+		Server:    stdio,
+		AuthToken: token,
+	})
 	if err != nil {
 		t.Fatalf("NewHTTPServer() error = %v", err)
 	}

@@ -13,6 +13,7 @@ param(
     [string]$DeviceID = "ai-node",
     [string]$DisplayName = "AI MCP",
     [string]$Endpoint = "",
+    [string]$AuthToken = "",
     [switch]$AllowWrite
 )
 
@@ -102,6 +103,11 @@ function New-McpServerBlock {
             "[mcp_servers.$ServerName]"
             'type = "http"'
             "url = $(ConvertTo-TomlString $trimmedUrl)"
+            if ($AuthToken.Trim() -ne "") {
+                ""
+                "[mcp_servers.$ServerName.http_headers]"
+                "Authorization = $(ConvertTo-TomlString ("Bearer " + $AuthToken.Trim()))"
+            }
         ) -join "`r`n"
     }
 
@@ -160,9 +166,13 @@ function Set-McpServerBlock {
         $existing = [System.IO.File]::ReadAllText($Path)
     }
 
-    $pattern = "(?ms)^\[mcp_servers\." + [regex]::Escape($ServerName) + "\]\r?\n.*?(?=^\[|\z)"
+    $pattern = "(?ms)^\[mcp_servers\." + [regex]::Escape($ServerName) + "(?:\.[^\]]+)?\]\r?\n.*?(?=^\[|\z)"
     if ([regex]::IsMatch($existing, $pattern)) {
-        return [regex]::Replace($existing, $pattern, $Block + "`r`n")
+        $withoutExisting = [regex]::Replace($existing, $pattern, "").TrimEnd()
+        if ([string]::IsNullOrWhiteSpace($withoutExisting)) {
+            return "[mcp_servers]`r`n`r`n$Block`r`n"
+        }
+        return $withoutExisting + "`r`n`r`n" + $Block + "`r`n"
     }
 
     if ([string]::IsNullOrWhiteSpace($existing)) {
@@ -199,7 +209,15 @@ if ($Transport -eq "http") {
     if ($Url.Trim() -eq "") {
         Write-Output "DerivedUrl: http://$Listen$(Normalize-McpPath -Path $McpPath)"
     }
-    Write-Output "EnsureRunning: $(New-EnsureRunningCommand)"
+    if ($AuthToken.Trim() -ne "") {
+        Write-Output "AuthHeader: Authorization = Bearer <redacted>"
+    }
+    if ($Url.Trim() -eq "") {
+        Write-Output "EnsureRunning: $(New-EnsureRunningCommand)"
+    }
+    else {
+        Write-Output "EnsureRunning: not used for explicit remote Url"
+    }
 }
 Write-Output ""
 Write-Output $block

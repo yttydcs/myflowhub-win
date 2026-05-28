@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ type HTTPServerConfig struct {
 	ListenAddr  string
 	Path        string
 	AllowRemote bool
+	AuthToken   string
 }
 
 type HTTPServer struct {
@@ -31,6 +33,7 @@ type HTTPServer struct {
 	listenAddr  string
 	path        string
 	allowRemote bool
+	authToken   string
 	httpServer  *http.Server
 }
 
@@ -45,12 +48,17 @@ func NewHTTPServer(config HTTPServerConfig) (*HTTPServer, error) {
 	if !config.AllowRemote && !isLoopbackListenAddr(listenAddr) {
 		return nil, fmt.Errorf("listen address %q is not loopback; use an explicit unsafe remote mode before exposing MCP", listenAddr)
 	}
+	authToken := strings.TrimSpace(config.AuthToken)
+	if config.AllowRemote && authToken == "" {
+		return nil, errors.New("auth token is required when remote MCP HTTP mode is enabled")
+	}
 	path := normalizeHTTPPath(config.Path)
 	srv := &HTTPServer{
 		server:      config.Server,
 		listenAddr:  listenAddr,
 		path:        path,
 		allowRemote: config.AllowRemote,
+		authToken:   authToken,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, srv.handleMCP)
@@ -106,6 +114,10 @@ func (s *HTTPServer) Serve(ctx context.Context) error {
 }
 
 func (s *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
+	if s.authToken != "" && !isAuthorizedBearer(r.Header.Get("Authorization"), s.authToken) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if !s.allowRemote && !isAllowedOrigin(r.Header.Get("Origin")) {
 		http.Error(w, "origin is not allowed", http.StatusForbidden)
 		return
@@ -165,6 +177,23 @@ func isAllowedOrigin(origin string) bool {
 		return false
 	}
 	return isLoopbackHost(parsed.Hostname())
+}
+
+func isAuthorizedBearer(header string, token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return true
+	}
+	header = strings.TrimSpace(header)
+	scheme, value, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return false
+	}
+	value = strings.TrimSpace(value)
+	if len(value) != len(token) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(value), []byte(token)) == 1
 }
 
 func isLoopbackListenAddr(addr string) bool {

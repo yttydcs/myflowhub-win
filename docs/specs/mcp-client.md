@@ -23,6 +23,10 @@
 - `http` 模式默认监听 `127.0.0.1:17688`，默认 MCP path 为 `/mcp`。
 - `http` 模式默认不得监听 `0.0.0.0`、公网 IP 或非 loopback 地址。
 - `http` 模式收到 `Origin` header 时，必须校验该来源为 loopback host；不符合时返回 HTTP 403。
+- 远程 HTTP 模式必须通过 `--allow-remote` 显式开启；开启后允许监听非 loopback 地址，但必须配置固定 bearer token。
+- 固定 bearer token 通过 `--auth-token` 或 `MYFLOWHUB_MCP_AUTH_TOKEN` 配置；CLI 参数优先于环境变量。
+- 当配置了 bearer token，HTTP request 必须在读取 JSON-RPC body 前校验 `Authorization: Bearer <token>`；缺失、scheme 错误或 token 不匹配时返回 HTTP 401。
+- 远程 HTTP 模式下不再依赖 `Origin` header 作为安全边界；公网部署必须使用 bearer token，并建议放在 HTTPS / VPN / 防火墙 / 反向代理之后。
 - `http` 模式至少支持 HTTP `POST`：
   - JSON-RPC request 返回 `Content-Type: application/json` 与单个 JSON-RPC response。
   - JSON-RPC notification 或 response 被接受时返回 HTTP `202 Accepted` 且不返回 body。
@@ -450,7 +454,9 @@
 - 安装脚本必须支持 `stdio` 和 `http` 两种 Codex 配置：
   - `stdio` 输出 `command = "powershell.exe"` 与启动脚本参数。
   - `http` 输出 `type = "http"` 与 `url = "http://127.0.0.1:<port>/mcp"`。
+  - `http` 显式传入 `-AuthToken` 时输出 `[mcp_servers.<name>.http_headers] Authorization = "Bearer <token>"`。
 - `http` 安装模式只写 Codex 连接配置，不负责长期托管 daemon；用户仍需单独启动、执行 `start-myflowhub-mcp.ps1 -EnsureRunning`，或后续注册系统服务。
+- 当 `http` 安装模式显式传入远程 `-Url` 时，安装脚本只输出远程 HTTP MCP 连接配置，不再提示本机 `EnsureRunning` 命令。
 - 安装脚本必须支持 `-WhatIf` 预演。
 - `scripts/test-myflowhub-mcp-smoke.ps1` 必须复用 `scripts/start-myflowhub-mcp.ps1` 拉起 MCP 进程，并通过 stdio 逐条发送 JSON-RPC。
 - smoke 脚本必须采用 staged 模型：
@@ -496,6 +502,27 @@
 - write 阶段必须自动让 launcher 追加 `--allow-write`，并在本地要求 `executor_node` 与 `flow_method`。
 - write 阶段必须使用临时资源名，完成后显式执行 `flow_delete` 与 `varstore_revoke`；cleanup 失败不得吞掉。
 - 若 extended read 阶段未拿到现成 `flow_id` 且用户也未传 `-FlowID`，`flow_get/status` 可显式记录为 skipped，但 `flow_list` 仍必须执行。
+
+### 13. Docker 远程部署
+
+- `Dockerfile.mcp` 必须只构建并运行无界面 `cmd/myflowhub-mcp`，不得要求 Wails GUI 或前端构建产物。
+- 容器入口必须默认启动：
+  - `--transport http`
+  - `--allow-remote`
+  - `--listen 0.0.0.0:17688`
+  - `--mcp-path /mcp`
+  - `--config-dir /data`
+- 容器入口必须从环境变量读取：
+  - `MYFLOWHUB_MCP_AUTH_TOKEN`
+  - `MYFLOWHUB_MCP_ENDPOINT`
+  - `MYFLOWHUB_MCP_DEVICE_ID`
+  - `MYFLOWHUB_MCP_DISPLAY_NAME`
+  - `MYFLOWHUB_MCP_DEFAULT_TARGET`
+  - `MYFLOWHUB_MCP_TIMEOUT`
+  - `MYFLOWHUB_MCP_ALLOW_WRITE`
+- `MYFLOWHUB_MCP_AUTH_TOKEN` 为空时容器入口必须失败。
+- `MYFLOWHUB_MCP_ALLOW_WRITE` 默认 false，只有明确为 true-like 值时才追加 `--allow-write`。
+- Compose 示例必须挂载 `/data` 持久 volume，并用 `${MYFLOWHUB_MCP_AUTH_TOKEN:?set MYFLOWHUB_MCP_AUTH_TOKEN}` 强制要求 token。
 
 ## Data Model or Protocol
 
@@ -604,6 +631,9 @@ MCP tool 结构化错误至少包含：
 - `stdout` 只承载协议，`stderr` 只承载日志。
 - MCP 本地配置目录默认独立于 GUI。
 - 写操作默认关闭。
+- HTTP transport 的固定 bearer token 只用于控制 MCP endpoint 访问，不替代 Hub 登录、Hub 角色权限或本地 `allow_write` gate。
+- 远程 HTTP 模式缺少 bearer token 时必须启动失败，避免把 MCP endpoint 无认证暴露到公网。
+- Docker / Compose 远程部署必须要求 `MYFLOWHUB_MCP_AUTH_TOKEN`；容器入口不得把 token 输出到日志。
 - `management_config_set` 仅在显式开启 `allow_write` 后可用，避免 AI 与用户手动配置互相覆盖。
 - exec 工具必须明确区分 `target_id` 与 `requester_node`，避免把 transport 路由和请求身份语义混为一谈。
 - flow 工具必须明确区分 `target_id` 与 `executor_node`，避免把 transport 路由和执行节点语义混为一谈。

@@ -1,0 +1,25 @@
+services:
+  myflowhub-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: myflowhub-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "${MYFLOWHUB_MCP_PORT:-17688}:17688"
+    environment:
+      MYFLOWHUB_MCP_AUTH_TOKEN: "${MYFLOWHUB_MCP_AUTH_TOKEN:?set MYFLOWHUB_MCP_AUTH_TOKEN}"
+      MYFLOWHUB_MCP_ENDPOINT: "${MYFLOWHUB_MCP_ENDPOINT:-}"
+      MYFLOWHUB_MCP_LISTEN: "0.0.0.0:17688"
+      MYFLOWHUB_MCP_PATH: "${MYFLOWHUB_MCP_PATH:-/mcp}"
+      MYFLOWHUB_MCP_CONFIG_DIR: "/data"
+      MYFLOWHUB_MCP_DEVICE_ID: "${MYFLOWHUB_MCP_DEVICE_ID:-ai-node}"
+      MYFLOWHUB_MCP_DISPLAY_NAME: "${MYFLOWHUB_MCP_DISPLAY_NAME:-AI MCP}"
+      MYFLOWHUB_MCP_DEFAULT_TARGET: "${MYFLOWHUB_MCP_DEFAULT_TARGET:-}"
+      MYFLOWHUB_MCP_TIMEOUT: "${MYFLOWHUB_MCP_TIMEOUT:-}"
+      MYFLOWHUB_MCP_ALLOW_WRITE: "${MYFLOWHUB_MCP_ALLOW_WRITE:-false}"
+    volumes:
+      - myflowhub_mcp_data:/data
+
+volumes:
+  myflowhub_mcp_data:
