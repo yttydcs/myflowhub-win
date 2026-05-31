@@ -145,6 +145,18 @@ const clearComposer = () => {
   sendForm.payload = ""
 }
 
+const activateWindowSubscription = async () => {
+  if (!sessionStore.connected || !selfNodeId.value) return
+  if (isAllWindow.value) {
+    await topicbus.resubscribe()
+    return
+  }
+  const topic = requestedTopic.value
+  if (!topic) return
+  await topicbus.updateTopics([topic], "add")
+  await topicbus.subscribe([topic])
+}
+
 const clearLocalEvents = () => {
   pendingEvents.length = 0
   if (flushTimer !== null) {
@@ -306,14 +318,15 @@ watch(
 )
 
 onMounted(async () => {
+  attachTopicBusListener()
   try {
     await topicbus.loadPrefs()
     await loadHomeDefaults()
+    await activateWindowSubscription()
   } catch (err) {
     console.warn(err)
     toast.errorOf(err, t("Failed to initialize TopicBus window."))
   }
-  attachTopicBusListener()
 })
 
 onBeforeUnmount(() => {

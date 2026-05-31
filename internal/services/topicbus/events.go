@@ -41,7 +41,7 @@ func (s *TopicBusService) bindBus() {
 		if !ok {
 			return
 		}
-		if frame.Major != header.MajorMsg {
+		if frame.Major != header.MajorCmd && frame.Major != header.MajorMsg {
 			return
 		}
 		if frame.SubProto != protocol.SubProtoTopicBus {
